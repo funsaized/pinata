@@ -19,6 +19,7 @@ and leaves your project files alone.
   uncertain launches, cancellation, and rollback.
 - [Run the tests](testing.md): use local fixtures or opt into Herdr and live checks.
 - [Publish to npm](publication.md): inspect, publish, and verify an authorized release.
+- [Mirror to GitHub Packages](github-packages.md): sync published npm versions and verify the mirror.
 
 ## Reference: look up a fact
 
