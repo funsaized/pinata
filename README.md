@@ -24,7 +24,7 @@ installation checks. Research agents also need an installed
 
 ## Try it in Pi
 
-Ask for one bounded task:
+After installing, ask Pi in plain language i.e:
 
 ```text
 Use a scout subagent to trace the request-validation path. Return the entry
