@@ -1,201 +1,247 @@
-# Configuration and commands
+# Configuration reference
 
-## Paths and prerequisites
+pinata reads JSON files. Unknown keys in job, config, task, model, check, and
+result objects are rejected. Put task text in JSON, not in shell-interpolated
+arguments. The helper path is relative to the installed package, not your project.
 
-Resolve `lib/pinata.mjs` relative to the installed skill, never by assuming the
-current project is pinata. Commands use Node and explicit JSON files:
+For CLI arguments, see [command reference](commands.md). For a working setup,
+see [setup](setup.md) or the [first tutorial](tutorials/first-scout.md).
 
-```sh
-node /absolute/package/lib/pinata.mjs doctor /absolute/config.json
-node /absolute/package/lib/pinata.mjs init /absolute/job.json
-node /absolute/package/lib/pinata.mjs wait /returned/run/directory 30000
+## Job
+
+Pass a job file to `init`. Configuration is embedded as an object in `config`;
+it is not a path to another JSON file.
+
+| Field                      | Required / default | Meaning                                              |
+| -------------------------- | ------------------ | ---------------------------------------------------- |
+| `cwd`                      | Required           | Absolute Git-root path with an existing `HEAD`       |
+| `approval`                 | Required           | Nonempty record of the user's actual scope approval  |
+| `allowWrites`              | `false`            | Allows builder tasks and scoped local integration    |
+| `instructions`             | `[]`               | Strings copied into each task's instructions         |
+| `config`                   | `{}`               | Configuration object below                           |
+| `tasks`                    | `[]`               | Initial tasks; `add` can append tasks later          |
+| `integratedChecks`         | `[]`               | Checks run in the target root after integration      |
+| `noIntegratedChecksReason` | Conditional        | Required for writable jobs without integrated checks |
+
+An approval record is not a security mechanism. Every task is required; the
+graph has no optional-failure flag. IDs must be unique, dependencies must exist,
+and dependency cycles are rejected.
+
+Example: [builder and reviewer job](../examples/job.json). Its path, assignment,
+approval, checks, and model placeholders must be replaced before use.
+
+## Config
+
+| Field          | Default                    | Meaning                                                    |
+| -------------- | -------------------------- | ---------------------------------------------------------- |
+| `pi`           | `pi` on `PATH`             | Pi executable path or name                                 |
+| `herdr`        | `herdr` on `PATH`          | Herdr executable path or name                              |
+| `session`      | Captured Herdr environment | Existing named session; required outside Herdr             |
+| `models`       | `{}`                       | Model entries keyed by `default` or role                   |
+| `fallbacks`    | `{}`                       | Up to five approved model entries per role, in order       |
+| `passEnv`      | `[]`                       | Additional environment variable names allowed into workers |
+| `webExtension` | Unset                      | Installed pi-web-access entry file; required for research  |
+| `limits`       | Table below                | Worker, time, repair, and turn limits                      |
+
+Roles are `scout`, `research`, `planner`, `builder`, and `reviewer`. `session`
+accepts letters, digits, underscores, and hyphens. Inside Herdr, the helper
+captures `HERDR_SOCKET_PATH` and `HERDR_SESSION`. Later commands use that endpoint
+rather than the currently focused pane.
+
+### Models
+
+Every model entry has this shape:
+
+```json
+{
+  "provider": "REPLACE_WITH_APPROVED_PROVIDER",
+  "id": "REPLACE_WITH_AVAILABLE_MODEL_ID",
+  "thinking": "medium"
+}
 ```
 
-The helper prints JSON. `wait` is bounded to 30 seconds by default; repeat while
-`waiting: true`. A terminal failure makes CLI `wait` exit nonzero. `tick`,
-`resume`, and `status` describe state; use `barrier` for a proof that every named
-dependency succeeded. `integrate` exits nonzero if integrated checks fail.
+Selection order:
 
-Use the installed Pi commands `pi --list-models` and
-`pi auth check --provider <provider> --model <id> --json --no-refresh` for
-metadata/readiness, not credential-printing commands. pinata verifies exact model
-and thinking selection via an ephemeral, offline RPC metadata probe before
-creating each worker. A readiness check cannot guarantee the next remote request
+1. `task.model`
+2. `config.models[role]`
+3. `config.models.default`
+4. Coordinating Pi environment: `PI_PROVIDER`, `PI_MODEL`, `PI_REASONING_LEVEL`
+
+The inherited environment default is captured at initialization. If its thinking
+level is absent, pinata uses `medium`. Explicit entries must include `thinking`.
+Allowed values are `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`.
+
+Before launching a worker, pinata checks authentication and exact model/thinking
+selection with an ephemeral offline RPC metadata probe. It blocks a selection
+that Pi clamps or changes. Readiness does not guarantee the next remote request
 will succeed.
 
-`doctor` detects tools/versions, a running compatible Herdr endpoint and its
-schema, and any configured extension entry. It never repairs installations.
-Outside Herdr, set `config.session` to an already-running named session. Inside
-Herdr, the helper captures `HERDR_SOCKET_PATH`/`HERDR_SESSION`; subsequent commands
-target that endpoint, not whichever pane happens to be focused.
+This list selects one preferred model; it is not a retry order. An unavailable or
+unauthenticated explicit override does not fall through to the default or current model.
+Fallback is permitted only through `config.fallbacks[role]`. The task records
+which approved fallback was used and why. There are no production model IDs in
+the persona prompts.
 
-## Job file
+### Environment
 
-[Example job](../examples/job.json) uses placeholders deliberately. Replace its
-absolute cwd, approval record, task, ownership, checks, and configured model with
-real approved values. Do not execute placeholder model identifiers.
+Workers inherit an allowlist of path, home, locale, XDG, Pi agent-directory, and
+Herdr identity variables. On-disk Pi authentication under the selected home
+remains available. Extra provider keys or proxy variables require `passEnv`.
 
-Fields:
+Entries must match `^[A-Z][A-Z0-9_]*$`. Names beginning with `PINATA_`, `PI_`, or
+`HERDR_` are rejected, as are `NODE_OPTIONS`, `LD_PRELOAD`, and
+`DYLD_INSERT_LIBRARIES`.
 
-| Field                      | Meaning                                                             |
-| -------------------------- | ------------------------------------------------------------------- |
-| `cwd`                      | Absolute Git-root path; existing HEAD required                      |
-| `approval`                 | Description/reference to actual user scope approval                 |
-| `allowWrites`              | Authorizes scoped local integration; default false                  |
-| `instructions`             | Relevant instructions/context copied explicitly to each task        |
-| `config`                   | Tool paths, model selection, environment, extension, budgets        |
-| `tasks`                    | Initial task array; append more with `add` after gathering evidence |
-| `integratedChecks`         | Approved argv-based checks on the integrated tree                   |
-| `noIntegratedChecksReason` | Required justification for writable jobs without checks             |
+Approved values travel in a private, single-use `environment.json`, not pane
+commands, process arguments, task specifications, or the manifest. Logs may
+still contain sensitive tool output. See [trust and safety](architecture.md#trust-and-safety).
 
-An approval string is a record, not a security mechanism or fabricated consent.
-Do not include credentials, private unrelated content, or unapproved commands.
+### Limits
 
-## Models and environment
+All values are positive integers. Time values use milliseconds.
 
-Priority is `task.model` → `config.models[role]` → `config.models.default` → coordinating Pi
-`PI_PROVIDER`/`PI_MODEL`/`PI_REASONING_LEVEL`. An inherited default is captured
-at initialization so resumption does not silently switch models.
+| Key           | Default                            | Maximum    |
+| ------------- | ---------------------------------- | ---------- |
+| `concurrency` | `3`                                | `16`       |
+| `startupMs`   | `30000` (30 seconds)               | `86400000` |
+| `taskMs`      | `1200000` (20 minutes per attempt) | `86400000` |
+| `jobMs`       | `5400000` (90 minutes per run)     | `86400000` |
+| `repairs`     | `2` per task                       | `10`       |
+| `maxTurns`    | `60` per attempt                   | `1000`     |
 
-Each model entry is `{ "provider": "...", "id": "...", "thinking": "..." }`.
-The current Pi's supported thinking levels are `off`, `minimal`, `low`,
-`medium`, `high`, `xhigh`, `max`. If Pi clamps or changes the requested
-selection, pinata blocks it. Personas contain no production model IDs.
+Limits are saved with the run. There is at most one same-attempt submission
+retry and one result-format repair. The latter also consumes the repair budget.
+These limits do not impose provider dollar or token caps.
 
-Only `config.fallbacks[role]`, an ordered list of **previously approved** model
-entries, permits fallback. Missing/invalid overrides do not silently select the
-current model. Used fallbacks and reasons are recorded in the task specification.
+## Task
 
-`config.pi` and `config.herdr` optionally select executable paths/names.
-Environment inheritance is allowlisted: normal path/home/locale/XDG variables,
-Pi's agent directory, and Herdr identity/endpoint variables. Extra provider or
-proxy environment names require `config.passEnv`. Arbitrary loader variables,
-`PINATA_*`, `PI_*`, and `HERDR_*` cannot be added through that list.
-Pi's configured on-disk authentication remains available under the selected home.
+| Field            | Required / default          | Meaning                                                    |
+| ---------------- | --------------------------- | ---------------------------------------------------------- |
+| `id`             | Required                    | Matches `^[a-z][a-z0-9-]{0,31}$`                           |
+| `role`           | Required                    | One of the five roles                                      |
+| `task`           | Required                    | Nonempty assignment text                                   |
+| `acceptance`     | Required                    | Nonempty array of acceptance strings                       |
+| `instructions`   | `[]`                        | Additional instructions for this task                      |
+| `context`        | `[]`                        | Relevant context strings                                   |
+| `after`          | `[]`                        | Required predecessor task IDs                              |
+| `model`          | Model selection above       | Explicit provider, ID, and thinking override               |
+| `ownership`      | `[]`; required for builders | Repository-relative files or directory prefixes, not globs |
+| `checks`         | `[]`                        | Approved checks for a builder                              |
+| `noChecksReason` | Conditional                 | Required for a builder without checks                      |
+| `reviewOf`       | Required only for reviewers | Target task ID; must also appear directly in `after`       |
 
-Herdr's server may predate your coordinating shell. Each launch therefore uses a
-private, single-use `environment.json` capsule, deleted before starting Pi.
-Approved environment credential values are **not placed in pane commands, process
-argv, task specifications, or the manifest**. An unclaimed capsule can remain
-after a failed launch; verified cancellation removes it. Treat the entire private
-run as sensitive and do not upload it wholesale. Provider/tool output can also
-contain sensitive text; logs are private, bounded, not automatically redacted.
+Ownership rejects absolute paths, traversal, and `.git`. Independent builders
+cannot overlap ownership; builders ordered by dependencies can. Only builders
+can have nonempty ownership or checks. Builder tasks require `allowWrites: true`.
+A reviewer can target any non-reviewer task.
 
-## Research
+### Tools by role
 
-Set `config.webExtension` to the **installed pi-web-access entry file**, such as
-its `index.ts`, not a guessed package directory. pinata does not bundle or install
-that extension. It is loaded explicitly for research and not for other roles.
+| Role                                | Pi tools                                                                                        |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Scout, planner, reviewer            | `read`, `grep`, `find`, `ls`                                                                    |
+| Research                            | `read`, `grep`, `find`, `ls`, `web_enable`, `web_search`, `fetch_content`, `get_search_content` |
+| Builder                             | `read`, `bash`, `edit`, `write`                                                                 |
+| Builder during result-format repair | `read`, `grep`, `find`, `ls`                                                                    |
 
-The coordinator must verify provider policy/auth readiness before authorizing
-external requests. [Example web policy](../examples/web-search.json) is a
-non-secret, restrictive example for pi-web-access 0.35.0: Tavily only, direct HTTP
-fetch, no hosted/cookie fallback, no summary workflow. **Do not overwrite your
-existing web configuration.** Merge only explicitly approved changes.
+Research loads only the configured pi-web-access entry. Its dynamic tools require
+`web_enable` first. See [research setup](setup.md#enable-research).
 
-The research persona handles `web_enable` dynamic activation, fetches primary
-sources beyond snippets, and returns a brief with structured source evidence.
-Missing tools/auth, disallowed routing, failed fetches, and unresolved evidence
-are blockers. Do not silently broaden providers or use cached guesses as sources.
-Tool instructions do not enforce a spending or network sandbox.
+### Checks
 
-## Task contract
+```json
+{
+  "id": "regression",
+  "argv": ["node", "--test", "greet.test.mjs"],
+  "timeoutMs": 120000
+}
+```
 
-Every task has `id`, `role`, `task`, and nonempty `acceptance`. IDs use lowercase
-letters, digits, and hyphens (start with a letter; at most 32 characters).
-Optional `after`, `instructions`, and `context` arrays default empty.
-An optional `model` uses the same explicit provider/id/thinking contract as role configuration.
+`id` uses the task-ID syntax and must be unique within the check list. `argv`
+is a nonempty array of strings. `timeoutMs` defaults to `120000` (two minutes);
+when supplied it must be between 1 and 1200000. Checks also remain subject to
+the enclosing attempt or job deadline.
 
-Builders require `ownership`: repository-relative files or directory prefixes,
-not globs. Traversal, absolute paths, and `.git` are rejected. Independent writers
-cannot overlap; dependent writers can. Builders also need `checks` or a concrete
-`noChecksReason`. Other roles are inspection-only and cannot own files or supply
-mutating checks.
+There is no shell parsing. An explicitly approved `['sh', '-c', '...']` command
+is needed for shell syntax. Never interpolate untrusted task text. Builder checks
+run in the worker worktree; integrated checks run in the target repository.
 
-A check is `{ "id": "...", "argv": ["executable", "arg"], "timeoutMs": 120000 }`.
-No shell parsing occurs. If a shell is truly needed, explicitly approve
-`["sh", "-c", "..."]`; do not interpolate untrusted task text. Commands run in the
-task's worktree, then integrated checks run in the target root.
+## Results
 
-Reviewers require `reviewOf` and a direct `after` dependency on that target.
-They inspect its actual worktree and evidence in a fresh Pi process. Reviews may
-target a plan or builder, not another review. Add reviewers after builders or
-include them in the initial dependency graph.
+A worker returns one JSON object in its final assistant text. The supervisor
+validates it and writes the result file. Workers do not write authoritative
+result files themselves.
 
-`add <run> <task.json>` accepts one task or an array. Every task is required;
-there is no silent “optional failure.” Observe budgets when expanding scope.
+| Field                                        | Contract                                                                             |
+| -------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `schemaVersion`                              | `1`                                                                                  |
+| `runId`, `taskId`, `attemptId`, `taskDigest` | Must match the supplied task specification                                           |
+| `status`                                     | `succeeded`, `failed`, `blocked`, or `cancelled`                                     |
+| `summary`                                    | Nonempty text                                                                        |
+| `changedFiles`                               | Unique repository-relative paths matching the real delta; empty for inspection roles |
+| `commit`                                     | Always `null`; workers do not commit                                                 |
+| `checks`                                     | Array of `{name, status, detail}`; status is `passed`, `failed`, or `not-run`        |
+| `findings`                                   | Array of `{severity, message, evidence}`                                             |
+| `blockers`                                   | Array of strings; must be empty on success                                           |
 
-## Results and evidence
+Finding severities are `critical`, `high`, `medium`, `low`, and `info`.
 
-Workers return a JSON object in their final assistant text. They do not write
-their own authoritative result file. The supervisor validates and materializes it.
+Additional fields required for successful results:
 
-Common schemaVersion 1 fields:
-`runId`, `taskId`, `attemptId`, `taskDigest`, `status`, `summary`,
-`changedFiles`, `commit: null`, `checks`, `findings`, `blockers`.
+| Role           | Fields                                                               |
+| -------------- | -------------------------------------------------------------------- |
+| Scout, planner | Nonempty `brief`                                                     |
+| Research       | `brief` of at most 8000 characters; nonempty `sources` array         |
+| Reviewer       | `review: {taskId, fingerprint, verdict}` matching the current target |
 
-- Status: `succeeded`, `failed`, `blocked`, or `cancelled`.
-- Check claim: `{name, status: "passed|failed|not-run", detail}`.
-- Finding: `{severity: "critical|high|medium|low|info", message, evidence}`.
-- Scout/planner: add `brief`.
-- Research: add `brief` and `sources: [{url,title,supports,applicability}]`.
-- Reviewer: add `review: {taskId,fingerprint,verdict}`; verdict is `approve` or
-  `changes_requested`. Approval cannot contain unresolved medium-or-higher findings.
+Each research source has `url`, `title`, `supports`, and `applicability`.
+URLs must use HTTP or HTTPS without embedded credentials. Review verdicts are
+`approve` or `changes_requested`. Approval cannot include unresolved critical,
+high, or medium findings.
 
-Supervisor evidence in `outcome.json` includes the actual process exit, settled
-state, terminal stop reason, check argv/cwd/exit/log references, real file deltas,
-and a fingerprint covering snapshot/result/checks. `result.json` is the validated
-worker claim; it is not sufficient on its own. Malformed, stale, uncorrelated,
-oversized, symlinked, or path-escaping evidence is rejected. Reported changed files
-must match reality. File bytes and executable bits are verified at integration.
+## State and artifacts
 
-## Budgets
+Runs live under `<git-common-dir>/pinata/<run-id>/`, outside checked-out content.
+Directories are private (`0700`); state files are `0600`. Keep the `run` path
+returned by `init`.
 
-Defaults: **3** active workers per run; **30 s** startup; **20 min** per task attempt;
-**90 min** job; **60** assistant turns per attempt; **2** repairs per task.
-Configure these via `config.limits`: `concurrency`, `startupMs`, `taskMs`,
-`jobMs`, `maxTurns`, `repairs`. Budgets are persisted.
+| Artifact                                                                    | Purpose                                                     |
+| --------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| `manifest.json`                                                             | Saved run, tasks, attempts, notes, and integration state    |
+| `coordinator.lock`                                                          | Per-run coordinator ownership                               |
+| `tasks/<id>/<n>/task.json`                                                  | Task specification and correlation digest                   |
+| `tasks/<id>/<n>/environment.json`                                           | Single-use environment capsule; deleted before Pi starts    |
+| `tasks/<id>/<n>/claim.json`                                                 | Exclusive worker claim                                      |
+| `tasks/<id>/<n>/context.md`                                                 | Worker briefing                                             |
+| `tasks/<id>/<n>/result.json`                                                | Validated worker claim                                      |
+| `tasks/<id>/<n>/outcome.json`                                               | Process, result, checks, snapshot, and fingerprint evidence |
+| `tasks/<id>/<n>/process.json`                                               | Observed process identities for reconciliation              |
+| `tasks/<id>/<n>/cancel.json`                                                | Persisted cancellation request                              |
+| `tasks/<id>/<n>/pi.stdout.log`, `pi.stderr.log`                             | Pi JSON output and stderr                                   |
+| `tasks/<id>/<n>/check-<check-id>.stdout.log`, `check-<check-id>.stderr.log` | Supervisor-run check output                                 |
+| `tasks/<id>/<n>/review.diff`                                                | Diff supplied to a reviewer                                 |
+| `tasks/<id>/<n>/files/`                                                     | Content-addressed file evidence                             |
+| `tasks/<id>/<n>/sessions/`                                                  | Private Pi session files                                    |
+| `worktrees/<id>/`                                                           | Task worktree; a reviewer uses its target's tree            |
+| `integration/journal.json`                                                  | Local integration progress and rollback evidence            |
+| `integration/before/`                                                       | File contents retained for rollback                         |
 
-One same-attempt submission retry is permitted after reconciliation proves no
-worker claim exists and the owned original shell is available. A claim is
-exclusive, so an ambiguous duplicate submission cannot duplicate work.
+`<n>` is the 1-based attempt number, for example `tasks/build/1/`. It is not
+the result's `attemptId`, which has a value such as `build-1`. Log pairs in the
+table share the same attempt directory. Integrated check logs live under
+`integration/`.
 
-At most one result-format repair is allowed, within the overall repair budget.
-It reuses retained files, removes builder write/bash tools for that attempt, and
-requests only a corrected report. Other repairs preserve the original input
-snapshot and report cumulative changes. Repairing a builder invalidates dependent
-reviews; completed downstream builders require explicit replanning, not replay.
+`status` includes the current outcome path for each attempted task. Saved task
+states include `queued`, `preparing`, `launching`, and `running`. Terminal states
+are `succeeded`, `rejected`, `failed`, `blocked`, `cancelled`, and `uncertain`.
+`uncertain` requires reconciliation; it is not proof that a worker stopped.
+A review asking for changes produces `rejected`, even if the review process ran
+successfully.
 
-These are execution/time/turn limits, **not a provider dollar or token cap**.
+An outcome includes process exit, settlement, final stop reason, actual check
+arguments/cwd/exit/log references, and file evidence. `result.json` alone is not
+proof of success. Malformed, stale, oversized, symlinked, path-escaping, or
+uncorrelated evidence is rejected. JSON input files are limited to 1 MiB;
+managed regular files are limited to 16 MiB.
 
-## Recovery, integration, removal
-
-`status` reads saved state. `resume` reconciles actual artifacts/processes and
-schedules ready work. A dead coordinator lock requires `unlock`; live/unknown
-owners are never evicted automatically.
-
-`repair <run> <task-id> <feedback-file>` schedules a bounded repair.
-`retry-launch` handles uncertain submission only. Unknown ownership remains a
-blocker. Inspect private artifacts before deciding; do not invent a new task ID
-to reset budgets.
-
-`integrate` requires every result and an independent current approval for every
-builder. It applies verified file deltas serially with content preconditions,
-leaves the user's index untouched, journals progress, and runs integrated checks.
-It does not commit. It refuses changed HEAD or conflicting user edits.
-
-If interrupted during application, rerun `integrate` to reconcile the journal.
-A failed integrated check leaves changes visible and reports failure. Inspect
-before deciding to repair or use `rollback <run> --confirm`. Rollback is local,
-requires user authorization, restores only the latest journal, and refuses to
-overwrite subsequent edits. An uncertain interrupted rollback needs manual
-inspection; it is not a cross-file transaction.
-
-`cancel` persists intent and verifies only owned process termination; it retains
-outputs. `cleanup` previews pane/worktree removal. `cleanup --confirm` closes
-verified idle owned panes and removes clean owned worktrees, never force-removing
-dirty trees. Logs/manifests remain for recovery; deleting those separately needs
-explicit authorization. Do not remove the package while active workers use it.
-
-Use `note <run> <note.json>` for progress, authorization references, and release
-evidence. Releases/deployments are coordinator actions outside this helper.
+[Command reference](commands.md) · [Recovery](recovery.md) · [Documentation index](README.md)

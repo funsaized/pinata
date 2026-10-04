@@ -1,130 +1,73 @@
 # pinata
 
-Pi subagents through skills, bash, and [Herdr](https://herdr.dev/). Distributed as
-**`pi-pinata`**; unrelated to the Pinata storage SDK.
+Run Pi subagents in [Herdr](https://herdr.dev/) workspaces. Give each agent a
+specific task, collect its results, and review changes before bringing them back
+to your working tree.
 
-- Exactly two skills: discoverable `subagents` and explicit-only `engmgmt`.
-- Five global prompt templates: `/scout`, `/research`, `/planner`, `/builder`,
-  `/reviewer`.
-- Three workers per run by default, isolated writer worktrees, dependency barriers,
-  independent adversarial review, bounded repairs, and verified integration.
-- No bundled Pi extension, MCP server, daemon, database, runtime npm dependencies,
-  or terminal-specific pane API.
+The npm package is `pi-pinata`, unrelated to the Pinata storage SDK. It contains
+two Pi skills, five agent prompt templates, and a Node helper. It has no runtime
+npm dependencies or resident service.
 
 ## Install
 
-Requires **Pi ≥1.0.2**, **Herdr ≥0.9.1** with a running compatible server,
-**Node ≥22.19.0**, and Git. Model access is external configuration. Research also
-requires an already-installed [pi-web-access](https://github.com/nicobailon/pi-web-access).
-The helper detects prerequisites; it does not install or upgrade them.
-
-Install from npm:
+You need Pi 1.0.2 or newer, Herdr 0.9.1 or newer with a running compatible server,
+Node 22.19.0 or newer, Git, and access to a model.
 
 ```sh
 pi install npm:pi-pinata
 ```
 
-Or clone this repository and register its absolute path:
+For a local checkout, use `pi install /absolute/path/to/pinata`. Restart Pi or run
+`/reload`. See [setup](docs/setup.md) for model selection, Herdr sessions, and
+installation checks. Research agents also need an installed
+[pi-web-access](https://github.com/nicobailon/pi-web-access) extension.
 
-```sh
-pi install /absolute/path/to/pinata
-```
+## Try it in Pi
 
-These commands change your personal Pi configuration; use them only when you
-intend to install. Do not copy files over existing skills/prompts. Restart Pi or
-use `/reload`. A personal installation works in unrelated projects and worktrees.
-Use `pi list` to locate the installed package and verify its exact resources:
-
-```sh
-node /absolute/installed/package/lib/pinata.mjs resources /an/unrelated/project
-```
-
-A missing or shadowed resource is a blocker, not a reason to overwrite yours.
-Resolve name collisions explicitly in Pi configuration. This probe intentionally
-ignores untrusted project resources; a project's trusted prompts/extensions can
-still shadow global commands. Check the active session's diagnostics too.
-
-## Use
-
-For engineering coordination, invoke the skill explicitly:
+Ask for one bounded task:
 
 ```text
-/skill:engmgmt Fix the approved issue through tests, adversarial review, and local integration.
-Do not commit, push, publish, or deploy.
+Use a scout subagent to trace the request-validation path. Return the entry
+points, callers, and existing tests. Do not change files.
 ```
 
-Or ask Pi to delegate a bounded assignment:
+For a coding job that needs coordination, invoke the engineering-management skill:
 
 ```text
-Use a scout subagent to trace the request-validation path and identify the narrowest regression check.
+/skill:engmgmt Fix the approved issue, run the relevant tests, have a separate
+reviewer inspect the changes, and integrate them locally. Do not commit or push.
 ```
 
-The coordinator reads `subagents`, records scope and acceptance criteria, selects
-configured models, creates a private run, collects every required result, and
-integrates only reviewed changes. `engmgmt` explicitly loads `subagents`; Pi has
-no implicit skill inheritance.
+`subagents` responds to explicit delegation requests. `engmgmt` is explicit-only.
+The `/scout`, `/research`, `/planner`, `/builder`, and `/reviewer` commands apply a
+persona to your current conversation; they do not launch child agents.
 
-Invoking `/scout` or another persona directly changes the **current conversation's
-prompt**. It does not launch a child. The skills and helper do the delegation.
+## Documentation
 
-An idle pane, a settled agent, or exit zero alone is **not success**. Pi can emit
-an assistant error and still exit zero. pinata requires correlated terminal
-results, actual file/check evidence, and applicable review gates.
+| I want to…                                | Start here                                                      |
+| ----------------------------------------- | --------------------------------------------------------------- |
+| Learn with a small, read-only run         | [Run your first scout](docs/tutorials/first-scout.md)           |
+| Learn the build and review cycle          | [Build and review a change](docs/tutorials/build-and-review.md) |
+| Choose a task for each agent              | [Agent examples](examples/README.md)                            |
+| Install or configure pinata               | [Setup](docs/setup.md)                                          |
+| Resume, repair, or clean up a run         | [Recovery](docs/recovery.md)                                    |
+| Look up commands and JSON fields          | [Reference](docs/configuration.md)                              |
+| Understand worktrees, reviews, and safety | [Concepts](docs/architecture.md)                                |
 
-## Configuration and operation
+The [documentation index](docs/README.md) also links to contributor testing,
+recorded validation, and npm publication instructions.
 
-See [configuration](docs/configuration.md) for JSON contracts and commands,
-[architecture](docs/architecture.md) for lifecycle diagrams and trust boundaries,
-and [examples](examples/) for editable configurations.
+## Before delegating writes
 
-Jobs operate from a Git root with an existing commit. Builders start at that
-commit, not a copy of arbitrary dirty user work. State is private under
-`<git-common-dir>/pinata/<run-id>/`, outside checked-out/package content.
-Keep the returned run path for `status`, `resume`, `cancel`, and cleanup.
+Workers start from committed Git `HEAD`, not your uncommitted changes. Builders
+work in separate worktrees. Integration requires a current independent approval
+for every builder, preserves your Git index, and does not commit.
 
-Read-only personas do not get bash/edit/write tools. Builders are not sandboxed:
-Pi runs with your OS permissions. Review tasks/check commands before approving
-them. Workers must not delegate, install, stage, commit, publish, or deploy.
-The coordinator owns separately authorized release actions.
+Builders have bash and run with your OS permissions. pinata is not a sandbox.
+Review the task and check commands before approving them. Keep private run logs
+out of bug reports unless you have inspected them for sensitive content.
 
-## Development and validation
-
-From a repository checkout (tests and lockfiles are not shipped in the tarball):
-
-```sh
-npm ci --ignore-scripts
-npm test
-npm run test:pi
-npm run lint
-npm run format:check
-```
-
-`test:pi` packs and installs locally in a scratch npm prefix, registers resources
-in an isolated Pi configuration, and uses a localhost provider fixture. It does
-not use live model credentials or change personal Pi configuration.
-
-`npm run test:herdr` requires an explicit opt-in and creates/closes owned Herdr
-panes with mock Pi workers. `npm run test:live` requires separate live-spending
-authorization and configuration. See [validation and limitations](docs/validation.md)
-for exact coverage and the deferred macOS checklist.
-
-Linux is the current validation target. **macOS: designed for compatibility; not
-yet validated.** No native macOS, Mac Ghostty, Tailscale, or Dotbento setup is
-included. Headless Herdr checks are not outer-terminal UI validation.
-
-## Remove and publish
-
-```sh
-pi remove npm:pi-pinata
-# For a locally registered checkout, use the exact source you installed:
-pi remove /absolute/path/to/pinata
-```
-
-Removal unregisters package resources; it does not delete your run artifacts or
-dirty worker worktrees. Cancel/reconcile runs first and preview cleanup.
-
-[Publication instructions](docs/publication.md) target npm account
-[`funsaized`](https://www.npmjs.com/~funsaized). Nothing here publishes, pushes,
-commits, or reserves a package name automatically.
+Linux is the current validation target. macOS is designed for compatibility but
+has not been validated. See [recorded validation](docs/validation.md).
 
 MIT licensed.

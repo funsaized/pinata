@@ -1,0 +1,55 @@
+{
+  "cwd": "/absolute/path/to/pinata-playground",
+  "approval": "Replace with your approval to fix greet, update its tests, use the selected model, and integrate locally",
+  "allowWrites": true,
+  "instructions": [
+    "Work only on the greeting whitespace fix. Do not install dependencies, stage, commit, push, publish, or deploy."
+  ],
+  "config": {
+    "models": {
+      "default": {
+        "provider": "REPLACE_WITH_APPROVED_PROVIDER",
+        "id": "REPLACE_WITH_AVAILABLE_MODEL_ID",
+        "thinking": "medium"
+      }
+    }
+  },
+  "tasks": [
+    {
+      "id": "build",
+      "role": "builder",
+      "task": "Make greet trim leading and trailing whitespace from its string argument. Add a test for greet(' Ada ') returning 'Hello, Ada!'. Keep the existing greeting test passing. Do not change the behavior for internal spaces or add non-string handling.",
+      "acceptance": [
+        "greet(' Ada ') returns 'Hello, Ada!'.",
+        "greet('Ada') still returns 'Hello, Ada!'.",
+        "The regression is covered in greet.test.mjs and the approved check passes."
+      ],
+      "ownership": ["greet.mjs", "greet.test.mjs"],
+      "checks": [
+        {
+          "id": "greeting",
+          "argv": ["node", "--test", "greet.test.mjs"],
+          "timeoutMs": 30000
+        }
+      ]
+    },
+    {
+      "id": "review",
+      "role": "reviewer",
+      "task": "Inspect the actual greeting changes and supervisor check evidence. Check that the regression test exercises surrounding whitespace and that internal spaces and the existing greeting are preserved. Report concrete defects, or approve the current evidence if the acceptance criteria hold.",
+      "acceptance": [
+        "The review cites the actual diff and check evidence.",
+        "The verdict addresses the builder's acceptance criteria without proposing unrelated changes."
+      ],
+      "after": ["build"],
+      "reviewOf": "build"
+    }
+  ],
+  "integratedChecks": [
+    {
+      "id": "greeting",
+      "argv": ["node", "--test", "greet.test.mjs"],
+      "timeoutMs": 30000
+    }
+  ]
+}

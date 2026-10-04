@@ -1,132 +1,184 @@
-# Architecture
+# How pinata runs a job
 
-pinata is a normal Pi package: two skills, five prompt templates, and three small
-Node modules. `pinata.mjs` coordinates finite-lived commands, `worker.mjs`
-supervises one process at a time, and `core.mjs` shares contracts/OS primitives.
-There is no resident pinata service.
+pinata delegates tasks to separate Pi processes and brings their results back to
+one coordinator. Herdr provides the workspaces. Git worktrees keep builders'
+changes separate until they pass review.
 
-## Persona relationships
+This page explains the design. For a working example, follow
+[Build and review a change](tutorials/build-and-review.md).
+
+## Skills, personas, and workers
+
+The coordinator is your main Pi conversation. It decides what to delegate and
+remains responsible for the final result.
+
+The `subagents` skill teaches the coordinator how to create and manage a run.
+It activates for explicit delegation requests. The `engmgmt` skill adds a coding
+workflow: inspect, plan when needed, build, review, repair, and integrate. You
+invoke it explicitly with `/skill:engmgmt`; it then reads `subagents`. Pi does not
+provide implicit skill inheritance.
+
+Personas are prompt templates for five roles:
+
+| Role     | Main question                                                   |
+| -------- | --------------------------------------------------------------- |
+| Scout    | Where does this behavior live in the repository?                |
+| Research | What do inspected external sources say about it?                |
+| Planner  | What should change, in what order, and how will we check it?    |
+| Builder  | Can I implement this assignment within the owned paths?         |
+| Reviewer | Does the actual plan or change satisfy its acceptance criteria? |
+
+You do not need every role for every job. A scout can answer a local code question
+alone. A small fix may need only a builder and reviewer.
+
+Typing `/builder` in Pi uses that prompt in the current conversation. It does not
+create a worker. A delegated worker is a new Pi process launched by the helper,
+with its own task, model, tools, and session directory.
+
+## A run is a dependency graph
+
+A task's `after` list names the tasks it depends on. Ready tasks can run in
+parallel, up to three workers by default. A failed required predecessor blocks
+its dependents. One successful task cannot stand in for the rest of the group.
 
 ```mermaid
-flowchart TD
-  U[User scope and authorization] --> C[Coordinator: acceptance and delivery]
-  E["/skill:engmgmt — explicit only"] --> S[subagents skill — explicitly loaded]
-  C --> E
-  C --> S
-  S --> SC[scout: local reconnaissance]
-  S --> RE[research: authoritative sources]
-  SC --> P[planner: dependencies and ownership]
-  RE --> P
-  P --> V[reviewer: adversarial plan review when warranted]
-  V --> B[builder: scoped implementation]
-  B --> R[reviewer: independent actual-diff review]
-  R -->|actionable rejection| B
-  R -->|approval tied to evidence| C
-  C --> G[Separately authorized package / release / deployment]
+flowchart LR
+  S[Scout] --> P[Planner]
+  R[Research, if needed] --> P
+  P --> B[Builder]
+  B --> V[Reviewer]
+  V -->|approve| I[Local integration]
+  V -->|changes requested| F[Builder repair]
+  F --> V
 ```
 
-Not every role is required. Scouts and research run concurrently only when their
-inputs are independent. All roles and repairs share the run's concurrency budget.
+This diagram shows one possible job, not a mandatory sequence. Research that
+needs a version discovered by the scout must wait for the scout.
 
-## Lifecycle and barriers
+The helper has no scheduler daemon. `tick`, `resume`, and `wait` collect results
+and schedule ready tasks. Workers already launched run under their supervisors;
+the coordinator must keep reconciling to collect them and launch downstream work.
+`status` only reads saved state.
 
-```mermaid
-flowchart TD
-  A[Inspect and record approved scope] --> F[Preflight tools / model / auth / endpoint]
-  F -->|ready| Q[Dependency and ownership plan]
-  F -->|missing prerequisite| X[Blocked — report decision needed]
-  Q --> D{All required predecessors verified?}
-  D -->|no: still running| W[Wait and reconcile all workers]
-  W --> D
-  D -->|failed or unknown| X
-  D -->|yes; slot available| H[Create owned Herdr pane]
-  H --> L[Exclusive attempt claim; supervise Pi JSON]
-  L --> O{Valid correlated terminal outcome and checks?}
-  O -->|no; bounded recovery possible| T[Inspect evidence; repair or safe same-attempt retry]
-  T --> D
-  O -->|budget exhausted / unresolved| X
-  O -->|yes| R[Independent adversarial review]
-  R -->|changes requested; budget remains| T
-  R -->|current approval| B{Every required task and review passed?}
-  B -->|no| W
-  B -->|yes| I[Serialized journaled integration]
-  I --> K{Integrated checks pass?}
-  K -->|no| X
-  K -->|yes| G{Release / production action authorized?}
-  G -->|no or not needed| Z[Verified local delivery]
-  G -->|yes| P[Coordinator performs action; verifies target]
-  P --> Z
-  L -->|deadline or cancellation| C[Persist intent; stop scheduling]
-  W -->|cancel| C
-  C --> V{Owned termination verified?}
-  V -->|yes| Y[Cancelled; preserve outputs and dirty worktrees]
-  V -->|no| X
-```
+## Worktrees and ownership
 
-## Control and evidence
+Each run records the repository's committed `HEAD`. Worker worktrees begin at
+that commit. They do not receive arbitrary uncommitted changes from your working
+tree. A dependent builder receives verified changes from predecessor builders.
 
-1. Pi's bash tool invokes the Node helper with JSON input paths.
-2. A coordinator lock protects atomic manifest updates. Separate runs do not have
-   a shared lock; coordinate their ownership yourself.
-3. Herdr creates labelled, unfocused workspaces. pinata captures workspace, tab,
-   terminal and pane IDs and checks the original foreground shell before sending
-   a quoted Node worker command through `pane run`.
-4. The worker claims the immutable attempt, consumes its private environment
-   capsule, and starts Pi in JSON mode with explicit model, reasoning, persona,
-   task/context, tools, and session directory.
-5. It drains LF-framed JSON stdout and separate stderr. It rejects incomplete
-   lifecycle streams, assistant errors/abort/length stops, unexpected models,
-   malformed results, nonzero exit, surviving subprocesses, and deadline failures.
-6. It runs approved checks independently, snapshots changes, enforces ownership
-   and truthful changed-file lists, and writes the outcome atomically.
-7. The coordinator verifies dependency outcomes and evidence again before review
-   and integration. Review fingerprints bind the actual result and checks, not
-   merely a pane status or the reviewer's confidence.
+Each builder declares the files or directory prefixes it may change. Independent
+builders cannot own overlapping paths. Dependent builders can, because their
+ordering is explicit. These checks apply within a run; separate runs have no
+shared ownership lock.
 
-The optional official Herdr Pi integration is useful for coordinator/TUI
-inspection. It is **not bundled** and is not completion evidence: the installed
-integration skips JSON/print/RPC lifecycle reporting. A headless Herdr server
-does not require a visible outer terminal.
+A reviewer inspects its target's actual worktree and evidence. It does not review
+a paraphrase of the change. When a repair changes the evidence, the old review
+no longer approves it.
 
-## Boundaries and deliberate limits
+## Why an idle pane is not success
 
-- Repository text, worker output, fetched content, and check claims are untrusted.
-  Task specifications and approved commands are coordinator-controlled.
-- Pi project trust and tool allowlists are not an OS sandbox. A builder has bash;
-  it can read accessible files, contact networks, or deliberately bypass workflow
-  restrictions. Use an actual external sandbox for hostile code.
-- Global skills/templates/extensions are suppressed in child discovery. A single
-  persona is explicitly loaded; research additionally loads trusted pi-web-access.
-  Project-local Pi configuration is not approved. Relevant instructions are
-  copied into task context; applicable AGENTS.md remains guidance, not authority
-  to expand scope.
-- Inspection roles have read/search/list tools, not bash/edit/write. This is
-  capability reduction, not a filesystem/security boundary.
-- Process ownership uses PID, start time, command name, and process group plus
-  observed descendants. A rapidly daemonizing child can escape observation; OS
-  process containment is outside scope. Unknown ownership is retained/reported.
-- State is Git-common-directory-local, mode 0700 directories/0600 files by
-  default. Do not sync/upload it indiscriminately. Same-user tampering is not
-  cryptographically prevented. Single-use environment capsules can contain
-  explicitly approved secrets; unclaimed capsules require verified cancellation.
-- Integration manages ordinary regular files up to 16 MiB, executable bits, and
-  deletions. No symlink/submodule/LFS/filter-aware merge engine. Secret-bearing
-  names such as `.env*`, `auth.json`, `.npmrc`, and `.netrc` are refused.
-- Git-ignored files are not snapshotted as deliverables; ignored build output can
-  keep a worktree dirty at cleanup. Dependency installation is not automatic.
-- Check processes are bounded. Checks that intentionally update files are
-  incorporated into builder evidence; integrated checks must not alter managed
-  code/index. No implicit live-credential checks are permitted.
-- This implementation is local, single-host orchestration. There is no remote
-  worker scheduler, transactional remote deployment, persistent RPC backend, or
-  automatic publication mechanism.
+Pi can report an assistant error and still exit with code zero. Herdr pane status
+also says nothing about whether a task met its acceptance criteria.
 
-## Source contracts
+The worker supervisor checks the JSON event stream, process exit, final stop
+reason, model identity, and result envelope. It then runs the approved checks
+itself and compares reported file changes with the real worktree. A failed check
+overrides the worker's claim of success.
 
-Version-matched implementation evidence is in [validation](validation.md).
-Primary references: [Pi packages](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/packages.md),
+The resulting `outcome.json` contains the process and check evidence, file
+snapshot, and validated worker result. Its fingerprint covers the snapshot,
+result, and checks. A review names that fingerprint, so approval cannot silently
+carry over to a different result.
+
+The optional official Herdr Pi integration can help you inspect interactive
+sessions. It is not bundled with pinata, and its badges are not completion
+evidence for JSON workers. Herdr can also run headlessly without a visible outer
+terminal.
+
+## Integration and recovery
+
+Integration requires all tasks to succeed and every builder to have a current
+approving review. The helper applies verified file deltas in order, checks their
+starting contents, and runs the integrated checks. It preserves your Git index
+and does not commit, push, publish, or deploy.
+
+An integration journal records progress. It lets the helper reconcile an
+interruption and refuse to overwrite later edits during rollback. It is not an
+atomic transaction across files. A failed integrated check leaves the changes
+visible for inspection.
+
+Repairs reuse retained work and consume a budget. They preserve the original
+input snapshot, so the worker reports cumulative changes. Repair requeues
+dependents and invalidates their old reviews. Any downstream non-reviewer with
+an existing attempt blocks repair; pinata does not silently replay that work.
+A result-stage failure automatically selects a single report-only repair that
+removes the builder's write and bash tools.
+
+See [recovery](recovery.md) for the commands and decision points.
+
+## Trust and safety
+
+pinata reduces what workers can do, but it is not an OS sandbox. Builders have
+bash and run with your permissions. They can access files or networks available
+to your user and can bypass prompt-based restrictions. Use an external sandbox
+for hostile code. An `approval` string records consent; it does not create or
+enforce it.
+
+Inspection roles get read, search, and list tools, not bash, edit, or write.
+Research also gets the explicitly loaded pi-web-access tools. Child discovery
+disables global skills, templates, extensions, and themes, then loads only the
+chosen persona and, for research, the approved extension. Project-local Pi
+configuration is not approved. Relevant instructions are copied into the task.
+Repository text, AGENTS.md guidance, fetched pages, and worker claims cannot
+authorize broader actions.
+
+Worker instructions prohibit further delegation, installs, staging, commits,
+background services, releases, and global configuration changes. The helper also
+blocks ordinary recursive launches through a child marker. These workflow rules
+are not protection against a malicious bash-capable worker.
+
+Process cleanup checks PID, start time, command, process group, and observed
+descendants. A rapidly daemonizing process can escape observation. The helper
+retains and reports processes or workspaces whose ownership it cannot prove.
+
+Run directories use mode `0700`; state files use `0600`. A private, single-use
+environment file carries approved environment values to each worker and is
+deleted before Pi starts. An unclaimed file may remain after a failed launch;
+verified cancellation removes it. Logs are bounded but not automatically
+redacted. Do not upload a run directory wholesale. Same-user tampering is not
+cryptographically prevented.
+
+## File and execution limits
+
+Integration handles ordinary files up to 16 MiB, executable bits, and deletions.
+It refuses symlinks, submodules, and secret-bearing filenames such as `.env`,
+`.env.*`, `auth.json`, `.npmrc`, and `.netrc`. It does not detect Git LFS pointers
+or implement LFS/filter-aware merging; ordinary pointer files are treated as text.
+
+Ignored files are not snapshotted as deliverables. Ignored build output can still
+keep a worker worktree dirty and prevent automatic cleanup. Dependency
+installation is not automatic.
+
+Builder checks may update files; those changes become part of the evidence and
+must respect ownership. Integrated checks must not alter managed code or the
+index. Live-credential checks require explicit approval. Time and turn limits
+are not spending caps; enforce monetary limits with your provider.
+
+pinata coordinates local, single-host work. It does not schedule remote workers
+or implement remote deployment transactions.
+
+## Implementation and sources
+
+`lib/pinata.mjs` coordinates finite-lived CLI commands. `lib/worker.mjs`
+supervises workers and checks. `lib/core.mjs` holds validation and OS helpers.
+Atomic state writes and a per-run coordinator lock protect local state updates.
+
+See [recorded validation](validation.md) for tested versions and source revisions.
+Upstream contracts: [Pi packages](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/packages.md),
 [skills](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/skills.md),
 [JSON mode](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/json.md),
 [Herdr automation](https://herdr.dev/docs/agent-automation/),
-[CLI](https://herdr.dev/docs/cli-reference/),
+[CLI](https://herdr.dev/docs/cli-reference/), and
 [integrations](https://herdr.dev/docs/integrations/).
+
+[Documentation index](README.md)
