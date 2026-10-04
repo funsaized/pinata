@@ -46,8 +46,8 @@ availability or reserve it. If a different project or account occupies the name,
 versions and maintainers before an authorized version bump. Confirm `npm whoami`
 is exactly `funsaized`, and authenticate interactively only with permission.
 
-The first registry check on 2026-10-04 returned E404. Rechecking is mandatory
-because that observation can become stale at any time.
+Version 0.1.0 is published on npm. Recheck the registry before choosing the next
+version; published versions cannot be replaced.
 
 ## Authorized release only
 
@@ -87,6 +87,13 @@ npm versions are not overwriteable. A rollback normally means an explicitly
 authorized corrective version and, where appropriate, deprecation. Do not
 automatically unpublish or change dist-tags. Record a rollback plan before
 publication and verify its actual outcome if you use it.
+
+## Sync the GitHub mirror
+
+After npm publication, [sync that version to GitHub Packages](github-packages.md).
+The daily workflow mirrors npm's current `latest`; a manual dispatch can copy a
+specific published version immediately. It uses `@funsaized/pi-pinata` on GitHub
+and keeps the unscoped npm package unchanged.
 
 ## Removal
 
