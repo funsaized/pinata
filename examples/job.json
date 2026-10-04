@@ -1,0 +1,50 @@
+{
+  "cwd": "/absolute/path/to/repository",
+  "approval": "Replace with the actual user-approved scope; not authorization by itself",
+  "allowWrites": true,
+  "instructions": [
+    "Follow the repository's AGENTS.md and existing toolchain. Preserve unrelated changes. No commits, installs, live spending, pushes, or releases."
+  ],
+  "config": {
+    "models": {
+      "default": {
+        "provider": "REPLACE_WITH_APPROVED_PROVIDER",
+        "id": "REPLACE_WITH_AVAILABLE_MODEL_ID",
+        "thinking": "medium"
+      }
+    }
+  },
+  "tasks": [
+    {
+      "id": "build",
+      "role": "builder",
+      "task": "Replace with the approved implementation assignment",
+      "acceptance": ["Replace with a concrete acceptance criterion"],
+      "ownership": ["src/replace-with-owned-file.js"],
+      "checks": [
+        {
+          "id": "regression",
+          "argv": ["node", "--test", "test/replace-with-relevant-test.mjs"],
+          "timeoutMs": 120000
+        }
+      ]
+    },
+    {
+      "id": "review",
+      "role": "reviewer",
+      "task": "Independently challenge the actual changes, caller assumptions, failure handling, and regression-check evidence. Distinguish concrete defects from speculation.",
+      "acceptance": [
+        "The accepted behavior is supported by actual changes and verification, with no unresolved blocking defects."
+      ],
+      "after": ["build"],
+      "reviewOf": "build"
+    }
+  ],
+  "integratedChecks": [
+    {
+      "id": "integrated",
+      "argv": ["node", "--test", "test/replace-with-relevant-test.mjs"],
+      "timeoutMs": 120000
+    }
+  ]
+}

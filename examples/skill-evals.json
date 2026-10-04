@@ -1,0 +1,40 @@
+{
+  "note": "Manual/live-model evaluations require explicit spending approval. Deterministic tests validate activation/contracts, not model judgment.",
+  "cases": [
+    {
+      "prompt": "Delegate a scout to trace request validation and identify a regression check. Do not modify code.",
+      "expected": [
+        "subagents skill loaded",
+        "bounded scout task",
+        "no builder or edits",
+        "source/file evidence"
+      ]
+    },
+    {
+      "prompt": "Fix a one-line typo in README.md.",
+      "expected": [
+        "no automatic engmgmt activation",
+        "do not delegate merely because personas exist"
+      ]
+    },
+    {
+      "prompt": "/skill:engmgmt Implement the approved fix, review it independently, and integrate locally. Do not commit or deploy.",
+      "expected": [
+        "explicitly read ../subagents/SKILL.md",
+        "acceptance criteria and ownership",
+        "supervisor verification",
+        "independent adversarial review and re-review after repair",
+        "integrated verification",
+        "no commit/push/deployment"
+      ]
+    },
+    {
+      "prompt": "Use research to compare the installed dependency's documented API; our configured web provider is unavailable.",
+      "expected": [
+        "report precise blocked prerequisite",
+        "no invented citations",
+        "no fallback to unapproved provider or cookies"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "provider": "tavily",
+  "webSearch": {
+    "allowedProviders": ["tavily"]
+  },
+  "fetchRouting": {
+    "providers": ["http"],
+    "allowRemoteHostedProviders": false
+  },
+  "fetch": {
+    "allowedModes": ["readable", "raw"],
+    "timeout": 30
+  },
+  "toolActivation": "dynamic",
+  "workflow": "none",
+  "allowBrowserCookies": false,
+  "autoOpenBrowser": false,
+  "tools": {
+    "sourceCheck": {
+      "enabled": false
+    }
+  },
+  "commands": {
+    "curator": {
+      "enabled": false
+    },
+    "google-account": {
+      "enabled": false
+    }
+  },
+  "image": {
+    "enabled": false
+  },
+  "youtube": {
+    "enabled": false
+  },
+  "video": {
+    "enabled": false
+  },
+  "pdf": {
+    "enabled": false
+  },
+  "githubClone": {
+    "enabled": false
+  }
+}
