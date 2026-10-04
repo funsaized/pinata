@@ -1,0 +1,70 @@
+{
+  "name": "pi-pinata",
+  "version": "0.1.0",
+  "description": "Bash-driven subagents and engineering management for Pi, orchestrated with Herdr.",
+  "keywords": [
+    "herdr",
+    "pi",
+    "pi-package",
+    "subagents"
+  ],
+  "homepage": "https://github.com/funsaized/pinata#readme",
+  "bugs": {
+    "url": "https://github.com/funsaized/pinata/issues"
+  },
+  "license": "MIT",
+  "author": {
+    "name": "funsaized",
+    "url": "https://www.npmjs.com/~funsaized"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/funsaized/pinata.git"
+  },
+  "files": [
+    "skills/",
+    "prompts/",
+    "lib/",
+    "docs/",
+    "examples/",
+    "README.md",
+    "LICENSE"
+  ],
+  "os": [
+    "linux",
+    "darwin"
+  ],
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "test:pi": "node test/pi-smoke.mjs",
+    "test:herdr": "node test/herdr-smoke.mjs",
+    "test:live": "node test/live-smoke.mjs",
+    "check": "npm run format:check && npm run lint",
+    "lint": "oxlint lib test",
+    "format:check": "oxfmt --check package.json lib test examples README.md docs skills prompts",
+    "format": "oxfmt package.json lib test examples README.md docs skills prompts"
+  },
+  "devDependencies": {
+    "oxfmt": "0.71.0",
+    "oxlint": "1.86.0"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "pi": {
+    "extensions": [],
+    "skills": [
+      "./skills/subagents",
+      "./skills/engmgmt"
+    ],
+    "prompts": [
+      "./prompts/scout.md",
+      "./prompts/research.md",
+      "./prompts/planner.md",
+      "./prompts/builder.md",
+      "./prompts/reviewer.md"
+    ],
+    "themes": []
+  }
+}

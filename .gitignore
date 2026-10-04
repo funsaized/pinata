@@ -1,0 +1,10 @@
+node_modules/
+*.tgz
+coverage/
+.pinata/
+.env
+.env.*
+*.log
+
+# Local implementation checklist, not part of the project or release.
+PLAN.md
