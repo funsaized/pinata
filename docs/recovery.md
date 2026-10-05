@@ -1,5 +1,11 @@
 # Recover and clean up a run
 
+To inspect historical resources across this repository, use `pinata_gc({})` or
+`node "$PINATA" gc /absolute/repo`. Preview does not change run state. After
+reviewing eligible resources within the approved scope, confirm with
+`pinata_gc({confirm:true})` or append `--confirm` to the command. The report gives
+retention reasons; saved results, session logs, and manifests remain available.
+
 Tell Pi what happened and which run you mean. In a new conversation, provide the
 saved run path if you have it. Pi can inspect the run's state and evidence before
 deciding what can safely continue. Keep logs and retained worktrees until the

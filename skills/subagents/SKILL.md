@@ -41,8 +41,11 @@ layer around the helper.
 
 ## Scope and preflight
 
-1. Read applicable AGENTS.md files, repository state, lockfiles, existing checks,
-   and deployment conventions. Note existing staged, unstaged, and untracked work.
+1. Read applicable AGENTS.md files and required project guidance, inspect Git
+   state, and identify the bounded scope. Note staged, unstaged, and untracked
+   work. Read lockfiles/checks/deployment conventions when relevant to that scope.
+   Complete required orientation, then delegate; do not perform the workers'
+   repository investigation before launching them.
 2. Establish the user's actual scope and authorization. A job's `approval` field
    records that authorization; writing a string does not create it. Ask only for
    material ambiguity, missing authorization, exhausted recovery, or blockers.
@@ -81,6 +84,21 @@ layer around the helper.
 
 ## Make each task self-contained
 
+Act as coordinator and evidence reviewer. Split the work into complementary
+questions with distinct deliverables; do not assign the same broad repository
+explanation to both scout and research. For an overview, let scout own purpose,
+local architecture, call paths, and tests. Give research named questions about
+external protocols, dependency versions, or guarantees that need clarification.
+Research reads only the local evidence needed for those questions. Include known
+paths/versions in its context, and do not require a second full architecture map.
+
+After inspecting the prepared job, start and yield immediately by default.
+`yield:false` is for a concrete separate deliverable outside worker scope, not
+reading the same modules or preparing an answer before their evidence arrives.
+After completion, read every required outcome, pass the barrier, synthesize, and
+spot-check material claims or disagreements in the source. Reopen the broad
+investigation only when missing or contradictory evidence requires it.
+
 Supply its role, task, cwd (the helper creates the isolated worktree), relevant
 instructions/context, model, permitted actions, acceptance criteria, ownership,
 dependencies, and checks. Pass only relevant context, not the coordinator's
@@ -99,6 +117,11 @@ Use only roles the job needs. Limit concurrent workers to three by default.
 Independent builders get separate worktrees and non-overlapping ownership.
 Dependent builders receive the verified changes of their predecessors. Reviewers
 inspect their target's real worktree, diff, outcome, and check logs.
+
+Worker checkouts start from committed `HEAD`. Uncommitted, untracked, and ignored
+local files (including a local `.pi` directory) are absent unless explicitly
+prepared by the helper. Supply relevant local configuration facts as scoped
+context rather than asking a worker to read files its checkout does not contain.
 
 Children must not delegate, stage, commit, install dependencies, start background
 services, push, publish, deploy, or change global configuration. The helper denies
@@ -147,7 +170,10 @@ ordinary recursive launches through its child marker. These are workflow control
   unintegrated worktrees. Finished panes and disposable inspection worktrees
   close automatically; builder worktrees are removed after verified integration.
   Results, session logs, and rollback evidence remain available. Preview
-  `cleanup` before manually removing any retained resources.
+  `cleanup` for one run or `pinata_gc` / `gc [cwd]` for historical runs across the
+  repository. Preview first; confirmation removes eligible resources only within
+  the user's existing authorization. GC reports retention reasons, never resumes
+  or cancels work, and keeps validated results usable after checkout removal.
   Never kill unrelated processes, stop a shared Herdr server, or force-remove
   a worktree.
 

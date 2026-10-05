@@ -70,6 +70,11 @@ active work. Herdr panes still show live worker sessions. Finished panes and unc
 removed automatically; builder worktrees are removed after verified integration.
 Saved results and recovery evidence remain.
 
+For historical leftovers, ask Pi to preview cleanup with `pinata_gc`, or run
+`node /absolute/pinata/lib/pinata.mjs gc /absolute/repo`. Add `--confirm` to retire
+eligible owned resources after reviewing the preview. GC reports why anything
+is retained and preserves validated results. See [commands](docs/commands.md).
+
 Pi uses typed delegation, status, repair, and integration tools. Status shows
 resolved models and thinking levels, configuration origins, phase timings, and
 token usage. Failed completion delivery remains pending and can be retried with

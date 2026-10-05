@@ -16,6 +16,7 @@ Full human reference: `../../docs/configuration.md` (read only if this is not en
 | `pinata_barrier`   | `{run, taskIds: [...]}`. Revalidate every required task.                                                                         |
 | `pinata_integrate` | `{run}`. Apply reviewed changes and run integrated checks.                                                                       |
 | `pinata_rollback`  | `{run, confirm: true}`. Restore matching journaled contents.                                                                     |
+| `pinata_gc`        | `{cwd?, confirm?}`. Preview historical runs; confirm retires eligible owned resources and preserves evidence.                    |
 
 Tools return JSON data and report errors as failed tool results. A completed tool
 call can still report failed tasks or integration; inspect returned statuses.
@@ -24,6 +25,10 @@ Existing CLI commands remain available for notes, unlock, retry-launch and scrip
 Interactive Pi start uses `pi-extension` completion and ends the current turn by
 default. Call start alone outside codemode. Use `yield:false` for independent work,
 then `pinata_yield`. Start nested in codemode also needs a direct `pinata_yield`.
+Use `yield:false` only for a concrete deliverable outside worker scope; repeating
+their repository reading is not independent work. For overview jobs, scout owns
+local architecture while research answers named protocol/version questions.
+The parent reads validated outcomes and spot-checks material claims for synthesis.
 Do not poll status while waiting. Native completion resumes an idle parent or
 queues a follow-up behind active work; duplicate completion IDs do not start a
 second turn. Reload/restart recovers saved completion for the original session.
@@ -49,6 +54,7 @@ All print JSON. `-` reads JSON (or repair text) from stdin; use `<<'PINATA_JSON'
 | `cancel <run>` / `cleanup <run> [--confirm]` | Stop owned work / preview then remove idle panes and clean worktrees.                                         |
 | `note <run> -`                               | Append a JSON note (plan, approvals, release evidence).                                                       |
 | `unlock <run>`                               | Remove a dead coordinator's lock.                                                                             |
+| `gc [cwd] [--confirm]`                       | Preview/retire eligible resources across historical runs in one repository; preserve saved evidence.          |
 
 ## Job
 
