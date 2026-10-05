@@ -31,6 +31,29 @@ and dependency cycles are rejected.
 Example: [builder and reviewer job](../examples/job.json). Its path, assignment,
 approval, checks, and model placeholders must be replaced before use.
 
+## Config files
+
+pinata reads up to two files and layers the job's own `config` on top, like Pi's
+settings:
+
+| Layer   | File                      | Use                                      |
+| ------- | ------------------------- | ---------------------------------------- |
+| Global  | `~/.pi/agent/pinata.json` | Your defaults, such as per-role models   |
+| Project | `<repo>/.pi/pinata.json`  | One project's overrides, such as `setup` |
+| Job     | the job's `config` field  | One run's overrides                      |
+
+`~/.pi/agent` follows `PI_CODING_AGENT_DIR` when it is set. Each file holds a
+config object (below) and is validated on its own; errors name the file. Later
+layers win. `models`, `fallbacks`, and `limits` merge per entry, so a project
+that sets only `models.reviewer` keeps the global choices for other roles; every
+other key is replaced whole. `init` returns `config.files` and `config.origins`,
+which records the layer behind each value (for example
+`"models.reviewer": "project"`), and saves both in the manifest. `doctor` shows
+the same as `configFiles` and `configOrigins`.
+
+A project file is repository content. In particular its `setup` is a shell
+command that runs in builder worktrees, so read it before approving a run.
+
 ## Config
 
 | Field          | Default                    | Meaning                                                    |

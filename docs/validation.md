@@ -9,7 +9,7 @@ For the trust boundaries the results apply to, see
 
 Validation target: Omarchy/Arch Linux, kernel `7.2.5-3-omarchy`, x86_64.
 
-The deterministic run on 2026-10-05 reported **53 passed, 0 failed**. The
+The deterministic run on 2026-10-05 reported **54 passed, 0 failed**. The
 installed-Pi/web, codemode containment, packed-install, owned-Herdr, format/lint,
 and package-content checks also passed, and so did one live end-to-end build.
 

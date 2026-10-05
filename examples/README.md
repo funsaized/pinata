@@ -261,9 +261,10 @@ and final verification.
 
 ## Model configs
 
-Each file in [configs/](configs/) is a `config` object. Pass it to `doctor`, or
-paste it into a job's `config` field. The helper never loads these files on its
-own. They use models from a real Pi setup (OpenAI `gpt-6-luna`, `gpt-6-astra`,
+Each file in [configs/](configs/) is a `config` object. Copy one to
+`~/.pi/agent/pinata.json` for your defaults, or to a project's `.pi/pinata.json`
+for that project; pinata reads both automatically. You can also paste one into a
+job's `config` field. They use models from a real Pi setup (OpenAI `gpt-6-luna`, `gpt-6-astra`,
 `gpt-6.1-sol`, and DeepSeek `deepseek-flash`). Replace them with models that
 `pi --list-models` and `pi auth check` show as ready on your machine.
 

@@ -44,59 +44,58 @@ collision in Pi configuration. Do not overwrite existing skills or prompts.
 The probe ignores untrusted project resources, so also check the active
 session's diagnostics for trusted project resources that shadow a global name.
 
-## 3. Choose a model and session
+## 3. Choose models (optional)
 
-List models and check the intended account without printing credentials:
+pinata needs no configuration: without any, every worker uses the model your
+Pi session has selected. To pick models per role, create
+`~/.pi/agent/pinata.json`. First list models and check the account without
+printing credentials:
 
 ```sh
 pi --list-models
 pi auth check --provider YOUR_PROVIDER --model YOUR_MODEL --json --no-refresh
 ```
 
-Replace `YOUR_PROVIDER` and `YOUR_MODEL` with an available, approved selection.
-Create a local `pinata.config.json` in your editor:
+Then write the file, replacing the placeholders:
 
 ```json
 {
-  "session": "YOUR_EXISTING_HERDR_SESSION",
   "models": {
-    "default": {
-      "provider": "YOUR_PROVIDER",
-      "id": "YOUR_MODEL",
-      "thinking": "medium"
-    }
+    "default": { "provider": "YOUR_PROVIDER", "id": "YOUR_MODEL", "thinking": "medium" },
+    "reviewer": { "provider": "YOUR_PROVIDER", "id": "ANOTHER_MODEL", "thinking": "high" }
   }
 }
 ```
 
-Remove `session` if you are running inside the intended Herdr pane. Choose a
-thinking level that the model actually supports; pinata rejects silent changes
-to that selection. The [model reference](configuration.md#models) lists values,
-per-role overrides, and approved fallbacks.
+Choose a thinking level that Pi actually applies to the model; pinata rejects a
+selection Pi changes. [examples/configs](../examples/configs/) has ready-made
+files: one model for everything ([luna.json](../examples/configs/luna.json)), a
+model per role with a builder fallback
+([per-role.json](../examples/configs/per-role.json)), research
+([research.json](../examples/configs/research.json)), and codemode turned off
+([no-codemode.json](../examples/configs/no-codemode.json)). If you keep dotfiles
+in a repository, symlink the file from there.
 
-[examples/configs](../examples/configs/) has ready-made model configurations:
-one model for everything ([luna.json](../examples/configs/luna.json)), a model
-per role with a builder fallback ([per-role.json](../examples/configs/per-role.json)),
-research ([research.json](../examples/configs/research.json)), and codemode
-turned off ([no-codemode.json](../examples/configs/no-codemode.json)).
+A project can override any of it in its own `.pi/pinata.json`, for example a
+different reviewer or a `setup` command. See [config files](configuration.md#config-files).
 
-Two defaults need no configuration. Workers get Pi's codemode tool
+```sh
+node "$PINATA" doctor
+```
+
+Run `doctor` from a project to see the effective configuration: `configFiles`
+lists the files it read and `configOrigins` says which file set each value.
+Proceed only if preflight succeeds. Fix a missing executable, incompatible
+server, or invalid file before creating a run. The helper checks authentication
+and exact model selection before worker launch, not during `doctor`.
+
+Run Pi inside a Herdr pane, or add `"session": "YOUR_EXISTING_HERDR_SESSION"` to
+the file to target a named Herdr session.
+
+Two other defaults need no configuration. Workers get Pi's codemode tool
 ([how to change that](codemode.md)), and builder worktrees get their
 dependencies from a setup command detected from your lockfiles
 ([how to check it](dependencies.md)).
-
-```sh
-node "$PINATA" doctor /absolute/path/to/pinata.config.json
-```
-
-Proceed only if preflight succeeds. Fix a missing executable, incompatible
-server, or invalid extension path before creating a run. The helper checks
-authentication and exact model selection before worker launch, not during `doctor`.
-
-This standalone file is for `doctor`. To use it in a job, copy its object into
-the job's `config` field. The helper does not automatically load a project
-`pinata.config.json`. Jobs created inside Pi can instead capture the
-coordinator's model environment.
 
 ## Enable research
 

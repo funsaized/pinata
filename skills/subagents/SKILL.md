@@ -43,9 +43,12 @@ layer around the helper.
 4. Jobs require a Git root with an existing commit. Do not create an initial
    commit without authorization. Resolve dirty overlapping work before delegating
    writes. Unrelated user changes must remain untouched.
-5. Select exact per-role models through job configuration, outside persona prose.
-   Missing overrides/authentication block work unless an explicit approved fallback
-   exists. The default is captured from the coordinating Pi bash environment.
+5. pinata layers the user's `~/.pi/agent/pinata.json`, then the project's
+   `.pi/pinata.json`, under the job's `config`. Put in the job only what the user
+   asked to change; `init` reports `config.origins` for every value. Without any
+   models, workers use the coordinating Pi's current model. Missing models or
+   authentication block work unless an approved fallback exists. Show the user any
+   `setup` that came from a project file before launching.
 6. Builder worktrees lack ignored files such as `node_modules`. `init` returns
    `setup` resolved from root lockfiles; read it and show it to the user with
    the job. If `source` is `none`, decide with the user whether to set

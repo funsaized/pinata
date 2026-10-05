@@ -44,6 +44,10 @@ All print JSON. `-` reads JSON (or repair text) from stdin; use `<<'PINATA_JSON'
 
 ## Config (all optional)
 
+Layered: `~/.pi/agent/pinata.json`, then `<repo>/.pi/pinata.json`, then the job's
+`config`. `models`, `fallbacks`, `limits` merge per entry; other keys replace.
+`init` returns `config.origins` (which layer set each value).
+
 | Key            | Default                                                                                                                                                 |
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `models`       | `{default?, scout?, research?, planner?, builder?, reviewer?}`, each `{provider, id, thinking}`. Thinking: off, minimal, low, medium, high, xhigh, max. |

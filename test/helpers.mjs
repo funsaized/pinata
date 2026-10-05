@@ -4,6 +4,9 @@ import os from "node:os";
 import { ROOT, command, readJson, sleep, exists } from "../lib/core.mjs";
 import { init, tick, wait, cancel } from "../lib/pinata.mjs";
 
+// Never read the developer's real ~/.pi/agent (for example a personal pinata.json).
+process.env.PI_CODING_AGENT_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "pinata-agent-"));
+
 export async function repository(prefix = "pinata-test-") {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
   const cwd = path.join(dir, "repo");
