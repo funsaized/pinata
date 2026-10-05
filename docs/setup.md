@@ -75,8 +75,8 @@ to that selection. The [model reference](configuration.md#models) lists values,
 per-role overrides, and approved fallbacks.
 
 [examples/configs](../examples/configs/) has ready-made model configurations:
-one model for everything ([luna.json](../examples/configs/luna.json)), a cheaper
-model per role with a fallback ([per-role.json](../examples/configs/per-role.json)),
+one model for everything ([luna.json](../examples/configs/luna.json)), a model
+per role with a builder fallback ([per-role.json](../examples/configs/per-role.json)),
 research ([research.json](../examples/configs/research.json)), and codemode
 turned off ([no-codemode.json](../examples/configs/no-codemode.json)).
 

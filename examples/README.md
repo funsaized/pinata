@@ -267,13 +267,13 @@ own. They use models from a real Pi setup (OpenAI `gpt-6-luna`, `gpt-6-astra`,
 `gpt-6.1-sol`, and DeepSeek `deepseek-flash`). Replace them with models that
 `pi --list-models` and `pi auth check` show as ready on your machine.
 
-| File                                         | When to use it                                                               |
-| -------------------------------------------- | ---------------------------------------------------------------------------- |
-| [luna.json](configs/luna.json)               | One model for every role, with less thinking for scouts and more for reviews |
-| [per-role.json](configs/per-role.json)       | A cheaper scout, a separate research model, and a builder fallback           |
-| [research.json](configs/research.json)       | Research through pi-web-access; set `webExtension` to your installed entry   |
-| [no-codemode.json](configs/no-codemode.json) | A model that handles codemode poorly; raises `maxTurns` to compensate        |
-| [pinata.config.json](pinata.config.json)     | Every default limit written out, for reference                               |
+| File                                         | When to use it                                                                           |
+| -------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| [luna.json](configs/luna.json)               | One model for every role, with less thinking for scouts and more for reviews             |
+| [per-role.json](configs/per-role.json)       | Luna scouts and builds, Sol researches, Astra plans; DeepSeek Flash backs up the builder |
+| [research.json](configs/research.json)       | Research through pi-web-access; set `webExtension` to your installed entry               |
+| [no-codemode.json](configs/no-codemode.json) | A model that handles codemode poorly; raises `maxTurns` to compensate                    |
+| [pinata.config.json](pinata.config.json)     | Every default limit written out, for reference                                           |
 
 Pick thinking levels by role. Scouts mostly read, so `low` is usually enough.
 Reviewers benefit from `high`, because missing a defect costs more than the
