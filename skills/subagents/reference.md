@@ -3,6 +3,23 @@
 Compact contract for `lib/pinata.mjs`. Unknown keys are rejected everywhere.
 Full human reference: `../../docs/configuration.md` (read only if this is not enough).
 
+## Typed tools (preferred when loaded)
+
+| Tool               | Parameters and effect                                                                                    |
+| ------------------ | -------------------------------------------------------------------------------------------------------- |
+| `pinata_delegate`  | Job fields below; `cwd` defaults to Pi's cwd. Prepares a run and returns setup/models; launches nothing. |
+| `pinata_control`   | `{run, action: "start"\|"resume"\|"cancel"\|"cleanup", confirm?}`. Confirm applies only to cleanup.      |
+| `pinata_status`    | `{run, includeResults?}`. Read state; optionally revalidate and include saved outcomes.                  |
+| `pinata_add`       | `{run, tasks: [...]}`. Add tasks, then start.                                                            |
+| `pinata_repair`    | `{run, taskId, feedback}`. Queue repair, then start.                                                     |
+| `pinata_barrier`   | `{run, taskIds: [...]}`. Revalidate every required task.                                                 |
+| `pinata_integrate` | `{run}`. Apply reviewed changes and run integrated checks.                                               |
+| `pinata_rollback`  | `{run, confirm: true}`. Restore matching journaled contents.                                             |
+
+Tools return JSON data and report errors as failed tool results. A completed tool
+call can still report failed tasks or integration; inspect returned statuses.
+Existing CLI commands remain available for notes, unlock, retry-launch and scripts.
+
 ## Commands
 
 All print JSON. `-` reads JSON (or repair text) from stdin; use `<<'PINATA_JSON'`.
@@ -90,3 +107,12 @@ rejected (review asked for changes), failed, blocked, cancelled, uncertain
 (setup, process, result, verification). A setup failure retries via `repair`
 without using the repair budget. Self-reported checks are claims; trust the
 supervisor's `checks`.
+
+Status reports configured/selected/verified models, thinking, model origins and
+approved fallbacks used, plus effective codemode and limits. Task `metrics` contain
+elapsed, readiness, startup, setup, model, checks and verification milliseconds,
+turns, tool calls by name and usage (input, output, cached tokens, total, cost).
+Missing usage is `null`, never an inferred zero. Readiness metadata is cached only
+in the coordinator process for ten seconds and invalidated by changed Pi files,
+executable or environment. Completion delivery is pending or delivered separately
+from worker completion; `start` resumes pending delivery with the same completion ID.

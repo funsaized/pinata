@@ -11,6 +11,25 @@ print a JSON error to stderr and exit nonzero.
 
 In the signatures below, `<run>` is the directory returned by `init`.
 
+## Typed Pi tools
+
+The installed extension registers `pinata_delegate`, `pinata_control`,
+`pinata_status`, `pinata_add`, `pinata_repair`, `pinata_barrier`,
+`pinata_integrate`, and `pinata_rollback`. They accept structured objects and use
+the same library validation as the commands. `pinata_delegate` accepts job fields,
+defaults `cwd` to Pi's directory, and prepares without launching. Inspect returned
+setup and models before `pinata_control({run, action: "start"})`.
+
+`pinata_control` also accepts `resume`, `cancel`, or `cleanup`; cleanup previews
+unless `confirm: true`. `pinata_status({run, includeResults: true})` revalidates and
+includes available outcomes. Add takes `{run, tasks}`, repair takes
+`{run, taskId, feedback}`, and barrier takes `{run, taskIds}`. Integration takes
+`{run}` and rollback takes `{run, confirm: true}`. Errors are failed tool results;
+inspect task and integration statuses even when the tool call succeeds.
+
+Workers do not load the coordinator extension. The CLI remains available for
+scripts and less frequent operations such as `note`, `unlock`, and `retry-launch`.
+
 ## Preflight and creation
 
 | Command                    | Effect                                                                                                                                      |
@@ -60,6 +79,21 @@ outcome files, advances dependencies, and exits when the group settles. It sends
 a message through `herdr agent prompt` only if the original coordinator's terminal
 and agent session still match; otherwise it shows a Herdr notification. `start`
 reports the selected completion route. Call it again after adding or repairing tasks.
+
+Completion delivery has a durable `background.notification` record with a stable
+ID, status (`pending` or `delivered`), attempt count, and any error. The coordinator
+tries three times with a short backoff. `start` retries pending delivery even after
+a completed job's deadline or cancellation, without launching workers. Herdr has no idempotency
+key, so an accepted request whose reply is lost may be delivered twice; matching
+completion IDs identify the same result group. `notifiedAt` is set only on success.
+
+`status` includes effective codemode, limits, models and their configuration
+origins. Each task shows its configured/selected/verified model and thinking,
+fallback decisions, elapsed time, phase metrics, tool counts, available token usage
+and failure stage. Older runs may have no metrics. Usage is `null` when Pi did not
+report it; reasoning tokens are already included in output and are not added twice.
+`actualModel` records the provider/model reported by Pi's final assistant message,
+including mismatches that fail validation; `model` is the selected or configured choice.
 
 `wait` remains available for scripts. It defaults to 1000 ms and accepts 1 through
 300000 ms. It wakes on result files, with a five-second fallback for crashes and

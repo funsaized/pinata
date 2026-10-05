@@ -14,7 +14,15 @@ remain responsible for the result. A successful launch is not successful work.
 
 Read `reference.md` (beside this file) before the first run. Paths here are relative
 to this skill directory, **not the user's working directory**. Resolve
-`../../lib/pinata.mjs` to an absolute path. Invoke it through Pi's **bash tool**:
+`../../lib/pinata.mjs` to an absolute path for commands without a typed tool.
+When available, use `pinata_delegate` to prepare the job, inspect its setup and
+resolved models, then `pinata_control` with `action: "start"`. Use
+`pinata_status` with `includeResults: true` to read and revalidate saved outcomes,
+and `pinata_barrier`, `pinata_add`, `pinata_repair`, and `pinata_integrate` for the
+corresponding operations. These tools use the same validation and recovery rules
+as the helper. Delegation records existing approval and launches nothing.
+
+If the tools are unavailable, invoke the helper through Pi's **bash tool**:
 
 ```text
 node <absolute-helper> init - <<'PINATA_JSON'
@@ -109,6 +117,10 @@ ordinary recursive launches through its child marker. These are workflow control
   `waiting: true` means work continues, not a worker timeout or a reason to cancel.
   After adding tasks or requesting a repair, call `start` again; it reuses a live
   background coordinator or starts one if the previous group has finished.
+  Worker completion and notification delivery are separate. A pending
+  `background.notification` means results are ready but delivery failed; `start`
+  retries the saved completion ID without rerunning workers. Recognize duplicate
+  messages with the same completion ID.
 - Use `barrier <run> <every-required-task-id>...` before downstream work.
   Read every required outcome, including failures and blockers. One successful
   worker never means a parallel group succeeded.

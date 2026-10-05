@@ -56,9 +56,16 @@ else {
     await save();
     send({ type: "agent_prompted" });
   } else if (args[0] === "notification" && args[1] === "show") {
-    (state.notifications ??= []).push({ kind: "notification", text: arg("--body") });
-    await save();
-    send({ type: "notification_shown" });
+    state.notificationAttempts = (state.notificationAttempts ?? 0) + 1;
+    const failures = state.notificationFailures ?? Number(process.env.TEST_NOTIFY_FAILURES ?? 0);
+    if (state.notificationAttempts <= failures) {
+      await save();
+      error("timeout");
+    } else {
+      (state.notifications ??= []).push({ kind: "notification", text: arg("--body") });
+      await save();
+      send({ type: "notification_shown" });
+    }
   } else if (args[0] === "workspace" && args[1] === "create") {
     const n = state.resources.length + 1;
     const pane = {

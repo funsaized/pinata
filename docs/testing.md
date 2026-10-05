@@ -36,7 +36,7 @@ npm test
 
 This runs `node --test test/*.test.mjs` against disposable Git repos and mock
 Pi and Herdr processes. It makes no model or provider calls and does not touch
-personal Pi configuration. The recorded run reported 54 passed and 0 failed.
+personal Pi configuration. See [validation](validation.md) for recorded results.
 
 ## Run the installed-Pi smoke
 
@@ -133,11 +133,46 @@ under separately approved model budgets. Evaluate actual triggering, acceptance,
 review quality, false positives, and repair/re-review. Do not describe
 deterministic fixture output as a model-quality benchmark.
 
+## Repeatable live quality evaluation
+
+```sh
+PINATA_LIVE_SMOKE=I_AUTHORIZE_PAID_MODEL_CALLS \
+PINATA_LIVE_CONFIG=/absolute/approved-config.json \
+PINATA_EVAL_TRIALS=3 npm run eval:live
+```
+
+Requires separate spending authorization and a running Herdr session selected in
+the config. Trials default to one and are bounded to 1–10. Each trial makes eight
+live worker calls: two scouts, a builder, its independent reviewer, and four
+reviewers of deterministic seeded candidates. Each worker has a three-minute,
+20-turn, 100-tool-call limit; each case has a ten-minute deadline. There are no
+scheduled repairs. Provider retries may still cost money.
+
+The suite checks a parser against 28 independent oracle cases kept outside worker
+checkouts, including small years, invalid calendar dates and leading zeroes. The
+control reviewers receive one verified correct patch and three defective patches
+in blind, separate repositories. Seeded builders make no model calls. Scouts
+answer seven precise questions about a retry fixture; scoring checks values and
+file:line evidence against actual behavior. Ordinary `npm test` verifies the
+reference, defect controls and scorer without live calls.
+
+Minor answer-format drift is recorded separately from factual accuracy, so using
+a colon or line range cannot hide a wrong numeric claim as a missing answer.
+
+The retained `results.json` records full results, actual models, versions, per-task
+timings and tokens, false approvals/rejections, missing verdicts and incorrect or
+missing factual answers. The runner pins each role to the approved config's model
+and thinking selection so personal role overrides cannot contaminate a trial.
+It uses the supplied codemode setting, including the existing enabled default.
+Candidates are never integrated; cleanup closes owned panes and preserves dirty
+worktrees and evidence. Treat results as a small fixture evaluation, not a general
+model benchmark. Repetitions are needed before changing defaults.
+
 ## Verification
 
 What a healthy run looks like:
 
-- `npm test` reports 54 passed and 0 failed on the recorded version set.
+- `npm test` reports no failures, cancellations, or skipped tests.
 - `npm run test:pi` prints PASS lines for packed activation, explicit-only
   `engmgmt`, five templates, the unrelated worktree, collision preservation, and
   the real Pi supervision checks, and the codemode containment check. The web

@@ -21,7 +21,8 @@ authorization, exhausted budgets, or genuine blockers.
 1. **Inspect and specify.** Inspect the repository, instructions, existing user
    changes, checks, dependencies, and delivery target. Establish testable
    acceptance criteria yourself. Record approved scope, exclusions, permissions,
-   and assumptions in the job; initialize the private run with `init -`.
+   and assumptions in the job; initialize the private run with `pinata_delegate`
+   (or `init -` when typed tools are unavailable).
 2. **Gather evidence.** Delegate `scout` for bounded local reconnaissance and
    `research` for necessary external docs. Run them in parallel only if inputs
    are independent; version-specific research waits for the versions it needs.

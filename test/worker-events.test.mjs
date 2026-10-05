@@ -111,3 +111,78 @@ test("private interactive events still enforce tool budgets and malformed-stream
     assert.equal(result.terminated, true);
   }
 });
+
+test("fast settled workers cannot escape tool or turn budgets in either Pi transport", async (t) => {
+  for (const interactive of [false, true]) {
+    for (const [turns, tools, reason] of [
+      [1, 5, "tool call budget exceeded"],
+      [3, 0, "turn budget exceeded"],
+    ]) {
+      const records = [
+        { type: "agent_start" },
+        ...Array.from({ length: tools }, () => ({
+          type: "tool_execution_start",
+          toolName: "read",
+        })),
+        ...Array.from({ length: turns }, () => ({ type: "turn_end" })),
+        { type: "agent_settled" },
+      ];
+      const { result } = await run(
+        t,
+        `import { writeSync } from 'node:fs'; writeSync(${interactive ? 3 : 1}, ${JSON.stringify(records.map((x) => JSON.stringify(x)).join("\n") + "\n")});`,
+        { interactive, maxTurns: 2, maxToolCalls: 2 },
+      );
+      assert.equal(result.reason, reason);
+      assert.equal(result.terminated, true);
+    }
+  }
+});
+
+test("the last permitted final turn can drain before settlement; another turn is stopped", async (t) => {
+  const emit = `import { writeSync } from 'node:fs'; const send = x => writeSync(3, JSON.stringify(x)+'\\n'); send({type:'agent_start'}); send({type:'turn_start'}); send({type:'message_end', message:{role:'assistant', stopReason:'stop'}}); send({type:'turn_end'});`;
+  const final = await run(
+    t,
+    emit + `await new Promise(r => setTimeout(r, 400)); send({type:'agent_settled'});`,
+    { maxTurns: 1 },
+  );
+  assert.equal(final.result.reason, null);
+  const extra = await run(t, emit + `send({type:'turn_start'}); setInterval(()=>{},1000);`, {
+    maxTurns: 1,
+  });
+  assert.equal(extra.result.reason, "turn budget exceeded");
+});
+
+test("usage includes assistant and nested model calls without doubling reasoning tokens", () => {
+  const events = new JsonEvents();
+  events.push(
+    [
+      {
+        type: "message_end",
+        message: {
+          role: "assistant",
+          usage: {
+            input: 10,
+            output: 5,
+            reasoning: 3,
+            cacheRead: 2,
+            totalTokens: 17,
+            cost: { total: 0.1 },
+          },
+        },
+      },
+      {
+        type: "message_end",
+        message: {
+          role: "toolResult",
+          usage: { input: 4, output: 2, totalTokens: 6, cost: { total: 0.05 } },
+        },
+      },
+    ]
+      .map((x) => JSON.stringify(x))
+      .join("\n") + "\n",
+  );
+  assert.deepEqual(
+    { ...events.usage, cost: Math.round(events.usage.cost * 100) / 100 },
+    { input: 14, output: 7, cacheRead: 2, cacheWrite: 0, totalTokens: 23, cost: 0.15 },
+  );
+});

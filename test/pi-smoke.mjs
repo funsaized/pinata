@@ -24,10 +24,12 @@ const env = {
   PI_OFFLINE: "1",
   npm_config_cache: path.join(repo.dir, "npm-cache"),
   npm_config_userconfig: path.join(repo.dir, "npmrc"),
+  TEST_HERDR_STATE: path.join(repo.dir, "herdr.json"),
 };
 const requests = [],
   rounds = new Map();
 let activeRun,
+  typedRun,
   sourceFetches = 0;
 let origin;
 const server = createServer(async (req, res) => {
@@ -66,6 +68,44 @@ const server = createServer(async (req, res) => {
     }
     let content = "Loopback acknowledgement",
       call;
+    if (!spec && text.includes("typed-tool-probe")) {
+      const phase = rounds.get("typed-tool-probe") ?? 0;
+      rounds.set("typed-tool-probe", phase + 1);
+      const names = (body.tools ?? []).map((x) => x.function.name);
+      assert(
+        names.includes("pinata_delegate") &&
+          names.includes("pinata_repair") &&
+          names.includes("pinata_integrate"),
+      );
+      if (phase === 0) call = ["pinata_delegate", { approval: 123, tasks: [] }];
+      if (phase === 1)
+        call = [
+          "pinata_delegate",
+          {
+            approval: "Localhost-only typed tools smoke",
+            config: {
+              herdr: path.join(ROOT, "test/fixtures/herdr.mjs"),
+              session: "fixture",
+              passEnv: ["TEST_HERDR_STATE"],
+            },
+            tasks: [task("typed")],
+          },
+        ];
+      if (phase === 2) {
+        const message = body.messages.findLast((m) => m.role === "tool");
+        const result = JSON.parse(message.content);
+        typedRun = result.run;
+        assert(typedRun);
+        assert.equal(result.models[0].model.id, "loopback");
+        assert.equal(result.models[0].modelOrigin, "session");
+        call = ["pinata_status", { run: typedRun }];
+      }
+      if (phase === 3) {
+        const result = JSON.parse(body.messages.findLast((m) => m.role === "tool").content);
+        assert.equal(result.tasks[0].status, "queued");
+        call = ["pinata_control", { run: typedRun, action: "cancel" }];
+      }
+    }
     if (spec) {
       const result = {
         schemaVersion: 1,
@@ -264,6 +304,21 @@ try {
     .join("\n");
   assert(system.includes("<name>subagents</name>"), system.slice(-6000));
   assert(!system.includes("<name>engmgmt</name>"));
+  const typedBase = base.filter(
+    (x, i) => x !== "--no-extensions" && x !== "--tools" && base[i - 1] !== "--tools",
+  );
+  await run([...typedBase, "--", "typed-tool-probe"]);
+  const typedTranscript = requests
+    .at(-1)
+    .messages.filter((m) => m.role === "tool")
+    .map((m) => m.content)
+    .join("\n");
+  assert.match(typedTranscript, /approval/);
+  assert(typedRun);
+  assert.equal((await readJson(path.join(typedRun, "manifest.json"))).cancelled, true);
+  console.log(
+    "PASS packed typed tools, schema rejection, session model inheritance, reviewable delegation, status and cancellation",
+  );
   await run([...base, "--", "/skill:engmgmt Activation test, acknowledge only."]);
   assert(JSON.stringify(requests.at(-1).messages).includes("../subagents/SKILL.md"));
   for (const role of ROLES) {
@@ -366,6 +421,8 @@ try {
   console.log("PASS real Pi supervised JSON success and assistant-error-with-exit-zero rejection");
   await cleanup(activeRun, true);
   await run(["pi", "remove", installed, "--no-approve"]);
+  await run([...typedBase, "--", "Package removal tool probe"]);
+  assert(!requests.at(-1).tools.some((x) => x.function.name.startsWith("pinata_")));
   const remaining = await rpcProbe(
     "pi",
     repo.cwd,
