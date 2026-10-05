@@ -259,6 +259,44 @@ The coordinator may skip scout, research, or planning tasks that the job does
 not need. It still owns scope, collection of every result, review resolution,
 and final verification.
 
+## Model configs
+
+Each file in [configs/](configs/) is a `config` object. Pass it to `doctor`, or
+paste it into a job's `config` field. The helper never loads these files on its
+own. They use models from a real Pi setup (OpenAI `gpt-6-luna`, `gpt-6-astra`,
+`gpt-6.1-sol`, and DeepSeek `deepseek-flash`). Replace them with models that
+`pi --list-models` and `pi auth check` show as ready on your machine.
+
+| File                                         | When to use it                                                               |
+| -------------------------------------------- | ---------------------------------------------------------------------------- |
+| [luna.json](configs/luna.json)               | One model for every role, with less thinking for scouts and more for reviews |
+| [per-role.json](configs/per-role.json)       | A cheaper scout, a separate research model, and a builder fallback           |
+| [research.json](configs/research.json)       | Research through pi-web-access; set `webExtension` to your installed entry   |
+| [no-codemode.json](configs/no-codemode.json) | A model that handles codemode poorly; raises `maxTurns` to compensate        |
+| [pinata.config.json](pinata.config.json)     | Every default limit written out, for reference                               |
+
+Pick thinking levels by role. Scouts mostly read, so `low` is usually enough.
+Reviewers benefit from `high`, because missing a defect costs more than the
+extra tokens. Fallbacks are tried only when the preferred model is unavailable
+or unauthenticated, never after a bad result.
+
+## Complete jobs
+
+Each file in [jobs/](jobs/) is a complete job for `init`. Replace `cwd`,
+`approval`, and the assignment text before use.
+
+| File                                                          | Shape                                                                           |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| [node-deps-job.json](jobs/node-deps-job.json)                 | Scout, builder, reviewer on an npm project; setup is detected from the lockfile |
+| [monorepo-setup-job.json](jobs/monorepo-setup-job.json)       | Explicit `setup` that installs one pnpm workspace package                       |
+| [parallel-builders-job.json](jobs/parallel-builders-job.json) | Two independent builders with separate ownership, each with its own review      |
+| [research-plan-job.json](jobs/research-plan-job.json)         | Read-only: scout, then version-specific research, then a plan                   |
+
+In `parallel-builders-job.json`, setup copies `node_modules` from your checkout
+(`$PINATA_ROOT`) instead of installing. That copy is nearly instant on
+copy-on-write filesystems, but it trusts your checkout's dependencies to match
+the lockfile. Use the detected `npm ci` when they might not.
+
 ## Files you can copy
 
 | File                                               | Use                                                                             |
@@ -266,9 +304,12 @@ and final verification.
 | [scout-job.json](scout-job.json)                   | Complete read-only job for the first tutorial                                   |
 | [tutorial-build-job.json](tutorial-build-job.json) | Complete greeting builder/reviewer job for the second tutorial                  |
 | [job.json](job.json)                               | Generic builder/reviewer template; replace all assignment and path placeholders |
-| [pinata.config.json](pinata.config.json)           | Default limits and empty model/environment configuration                        |
+| [configs/](configs/)                               | Model and behavior configs; see [Model configs](#model-configs)                 |
+| [jobs/](jobs/)                                     | Complete jobs for common shapes; see [Complete jobs](#complete-jobs)            |
 | [web-search.json](web-search.json)                 | Restrictive pi-web-access 0.35.0 policy to inspect before merging               |
 | [skill-evals.json](skill-evals.json)               | Manual evaluation cases, not an automated benchmark                             |
+
+`npm test` validates every config and job here against pinata's input contracts.
 
 Model and path placeholders are deliberate. Never execute them unchanged or put
 credentials into these files.

@@ -1,0 +1,39 @@
+{
+  "cwd": "/absolute/path/to/node-project",
+  "approval": "Replace with your approval to fix the failing unit test with Luna, run npm test, and integrate locally",
+  "allowWrites": true,
+  "instructions": ["Follow the repository's AGENTS.md. Do not stage, commit, push, or publish."],
+  "config": {
+    "models": {
+      "default": { "provider": "openai", "id": "gpt-6-luna", "thinking": "medium" },
+      "scout": { "provider": "openai", "id": "gpt-6.1-sol", "thinking": "low" },
+      "reviewer": { "provider": "openai", "id": "gpt-6-luna", "thinking": "high" }
+    }
+  },
+  "tasks": [
+    {
+      "id": "scout",
+      "role": "scout",
+      "task": "Find why test/duration.test.mjs fails. Name the function, its callers, and the smallest fix. Do not edit files.",
+      "acceptance": ["Cites the failing function and test by file and line"]
+    },
+    {
+      "id": "fix",
+      "role": "builder",
+      "after": ["scout"],
+      "task": "Apply the scout's minimal fix to src/duration.mjs.",
+      "acceptance": ["npm test passes", "Only src/duration.mjs changes"],
+      "ownership": ["src/duration.mjs"],
+      "checks": [{ "id": "unit", "argv": ["npm", "test"], "timeoutMs": 120000 }]
+    },
+    {
+      "id": "review",
+      "role": "reviewer",
+      "after": ["fix"],
+      "reviewOf": "fix",
+      "task": "Challenge the fix: correctness, edge cases, and whether npm test proves the acceptance criteria.",
+      "acceptance": ["Approve only if the fix is correct, minimal, and tested"]
+    }
+  ],
+  "integratedChecks": [{ "id": "unit", "argv": ["npm", "test"], "timeoutMs": 120000 }]
+}
