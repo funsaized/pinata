@@ -151,6 +151,13 @@ const server = createServer(async (req, res) => {
         assert(result.cancelled);
         assert.equal(result.tasks.at(-1).status, "cancelled");
         assert.equal(result.tasks.at(-1).paneClosed, true);
+        call = ["pinata_gc", { cwd: repo.cwd }];
+      }
+      if (phase === 9) {
+        const result = JSON.parse(body.messages.findLast((m) => m.role === "tool").content);
+        assert.equal(result.confirm, false);
+        assert.equal(result.counts.runs, 1);
+        assert.equal(result.counts.retained, 0);
       }
     }
     if (spec) {
@@ -370,7 +377,7 @@ try {
     .join("\n");
   assert.match(typedTranscript, /approval/);
   assert(typedRun);
-  assert.equal(rounds.get("typed-tool-probe"), 9);
+  assert.equal(rounds.get("typed-tool-probe"), 10);
   const typedManifest = await readJson(path.join(typedRun, "manifest.json"));
   assert.equal(typedManifest.cancelled, true);
   assert.equal(typedManifest.versions.node, process.version);

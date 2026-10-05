@@ -134,6 +134,13 @@ checkouts and altered outcomes still fail. Repairs recreate removed worktrees
 from the base commit and retained change blobs. Results, session logs, and rollback
 evidence remain; temporary overflow files and installed dependencies are removed.
 
+Repository GC discovers historical runs through the Git common directory. Its
+preview performs no writes. Confirmation locks and revalidates each run before
+closing idle owned panes and removing eligible checkouts; it preserves outcome
+attestations before removal. Locked, active, uncertain, changed, or invalid runs
+remain visible with retention reasons, and one damaged run cannot stop the scan.
+GC never schedules tasks or sweeps unrelated Git worktrees.
+
 The optional official Herdr Pi integration can help you inspect interactive
 sessions. It is not bundled with pinata, and its badges are not completion
 evidence for supervised workers. Herdr can also run headlessly without a visible outer

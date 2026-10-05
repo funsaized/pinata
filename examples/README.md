@@ -7,6 +7,21 @@ the prompt to your current conversation and does not launch a worker.
 For complete walkthroughs, see [the tutorials](../docs/README.md#use-pinata-in-pi).
 For task JSON, model configs, and complete jobs, see [helper examples](helper.md).
 
+For parallel explanations, use distinct assignments and let the parent synthesize:
+
+```text
+Use scout and research subagents in parallel. Scout: explain this repository's
+purpose and trace one typical command through the local implementation. Research:
+clarify the schema/protocol guarantees and dependency-version caveats relevant to
+that command, using only the local files needed for applicability and primary
+external sources when needed. Avoid a second full architecture map. After required
+orientation, launch both and yield; then synthesize their evidence and spot-check
+material claims. Do not change files.
+```
+
+The parent should reserve `yield:false` for a separate deliverable outside worker
+scope. Reading the same modules while they investigate defeats the division of work.
+
 ## Scout: find local evidence
 
 Use a scout when you need to understand existing code. It reads and searches

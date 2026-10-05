@@ -5,6 +5,23 @@ unproven. For the commands that reproduce these runs, see [testing](testing.md).
 For the trust boundaries the results apply to, see
 [architecture](architecture.md#trust-and-safety).
 
+## 0.5.0 release checks
+
+On 2026-10-05, the release passed **108 tests, 0 failures**, formatting/linting,
+packed Pi 1.0.3 lifecycle/codemode checks, and the owned Herdr 0.9.1 smoke.
+The packed typed-tool check calls repository GC through the Pi extension.
+GC regressions cover read-only preview, historical panes already gone, archived
+barriers after removal, ignored dependencies, unrelated worktrees, changed files,
+missing evidence, active children, busy/repurposed panes, locks, corrupt runs,
+symlinks, builder integration, CLI validation, and retry after a lost close reply.
+
+A read-only preview against Ribbet identified its four clean historical
+inspection worktrees as eligible without removing them. Coordinator, scout, and
+research guidance now specifies complementary assignments, immediate yield,
+outcome-based synthesis, and the limits of committed worker checkouts. These
+guidance changes have not yet been benchmarked with live models. Runtime checks
+used local fixtures; model, thinking, codemode, and budget defaults are unchanged.
+
 ## 0.4.0 release checks
 
 On 2026-10-05, the release passed **96 tests, 0 failures**, formatting/linting,

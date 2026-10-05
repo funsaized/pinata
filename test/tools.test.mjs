@@ -94,3 +94,17 @@ test("worker marker prevents recursive typed tool activation and execution", asy
     /Recursive/,
   );
 });
+
+test("typed GC defaults to the current repository and rejects invalid confirmation or extra fields", async (t) => {
+  const f = await fixture(t, [task("one")]);
+  await settled(f);
+  const report = await executeTool("gc", {}, { ...ctx, cwd: f.cwd }, pi);
+  assert.equal(report.confirm, false);
+  assert.equal(report.counts.runs, 1);
+  assert.equal(report.counts.retained, 0);
+  await assert.rejects(
+    executeTool("gc", { confirm: "yes" }, { ...ctx, cwd: f.cwd }, pi),
+    /Invalid GC/,
+  );
+  await assert.rejects(executeTool("gc", { force: true }, { ...ctx, cwd: f.cwd }, pi), /Unknown/);
+});

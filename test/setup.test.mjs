@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs/promises";
 import path from "node:path";
 import { command, readJson, exists } from "../lib/core.mjs";
-import { config, repair, cleanup, add } from "../lib/pinata.mjs";
+import { config, repair, cleanup, add, integrate } from "../lib/pinata.mjs";
 import { resolveSetup } from "../lib/workspace.mjs";
 import { fixture, task, settled, repository } from "./helpers.mjs";
 
@@ -172,8 +172,8 @@ test("setup that changes project files fails and cannot be retried in place", as
   await assert.rejects(repair(f.run, "build", "retry"), /Setup modified project files/);
 });
 
-test("cleanup removes worktrees whose only extra files are ignored dependencies", async (t) => {
-  const f = await fixture(t, [builder()], {
+test("builder cleanup requires integration; ignored dependencies do not prevent verified retirement", async (t) => {
+  const f = await fixture(t, [builder(), review()], {
     config: {
       setup: "mkdir -p ignored/node_modules/pkg && echo x > ignored/node_modules/pkg/index.js",
     },
@@ -181,9 +181,11 @@ test("cleanup removes worktrees whose only extra files are ignored dependencies"
   assert.equal((await settled(f)).tasks[0].status, "succeeded");
   const report = await cleanup(f.run, true);
   assert(
-    report.report.some((r) => r.action === "removed clean owned worktree"),
+    report.report.some((r) => /integration is not verified/.test(r.reason)),
     JSON.stringify(report),
   );
+  assert(await exists(path.join(f.run, "worktrees", "build")));
+  assert.equal((await integrate(f.run)).integration.status, "verified");
   assert(!(await exists(path.join(f.run, "worktrees", "build"))));
 });
 

@@ -15,7 +15,7 @@ In the signatures below, `<run>` is the directory returned by `init`.
 
 The installed extension registers `pinata_delegate`, `pinata_control`,
 `pinata_yield`, `pinata_status`, `pinata_add`, `pinata_repair`, `pinata_barrier`,
-`pinata_integrate`, and `pinata_rollback`. They accept structured objects and use
+`pinata_integrate`, `pinata_rollback`, and `pinata_gc`. They accept structured objects and use
 the same library validation as the commands. `pinata_delegate` accepts job fields,
 defaults `cwd` to Pi's directory, and prepares without launching. Inspect returned
 setup and models before `pinata_control({run, action: "start"})`.
@@ -35,6 +35,11 @@ includes available outcomes. Add takes `{run, tasks}`, repair takes
 `{run, taskId, feedback}`, and barrier takes `{run, taskIds}`. Integration takes
 `{run}` and rollback takes `{run, confirm: true}`. Errors are failed tool results;
 inspect task and integration statuses even when the tool call succeeds.
+
+`pinata_gc({cwd?, confirm?})` scans historical runs in the current repository by
+default. Preview is read-only. `confirm:true` rechecks eligibility and removes
+finished owned resources while preserving validated outcomes and session logs.
+Each retained resource or run includes a reason; GC never resumes or cancels work.
 
 Workers do not load the coordinator extension. The CLI remains available for
 scripts and less frequent operations such as `note`, `unlock`, and `retry-launch`.
@@ -152,6 +157,8 @@ See [manual recovery](manual-recovery.md) before retrying uncertain work.
 | `rollback <run> --confirm` | Restore the latest integration journal only where current contents still match its recorded result |
 | `cleanup <run>`            | Preview removal of owned panes and worktrees                                                       |
 | `cleanup <run> --confirm`  | Close verified idle owned panes and remove clean owned worktrees                                   |
+| `gc [cwd]`                 | Preview eligible resources across saved runs in one Git repository; no state changes               |
+| `gc [cwd] --confirm`       | Revalidate and retire eligible resources; archive outcome digests and retain logs/results          |
 
 Normal collection automatically closes finished owned panes and removes unchanged
 inspection worktrees. Verified integration also removes builder worktrees,
@@ -159,6 +166,20 @@ including ignored dependencies. Saved results, native Pi sessions, change blobs,
 and rollback evidence remain; archived outcome digests keep barriers usable after
 checkout removal. Changed or busy resources are retained with a cleanup error in
 `status`. Manual `cleanup` is for these retained resources, not routine completion.
+
+Repository GC also discovers runs created before automatic retirement existed.
+It resolves Git's common directory, so calling it from a linked worktree scans
+the same repository. It keeps active/uncertain runs, locked coordinators, busy or
+repurposed panes, changed checkouts, missing or invalid evidence, and unverified
+builder integrations. A corrupt run is reported and does not prevent inspecting
+other runs. GC does not follow run-directory symlinks or remove unrelated
+worktrees. Confirm archives validated outcome digests before checkout removal,
+so barriers remain usable afterward. Repeating confirmed GC is safe.
+
+```sh
+node "$PINATA" gc /absolute/repo
+node "$PINATA" gc /absolute/repo --confirm
+```
 
 Integration requires `allowWrites`, at least one builder, every task succeeded,
 valid current evidence, an unchanged base `HEAD`, and a matching approving review
