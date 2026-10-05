@@ -281,6 +281,10 @@ independent, because it does not share the builder's blind spots; `per-role.json
 reviews Luna's work with Astra. Fallbacks are tried only when the preferred model is unavailable
 or unauthenticated, never after a bad result.
 
+Use the thinking level Pi actually applies to that model. Pi silently maps some
+levels; for example, DeepSeek `deepseek-flash` turns `xhigh` into `max`. pinata
+treats that change as "not ready" and skips the model, so these configs say `max`.
+
 ## Complete jobs
 
 Each file in [jobs/](jobs/) is a complete job for `init`. Replace `cwd`,
