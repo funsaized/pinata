@@ -105,6 +105,15 @@ deadlines, so it can launch dependent work without another model turn. Once the
 group settles it sends a Herdr message to the original coordinator session, or a
 notification if that session cannot be verified, and exits.
 
+In interactive Pi or RPC, typed start selects native completion only when
+Herdr's reported Pi session matches the caller. Its tool result ends the parent
+turn. Herdr submits `/pinata-complete`; the extension validates the saved job and
+completion ID and uses Pi's follow-up message API to resume an idle parent or
+queue behind active work. Custom session messages suppress duplicate delivery;
+saved run bindings recover completion after reload/restart. `yield:false` allows
+independent work, followed by a direct `pinata_yield`. These turn controls must
+be called alone outside codemode; they do not stop the detached workers.
+
 The worker supervisor checks the private JSON event stream, process exit, final stop
 reason, model identity, and result envelope. It then runs the approved checks
 itself and compares reported file changes with the real worktree. A failed check
@@ -213,23 +222,24 @@ or implement remote deployment transactions.
 
 `lib/pinata.mjs` is the public API and CLI entry point. Behind it:
 
-| Module           | Responsibility                                                  |
-| ---------------- | --------------------------------------------------------------- |
-| `cli.mjs`        | Argument handling and help text                                 |
-| `config.mjs`     | Configuration validation and model selection                    |
-| `preflight.mjs`  | `doctor` and `resources`                                        |
-| `run.mjs`        | Run creation, manifest state, the task graph, and locking       |
-| `workspace.mjs`  | Worktree creation and setup detection                           |
-| `launch.mjs`     | Building a task payload and submitting it to a Herdr pane       |
-| `herdr.mjs`      | Herdr transport, pane ownership checks, and workspace creation  |
-| `schedule.mjs`   | `tick`, `wait`, `barrier`, `repair`, `retry-launch`, `cancel`   |
-| `background.mjs` | `start`, background coordination, and Herdr completion messages |
-| `observe.mjs`    | Outcome notifications and bounded crash/deadline wakeups        |
-| `evidence.mjs`   | Revalidating a task's outcome before anything depends on it     |
-| `integrate.mjs`  | `integrate` and `rollback`                                      |
-| `cleanup.mjs`    | Automatic pane/worktree retirement, `cleanup`, and `unlock`     |
-| `worker.mjs`     | The per-attempt supervisor: setup, Pi, checks, and evidence     |
-| `core.mjs`       | Validation, Git and file snapshots, processes, role tool tables |
+| Module           | Responsibility                                                   |
+| ---------------- | ---------------------------------------------------------------- |
+| `cli.mjs`        | Argument handling and help text                                  |
+| `config.mjs`     | Configuration validation and model selection                     |
+| `preflight.mjs`  | `doctor` and `resources`                                         |
+| `run.mjs`        | Run creation, manifest state, the task graph, and locking        |
+| `workspace.mjs`  | Worktree creation and setup detection                            |
+| `launch.mjs`     | Building a task payload and submitting it to a Herdr pane        |
+| `herdr.mjs`      | Herdr transport, pane ownership checks, and workspace creation   |
+| `schedule.mjs`   | `tick`, `wait`, `barrier`, `repair`, `retry-launch`, `cancel`    |
+| `background.mjs` | `start`, background coordination, and Herdr completion messages  |
+| `completion.mjs` | Native Pi completion, session recovery, deduplication, and yield |
+| `observe.mjs`    | Outcome notifications and bounded crash/deadline wakeups         |
+| `evidence.mjs`   | Revalidating a task's outcome before anything depends on it      |
+| `integrate.mjs`  | `integrate` and `rollback`                                       |
+| `cleanup.mjs`    | Automatic pane/worktree retirement, `cleanup`, and `unlock`      |
+| `worker.mjs`     | The per-attempt supervisor: setup, Pi, checks, and evidence      |
+| `core.mjs`       | Validation, Git and file snapshots, processes, role tool tables  |
 
 Coordinating agents read `skills/subagents/reference.md`, a compact version of
 the configuration reference, instead of these pages. Keep the two in sync when
