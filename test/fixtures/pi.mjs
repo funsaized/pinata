@@ -2,9 +2,12 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
+import { writeSync } from "node:fs";
 const args = process.argv.slice(2);
 const arg = (key) => args[args.indexOf(key) + 1];
-const send = (value) => console.log(JSON.stringify(value));
+const interactive = args.includes("--tui-mode");
+const send = (value) =>
+  interactive ? writeSync(3, JSON.stringify(value) + "\n") : console.log(JSON.stringify(value));
 if (args.includes("--version")) console.log("1.0.2");
 else if (args[0] === "list") console.log(process.env.TEST_PI_LIST ?? "No packages installed.");
 else if (args[0] === "auth") {
@@ -35,6 +38,17 @@ else if (args[0] === "auth") {
   const scenario = JSON.parse(spec.task.task);
   await fs.appendFile(path.join(dir, "calls.txt"), "call\n");
   await fs.writeFile(path.join(dir, "args.json"), JSON.stringify(args));
+  if (interactive) {
+    await fs.writeFile(
+      path.join(dir, "tty.json"),
+      JSON.stringify({
+        stdin: Boolean(process.stdin.isTTY),
+        stdout: Boolean(process.stdout.isTTY),
+        stderr: Boolean(process.stderr.isTTY),
+      }),
+    );
+    console.log("Interactive Pi fixture on the pane terminal");
+  }
   await fs.writeFile(path.join(dir, "tmpdir.txt"), process.env.TMPDIR ?? "");
   if (scenario.delay) await new Promise((r) => setTimeout(r, scenario.delay));
   send({ type: "session", id: "fixture-session" });
@@ -114,8 +128,10 @@ else if (args[0] === "auth") {
     result.taskId = "other-task";
   if (scenario.noResult) {
     send({ type: "agent_settled" });
-  } else if (scenario.malformed) console.log("not JSON");
-  else {
+  } else if (scenario.malformed) {
+    if (interactive) writeSync(3, "not JSON\n");
+    else console.log("not JSON");
+  } else {
     send({
       type: "message_end",
       message: {

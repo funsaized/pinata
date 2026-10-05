@@ -52,6 +52,21 @@ try {
     JSON.stringify(complete),
   );
   const manifest = await readJson(path.join(run, "manifest.json"));
+  for (const task of manifest.tasks) {
+    const dir = path.join(run, "tasks", task.spec.id, "1");
+    assert.deepEqual(
+      await readJson(path.join(dir, "tty.json")),
+      {
+        stdin: true,
+        stdout: true,
+        stderr: true,
+      },
+      "Pi must inherit the actual pane terminal",
+    );
+    const args = await readJson(path.join(dir, "args.json"));
+    assert(!args.includes("--mode"), "Herdr workers must launch Pi's interactive mode");
+    assert(args.includes(path.join(ROOT, "lib/worker-events.mjs")));
+  }
   assert.equal(new Set(manifest.tasks.map((t) => t.attempts[0].resource.pane_id)).size, 4);
   assert.equal(new Set(manifest.tasks.map((t) => t.attempts[0].resource.terminal_id)).size, 4);
   await add(run, task("cancel-me", "scout", { hang: true, child: true }));
@@ -83,7 +98,7 @@ try {
         tests: [
           "owned Herdr schema/layout",
           "three-worker cap and fourth queue",
-          "pane run and collected JSON outcomes",
+          "native pane TTY inheritance and private event-channel outcomes",
           "cancellation including detached child",
           "owned cleanup and unrelated workspace preservation",
         ],
