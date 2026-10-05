@@ -3,7 +3,7 @@ import * as fs from "node:fs/promises";
 import path from "node:path";
 import { createServer } from "node:http";
 import { once } from "node:events";
-import { ROOT, ROLES, command, atomic, readJson, rpcProbe } from "../lib/core.mjs";
+import { ROOT, ROLES, command, atomic, readJson, rpcProbe, sleep, living } from "../lib/core.mjs";
 import { init, wait, cleanup, cancel } from "../lib/pinata.mjs";
 import { repository, task } from "./helpers.mjs";
 
@@ -27,11 +27,21 @@ const env = {
   TEST_HERDR_STATE: path.join(repo.dir, "herdr.json"),
 };
 const requests = [],
-  rounds = new Map();
+  rounds = new Map(),
+  fixtureErrors = [];
 let activeRun,
   typedRun,
   sourceFetches = 0;
 let origin;
+async function typedUntil(predicate) {
+  const deadline = Date.now() + 20_000;
+  while (Date.now() < deadline) {
+    const run = await readJson(path.join(typedRun, "manifest.json"));
+    if (await predicate(run)) return run;
+    await sleep(50);
+  }
+  throw new Error("Typed Pi orchestration did not reach the expected state");
+}
 const server = createServer(async (req, res) => {
   try {
     if (req.method === "GET") {
@@ -87,8 +97,9 @@ const server = createServer(async (req, res) => {
               herdr: path.join(ROOT, "test/fixtures/herdr.mjs"),
               session: "fixture",
               passEnv: ["TEST_HERDR_STATE"],
+              limits: { startupMs: 5000, taskMs: 30_000, jobMs: 120_000, maxToolCalls: 1 },
             },
-            tasks: [task("typed")],
+            tasks: [task("typed"), { ...task("budget"), task: "force-tool-budget" }],
           },
         ];
       if (phase === 2) {
@@ -103,7 +114,43 @@ const server = createServer(async (req, res) => {
       if (phase === 3) {
         const result = JSON.parse(body.messages.findLast((m) => m.role === "tool").content);
         assert.equal(result.tasks[0].status, "queued");
+        call = ["pinata_control", { run: typedRun, action: "start" }];
+      }
+      if (phase === 4) {
+        await typedUntil(
+          async (run) =>
+            run.background?.notification?.status === "delivered" &&
+            !(await living([run.background.runner])).length,
+        );
+        call = ["pinata_status", { run: typedRun, includeResults: true }];
+      }
+      if (phase === 5) {
+        const result = JSON.parse(body.messages.findLast((m) => m.role === "tool").content);
+        assert.equal(result.tasks[0].status, "succeeded");
+        assert.equal(result.outcomes.typed.actualModel.id, "loopback");
+        assert.equal(result.tasks[1].status, "failed");
+        assert.match(result.tasks[1].error, /tool call budget exceeded/);
+        call = [
+          "pinata_add",
+          { run: typedRun, tasks: [{ ...task("cancel-active"), task: "force-hang" }] },
+        ];
+      }
+      if (phase === 6) call = ["pinata_control", { run: typedRun, action: "resume" }];
+      if (phase === 7) {
+        const result = JSON.parse(body.messages.findLast((m) => m.role === "tool").content);
+        assert.equal(result.tasks?.at(-1).status, "launching", JSON.stringify(result));
+        await typedUntil(async (run) => {
+          const file = path.join(run.dir, "tasks/cancel-active/1/process.json");
+          const process = await readJson(file).catch(() => null);
+          return process?.children?.length && (await living(process.children)).length;
+        });
         call = ["pinata_control", { run: typedRun, action: "cancel" }];
+      }
+      if (phase === 8) {
+        const result = JSON.parse(body.messages.findLast((m) => m.role === "tool").content);
+        assert(result.cancelled);
+        assert.equal(result.tasks.at(-1).status, "cancelled");
+        assert.equal(result.tasks.at(-1).paneClosed, true);
       }
     }
     if (spec) {
@@ -162,6 +209,12 @@ const server = createServer(async (req, res) => {
         ];
       }
       content = JSON.stringify(result);
+      if (spec.task.task === "force-tool-budget") call = ["read", { path: "a.txt" }];
+      if (spec.task.task === "force-hang") {
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        res.write(": waiting for cancellation\n\n");
+        return;
+      }
     }
     res.writeHead(200, { "content-type": "text/event-stream" });
     const emit = (delta, finish_reason = null) =>
@@ -187,6 +240,7 @@ const server = createServer(async (req, res) => {
     }
     res.end("data: [DONE]\n\n");
   } catch (e) {
+    fixtureErrors.push(e.stack);
     res.writeHead(500, { "content-type": "application/json" });
     res.end(JSON.stringify({ error: { message: e.message } }));
   }
@@ -308,16 +362,35 @@ try {
     (x, i) => x !== "--no-extensions" && x !== "--tools" && base[i - 1] !== "--tools",
   );
   await run([...typedBase, "--", "typed-tool-probe"]);
+  assert.deepEqual(fixtureErrors, []);
   const typedTranscript = requests
-    .at(-1)
+    .findLast((r) => JSON.stringify(r.messages).includes("typed-tool-probe"))
     .messages.filter((m) => m.role === "tool")
     .map((m) => m.content)
     .join("\n");
   assert.match(typedTranscript, /approval/);
   assert(typedRun);
-  assert.equal((await readJson(path.join(typedRun, "manifest.json"))).cancelled, true);
+  assert.equal(rounds.get("typed-tool-probe"), 9);
+  const typedManifest = await readJson(path.join(typedRun, "manifest.json"));
+  assert.equal(typedManifest.cancelled, true);
+  assert.equal(typedManifest.versions.node, process.version);
+  assert.equal(await fs.realpath(typedManifest.runtime.node), await fs.realpath(process.execPath));
+  assert(typedManifest.tasks.every((task) => task.attempts[0].closed));
+  assert.equal(typedManifest.background.notification.status, "delivered");
+  assert(
+    (await readJson(path.join(repo.dir, "herdr.json"))).notifications[0].text.includes(
+      typedManifest.runtime.node,
+    ),
+  );
+  for (const task of typedManifest.tasks) {
+    const attempt = path.join(typedRun, "tasks", task.spec.id, "1");
+    const processes = await readJson(path.join(attempt, "process.json"));
+    assert.equal((await living([processes.runner, ...processes.children])).length, 0);
+    assert(await readJson(path.join(attempt, "claim.json")));
+    assert(await readJson(path.join(attempt, "outcome.json")));
+  }
   console.log(
-    "PASS packed typed tools, schema rejection, session model inheritance, reviewable delegation, status and cancellation",
+    "PASS packed typed tools: start, completion, budgets, notification, resume and active cancellation from Pi's runtime",
   );
   await run([...base, "--", "/skill:engmgmt Activation test, acknowledge only."]);
   assert(JSON.stringify(requests.at(-1).messages).includes("../subagents/SKILL.md"));
@@ -436,6 +509,7 @@ try {
   );
   console.log("PASS isolated package removal; no personal Pi configuration changed");
 } finally {
+  if (typedRun) await cancel(typedRun);
   if (activeRun) await cancel(activeRun);
   for (const key of Object.keys(process.env)) delete process.env[key];
   Object.assign(process.env, originalEnv);
