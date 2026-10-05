@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import fs from "node:fs/promises";
 import { spawn, execFileSync } from "node:child_process";
+import net from "node:net";
 let args = process.argv.slice(2);
 if (args[0] === "--session") args = args.slice(2);
 const arg = (key) => args[args.indexOf(key) + 1];
@@ -54,6 +55,14 @@ else {
   } else if (args[0] === "agent" && args[1] === "prompt") {
     (state.notifications ??= []).push({ kind: "agent", target: args[2], text: args[3] });
     await save();
+    if (process.env.TEST_PARENT_SOCKET) {
+      await new Promise((resolve, reject) => {
+        const socket = net.createConnection(process.env.TEST_PARENT_SOCKET);
+        socket.on("error", reject);
+        socket.on("connect", () => socket.end(JSON.stringify({ text: args[3] }) + "\n"));
+        socket.on("close", resolve);
+      });
+    }
     send({ type: "agent_prompted" });
   } else if (args[0] === "notification" && args[1] === "show") {
     state.notificationAttempts = (state.notificationAttempts ?? 0) + 1;

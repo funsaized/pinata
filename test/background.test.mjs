@@ -96,6 +96,30 @@ test("completion never prompts a different session in a reused coordinator pane"
   assert.equal(notices[0].kind, "notification");
 });
 
+test("native completion requires the matching Pi session and can upgrade an active legacy job without relaunch", async (t) => {
+  parent(t);
+  const f = await fixture(t, [task("one", "scout", { delay: 1200 })], {
+    env: { TEST_COORDINATOR: "original-session" },
+  });
+  assert.equal(
+    (await start(f.run, { nativeSession: "wrong-session" })).background.completion,
+    "herdr-agent-message",
+  );
+  assert.equal(
+    (await start(f.run, { nativeSession: "original-session" })).background.completion,
+    "pi-extension",
+  );
+  assert.equal((await start(f.run)).background.completion, "pi-extension");
+  const run = await complete(f);
+  const state = await readJson(path.join(f.dir, "herdr.json"));
+  assert.equal(state.submissions, 1);
+  assert.equal(state.notifications.length, 1);
+  assert.deepEqual(JSON.parse(state.notifications[0].text.slice("/pinata-complete ".length)), {
+    run: f.run,
+    id: run.background.notification.id,
+  });
+});
+
 test("cancelling a background run stops its workers, retires resources, and exits the coordinator", async (t) => {
   const f = await fixture(t, [task("one", "scout", { hang: true, child: true })]);
   await start(f.run);

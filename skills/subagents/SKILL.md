@@ -109,7 +109,16 @@ ordinary recursive launches through its child marker. These are workflow control
 
 - Use `start` to launch the background coordinator and return immediately.
   It watches outcomes, schedules dependent work, closes finished panes, and
-  sends completion back through Herdr. When `background.completion` is
+  sends completion back through Herdr. Prefer `pinata_control` start as the sole
+  tool call, outside codemode. When `background.completion` is `pi-extension`,
+  start ends your current turn automatically; a native completion message resumes
+  you in a later turn. Do not repeatedly call status or sleep while workers run.
+  If you have independent work, start with `yield:false`, do that work, then call
+  `pinata_yield` alone outside codemode. Yielding does not cancel workers. A start
+  nested in codemode cannot end the outer turn; call `pinata_yield` afterward.
+  Use status while running only for recovery or a user-requested progress report.
+  Native completions queue behind active work and deduplicate by completion ID.
+  When `background.completion` is
   `herdr-agent-message`, continue independent work or yield until the completion
   message arrives. Do not block Pi's bash tool with a five-minute `wait`.
   If no coordinator session was identified, completion uses a Herdr notification;

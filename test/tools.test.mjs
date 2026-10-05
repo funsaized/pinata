@@ -55,6 +55,10 @@ test("typed status/barrier validate saved evidence and invalid control parameter
     /only to cleanup/,
   );
   await assert.rejects(
+    executeTool("control", { run: f.run, action: "cancel", yield: true }, ctx, pi),
+    /yield applies only to start/,
+  );
+  await assert.rejects(
     executeTool("rollback", { run: f.run, confirm: false }, ctx, pi),
     /confirm:true/,
   );
