@@ -61,6 +61,12 @@ recorded validation, and npm publication instructions.
 
 ## Defaults that need no configuration
 
+- **Completion through Herdr.** `start` returns immediately. A background
+  coordinator watches results, advances dependent tasks, and sends completion to
+  the original agent session through Herdr, then exits. No long bash wait is needed.
+- **Automatic cleanup.** Finished panes and unchanged inspection worktrees are
+  removed automatically. Builder worktrees and installed dependencies are removed
+  after verified integration. Results, session logs, and rollback evidence remain.
 - **Dependencies in builder worktrees.** `init` detects an install command from
   your root lockfile (`npm ci`, `pnpm install --frozen-lockfile`, `uv sync
 --frozen`, ...) and runs it before each builder starts. Override it with one

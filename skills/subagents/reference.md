@@ -7,21 +7,21 @@ Full human reference: `../../docs/configuration.md` (read only if this is not en
 
 All print JSON. `-` reads JSON (or repair text) from stdin; use `<<'PINATA_JSON'`.
 
-| Command                                      | Use                                                                                                                  |
-| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `init -`                                     | Create a run from a job; returns `{run, id, versions, setup, research}`. Launches nothing.                           |
-| `add <run> -`                                | Append a task object or array.                                                                                       |
-| `wait <run> 300000`                          | Launch ready work and observe up to 5 min; repeat while `waiting: true`. Nonzero exit if all settled and any failed. |
-| `status <run>`                               | Read saved state only.                                                                                               |
-| `resume <run>`                               | Reconcile after interruption, then schedule.                                                                         |
-| `barrier <run> <id>...`                      | Revalidate that every named task succeeded.                                                                          |
-| `repair <run> <id> -`                        | Requeue with feedback; reuses work; invalidates dependent reviews.                                                   |
-| `retry-launch <run> <id>`                    | One same-attempt retry of an uncertain submission.                                                                   |
-| `integrate <run>`                            | Apply reviewed builder changes to the checkout; run integrated checks. Never commits.                                |
-| `rollback <run> --confirm`                   | Undo the latest integration if untouched since.                                                                      |
-| `cancel <run>` / `cleanup <run> [--confirm]` | Stop owned work / preview then remove idle panes and clean worktrees.                                                |
-| `note <run> -`                               | Append a JSON note (plan, approvals, release evidence).                                                              |
-| `unlock <run>`                               | Remove a dead coordinator's lock.                                                                                    |
+| Command                                      | Use                                                                                                           |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `init -`                                     | Create a run from a job; returns `{run, id, versions, setup, research}`. Launches nothing.                    |
+| `add <run> -`                                | Append a task object or array.                                                                                |
+| `start <run>`                                | Launch background scheduling; return immediately. Herdr sends completion to the original coordinator session. |
+| `status <run>`                               | Read saved state only.                                                                                        |
+| `resume <run>`                               | Reconcile after interruption, then schedule.                                                                  |
+| `barrier <run> <id>...`                      | Revalidate that every named task succeeded.                                                                   |
+| `repair <run> <id> -`                        | Requeue with feedback; reuses work; invalidates dependent reviews.                                            |
+| `retry-launch <run> <id>`                    | One same-attempt retry of an uncertain submission.                                                            |
+| `integrate <run>`                            | Apply reviewed builder changes to the checkout; run integrated checks. Never commits.                         |
+| `rollback <run> --confirm`                   | Undo the latest integration if untouched since.                                                               |
+| `cancel <run>` / `cleanup <run> [--confirm]` | Stop owned work / preview then remove idle panes and clean worktrees.                                         |
+| `note <run> -`                               | Append a JSON note (plan, approvals, release evidence).                                                       |
+| `unlock <run>`                               | Remove a dead coordinator's lock.                                                                             |
 
 ## Job
 

@@ -57,11 +57,12 @@ Copy the new `run` value, not the previous scout run:
 
 ```sh
 RUN=/absolute/new/run/path
-node "$PINATA" wait "$RUN" 30000
+node "$PINATA" start "$RUN"
 ```
 
-Repeat `wait` while `waiting: true`. The builder starts first. The reviewer can
-start only after the builder's outcome succeeds. When both report `succeeded`:
+Pinata notifies the originating Herdr agent when the group finishes. The builder
+starts first; the reviewer starts automatically after its outcome succeeds.
+Read `status "$RUN"`. When both report `succeeded`:
 
 ```sh
 node "$PINATA" barrier "$RUN" build review

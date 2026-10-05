@@ -15,11 +15,12 @@ sensitive data; inspect them locally rather than uploading the whole run.
 ```sh
 node "$PINATA" status "$RUN"
 node "$PINATA" resume "$RUN"
-node "$PINATA" wait "$RUN" 30000
+node "$PINATA" start "$RUN"
 ```
 
 `status` reads saved state. `resume` checks real artifacts and processes before
-scheduling ready work. Repeat `wait` while `waiting: true`. Read every task's
+scheduling ready work. `start` watches the run in the background and notifies
+the original Herdr agent when it finishes. Read every task's
 status and outcome path, including failed siblings.
 
 If a dead coordinator left a lock, use `node "$PINATA" unlock "$RUN"`, then
@@ -36,10 +37,10 @@ the lock to bypass that check.
 
 ```sh
 node "$PINATA" repair "$RUN" build /absolute/path/to/feedback.txt
-node "$PINATA" wait "$RUN" 30000
+node "$PINATA" start "$RUN"
 ```
 
-Replace `build` with the actual task ID. Repeat `wait` as needed. Repair reuses
+Replace `build` with the actual task ID. Wait for the Herdr completion message. Repair reuses
 retained work, consumes the repair budget, and invalidates dependent reviews.
 All dependents are requeued. Wait for a new review of the repaired evidence
 before integration. Repairs keep the original input snapshot, so the builder

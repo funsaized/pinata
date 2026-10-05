@@ -89,15 +89,16 @@ The `scout` task should be `queued`. Initialization records the job; it does not
 launch the worker yet. If preflight fails, fix the reported prerequisite before
 trying again. Do not replace a real model with a guessed identifier.
 
-## 3. Launch and wait
+## 3. Launch and receive completion
 
 ```sh
-node "$PINATA" wait "$RUN" 30000
+node "$PINATA" start "$RUN"
 ```
 
-This starts ready work and waits for up to 30 seconds. If the output includes
-`waiting: true`, repeat the same command. Do not treat the observation timeout
-as a finished task.
+This returns immediately. Pinata watches results in the background and sends a
+completion message to the originating Herdr agent session, or a Herdr notification
+if no agent session was identified. Finished panes and inspection worktrees are
+removed automatically; the saved result remains. Read it with `status "$RUN"`.
 
 Once the task reports `succeeded`, verify its evidence:
 

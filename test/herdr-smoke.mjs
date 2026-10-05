@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs/promises";
 import path from "node:path";
 import { ROOT, command, readJson, sleep, exists } from "../lib/core.mjs";
-import { init, tick, wait, add, cancel, cleanup } from "../lib/pinata.mjs";
+import { init, tick, wait, add, cancel, cleanup, start } from "../lib/pinata.mjs";
 import { repository, task, untilFile } from "./helpers.mjs";
 
 assert.equal(
@@ -52,6 +52,12 @@ try {
     JSON.stringify(complete),
   );
   const manifest = await readJson(path.join(run, "manifest.json"));
+  assert(manifest.tasks.every((t) => t.attempts.every((a) => a.closed)));
+  assert.deepEqual(
+    (await workspaces()).map((w) => w.workspace_id).sort(),
+    before,
+    "Completed panes should close automatically before cleanup",
+  );
   for (const task of manifest.tasks) {
     const dir = path.join(run, "tasks", task.spec.id, "1");
     assert.deepEqual(
@@ -69,18 +75,40 @@ try {
   }
   assert.equal(new Set(manifest.tasks.map((t) => t.attempts[0].resource.pane_id)).size, 4);
   assert.equal(new Set(manifest.tasks.map((t) => t.attempts[0].resource.terminal_id)).size, 4);
+  await add(run, task("notify", "scout", { delay: 300 }));
+  // Exercise real Herdr notifications without sending a prompt to the user's agent.
+  const caller = process.env.HERDR_PANE_ID;
+  delete process.env.HERDR_PANE_ID;
+  try {
+    await start(run);
+  } finally {
+    if (caller !== undefined) process.env.HERDR_PANE_ID = caller;
+  }
+  const deadline = Date.now() + 20_000;
+  let background;
+  do {
+    background = (await readJson(path.join(run, "manifest.json"))).background;
+    if (background?.status === "complete") break;
+    assert(Date.now() < deadline, "Background Herdr smoke did not complete");
+    await sleep(100);
+  } while (background?.status !== "complete");
+  assert.equal(background.delivery, "notification", JSON.stringify(background));
+  const automated = (await readJson(path.join(run, "manifest.json"))).tasks.at(-1);
+  assert.equal(automated.status, "succeeded");
+  assert(automated.attempts[0].closed && automated.worktreeRemoved);
   await add(run, task("cancel-me", "scout", { hang: true, child: true }));
   await tick(run);
   await untilFile(path.join(run, "tasks/cancel-me/1/child-pid"), 10_000);
   await sleep(350);
   const stopped = await cancel(run);
   assert.equal(stopped.tasks.at(-1).status, "cancelled", JSON.stringify(stopped));
+  assert.equal(stopped.tasks.at(-1).paneClosed, true);
   const preview = await cleanup(run);
-  assert.equal(preview.report.filter((r) => r.action === "would close").length, 5);
+  assert.equal(preview.report.filter((r) => r.action === "would close").length, 0);
   const closed = await cleanup(run, true);
   assert.equal(
     closed.report.filter((r) => r.action === "closed").length,
-    5,
+    0,
     JSON.stringify(closed),
   );
   assert.deepEqual(
@@ -99,6 +127,8 @@ try {
           "owned Herdr schema/layout",
           "three-worker cap and fourth queue",
           "native pane TTY inheritance and private event-channel outcomes",
+          "automatic pane closure on completion and cancellation",
+          "background scheduling, Herdr notification, and automatic worktree removal",
           "cancellation including detached child",
           "owned cleanup and unrelated workspace preservation",
         ],

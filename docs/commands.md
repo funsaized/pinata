@@ -47,6 +47,7 @@ project prompts or extensions may still shadow commands in an active Pi session.
 
 | Command                      | Effect                                                                                    |
 | ---------------------------- | ----------------------------------------------------------------------------------------- |
+| `start <run>`                | Return immediately; watch outcomes, schedule work, clean up, and send Herdr completion    |
 | `tick <run>`                 | Collect outcomes, reconcile attempts, and launch ready tasks within the concurrency limit |
 | `resume <run>`               | Alias of `tick`; use after an interruption                                                |
 | `wait <run> [milliseconds]`  | Repeat ticks until all tasks are terminal or the observation window ends                  |
@@ -54,15 +55,23 @@ project prompts or extensions may still shadow commands in an active Pi session.
 | `barrier <run> <task-id>...` | Revalidate every named task's successful outcome                                          |
 | `note <run> <note.json\|->`  | Append a timestamped JSON note to the run                                                 |
 
-`wait` defaults to 30000 ms and accepts 1 through 300000 ms. Coordinators should
-use 300000: Pi's bash tool has no default timeout, and each poll costs tokens. Repeat it while the
-output contains `waiting: true`. When all tasks are terminal, it exits nonzero
+Coordinators should use `start`. One short-lived background process watches
+outcome files, advances dependencies, and exits when the group settles. It sends
+a message through `herdr agent prompt` only if the original coordinator's terminal
+and agent session still match; otherwise it shows a Herdr notification. `start`
+reports the selected completion route. Call it again after adding or repairing tasks.
+
+`wait` remains available for scripts. It defaults to 1000 ms and accepts 1 through
+300000 ms. It wakes on result files, with a five-second fallback for crashes and
+deadlines. `waiting: true` is an observation deadline, not a worker failure. Avoid
+long blocking waits in Pi's bash tool. When all tasks are terminal, it exits nonzero
 if any task is not `succeeded`. `status`, `tick`, and `resume` can return failed
 task states without a nonzero exit; inspect their JSON. Use `barrier` when a
 caller needs a success check for a particular group.
 
 When the job deadline has passed, the next tick cancels non-terminal tasks.
 Calling `wait` or `resume` therefore also enforces that deadline.
+Background runs enforce it automatically.
 
 ## Repair and cancellation
 
@@ -91,6 +100,13 @@ See [recovery](recovery.md) before retrying uncertain work.
 | `rollback <run> --confirm` | Restore the latest integration journal only where current contents still match its recorded result |
 | `cleanup <run>`            | Preview removal of owned panes and worktrees                                                       |
 | `cleanup <run> --confirm`  | Close verified idle owned panes and remove clean owned worktrees                                   |
+
+Normal collection automatically closes finished owned panes and removes unchanged
+inspection worktrees. Verified integration also removes builder worktrees,
+including ignored dependencies. Saved results, native Pi sessions, change blobs,
+and rollback evidence remain; archived outcome digests keep barriers usable after
+checkout removal. Changed or busy resources are retained with a cleanup error in
+`status`. Manual `cleanup` is for these retained resources, not routine completion.
 
 Integration requires `allowWrites`, at least one builder, every task succeeded,
 valid current evidence, an unchanged base `HEAD`, and a matching approving review

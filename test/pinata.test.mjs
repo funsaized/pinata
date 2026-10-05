@@ -78,7 +78,8 @@ test("three independent workers; dependent task waits; all required results coll
     tasks: ["one", "two", "three", "four", "after"],
   });
   const clean = await cleanup(f.run, true);
-  assert.equal(clean.report.filter((x) => x.action === "closed").length, 5);
+  assert.equal(clean.report.filter((x) => x.action === "closed").length, 0);
+  assert((await f.manifest()).tasks.every((t) => t.attempts.every((a) => a.closed)));
 });
 
 test("builder repair retains earlier edits; reviewer re-reviews; integrated checks and safe rollback", async (t) => {
@@ -122,7 +123,7 @@ test("builder repair retains earlier edits; reviewer re-reviews; integrated chec
   assert.equal(await fs.readFile(path.join(f.cwd, "a.txt"), "utf8"), "original");
   assert.equal(await fs.readFile(path.join(f.cwd, "untouched.txt"), "utf8"), "user work");
   const report = await cleanup(f.run, true);
-  assert(report.report.some((r) => r.action.startsWith("retained: modified")));
+  assert.equal(report.report.length, 0, "Verified integration already retired the worktrees");
 });
 
 test("parallel builders own separate worktrees; downstream builder receives dependency code", async (t) => {
