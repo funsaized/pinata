@@ -37,7 +37,10 @@ The job has two tasks:
 
 `allowWrites: true` permits this local coding job. The check is
 `["node", "--test", "greet.test.mjs"]`, both in the builder worktree and after
-integration. There are no dependency installs or live network tests.
+integration. The repository has no lockfile, so there is no setup step and no
+network access. For a project with dependencies, `init` detects an install
+command for the builder's worktree; see
+[Give builders their dependencies](../dependencies.md).
 
 Check that this matches the work you approve. Builders have bash and run with
 your OS permissions; ownership validation is not an OS sandbox.

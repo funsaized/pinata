@@ -66,6 +66,15 @@ Each run records the repository's committed `HEAD`. Worker worktrees begin at
 that commit. They do not receive arbitrary uncommitted changes from your working
 tree. A dependent builder receives verified changes from predecessor builders.
 
+Because ignored files are not in the commit, a fresh worktree has no installed
+dependencies. Before a builder starts, its worker runs one setup command there,
+detected from the root lockfiles or set with `config.setup`. The supervisor runs
+it, not the model, and it must leave tracked and unignored files unchanged, so
+setup output can never become part of a deliverable. Workers themselves still
+may not install packages. This is the same split Codex cloud uses: a setup phase
+prepares the environment, then the agent works in it. See
+[Give builders their dependencies](dependencies.md).
+
 Each builder declares the files or directory prefixes it may change. Independent
 builders cannot own overlapping paths. Dependent builders can, because their
 ordering is explicit. These checks apply within a run; separate runs have no
@@ -125,6 +134,11 @@ for hostile code. An `approval` string records consent; it does not create or
 enforce it.
 
 Inspection roles get read, search, and list tools, not bash, edit, or write.
+Every role also gets Pi's `codemode` tool by default. Its scripts run in a QuickJS
+sandbox and can call only the tools the role already has, so codemode batches
+calls without widening access. Codemode scripts can also call Pi's classifier and
+image models with your credentials; the worker brief forbids that, but the brief
+is not enforcement.
 Research also gets the explicitly loaded pi-web-access tools. Child discovery
 disables global skills, templates, extensions, and themes, then loads only the
 chosen persona and, for research, the approved extension. Project-local Pi
@@ -155,13 +169,13 @@ It refuses symlinks, submodules, and secret-bearing filenames such as `.env`,
 `.env.*`, `auth.json`, `.npmrc`, and `.netrc`. It does not detect Git LFS pointers
 or implement LFS/filter-aware merging; ordinary pointer files are treated as text.
 
-Ignored files are not snapshotted as deliverables. Ignored build output can still
-keep a worker worktree dirty and prevent automatic cleanup. Dependency
-installation is not automatic.
+Ignored files are not snapshotted as deliverables, and they do not block
+cleanup. Workers do not install dependencies; builder setup does, before the
+worker starts.
 
 Builder checks may update files; those changes become part of the evidence and
 must respect ownership. Integrated checks must not alter managed code or the
-index. Live-credential checks require explicit approval. Time and turn limits
+index. Live-credential checks require explicit approval. Time, turn, and tool-call limits
 are not spending caps; enforce monetary limits with your provider.
 
 pinata coordinates local, single-host work. It does not schedule remote workers
@@ -169,9 +183,24 @@ or implement remote deployment transactions.
 
 ## Implementation and sources
 
-`lib/pinata.mjs` coordinates finite-lived CLI commands. `lib/worker.mjs`
-supervises workers and checks. `lib/core.mjs` holds validation and OS helpers.
-Atomic state writes and a per-run coordinator lock protect local state updates.
+`lib/pinata.mjs` is the public API and CLI entry point. Behind it:
+
+| Module                                                                          | Responsibility                                                  |
+| ------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| `cli.mjs`                                                                       | Argument handling and help text                                 |
+| `config.mjs`                                                                    | Configuration validation and model selection                    |
+| `preflight.mjs`                                                                 | `doctor` and `resources`                                        |
+| `run.mjs`                                                                       | Run creation, manifest state, the task graph, and locking       |
+| `workspace.mjs`                                                                 | Worktree creation and setup detection                           |
+| `launch.mjs`                                                                    | Building a task payload and submitting it to a Herdr pane       |
+| `herdr.mjs`                                                                     | Herdr transport, pane ownership checks, and workspace creation  |
+| `schedule.mjs`                                                                  | `tick`, `wait`, `barrier`, `repair`, `retry-launch`, `cancel`   |
+| `evidence.mjs`                                                                  | Revalidating a task's outcome before anything depends on it     |
+| `integrate.mjs`                                                                 | `integrate` and `rollback`                                      |
+| `cleanup.mjs`                                                                   | `cleanup` and `unlock`                                          |
+| `worker.mjs`                                                                    | The per-attempt supervisor: setup, Pi, checks, and evidence     |
+| `core.mjs`                                                                      | Validation, Git and file snapshots, processes, role tool tables |
+| Atomic state writes and a per-run coordinator lock protect local state updates. |
 
 See [recorded validation](validation.md) for tested versions and source revisions.
 Upstream contracts: [Pi packages](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/packages.md),

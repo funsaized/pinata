@@ -58,6 +58,14 @@ For these cases, or an exhausted deadline or repair budget, stop and reconcile
 the plan with the user. Do not invent a new task ID to reset counters or bypass
 a rejected review.
 
+## Fix a setup failure
+
+When a builder's outcome has `failureStage: "setup"`, read `setup.stderr.log` in
+its attempt directory. Retry a transient failure with `repair`; setup retries do
+not consume the repair budget. If setup changed project files, or the command is
+wrong, start a new run with a corrected `config.setup`. See
+[Give builders their dependencies](dependencies.md#fix-a-setup-failure).
+
 ## Resolve an uncertain launch
 
 Run `resume` first. Inspect the task's claim and process evidence. An uncertain
@@ -124,8 +132,9 @@ node "$PINATA" cleanup "$RUN"
 node "$PINATA" cleanup "$RUN" --confirm
 ```
 
-Only verified idle owned panes and clean owned worktrees are removed. Dirty
-worktrees, including those with ignored build output, remain. Inspect and retain
+Only verified idle owned panes and clean owned worktrees are removed. Worktrees
+with modified or untracked files remain; ignored files such as installed
+dependencies do not count. Inspect and retain
 needed work before approving any separate removal; do not force-remove it to
 make cleanup pass. Logs and manifests remain for recovery. Deleting them needs
 separate authorization.

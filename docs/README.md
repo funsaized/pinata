@@ -13,8 +13,12 @@ and leaves your project files alone.
 ## How-to guides: finish a task
 
 - [Set up pinata](setup.md): install resources, select models, and enable research.
+- [Give builders their dependencies](dependencies.md): check, override, or turn
+  off the setup command that prepares builder worktrees.
+- [Use codemode in workers](codemode.md): turn it off, bound tool calls, and
+  understand what it can reach.
 - [Agent examples](../examples/README.md): adapt assignments for scout, research,
-  planner, builder, and reviewer, plus a coordinated coding job.
+  planner, builder, and reviewer, plus model configs and complete jobs.
 - [Recover and clean up a run](recovery.md): handle interruptions, rejections,
   uncertain launches, cancellation, and rollback.
 - [Run the tests](testing.md): use local fixtures or opt into Herdr and live checks.

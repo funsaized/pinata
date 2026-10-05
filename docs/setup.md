@@ -74,6 +74,17 @@ thinking level that the model actually supports; pinata rejects silent changes
 to that selection. The [model reference](configuration.md#models) lists values,
 per-role overrides, and approved fallbacks.
 
+[examples/configs](../examples/configs/) has ready-made model configurations:
+one model for everything ([luna.json](../examples/configs/luna.json)), a cheaper
+model per role with a fallback ([per-role.json](../examples/configs/per-role.json)),
+research ([research.json](../examples/configs/research.json)), and codemode
+turned off ([no-codemode.json](../examples/configs/no-codemode.json)).
+
+Two defaults need no configuration. Workers get Pi's codemode tool
+([how to change that](codemode.md)), and builder worktrees get their
+dependencies from a setup command detected from your lockfiles
+([how to check it](dependencies.md)).
+
 ```sh
 node "$PINATA" doctor /absolute/path/to/pinata.config.json
 ```

@@ -75,7 +75,9 @@ JOB=/absolute/path/to/scout-job.json
 node "$PINATA" init "$JOB"
 ```
 
-The output contains a `run` directory, an `id`, and detected versions. Copy the
+The output contains a `run` directory, an `id`, detected versions, and a
+`setup` entry. The practice repository has no lockfile, so `setup.source` is
+`none`; scouts do not run setup anyway. Copy the
 `run` value into a variable:
 
 ```sh
