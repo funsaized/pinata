@@ -1,0 +1,39 @@
+{
+  "cwd": "/absolute/path/to/repository",
+  "approval": "Replace with your approval for read-only scouting, web research through pi-web-access, and a plan",
+  "allowWrites": false,
+  "config": {
+    "models": {
+      "default": { "provider": "openai", "id": "gpt-6-luna", "thinking": "medium" },
+      "scout": { "provider": "openai", "id": "gpt-6.1-sol", "thinking": "low" },
+      "research": { "provider": "openai", "id": "gpt-6-astra", "thinking": "medium" },
+      "planner": { "provider": "openai", "id": "gpt-6-luna", "thinking": "xhigh" }
+    },
+    "webExtension": "/home/YOU/.pi/agent/git/github.com/nicobailon/pi-web-access/index.ts"
+  },
+  "tasks": [
+    {
+      "id": "scout",
+      "role": "scout",
+      "task": "Find the installed version of the HTTP framework from the lockfile and every call site of its routing API.",
+      "acceptance": ["States the exact version and lists call sites by file and line"]
+    },
+    {
+      "id": "research",
+      "role": "research",
+      "after": ["scout"],
+      "task": "Using the version the scout found, fetch the official migration guide to the next major version and list changes that affect the routing API.",
+      "acceptance": [
+        "Cites fetched official sources",
+        "States which changes apply to the found call sites"
+      ]
+    },
+    {
+      "id": "plan",
+      "role": "planner",
+      "after": ["scout", "research"],
+      "task": "Plan the upgrade: ordered steps, builder ownership, and the checks that prove each step.",
+      "acceptance": ["Names owned paths per builder and a check for each step"]
+    }
+  ]
+}

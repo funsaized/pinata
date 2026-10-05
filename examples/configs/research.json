@@ -1,0 +1,8 @@
+{
+  "models": {
+    "default": { "provider": "openai", "id": "gpt-6-luna", "thinking": "medium" },
+    "research": { "provider": "openai", "id": "gpt-6-astra", "thinking": "medium" }
+  },
+  "webExtension": "/home/YOU/.pi/agent/git/github.com/nicobailon/pi-web-access/index.ts",
+  "passEnv": ["TAVILY_API_KEY"]
+}

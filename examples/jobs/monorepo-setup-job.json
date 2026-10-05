@@ -1,0 +1,42 @@
+{
+  "cwd": "/absolute/path/to/monorepo",
+  "approval": "Replace with your approval to change packages/api, run its tests, and integrate locally",
+  "allowWrites": true,
+  "config": {
+    "models": {
+      "default": { "provider": "openai", "id": "gpt-6-luna", "thinking": "medium" }
+    },
+    "setup": "pnpm install --frozen-lockfile --prefer-offline --filter ./packages/api..."
+  },
+  "tasks": [
+    {
+      "id": "api",
+      "role": "builder",
+      "task": "Replace with the approved change to packages/api.",
+      "acceptance": ["Replace with a concrete acceptance criterion"],
+      "ownership": ["packages/api/src", "packages/api/test"],
+      "checks": [
+        {
+          "id": "api-tests",
+          "argv": ["pnpm", "--filter", "./packages/api", "test"],
+          "timeoutMs": 300000
+        }
+      ]
+    },
+    {
+      "id": "review",
+      "role": "reviewer",
+      "after": ["api"],
+      "reviewOf": "api",
+      "task": "Independently review the packages/api change and its test evidence.",
+      "acceptance": ["Approve only if acceptance criteria are met with evidence"]
+    }
+  ],
+  "integratedChecks": [
+    {
+      "id": "api-tests",
+      "argv": ["pnpm", "--filter", "./packages/api", "test"],
+      "timeoutMs": 300000
+    }
+  ]
+}

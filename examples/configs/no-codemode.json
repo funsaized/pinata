@@ -1,0 +1,7 @@
+{
+  "models": {
+    "default": { "provider": "deepseek", "id": "deepseek-flash", "thinking": "xhigh" }
+  },
+  "codemode": false,
+  "limits": { "maxTurns": 120 }
+}

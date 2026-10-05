@@ -1,0 +1,49 @@
+{
+  "cwd": "/absolute/path/to/repository",
+  "approval": "Replace with your approval for two independent builders, two reviews, and local integration",
+  "allowWrites": true,
+  "config": {
+    "models": {
+      "default": { "provider": "openai", "id": "gpt-6-luna", "thinking": "medium" },
+      "reviewer": { "provider": "openai", "id": "gpt-6-luna", "thinking": "high" }
+    },
+    "setup": "cp -a --reflink=auto \"$PINATA_ROOT/node_modules\" ."
+  },
+  "tasks": [
+    {
+      "id": "api",
+      "role": "builder",
+      "task": "Replace with the approved server-side change.",
+      "acceptance": ["Replace with a concrete acceptance criterion"],
+      "ownership": ["src/server"],
+      "checks": [
+        { "id": "server", "argv": ["npm", "test", "--", "src/server"], "timeoutMs": 180000 }
+      ]
+    },
+    {
+      "id": "cli",
+      "role": "builder",
+      "task": "Replace with the approved CLI change.",
+      "acceptance": ["Replace with a concrete acceptance criterion"],
+      "ownership": ["src/cli"],
+      "checks": [{ "id": "cli", "argv": ["npm", "test", "--", "src/cli"], "timeoutMs": 180000 }]
+    },
+    {
+      "id": "review-api",
+      "role": "reviewer",
+      "after": ["api"],
+      "reviewOf": "api",
+      "task": "Review the server change against its acceptance criteria.",
+      "acceptance": ["Approve only with evidence"]
+    },
+    {
+      "id": "review-cli",
+      "role": "reviewer",
+      "after": ["cli"],
+      "reviewOf": "cli",
+      "task": "Review the CLI change against its acceptance criteria.",
+      "acceptance": ["Approve only with evidence"]
+    }
+  ],
+  "integratedChecks": [{ "id": "all", "argv": ["npm", "test"], "timeoutMs": 300000 }]
+}

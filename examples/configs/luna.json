@@ -1,0 +1,7 @@
+{
+  "models": {
+    "default": { "provider": "openai", "id": "gpt-6-luna", "thinking": "medium" },
+    "scout": { "provider": "openai", "id": "gpt-6-luna", "thinking": "low" },
+    "reviewer": { "provider": "openai", "id": "gpt-6-luna", "thinking": "high" }
+  }
+}
