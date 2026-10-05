@@ -77,14 +77,14 @@ export async function release(tag) {
     }
     // A retry can only accept the exact tarball already on npm, never another build.
     let remote;
-    for (let attempt = 0; attempt < 24; attempt++) {
+    for (let attempt = 0; attempt < 60; attempt++) {
       remote = await published(manifest.version);
       if (remote) break;
       await new Promise((resolve) => setTimeout(resolve, 5000));
     }
     assert(
       remote,
-      "Published version not visible after 2 minutes; inspect the registry before retrying",
+      "Published version not visible after 5 minutes; inspect the registry before retrying",
     );
     assert.equal(remote.name, NAME);
     assert.equal(remote.version, manifest.version);
