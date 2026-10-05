@@ -122,7 +122,7 @@ test("builder repair retains earlier edits; reviewer re-reviews; integrated chec
   assert.equal(await fs.readFile(path.join(f.cwd, "a.txt"), "utf8"), "original");
   assert.equal(await fs.readFile(path.join(f.cwd, "untouched.txt"), "utf8"), "user work");
   const report = await cleanup(f.run, true);
-  assert(report.report.some((r) => r.action.startsWith("retained: dirty")));
+  assert(report.report.some((r) => r.action.startsWith("retained: modified")));
 });
 
 test("parallel builders own separate worktrees; downstream builder receives dependency code", async (t) => {

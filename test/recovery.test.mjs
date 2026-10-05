@@ -49,7 +49,7 @@ test("result-format repair is read-only and preserves cumulative existing builde
     JSON.stringify(s),
   );
   const args = await readJson(path.join(f.run, "tasks/build/2/args.json"));
-  assert.equal(args[args.indexOf("--tools") + 1], "read,grep,find,ls");
+  assert.equal(args[args.indexOf("--tools") + 1], "read,grep,find,ls,codemode");
   const spec = await readJson(path.join(f.run, "tasks/build/2/task.json"));
   assert(spec.resultRepair);
   assert.notDeepEqual(spec.inputSnapshot, spec.baseline);
