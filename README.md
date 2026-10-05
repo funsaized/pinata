@@ -4,7 +4,7 @@ Run Pi subagents in [Herdr](https://herdr.dev/) workspaces. Give each agent a
 specific task, collect its results, and review changes before bringing them back
 to your working tree.
 
-The npm package is `pi-pinata`, unrelated to the Pinata storage SDK. It contains
+The npm package is `pi-pinata`. It contains
 two Pi skills, five agent prompt templates, and a Node helper. It has no runtime
 npm dependencies or resident service.
 
