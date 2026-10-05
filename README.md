@@ -1,4 +1,4 @@
-# pinata
+# piñata
 
 Run Pi subagents in [Herdr](https://herdr.dev/) workspaces. Give each agent a
 specific task, collect its results, and review changes before bringing them back
