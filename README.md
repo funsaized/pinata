@@ -26,7 +26,7 @@ installation checks. Research agents also need an installed
 
 ## Try it in Pi
 
-After installing, ask Pi in plain language i.e:
+After installing, ask Pi in plain language:
 
 ```text
 Use a scout subagent to trace the request-validation path. Return the entry
@@ -51,11 +51,11 @@ persona to your current conversation; they do not launch child agents.
 | Learn with a small, read-only run         | [Run your first scout](docs/tutorials/first-scout.md)             |
 | Learn the build and review cycle          | [Build and review a change](docs/tutorials/build-and-review.md)   |
 | Choose a task for each agent              | [Agent examples](examples/README.md)                              |
-| Copy a model config or a complete job     | [Example configs and jobs](examples/README.md#files-you-can-copy) |
+| Copy a model config or a complete job     | [Example configs and jobs](examples/helper.md#files-you-can-copy) |
 | Give builders their dependencies          | [Dependencies](docs/dependencies.md)                              |
 | Install or configure pinata               | [Setup](docs/setup.md)                                            |
 | Resume, repair, or clean up a run         | [Recovery](docs/recovery.md)                                      |
-| Look up commands and JSON fields          | [Reference](docs/configuration.md)                                |
+| Use the helper directly                   | [Helper tutorial](docs/tutorials/helper-first-scout.md)           |
 | Understand worktrees, reviews, and safety | [Concepts](docs/architecture.md)                                  |
 
 The [documentation index](docs/README.md) also links to contributor testing,
@@ -63,22 +63,14 @@ recorded validation, and npm publication instructions.
 
 ## Defaults that need no configuration
 
-- **Completion through Herdr.** `start` returns immediately. A background
-  coordinator watches results, advances dependent tasks, and sends completion to
-  the original agent session through Herdr, then exits. No long bash wait is needed.
-- **Automatic cleanup.** Finished panes and unchanged inspection worktrees are
-  removed automatically. Builder worktrees and installed dependencies are removed
-  after verified integration. Results, session logs, and rollback evidence remain.
-- **Dependencies in builder worktrees.** `init` detects an install command from
-  your root lockfile (`npm ci`, `pnpm install --frozen-lockfile`, `uv sync
---frozen`, ...) and runs it before each builder starts. Override it with one
-  string, `config.setup`, or set it to `false`. See
-  [dependencies](docs/dependencies.md).
-- **Codemode.** Workers get Pi's `codemode` tool to batch tool calls in one
-  script, limited to their role's tools. See [codemode](docs/codemode.md).
-- **Models.** Workers use your current Pi model. To choose per role, write
-  `~/.pi/agent/pinata.json`, and override per project in `.pi/pinata.json`. See
-  [config files](docs/configuration.md#config-files).
+Workers use your current Pi model. Pi receives completion automatically and
+collects the results. Finished panes and unchanged inspection worktrees are
+removed automatically; builder worktrees are removed after verified integration.
+Saved results and recovery evidence remain.
+
+Builder dependencies are prepared from committed root lockfiles. See
+[dependencies](docs/dependencies.md) to customize setup, or
+[configuration](docs/configuration.md#config-files) to choose models per role.
 
 ## Before delegating writes
 

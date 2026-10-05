@@ -90,7 +90,7 @@ uncertain, and cancelled dependents block it. Previous processes must be gone.
 Successful repair requeues all dependents and invalidates their old reviews.
 After a setup-stage failure, `repair` retries setup without consuming the repair
 budget, at most twice, and only if setup left project files unchanged.
-See [recovery](recovery.md) before retrying uncertain work.
+See [manual recovery](manual-recovery.md) before retrying uncertain work.
 
 ## Integration and cleanup
 

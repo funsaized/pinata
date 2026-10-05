@@ -5,7 +5,7 @@ result objects are rejected. Put task text in JSON, not in shell-interpolated
 arguments. The helper path is relative to the installed package, not your project.
 
 For CLI arguments, see [command reference](commands.md). For a working setup,
-see [setup](setup.md) or the [first tutorial](tutorials/first-scout.md).
+see [setup](setup.md) or the [first tutorial](tutorials/helper-first-scout.md).
 
 ## Job
 
