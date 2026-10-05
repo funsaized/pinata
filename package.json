@@ -1,6 +1,6 @@
 {
   "name": "pi-pinata",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Bash-driven subagents and engineering management for Pi, orchestrated with Herdr.",
   "keywords": [
     "herdr",

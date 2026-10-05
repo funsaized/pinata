@@ -1,6 +1,11 @@
 name: Sync npm package to GitHub
 
 on:
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
   workflow_dispatch:
     inputs:
       version:
