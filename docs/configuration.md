@@ -9,7 +9,8 @@ see [setup](setup.md) or the [first tutorial](tutorials/first-scout.md).
 
 ## Job
 
-Pass a job file to `init`. Configuration is embedded as an object in `config`;
+Pass a job file to `init`, or `-` to read it from standard input. Configuration
+is embedded as an object in `config`;
 it is not a path to another JSON file.
 
 | Field                      | Required / default | Meaning                                              |
@@ -40,7 +41,7 @@ approval, checks, and model placeholders must be replaced before use.
 | `models`       | `{}`                       | Model entries keyed by `default` or role                   |
 | `fallbacks`    | `{}`                       | Up to five approved model entries per role, in order       |
 | `passEnv`      | `[]`                       | Additional environment variable names allowed into workers |
-| `webExtension` | Unset                      | Installed pi-web-access entry file; required for research  |
+| `webExtension` | Detected from Pi packages  | pi-web-access entry file; required for research            |
 | `setup`        | Detected from lockfiles    | Builder worktree setup command, or `false`; see below      |
 | `codemode`     | `true`                     | Give every worker Pi's `codemode` tool                     |
 | `limits`       | Table below                | Worker, time, repair, turn, and tool-call limits           |
@@ -190,7 +191,7 @@ A reviewer can target any non-reviewer task.
 
 With `codemode` enabled (the default), every row also gets `codemode`, loaded with
 `--extension builtin:codemode`. A codemode script can call only the role's tools
-listed here. Research loads only the configured pi-web-access entry. Its dynamic
+listed here. Research loads only the detected or configured pi-web-access entry. Its dynamic
 tools require `web_enable` first. See [Use codemode in workers](codemode.md). See [research setup](setup.md#enable-research).
 
 ### Checks

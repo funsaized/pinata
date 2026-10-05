@@ -21,7 +21,7 @@ authorization, exhausted budgets, or genuine blockers.
 1. **Inspect and specify.** Inspect the repository, instructions, existing user
    changes, checks, dependencies, and delivery target. Establish testable
    acceptance criteria yourself. Record approved scope, exclusions, permissions,
-   and assumptions in a job file; initialize the private run.
+   and assumptions in the job; initialize the private run with `init -`.
 2. **Gather evidence.** Delegate `scout` for bounded local reconnaissance and
    `research` for necessary external docs. Run them in parallel only if inputs
    are independent; version-specific research waits for the versions it needs.
@@ -56,7 +56,7 @@ authorization, exhausted budgets, or genuine blockers.
 ## Durable progress
 
 Keep the returned run path in the conversation. Record decisions/progress with
-`note <run> <note.json>`; this can include an approved plan, revised assumptions,
+`note <run> -` (JSON on standard input); this can include an approved plan, revised assumptions,
 authorization references, integration failures, and release evidence. Worker
 results and verification logs remain in the private run directory.
 

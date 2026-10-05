@@ -17,13 +17,16 @@ to this skill directory, **not the user's working directory**. Resolve
 `../../lib/pinata.mjs` to an absolute path. Invoke it through Pi's **bash tool**:
 
 ```text
-node <absolute-helper> doctor [config.json]
-node <absolute-helper> init <absolute-job.json>
+node <absolute-helper> init - <<'PINATA_JSON'
+{ "cwd": "/absolute/repo", "approval": "...", "tasks": [ ... ] }
+PINATA_JSON
 node <absolute-helper> wait <returned-run-directory> 30000
 ```
 
-Use argv-safe quoting for paths. Put task text, instructions, acceptance criteria,
-and context in JSON files; never interpolate them into a shell command. The
+Pass jobs, added tasks, notes, and repair feedback on standard input with `-`
+and a quoted heredoc delimiter (`<<'PINATA_JSON'`), so the shell never expands
+them. Do not write job files into the project. Use argv-safe quoting for paths,
+and never interpolate task text into a command line. The
 helper owns Herdr layout and subprocess supervision. Do not use Ghostty/foot
 pane APIs, start agents in the coordinator pane, or build another orchestration
 layer around the helper.
@@ -51,8 +54,11 @@ layer around the helper.
    transient one with `repair`; otherwise start a new run with a corrected command.
 7. Workers get Pi's `codemode` tool by default, limited to their role's tools.
    Set `config.codemode: false` only for a model that handles it poorly.
-8. Research requires the existing pi-web-access extension entry in
-   `config.webExtension`, an approved provider route, and usable authentication.
+8. Research needs pi-web-access. `init` finds it among the user's installed Pi
+   packages and reports `research.webExtension`; set `config.webExtension` only
+   to override that. If it reports `null`, research is unavailable until the
+   user installs pi-web-access. Research also needs an approved provider route
+   and usable authentication.
    Read its installed configuration behavior without exposing credentials. No
    silent provider fallback, browser cookies, or additional summary-model calls.
 
@@ -92,7 +98,7 @@ ordinary recursive launches through its child marker. These are workflow control
 - Inspect actual changes and required supervisor-run checks. Self-reported checks,
   exit zero, Herdr idle/done, and Pi `agent_settled` are not proof of success.
 - A rejected review requires builder repair and independent re-review. Use
-  `repair` with a concise feedback file; it preserves work, consumes the repair
+  `repair <run> <task-id> -` with concise feedback on standard input; it preserves work, consumes the repair
   budget, and invalidates dependent reviews. Do not add new IDs to evade budgets.
 - On ambiguous submission use `resume` first. Inspect claims, process state, and
   artifacts before `retry-launch`. It permits one same-attempt retry only when

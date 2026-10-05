@@ -139,7 +139,8 @@ sandbox and can call only the tools the role already has, so codemode batches
 calls without widening access. Codemode scripts can also call Pi's classifier and
 image models with your credentials; the worker brief forbids that, but the brief
 is not enforcement.
-Research also gets the explicitly loaded pi-web-access tools. Child discovery
+Research also gets the pi-web-access tools, from the copy installed in your Pi
+or the one set in `config.webExtension`. Child discovery
 disables global skills, templates, extensions, and themes, then loads only the
 chosen persona and, for research, the approved extension. Project-local Pi
 configuration is not approved. Relevant instructions are copied into the task.

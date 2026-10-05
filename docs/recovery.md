@@ -29,7 +29,8 @@ the lock to bypass that check.
 ## Repair a failed task or rejected review
 
 1. Read the affected task's `outcome.json`, check logs, and reviewer findings.
-2. Write a plain-text feedback file naming the defect and expected correction.
+2. Write plain-text feedback naming the defect and expected correction, in a
+   file or on standard input with `-`.
    Keep the original scope and ownership.
 3. Repair the builder when the review identifies a builder defect:
 
