@@ -1,8 +1,6 @@
 # Set up pinata
 
-Use this guide to install pinata into your personal Pi configuration and verify
-that it can reach your tools. The helper detects missing prerequisites; it does
-not install them or start a Herdr server.
+Install pinata, open Pi in your project, and ask it to delegate.
 
 ## 1. Check prerequisites
 
@@ -10,46 +8,43 @@ You need Pi 1.0.2 or newer, Herdr 0.9.1 or newer with a running compatible serve
 Node 22.19.0 or newer, Git, and an authenticated model supported by Pi. Linux has
 been validated; macOS has not. See [validation](validation.md) for tested versions.
 
-```sh
-pi --version
-herdr --version
-node --version
-git --version
-```
+Run Pi inside a Herdr pane in a Git repository with an existing commit. Workers
+start from committed `HEAD`. If you run outside Herdr, configure an existing named
+session as described below.
 
-Run inside a Herdr pane, or choose an existing named Herdr session for
-`config.session`. Do not point jobs at a guessed or unrelated endpoint.
-
-## 2. Install and check resources
-
-Choose one source:
+## 2. Install and reload
 
 ```sh
 pi install npm:pi-pinata
-# Or register a local checkout:
-pi install /absolute/path/to/pinata
 ```
 
-Restart Pi or run `/reload`, then use `pi list` to locate the installed package.
-Set a shell variable to its helper:
+Restart Pi or run `/reload`. For a local checkout, install with
+`pi install /absolute/path/to/pinata` instead.
 
-```sh
-PINATA=/absolute/installed/package/lib/pinata.mjs
-node "$PINATA" resources /absolute/path/to/a/project
+## 3. Ask Pi to check setup and delegate
+
+```text
+Check that pinata is ready in this project. If it is, use a scout subagent to
+identify the main entry points and existing tests. Report findings with file
+references. Do not change project files or install anything.
 ```
 
-The output should have `ok: true` and resolve two skills and five prompts to the
-installed package. If a personal resource uses the same name, resolve the
-collision in Pi configuration. Do not overwrite existing skills or prompts.
-The probe ignores untrusted project resources, so also check the active
-session's diagnostics for trusted project resources that shadow a global name.
+Pi can check installed resources, prerequisites, and model readiness before
+launching. Missing tools or an unavailable Herdr server need to be resolved first;
+pinata does not install them or start the server. Workers use your current Pi
+model by default, so no model configuration is required.
 
-## 3. Choose models (optional)
+Next: [Run your first scout](tutorials/first-scout.md) or
+[Build and review a change](tutorials/build-and-review.md).
+
+The remaining sections cover optional configuration and troubleshooting.
+
+## Choose models (optional)
 
 pinata needs no configuration: without any, every worker uses the model your
 Pi session has selected. To pick models per role, create
-`~/.pi/agent/pinata.json`. First list models and check the account without
-printing credentials:
+`~/.pi/agent/pinata.json`. Ask Pi to check available models and authentication,
+or check them directly without printing credentials:
 
 ```sh
 pi --list-models
@@ -79,16 +74,6 @@ in a repository, symlink the file from there.
 A project can override any of it in its own `.pi/pinata.json`, for example a
 different reviewer or a `setup` command. See [config files](configuration.md#config-files).
 
-```sh
-node "$PINATA" doctor
-```
-
-Run `doctor` from a project to see the effective configuration: `configFiles`
-lists the files it read and `configOrigins` says which file set each value.
-Proceed only if preflight succeeds. Fix a missing executable, incompatible
-server, or invalid file before creating a run. The helper checks authentication
-and exact model selection before worker launch, not during `doctor`.
-
 Run Pi inside a Herdr pane, or add `"session": "YOUR_EXISTING_HERDR_SESSION"` to
 the file to target a named Herdr session.
 
@@ -104,26 +89,47 @@ everything else works; only jobs containing research tasks are refused at `init`
 
 1. Install and configure [pi-web-access](https://github.com/nicobailon/pi-web-access)
    separately, with permission to change your Pi configuration.
-2. Run `doctor`. Its `research` entry should show the extension with
-   `source: "detected"`: pinata finds pi-web-access among your installed Pi
-   packages (from `pi list`, ignoring project packages) and uses the extension
-   entry from its `package.json`. Set `config.webExtension` to an entry file
-   only to use a different copy.
+2. Ask Pi to check research readiness. pinata detects pi-web-access among your
+   installed Pi packages. Set `config.webExtension` only to use a different copy.
 3. Confirm the approved search provider and its authentication. If credentials
    come from environment variables, add only their names to `config.passEnv`.
    Never put credential values in job JSON.
-4. `doctor` checks the entry file, not live provider availability.
+4. The diagnostic checks the extension entry file; a live research task still
+   needs to reach and authenticate with the provider.
 
 [web-search.json](../examples/web-search.json) is a restrictive policy example
 for pi-web-access 0.35.0: Tavily search, direct HTTP fetch, no hosted/cookie
 fallback, and no summary workflow. Merge only approved settings; do not overwrite
 your existing policy.
 
-Research workers call `web_enable` before the dynamic web tools. They must fetch
-sources rather than treat search snippets as evidence. Missing tools, denied
-routes, missing authentication, failed fetches, and unresolved evidence are
-blockers. Do not broaden providers to hide a failure. Tool policy is not a
-network or spending sandbox.
+Research reports should cite fetched sources and identify evidence gaps. Missing
+authentication or unavailable tools must be resolved before research can finish.
+
+## Manual diagnostics
+
+To inspect helper output yourself, use `pi list` to locate the installed
+package, then set a shell variable to its helper:
+
+```sh
+PINATA=/absolute/installed/package/lib/pinata.mjs
+node "$PINATA" resources /absolute/path/to/a/project
+```
+
+The output should have `ok: true` and resolve two skills and five prompts to the
+installed package. If a personal resource uses the same name, resolve the
+collision in Pi configuration. Do not overwrite existing skills or prompts.
+The probe ignores untrusted project resources, so also check the active
+session's diagnostics for trusted project resources that shadow a global name.
+
+```sh
+node "$PINATA" doctor
+```
+
+Run `doctor` from a project to see the effective configuration: `configFiles`
+lists the files it read and `configOrigins` says which file set each value.
+Proceed only if preflight succeeds. Fix a missing executable, incompatible
+server, or invalid file before creating a run. The helper checks authentication
+and exact model selection before worker launch, not during `doctor`.
 
 ## Remove the package
 

@@ -1,44 +1,38 @@
 # Documentation
 
-New to pinata? Start with the scout tutorial. It uses a small local repository
-and leaves your project files alone.
+## Use pinata in Pi
 
-## Tutorials: learn by doing
+Start by asking your agent to delegate. You do not need to write job JSON or run
+helper commands for everyday use.
 
-- [Run your first scout](tutorials/first-scout.md): create a run, wait for a result,
-  and inspect the evidence.
-- [Build and review a change](tutorials/build-and-review.md): give a builder one
-  file, require a reviewer, and integrate the approved result.
+- [Set up pinata](setup.md): install, reload, and check readiness with Pi.
+- [Run your first scout](tutorials/first-scout.md): ask a code question and read the findings.
+- [Build and review a change](tutorials/build-and-review.md): delegate a fix through local integration.
+- [Agent examples](../examples/README.md): copy and adapt prompts for each role.
+- [Recover and clean up a run](recovery.md): ask Pi to resume, repair, cancel, or undo work.
 
-## How-to guides: finish a task
+## Configure and understand pinata
 
-- [Set up pinata](setup.md): install resources, select models, and enable research.
-- [Give builders their dependencies](dependencies.md): check, override, or turn
-  off the setup command that prepares builder worktrees.
-- [Use codemode in workers](codemode.md): turn it off, bound tool calls, and
-  understand what it can reach.
-- [Agent examples](../examples/README.md): adapt assignments for scout, research,
-  planner, builder, and reviewer, plus model configs and complete jobs.
-- [Recover and clean up a run](recovery.md): handle interruptions, rejections,
-  uncertain launches, cancellation, and rollback.
-- [Run the tests](testing.md): use local fixtures or opt into Herdr and live checks.
-- [Publish to npm](publication.md): inspect, publish, and verify an authorized release.
-- [Mirror to GitHub Packages](github-packages.md): sync published npm versions and verify the mirror.
+- [Builder dependencies](dependencies.md): understand automatic setup and override it when needed.
+- [Models and configuration files](configuration.md#config-files): set global or project preferences.
+- [Codemode](codemode.md): advanced worker tool configuration and limits.
+- [How pinata runs a job](architecture.md): worktrees, review, integration, and trust boundaries.
+- [Validation and limitations](validation.md): tested versions and supported scenarios.
 
-## Reference: look up a fact
+## Use the helper directly
 
-- [Commands and configuration](configuration.md): CLI arguments, job and task
-  fields, model selection, limits, results, and artifacts.
+These pages cover manual operation, scripting, and the contracts used by agents.
+
+- [Run a scout with the Node helper](tutorials/helper-first-scout.md): a self-contained practice repository and job.
+- [Build and review with the helper](tutorials/helper-build-and-review.md): launch, review, and integrate manually.
+- [Helper examples](../examples/helper.md): task JSON, model configurations, and complete jobs.
 - [Command reference](commands.md): command signatures, effects, and exit behavior.
-- [Coordinator reference](../skills/subagents/reference.md): the compact contract
-  the `subagents` skill gives coordinating agents.
-- [Recorded validation](validation.md): tested versions, coverage, and untested platforms.
+- [Configuration reference](configuration.md): job, task, configuration, and result fields.
+- [Manual recovery](manual-recovery.md): exact recovery commands and edge cases.
+- [Coordinator reference](../skills/subagents/reference.md): the contract for coordinating agents.
 
-## Explanation: understand the design
+## Contribute and release
 
-- [How pinata runs a job](architecture.md): coordinators and workers, dependencies,
-  ownership, evidence, review fingerprints, and trust boundaries.
-
-These pages follow [Diataxis](https://diataxis.fr/): tutorials teach a path,
-how-to guides solve a task, reference pages define contracts, and explanations
-describe why the parts work together.
+- [Run the tests](testing.md): local fixtures, Herdr smoke tests, and live checks.
+- [Publish to npm](publication.md): inspect, publish, and verify an authorized release.
+- [Mirror to GitHub Packages](github-packages.md): sync published npm versions.

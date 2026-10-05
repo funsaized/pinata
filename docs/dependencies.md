@@ -10,7 +10,10 @@ Use this guide to check builder setup, change it, or turn it off.
 
 ## Check what pinata detected
 
-`init` resolves setup once per run and prints it:
+Ask Pi: “Show the builder setup command detected for this project before
+starting the run.” It should explain the command and where it came from.
+
+When using the helper directly, `init` resolves setup once per run and prints it:
 
 ```json
 "setup": {
@@ -93,9 +96,8 @@ A failed setup stops the attempt before Pi starts. The outcome has
   `repair`. Setup retries have their own budget of two and do not consume the
   task's repair budget.
 
-  ```sh
-  node "$PINATA" repair "$RUN" build /absolute/path/to/feedback.txt
-  ```
+  Ask Pi to inspect the setup error and retry the affected builder. For direct
+  commands, see [manual recovery](manual-recovery.md#fix-a-setup-failure).
 
 - **"Setup changed project files"**: the command modified tracked or
   unignored files, for example an install that rewrote the lockfile, or a

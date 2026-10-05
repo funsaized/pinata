@@ -1,115 +1,60 @@
 # Build and review a change
 
-You will fix the greeting's whitespace behavior, have a separate reviewer inspect
-the result, and integrate it into the practice repository. Nothing will be
-committed or pushed by pinata.
+Ask Pi to coordinate a small fix, have a separate reviewer inspect it, and bring
+the approved change back to your working tree.
 
-Start with the committed `pinata-playground` repository from
-[Run your first scout](first-scout.md). Keep the same model and Herdr setup.
-This lesson launches a builder and a reviewer, so approve their model usage
-before starting.
+Complete [setup](../setup.md) and choose a small, understood issue in a repository
+with a committed starting point. [A scout](first-scout.md) can help locate the
+relevant code first. Workers start from committed `HEAD`; commit any prerequisites
+you want them to see before delegating.
 
-## 1. Confirm the starting point
+## 1. Describe the change and its checks
 
-From `pinata-playground`:
+Invoke the engineering-management skill in Pi. Replace the paths, behavior, and
+test command with those for your issue:
 
-```sh
-git status --short
-node --test greet.test.mjs
+```text
+/skill:engmgmt Fix greet so it trims surrounding whitespace from a name while
+preserving internal spaces and the greeting for plain names. Keep changes to
+greet.mjs and greet.test.mjs. Add a regression test and run
+node --test greet.test.mjs. Have an independent reviewer inspect the change,
+resolve any findings, and integrate locally after review and checks pass.
+Do not stage, commit, or push.
 ```
 
-Expect a clean tree and one passing test. The current function still preserves
-spaces around a name. The assignment is to trim those spaces while keeping the
-existing greeting behavior.
+This authorizes a local coding job and its model calls. Builders have bash and
+run with your OS permissions. Keep the scope and approved checks specific.
+For projects with dependencies, pinata normally detects a setup command from
+committed root lockfiles; see [builder dependencies](../dependencies.md).
 
-## 2. Read the job before approving it
+## 2. Let Pi coordinate the work
 
-Save [tutorial-build-job.json](../../examples/tutorial-build-job.json) outside
-the repository. Replace its `cwd`, approval, and model fields as in the first
-tutorial. Add `config.session` if you are running outside Herdr.
+Pi assigns the builder's files and checks, collects the result, and sends the
+actual change and check evidence to a separate reviewer. A rejected change needs
+repair and a new review before integration. You can ask Pi for progress or clarify
+the expected behavior during the run.
 
-The job has two tasks:
+The builder works in a separate worktree. After approval, Pi integrates the change
+locally and verifies it again in your project. If checks fail or work is blocked,
+Pi should explain what remains unresolved; see [recovery](../recovery.md).
 
-| Task     | Scope                                                               |
-| -------- | ------------------------------------------------------------------- |
-| `build`  | Change only `greet.mjs` and `greet.test.mjs`; run the Node test     |
-| `review` | Wait for `build`, then inspect its actual change and check evidence |
+## 3. Review the delivery
 
-`allowWrites: true` permits this local coding job. The check is
-`["node", "--test", "greet.test.mjs"]`, both in the builder worktree and after
-integration. The repository has no lockfile, so there is no setup step and no
-network access. For a project with dependencies, `init` detects an install
-command for the builder's worktree; see
-[Give builders their dependencies](../dependencies.md).
+Ask Pi to show the final diff and summarize:
 
-Check that this matches the work you approve. Builders have bash and run with
-your OS permissions; ownership validation is not an OS sandbox.
+- What changed and how it meets the requested behavior.
+- Which checks passed, including after integration.
+- Whether independent review is approved and any limitations remain.
 
-## 3. Run the builder and reviewer
+For the greeting example, expect whitespace trimming and a regression test,
+with existing tests still passing. The change should be an unstaged diff;
+integration preserves your index and does not commit.
 
-```sh
-PINATA=/absolute/installed/package/lib/pinata.mjs
-JOB=/absolute/path/to/tutorial-build-job.json
-node "$PINATA" init "$JOB"
-```
+Verified integration removes builder worktrees and installed dependencies
+automatically. Results and rollback evidence remain. If you want to undo the
+integration, [ask Pi to roll it back](../recovery.md#finish-or-undo-integration).
 
-Copy the new `run` value, not the previous scout run:
+[More assignments](../../examples/README.md) · [How reviews work](../architecture.md)
 
-```sh
-RUN=/absolute/new/run/path
-node "$PINATA" start "$RUN"
-```
-
-Pinata notifies the originating Herdr agent when the group finishes. The builder
-starts first; the reviewer starts automatically after its outcome succeeds.
-Read `status "$RUN"`. When both report `succeeded`:
-
-```sh
-node "$PINATA" barrier "$RUN" build review
-```
-
-Open both outcome paths from the status output. Check the builder's actual file
-changes and supervisor-run check results. The review should name the builder's
-current fingerprint and give an `approve` verdict.
-
-If the reviewer returns `changes_requested`, the task becomes `rejected`.
-Use the [repair procedure](../recovery.md#repair-a-failed-task-or-rejected-review)
-and wait for a new review. Do not integrate a rejected result or simply remove
-the reviewer from the job.
-
-## 4. Integrate and verify
-
-Before integration, `git status --short` in the original repository should still
-be clean: the builder worked elsewhere.
-
-```sh
-node "$PINATA" integrate "$RUN"
-git diff -- greet.mjs greet.test.mjs
-git diff --cached
-node --test greet.test.mjs
-```
-
-Expect `integration.status` to be `verified`. The diff should trim surrounding
-whitespace and add its regression test. The tests should pass. The cached diff
-should be empty because integration does not stage changes.
-
-If integrated checks fail, changes remain visible and `integrate` exits nonzero.
-Stop and use [integration recovery](../recovery.md#finish-or-undo-integration).
-Do not call the job complete based on the builder's earlier check alone.
-
-## 5. Inspect cleanup
-
-```sh
-node "$PINATA" cleanup "$RUN"
-```
-
-Review the preview before using `cleanup --confirm`. A builder worktree with
-uncommitted changes is dirty, even after successful integration, and may be
-retained. That is expected. Inspect it before deciding whether to remove it
-separately; cleanup never force-removes it. Run logs also remain.
-
-Your practice repository now contains a tested, reviewed change as an unstaged
-diff. Committing it is a separate action. To undo the local integration instead,
-authorize and use the [rollback procedure](../recovery.md#finish-or-undo-integration).
-
-[How worktrees and reviews fit together](../architecture.md) · [Documentation index](../README.md)
+For a self-contained greeting exercise using commands and job JSON, follow
+[the Node helper tutorials](helper-first-scout.md).
