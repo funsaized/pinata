@@ -84,6 +84,12 @@ Cleanup closed all three panes, removed the clean scout worktree, and kept the
 builder's modified worktree. One run on one small fixture shows that the
 pipeline works end to end with a live model. It is not a model-quality benchmark.
 
+After the worker brief was trimmed to assignment fields, a rerun first failed:
+the scout returned `brief` as an object, which the old envelope example never
+ruled out. The envelope example now shows each role's fields and types. The next
+rerun passed end to end (scout 16, fix 10, review 15 tool calls; 65k total
+tokens against 77k on the first run, within normal run-to-run variance).
+
 ## Herdr smoke
 
 The Herdr smoke creates labelled, unfocused resources on the explicitly selected

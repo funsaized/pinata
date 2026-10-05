@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs/promises";
 import path from "node:path";
 import { ROOT, command, readJson } from "../lib/core.mjs";
+import { init, add, cancel } from "../lib/pinata.mjs";
 import { fixture, task, settled, repository } from "./helpers.mjs";
 
 const fixtureConfig = (dir) => ({
@@ -40,12 +41,23 @@ test("research finds the installed pi-web-access extension without configuration
   assert.equal(spec.webExtension, manifest.config.webExtension);
 });
 
-test("without pi-web-access, init reports why research is unavailable", async (t) => {
-  const f = await fixture(t, [task("look", "research")]);
-  assert.equal((await f.manifest()).config.webExtension, undefined);
-  const s = await settled(f);
-  assert.equal(s.tasks[0].status, "blocked");
-  assert.match(s.tasks[0].error, /research requires config.webExtension/);
+test("without pi-web-access, init and add refuse research tasks up front", async (t) => {
+  const repo = await repository("pinata-noweb-");
+  t.after(() => fs.rm(repo.dir, { recursive: true, force: true }));
+  const old = process.env.TEST_HERDR_STATE;
+  process.env.TEST_HERDR_STATE = path.join(repo.dir, "herdr.json");
+  t.after(() => {
+    if (old === undefined) delete process.env.TEST_HERDR_STATE;
+    else process.env.TEST_HERDR_STATE = old;
+  });
+  const job = { cwd: repo.cwd, approval: "Disposable test", config: fixtureConfig() };
+  await assert.rejects(
+    init({ ...job, tasks: [task("look", "research")] }),
+    /Research tasks need pi-web-access.*pi install git:github.com\/nicobailon\/pi-web-access/,
+  );
+  const { run } = await init({ ...job, tasks: [task("one", "scout")] });
+  await assert.rejects(add(run, task("look", "research")), /Research tasks need pi-web-access/);
+  await cancel(run);
 });
 
 test("init, add, and repair feedback accept standard input instead of files", async (t) => {

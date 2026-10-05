@@ -53,7 +53,7 @@ const server = createServer(async (req, res) => {
     const text = body.messages
       .map((m) => (typeof m.content === "string" ? m.content : JSON.stringify(m.content)))
       .join("\n");
-    const match = text.match(/"attemptDir": ("(?:[^"\\]|\\.)*")/);
+    const match = text.match(/"attemptDir": ?("(?:[^"\\]|\\.)*")/);
     const spec = match ? await readJson(path.join(JSON.parse(match[1]), "task.json")) : null;
     if (spec?.task.task === "force-provider-error") {
       res.writeHead(400, { "content-type": "application/json" });

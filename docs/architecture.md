@@ -186,22 +186,27 @@ or implement remote deployment transactions.
 
 `lib/pinata.mjs` is the public API and CLI entry point. Behind it:
 
-| Module                                                                          | Responsibility                                                  |
-| ------------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| `cli.mjs`                                                                       | Argument handling and help text                                 |
-| `config.mjs`                                                                    | Configuration validation and model selection                    |
-| `preflight.mjs`                                                                 | `doctor` and `resources`                                        |
-| `run.mjs`                                                                       | Run creation, manifest state, the task graph, and locking       |
-| `workspace.mjs`                                                                 | Worktree creation and setup detection                           |
-| `launch.mjs`                                                                    | Building a task payload and submitting it to a Herdr pane       |
-| `herdr.mjs`                                                                     | Herdr transport, pane ownership checks, and workspace creation  |
-| `schedule.mjs`                                                                  | `tick`, `wait`, `barrier`, `repair`, `retry-launch`, `cancel`   |
-| `evidence.mjs`                                                                  | Revalidating a task's outcome before anything depends on it     |
-| `integrate.mjs`                                                                 | `integrate` and `rollback`                                      |
-| `cleanup.mjs`                                                                   | `cleanup` and `unlock`                                          |
-| `worker.mjs`                                                                    | The per-attempt supervisor: setup, Pi, checks, and evidence     |
-| `core.mjs`                                                                      | Validation, Git and file snapshots, processes, role tool tables |
-| Atomic state writes and a per-run coordinator lock protect local state updates. |
+| Module          | Responsibility                                                  |
+| --------------- | --------------------------------------------------------------- |
+| `cli.mjs`       | Argument handling and help text                                 |
+| `config.mjs`    | Configuration validation and model selection                    |
+| `preflight.mjs` | `doctor` and `resources`                                        |
+| `run.mjs`       | Run creation, manifest state, the task graph, and locking       |
+| `workspace.mjs` | Worktree creation and setup detection                           |
+| `launch.mjs`    | Building a task payload and submitting it to a Herdr pane       |
+| `herdr.mjs`     | Herdr transport, pane ownership checks, and workspace creation  |
+| `schedule.mjs`  | `tick`, `wait`, `barrier`, `repair`, `retry-launch`, `cancel`   |
+| `evidence.mjs`  | Revalidating a task's outcome before anything depends on it     |
+| `integrate.mjs` | `integrate` and `rollback`                                      |
+| `cleanup.mjs`   | `cleanup` and `unlock`                                          |
+| `worker.mjs`    | The per-attempt supervisor: setup, Pi, checks, and evidence     |
+| `core.mjs`      | Validation, Git and file snapshots, processes, role tool tables |
+
+Coordinating agents read `skills/subagents/reference.md`, a compact version of
+the configuration reference, instead of these pages. Keep the two in sync when
+the job contract changes.
+
+Atomic state writes and a per-run coordinator lock protect local state updates.
 
 See [recorded validation](validation.md) for tested versions and source revisions.
 Upstream contracts: [Pi packages](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/packages.md),

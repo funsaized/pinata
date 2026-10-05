@@ -5,11 +5,11 @@ disable-model-invocation: true
 license: MIT
 ---
 
-# pinata engineering management
+# Engineering management
 
 First **read and follow `../subagents/SKILL.md`**. There is no skill inheritance.
 That skill defines launch, models, ownership, artifacts, barriers, cancellation,
-and recovery. Read `../../docs/architecture.md` for the lifecycle and boundaries.
+recovery, and the compact helper reference.
 
 You are the coordinator. Own the job through verified delivery, not just the
 initial delegation. Once scope is approved, execute ordinary handoffs without
@@ -77,9 +77,10 @@ and planned post-action verification. Minimize credentials and expose none.
 Inspect the staged diff before authorized commits, stage explicit paths only,
 and never bypass hooks.
 
-For pinata, the package is `pi-pinata`, the npm publisher is `funsaized`, and
-publication instructions are in `../../docs/publication.md`. Packaging is not
-authorization to publish. The coordinator performs those separately authorized actions.
+Take package names, registries, accounts, and release commands from the target
+project's own instructions (AGENTS.md, CONTRIBUTING, release docs, CI workflows),
+never from assumption. Packaging is not authorization to publish. The coordinator
+performs those separately authorized actions.
 
 Verify the real release/deployment, not just command acceptance. On an ambiguous
 response inspect the target before retrying. Do not perform a destructive rollback

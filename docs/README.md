@@ -30,6 +30,8 @@ and leaves your project files alone.
 - [Commands and configuration](configuration.md): CLI arguments, job and task
   fields, model selection, limits, results, and artifacts.
 - [Command reference](commands.md): command signatures, effects, and exit behavior.
+- [Coordinator reference](../skills/subagents/reference.md): the compact contract
+  the `subagents` skill gives coordinating agents.
 - [Recorded validation](validation.md): tested versions, coverage, and untested platforms.
 
 ## Explanation: understand the design

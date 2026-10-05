@@ -100,7 +100,8 @@ coordinator's model environment.
 
 ## Enable research
 
-Skip this section if you only need local code tasks.
+Skip this section if you only need local code tasks. Without pi-web-access,
+everything else works; only jobs containing research tasks are refused at `init`.
 
 1. Install and configure [pi-web-access](https://github.com/nicobailon/pi-web-access)
    separately, with permission to change your Pi configuration.
