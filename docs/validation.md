@@ -7,7 +7,7 @@ For the trust boundaries the results apply to, see
 
 ## 0.4.0 release checks
 
-On 2026-10-05, the release passed **95 tests, 0 failures**, formatting/linting,
+On 2026-10-05, the release passed **96 tests, 0 failures**, formatting/linting,
 the packed Pi/codemode smoke tests on compiled Pi 1.0.3, and the owned Herdr smoke
 on Herdr 0.9.1. The six native completion scenarios cover an idle parent, an
 active parent, reload, lost-notification recovery, explicit yield, and codemode
