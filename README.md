@@ -5,7 +5,7 @@ specific task, collect its results, and review changes before bringing them back
 to your working tree.
 
 The npm package is `pi-pinata`. It contains
-two Pi skills, five agent prompt templates, and a Node helper. It has no runtime
+two Pi skills, five agent prompt templates, typed Pi tools, and a Node helper. It has no runtime
 npm dependencies or resident service.
 
 [![Orchestrator launches two parallel scouts, then research uses both reports](https://raw.githubusercontent.com/funsaized/pinata/master/media/pinata-demo.gif)](https://github.com/funsaized/pinata/releases/download/v0.2.0/pinata-demo.mp4)
@@ -67,6 +67,11 @@ Workers use your current Pi model. Pi receives completion automatically and
 collects the results. Finished panes and unchanged inspection worktrees are
 removed automatically; builder worktrees are removed after verified integration.
 Saved results and recovery evidence remain.
+
+Pi uses typed delegation, status, repair, and integration tools. Status shows
+resolved models and thinking levels, configuration origins, phase timings, and
+token usage. Failed completion delivery remains pending and can be retried with
+`start` without repeating completed workers.
 
 Builder dependencies are prepared from committed root lockfiles. See
 [dependencies](docs/dependencies.md) to customize setup, or

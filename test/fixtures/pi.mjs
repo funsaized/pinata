@@ -4,6 +4,8 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { writeSync } from "node:fs";
 const args = process.argv.slice(2);
+if (process.env.TEST_PI_METADATA_LOG && !args.includes("--append-system-prompt"))
+  await fs.appendFile(process.env.TEST_PI_METADATA_LOG, JSON.stringify(args) + "\n");
 const arg = (key) => args[args.indexOf(key) + 1];
 const interactive = args.includes("--tui-mode");
 const send = (value) =>

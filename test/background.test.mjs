@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import { readJson, atomic, sleep, living, exists } from "../lib/core.mjs";
 import { start, barrier, add, cancel } from "../lib/pinata.mjs";
-import { fixture, task, untilFile } from "./helpers.mjs";
+import { fixture, task, untilFile, settled } from "./helpers.mjs";
 
 async function complete(f) {
   const until = Date.now() + 20_000;
@@ -14,7 +14,7 @@ async function complete(f) {
         assert(Date.now() < until, "Background coordinator did not exit");
         await sleep(50);
       }
-      return run;
+      return f.manifest();
     }
     await sleep(50);
   }
@@ -69,6 +69,12 @@ test("start returns immediately; background completion advances dependencies, cl
   await add(f.run, task("later", "scout", {}, { after: ["next"] }));
   await start(f.run);
   assert.equal((await complete(f)).tasks.at(-1).status, "succeeded");
+  await add(f.run, task("manual", "scout"));
+  await settled(f); // New group finishes before start observes it.
+  await start(f.run);
+  const last = await complete(f);
+  assert.equal(last.background.notification.status, "delivered");
+  assert.equal((await readJson(path.join(f.dir, "herdr.json"))).notifications.length, 3);
 });
 
 test("completion never prompts a different session in a reused coordinator pane", async (t) => {
@@ -101,4 +107,74 @@ test("cancelling a background run stops its workers, retires resources, and exit
   const run = await complete(f);
   assert(run.cancelled);
   assert(run.tasks[0].worktreeRemoved);
+});
+
+test("completion retries transient delivery failure without repeating completed workers", async (t) => {
+  const f = await fixture(t, [task("one")], { env: { TEST_NOTIFY_FAILURES: "1" } });
+  await start(f.run);
+  const run = await complete(f);
+  assert.equal(run.background.notification.status, "delivered");
+  assert.equal(run.background.notification.attempts, 2);
+  const state = await readJson(path.join(f.dir, "herdr.json"));
+  assert.equal(state.submissions, 1);
+  assert.equal(state.notificationAttempts, 2);
+  assert.equal(state.notifications.length, 1);
+});
+
+test("failed completion stays pending and start resumes the same saved delivery even after the deadline", async (t) => {
+  const f = await fixture(t, [task("one")], { env: { TEST_NOTIFY_FAILURES: "3" } });
+  await start(f.run);
+  const pending = await complete(f);
+  assert.equal(pending.background.notification.status, "pending");
+  assert.equal(pending.background.notification.attempts, 3);
+  assert.equal(pending.background.notifiedAt, undefined);
+  const id = pending.background.notification.id;
+  pending.deadline = Date.now() - 1;
+  await atomic(path.join(f.run, "manifest.json"), pending);
+  await start(f.run);
+  const delivered = await complete(f);
+  assert.equal(delivered.background.notification.id, id);
+  assert.equal(delivered.background.notification.status, "delivered");
+  assert.equal(delivered.background.notification.attempts, 4);
+  const state = await readJson(path.join(f.dir, "herdr.json"));
+  assert.equal(state.submissions, 1);
+  assert.equal(state.notifications.length, 1);
+  assert(state.notifications[0].text.includes(id));
+});
+
+test("legacy failed delivery with notifiedAt is retried rather than treated as delivered", async (t) => {
+  const f = await fixture(t, [task("one")]);
+  await settled(f);
+  const old = await f.manifest();
+  old.background = {
+    status: "complete",
+    notifiedAt: Date.now(),
+    notificationError: "Lost delivery",
+    coordinator: null,
+  };
+  await atomic(path.join(f.run, "manifest.json"), old);
+  await start(f.run);
+  const delivered = await complete(f);
+  assert.equal(delivered.background.notification.status, "delivered");
+  const state = await readJson(path.join(f.dir, "herdr.json"));
+  assert.equal(state.submissions, 1);
+  assert.equal(state.notifications.length, 1);
+});
+
+test("a cancelled run can retry pending delivery without restarting its workers", async (t) => {
+  const f = await fixture(t, [task("one", "scout", { hang: true })], {
+    env: { TEST_NOTIFY_FAILURES: "3" },
+  });
+  await start(f.run);
+  await untilFile(path.join(f.run, "tasks/one/1/calls.txt"));
+  await cancel(f.run);
+  const pending = await complete(f);
+  assert.equal(pending.background.notification.status, "pending");
+  await start(f.run);
+  const delivered = await complete(f);
+  assert.equal(delivered.background.notification.status, "delivered");
+  assert.equal(delivered.background.notification.id, pending.background.notification.id);
+  assert.equal(delivered.tasks[0].status, "cancelled");
+  assert.equal(delivered.tasks[0].attempts.length, 1);
+  assert.equal((await readJson(path.join(f.dir, "herdr.json"))).submissions, 1);
 });

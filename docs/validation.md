@@ -5,6 +5,29 @@ unproven. For the commands that reproduce these runs, see [testing](testing.md).
 For the trust boundaries the results apply to, see
 [architecture](architecture.md#trust-and-safety).
 
+## 0.3.0 release checks
+
+On 2026-10-05, the release passed **84 tests, 0 failures**, packed-Pi
+tool activation and codemode checks on Pi 1.0.3, owned-Herdr smoke on Herdr 0.9.1,
+and formatting/linting. The tests cover fast settled budget overages, final-turn
+boundaries, retryable completion delivery, readiness-cache invalidation, effective
+configuration and metrics, and typed delegation using the shared validation.
+Codemode, thinking levels and run-wide limit defaults remain unchanged.
+
+One live quality trial used OpenAI `gpt-6-luna` with medium thinking and codemode
+enabled for eight live workers. The builder passed all 28 independent parser
+oracle cases. Control reviewers approved the verified reference and rejected all
+three defective candidates: invalid calendar dates, leading zeroes, and small
+years. Scouts answered 11 of 14 factual questions correctly; one scout made three
+wrong numeric claims. Seven answers also deviated from the requested format;
+format drift is scored separately from factual accuracy.
+
+Every live task reported timings and usage. Per-task elapsed times ranged from
+20.5 to 104.9 seconds. The pipeline took 137.7 seconds. These are one-trial fixture
+results, not evidence for changing model or thinking defaults. Reproduce repeated
+trials with [`eval:live`](testing.md#repeatable-live-quality-evaluation); full
+artifacts remain in the temporary evidence directory printed by that runner.
+
 ## 0.2.0 release checks
 
 On 2026-10-05, the release candidate passed **68 tests, 0 failures**, the real Pi
