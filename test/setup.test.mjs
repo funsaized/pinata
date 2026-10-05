@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs/promises";
 import path from "node:path";
 import { command, readJson, exists } from "../lib/core.mjs";
-import { config, repair, cleanup } from "../lib/pinata.mjs";
+import { config, repair, cleanup, add } from "../lib/pinata.mjs";
 import { resolveSetup } from "../lib/workspace.mjs";
 import { fixture, task, settled, repository } from "./helpers.mjs";
 
@@ -100,6 +100,7 @@ test("setup runs once per builder worktree before Pi, with PINATA_ROOT, and repa
   assert.equal(await fs.readFile(path.join(tree, "ignored/root.txt"), "utf8"), f.cwd);
   assert.equal((await readJson(path.join(attempt(f, "build"), "outcome.json"))).setup.code, 0);
   assert(!(await exists(path.join(attempt(f, "look"), "setup.stdout.log"))), "scouts skip setup");
+  assert.equal((await readJson(path.join(attempt(f, "review"), "task.json"))).setup, null);
   await repair(f.run, "build", "Use the accepted value");
   const second = await settled(f);
   assert(
@@ -110,6 +111,36 @@ test("setup runs once per builder worktree before Pi, with PINATA_ROOT, and repa
   assert.equal(
     (await readJson(path.join(attempt(f, "build", 2), "outcome.json"))).setup.skipped,
     true,
+  );
+});
+
+test("inspection-only runs skip setup without overrides; adding a builder resolves it", async (t) => {
+  const command = "mkdir -p ignored && echo ready > ignored/setup-marker";
+  const f = await fixture(
+    t,
+    [task("look", "scout"), task("plan", "planner"), task("search", "research")],
+    {
+      config: {
+        setup: command,
+        webExtension: new URL("./fixtures/pi.mjs", import.meta.url).pathname,
+      },
+    },
+  );
+  assert.equal((await f.manifest()).setup.source, "not-needed");
+  assert.equal((await f.manifest()).setup.command, null);
+  assert.equal((await f.manifest()).config.setup, command, "builder configuration is preserved");
+  assert((await settled(f)).tasks.every((task) => task.status === "succeeded"));
+  for (const id of ["look", "plan", "search"]) {
+    assert.equal((await readJson(path.join(attempt(f, id), "task.json"))).setup, null);
+    assert(!(await exists(path.join(attempt(f, id), "setup.stdout.log"))));
+  }
+  const added = await add(f.run, [builder(), review()]);
+  assert.equal(added.setup.source, "config");
+  assert.equal(added.setup.command, command);
+  assert((await settled(f)).tasks.every((task) => task.status === "succeeded"));
+  assert.equal(
+    await fs.readFile(path.join(f.run, "worktrees/build/ignored/setup-marker"), "utf8"),
+    "ready\n",
   );
 });
 

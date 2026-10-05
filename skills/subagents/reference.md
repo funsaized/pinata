@@ -52,7 +52,7 @@ Layered: `~/.pi/agent/pinata.json`, then `<repo>/.pi/pinata.json`, then the job'
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `models`       | `{default?, scout?, research?, planner?, builder?, reviewer?}`, each `{provider, id, thinking}`. Thinking: off, minimal, low, medium, high, xhigh, max. |
 | `fallbacks`    | `{role: [model, ...]}`, at most 5; used only if the preferred model is unavailable or unauthenticated.                                                  |
-| `setup`        | Detected from root lockfile; a shell string to override (`$PINATA_ROOT` = main checkout), or `false`.                                                   |
+| `setup`        | Builders only: detected from root lockfile; a shell string to override (`$PINATA_ROOT` = main checkout), or `false`.                                    |
 | `codemode`     | `true`                                                                                                                                                  |
 | `webExtension` | Detected pi-web-access entry; override path.                                                                                                            |
 | `passEnv`      | Extra env var names for workers (never values).                                                                                                         |

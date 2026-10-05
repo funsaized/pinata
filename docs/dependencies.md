@@ -3,7 +3,10 @@
 Builder worktrees start from committed `HEAD`, so ignored directories such as
 `node_modules` or `.venv` are missing. Before a builder starts, pinata runs one
 setup command in its worktree. For most projects that command is detected for
-you. Use this guide to check it, change it, or turn it off.
+you. Scout, research, planner, and reviewer tasks never run setup. Runs without
+builders skip detection and report `source: "not-needed"`; leave setup alone and
+continue the run. If you add a builder later, `add` resolves and reports its setup.
+Use this guide to check builder setup, change it, or turn it off.
 
 ## Check what pinata detected
 
@@ -19,12 +22,13 @@ you. Use this guide to check it, change it, or turn it off.
 
 Read it before approving the run. `source` is one of:
 
-| Source     | Meaning                                                |
-| ---------- | ------------------------------------------------------ |
-| `detected` | Chosen from lockfiles committed at the repository root |
-| `config`   | Your `config.setup` command                            |
-| `none`     | Nothing will run; `reason` says why                    |
-| `disabled` | You set `config.setup` to `false`                      |
+| Source       | Meaning                                                |
+| ------------ | ------------------------------------------------------ |
+| `detected`   | Chosen from lockfiles committed at the repository root |
+| `config`     | Your `config.setup` command                            |
+| `none`       | Nothing will run; `reason` says why                    |
+| `disabled`   | You set `config.setup` to `false`                      |
+| `not-needed` | No builder tasks; setup is not detected or run         |
 
 Detection uses only root lockfiles and only commands that refuse to rewrite the
 lockfile. See the [detection table](configuration.md#setup) for the exact
