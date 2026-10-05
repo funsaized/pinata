@@ -40,9 +40,10 @@ scripts and less frequent operations such as `note`, `unlock`, and `retry-launch
 | `init <job.json\|->`       | Record scope and initial Git state, resolve builder setup, create a private run, return `{run, id, versions, setup}`; does not launch tasks |
 | `add <run> <task.json\|->` | Append one task object or an array; reject invalid dependencies or ownership                                                                |
 
-`doctor` checks Pi >=1.0.2, Herdr >=0.9.1 with a running compatible server,
-Git, and `ps`. It records Node's version and reports npm and gh availability.
-Node >=22.19.0 is the package requirement, not a version check enforced by `doctor`.
+`doctor` checks standalone Node >=22.19.0, Pi >=1.0.2, Herdr >=0.9.1 with a
+running compatible server, Git, and `ps`. It executes a small Node probe, saves
+the resolved Node path for script launches, and reports npm and gh availability.
+Compiled Pi installations use that standalone Node to run Pinata's supervisors.
 Missing tools or an incompatible endpoint are blockers, not auto-install requests.
 
 `init`, `add`, `note`, `doctor`, and `repair` accept `-` in place of a file and
