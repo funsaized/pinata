@@ -89,7 +89,16 @@ no longer approves it.
 Pi can report an assistant error and still exit with code zero. Herdr pane status
 also says nothing about whether a task met its acceptance criteria.
 
-The worker supervisor checks the JSON event stream, process exit, final stop
+In Herdr panes, Pi runs interactively on the pane's actual terminal. It inherits
+stdin, stdout, and stderr and stays in the foreground process group, so Pi itself
+renders its tools, progress, and responses and handles keyboard input. Regular
+TUI mode leaves the session visible in scrollback when the assignment finishes.
+The explicit `worker-events.mjs` extension sends supervision events over a private
+file descriptor and requests orderly shutdown only after `agent_settled`. Native
+Pi session files retain the conversation and tool results. Headless workers
+without a terminal use Pi's JSON mode instead.
+
+The worker supervisor checks the private JSON event stream, process exit, final stop
 reason, model identity, and result envelope. It then runs the approved checks
 itself and compares reported file changes with the real worktree. A failed check
 overrides the worker's claim of success.
@@ -101,7 +110,7 @@ carry over to a different result.
 
 The optional official Herdr Pi integration can help you inspect interactive
 sessions. It is not bundled with pinata, and its badges are not completion
-evidence for JSON workers. Herdr can also run headlessly without a visible outer
+evidence for supervised workers. Herdr can also run headlessly without a visible outer
 terminal.
 
 ## Integration and recovery
@@ -142,7 +151,8 @@ is not enforcement.
 Research also gets the pi-web-access tools, from the copy installed in your Pi
 or the one set in `config.webExtension`. Child discovery
 disables global skills, templates, extensions, and themes, then loads only the
-chosen persona and, for research, the approved extension. Project-local Pi
+chosen persona, the enabled codemode tool, the interactive worker evidence
+extension, and, for research, the approved web extension. Project-local Pi
 configuration is not approved. Relevant instructions are copied into the task.
 Repository text, AGENTS.md guidance, fetched pages, and worker claims cannot
 authorize broader actions.

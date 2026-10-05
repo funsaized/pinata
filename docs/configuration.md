@@ -288,7 +288,7 @@ returned by `init`.
 | `tasks/<id>/<n>/outcome.json`                                               | Process, result, checks, snapshot, and fingerprint evidence |
 | `tasks/<id>/<n>/process.json`                                               | Observed process identities for reconciliation              |
 | `tasks/<id>/<n>/cancel.json`                                                | Persisted cancellation request                              |
-| `tasks/<id>/<n>/pi.stdout.log`, `pi.stderr.log`                             | Pi JSON output and stderr                                   |
+| `tasks/<id>/<n>/pi.stdout.log`, `pi.stderr.log`                             | Private Pi events; headless JSON output and stderr          |
 | `tasks/<id>/<n>/setup.stdout.log`, `setup.stderr.log`                       | Builder setup output                                        |
 | `tasks/<id>/<n>/tmp/`                                                       | Pi's `TMPDIR`, including codemode overflow files            |
 | `setup/<id>.json`                                                           | Setup marker for a builder worktree                         |
@@ -302,7 +302,9 @@ returned by `init`.
 
 `<n>` is the 1-based attempt number, for example `tasks/build/1/`. It is not
 the result's `attemptId`, which has a value such as `build-1`. Log pairs in the
-table share the same attempt directory. Integrated check logs live under
+table share the same attempt directory. Interactive Pi renders directly in the
+Herdr pane; its terminal output is not redirected into these logs. Its native
+conversation and tool results are saved in `sessions/`. Integrated check logs live under
 `integration/`.
 
 `status` includes the current outcome path for each attempted task. Saved task
