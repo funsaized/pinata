@@ -33,14 +33,17 @@ commands joined with `&&`.
 
 ## Set the command yourself
 
-Set `config.setup` when detection reports `none`, picks the wrong command, or the
-project needs more than an install:
+Set `setup` when detection reports `none`, picks the wrong command, or the
+project needs more than an install. Put it in the project's `.pi/pinata.json` so
+every run uses it:
 
 ```json
-"config": {
+{
   "setup": "uv sync --frozen && make codegen"
 }
 ```
+
+A job's own `config.setup` overrides that file for one run.
 
 The string runs with `sh -c` in the builder worktree. Common reasons to set it:
 

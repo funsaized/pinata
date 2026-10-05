@@ -88,3 +88,72 @@ test("init, add, and repair feedback accept standard input instead of files", as
   const cancelled = await cli(["cancel", run]);
   assert.equal(cancelled.code, 0, cancelled.stderr);
 });
+
+test("init layers ~/.pi/agent/pinata.json, then the project's .pi/pinata.json, then the job", async (t) => {
+  const repo = await repository("pinata-layers-");
+  const agent = process.env.PI_CODING_AGENT_DIR;
+  const shared = path.join(repo.dir, "dotfiles-pinata.json");
+  t.after(async () => {
+    await fs.rm(path.join(agent, "pinata.json"), { force: true });
+    await fs.rm(repo.dir, { recursive: true, force: true });
+  });
+  // The global file is commonly a symlink into a dotfiles repository.
+  await fs.writeFile(
+    shared,
+    JSON.stringify({
+      models: {
+        default: { provider: "fixture", id: "global-default", thinking: "off" },
+        scout: { provider: "fixture", id: "global-scout", thinking: "off" },
+      },
+      limits: { maxTurns: 30 },
+      codemode: false,
+    }),
+  );
+  await fs.symlink(shared, path.join(agent, "pinata.json"));
+  await fs.mkdir(path.join(repo.cwd, ".pi"));
+  await fs.writeFile(
+    path.join(repo.cwd, ".pi/pinata.json"),
+    JSON.stringify({
+      models: { reviewer: { provider: "fixture", id: "project-reviewer", thinking: "off" } },
+      setup: "true",
+      limits: { maxToolCalls: 50 },
+    }),
+  );
+  const old = process.env.TEST_HERDR_STATE;
+  process.env.TEST_HERDR_STATE = path.join(repo.dir, "herdr.json");
+  t.after(() => {
+    if (old === undefined) delete process.env.TEST_HERDR_STATE;
+    else process.env.TEST_HERDR_STATE = old;
+  });
+  const { models, ...jobConfig } = fixtureConfig();
+  const created = await init({
+    cwd: repo.cwd,
+    approval: "Disposable test",
+    config: { ...jobConfig, models: { scout: models.default } },
+    tasks: [],
+  });
+  const manifest = await readJson(path.join(created.run, "manifest.json"));
+  assert.deepEqual(
+    Object.fromEntries(Object.entries(manifest.config.models).map(([k, v]) => [k, v.id])),
+    { default: "global-default", scout: "fixture-model", reviewer: "project-reviewer" },
+  );
+  assert.equal(manifest.config.limits.maxTurns, 30);
+  assert.equal(manifest.config.limits.maxToolCalls, 50);
+  assert.equal(manifest.config.codemode, false);
+  assert.equal(created.setup.command, "true");
+  assert.deepEqual(
+    created.config.files.map((f) => f.layer),
+    ["global", "project"],
+  );
+  assert.equal(created.config.origins["models.default"], "global");
+  assert.equal(created.config.origins["models.scout"], "job");
+  assert.equal(created.config.origins["models.reviewer"], "project");
+  assert.equal(created.config.origins.setup, "project");
+  await cancel(created.run);
+
+  await fs.writeFile(path.join(repo.cwd, ".pi/pinata.json"), JSON.stringify({ mystery: 1 }));
+  await assert.rejects(
+    init({ cwd: repo.cwd, approval: "x", config: jobConfig }),
+    /\.pi\/pinata\.json: Unknown config field/,
+  );
+});

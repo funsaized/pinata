@@ -68,6 +68,9 @@ recorded validation, and npm publication instructions.
   [dependencies](docs/dependencies.md).
 - **Codemode.** Workers get Pi's `codemode` tool to batch tool calls in one
   script, limited to their role's tools. See [codemode](docs/codemode.md).
+- **Models.** Workers use your current Pi model. To choose per role, write
+  `~/.pi/agent/pinata.json`, and override per project in `.pi/pinata.json`. See
+  [config files](docs/configuration.md#config-files).
 
 ## Before delegating writes
 
