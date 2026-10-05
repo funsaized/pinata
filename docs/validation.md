@@ -5,6 +5,23 @@ unproven. For the commands that reproduce these runs, see [testing](testing.md).
 For the trust boundaries the results apply to, see
 [architecture](architecture.md#trust-and-safety).
 
+## 0.2.0 release checks
+
+On 2026-10-05, the release candidate passed **68 tests, 0 failures**, the real Pi
+packed-install and codemode smoke tests, the real Herdr smoke test, formatting,
+linting, and actionlint validation of both GitHub workflows. The release tests
+also reject mismatched tags/versions, lockfiles, package identities, and unexpected
+packed files. The optional pi-web-access branch was not rerun for this release;
+its earlier results are recorded below.
+
+The README demo records a real Pi coordinator using OpenAI `gpt-6-luna` to run a
+scout, builder, and independent reviewer in an isolated Herdr session. They fix a
+whitespace regression in a disposable greeting function. All three tests pass
+before and after integration. Worker panes close automatically; inspection
+worktrees are removed on completion and the builder worktree after verified
+integration. The recording captures Herdr's native terminal output and is sped up
+for viewing. It does not test a graphical terminal emulator.
+
 ## Recorded run
 
 Validation target: Omarchy/Arch Linux, kernel `7.2.5-3-omarchy`, x86_64.
@@ -100,11 +117,11 @@ mock executables, so it makes no provider calls.
 
 ## Not claimed
 
-- Live model calls are limited to the end-to-end build above. No live
+- Live model calls cover the end-to-end builds and release demo above. No live
   search-provider calls were made. Fixtures validate orchestration, not model
   judgment or task quality.
-- No independent live-model review, model benchmark, or dollar-budget guarantee.
-- No outer-terminal UI or end-to-end validation. foot 1.28.0 was installed, but
+- No model benchmark or dollar-budget guarantee.
+- No graphical outer-terminal UI validation. foot 1.28.0 was installed, but
   that is not a foot interaction test. Ghostty was not installed on the Linux host.
 - The official Herdr Pi integration v9 was inspected, not bundled or replaced. Its
   TUI status badges are not JSON-worker completion evidence.

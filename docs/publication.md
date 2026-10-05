@@ -7,11 +7,43 @@ commands are in [testing](testing.md).
 
 Package: **pi-pinata**. Publisher: **funsaized**
 ([npm profile](https://www.npmjs.com/~funsaized)). Repository:
-<https://github.com/funsaized/pinata>. Initial version: 0.1.0, MIT. There are no
+<https://github.com/funsaized/pinata>. License: MIT. There are no
 runtime npm dependencies.
 
 Record the approved action and target before proceeding. Never log npm tokens
 or read credential files to check identity.
+
+## Automated release
+
+The [release workflow](../.github/workflows/release.yml) runs on a pushed `vX.Y.Z`
+tag. With release authorization, bump `package.json` and `package-lock.json`,
+complete the local checks below (including the real Pi smoke test), and commit
+the reviewed release. Push the commit and its matching tag:
+
+```sh
+npm version 0.2.0 --no-git-tag-version
+# Review, test, and commit the release changes before tagging.
+git tag v0.2.0
+git push origin master v0.2.0
+```
+
+Use the intended version for future releases. CI runs unit tests and formatting/lint
+checks, validates the tag, lockfile, package identity, and packed paths, then
+publishes the exact tarball with provenance using the repository's `NPM_TOKEN`
+secret. The token must belong to `funsaized` and permit publication of `pi-pinata`.
+CI checks the npm integrity hash before calling the GitHub Packages mirror for
+the same version. It does not require a Herdr server or model credentials.
+
+For a failed run, inspect its result before retrying. The workflow can also be
+manually dispatched against an existing release tag:
+
+```sh
+gh workflow run release.yml --ref master -f tag=v0.2.0
+```
+
+A version already on npm is accepted only when its integrity matches the local
+packed artifact. A failed mirror can be retried independently using the sync
+workflow below. Never move a published release tag or overwrite a package version.
 
 ## Inspect and pack
 
@@ -46,8 +78,7 @@ availability or reserve it. If a different project or account occupies the name,
 versions and maintainers before an authorized version bump. Confirm `npm whoami`
 is exactly `funsaized`, and authenticate interactively only with permission.
 
-Version 0.1.0 is published on npm. Recheck the registry before choosing the next
-version; published versions cannot be replaced.
+Recheck the registry before choosing the next version; published versions cannot be replaced.
 
 ## Authorized release only
 
@@ -55,7 +86,7 @@ After reviewing the exact packed artifact, version, staged diff (if committing),
 and action-specific authorization:
 
 ```sh
-npm publish ./pi-pinata-0.1.0.tgz --access public
+npm publish ./pi-pinata-0.2.0.tgz --access public
 ```
 
 Use the actual inspected tarball and version, not a stale filename. Follow npm's
@@ -66,11 +97,11 @@ authorized actions.
 Verify registry metadata, then inspect a fresh download of the published version:
 
 ```sh
-npm view pi-pinata@0.1.0 version dist.integrity repository maintainers --json
+npm view pi-pinata@0.2.0 version dist.integrity repository maintainers --json
 RELEASE_CHECK=$(mktemp -d)
-npm pack pi-pinata@0.1.0 --pack-destination "$RELEASE_CHECK" --ignore-scripts
-tar -tzf "$RELEASE_CHECK/pi-pinata-0.1.0.tgz"
-npm install --prefix "$RELEASE_CHECK/install" --ignore-scripts "$RELEASE_CHECK/pi-pinata-0.1.0.tgz"
+npm pack pi-pinata@0.2.0 --pack-destination "$RELEASE_CHECK" --ignore-scripts
+tar -tzf "$RELEASE_CHECK/pi-pinata-0.2.0.tgz"
+npm install --prefix "$RELEASE_CHECK/install" --ignore-scripts "$RELEASE_CHECK/pi-pinata-0.2.0.tgz"
 PI_CODING_AGENT_DIR="$RELEASE_CHECK/pi-agent" pi install "$RELEASE_CHECK/install/node_modules/pi-pinata" --no-approve
 PI_CODING_AGENT_DIR="$RELEASE_CHECK/pi-agent" node "$RELEASE_CHECK/install/node_modules/pi-pinata/lib/pinata.mjs" resources "$RELEASE_CHECK"
 ```
@@ -91,8 +122,9 @@ publication and verify its actual outcome if you use it.
 ## Sync the GitHub mirror
 
 After npm publication, [sync that version to GitHub Packages](github-packages.md).
-The daily workflow mirrors npm's current `latest`; a manual dispatch can copy a
-specific published version immediately. It uses `@funsaized/pi-pinata` on GitHub
+The release workflow mirrors its version immediately after npm verification.
+The daily workflow also mirrors npm's current `latest`; a manual dispatch can
+copy a specific published version. It uses `@funsaized/pi-pinata` on GitHub
 and keeps the unscoped npm package unchanged.
 
 ## Removal

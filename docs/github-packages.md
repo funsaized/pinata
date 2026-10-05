@@ -9,6 +9,9 @@ file contents, executable bits, and the remaining metadata before publication,
 then downloads the GitHub package and checks them again. It does not rebuild
 from the current branch, run package lifecycle scripts, or publish to npm.
 
+The [release workflow](../.github/workflows/release.yml) calls this mirror
+automatically after publishing and verifying each npm release.
+
 ## Run a sync
 
 The [sync workflow](../.github/workflows/sync-github-package.yml) checks npm's
@@ -16,12 +19,12 @@ The [sync workflow](../.github/workflows/sync-github-package.yml) checks npm's
 To mirror a release immediately:
 
 ```sh
-gh workflow run sync-github-package.yml --ref master -f version=0.1.0
+gh workflow run sync-github-package.yml --ref master -f version=0.2.0
 gh run list --workflow sync-github-package.yml --limit 5
 gh run watch RUN_ID --exit-status
 ```
 
-Replace `0.1.0` with the published version and `RUN_ID` with the dispatched run.
+Replace `0.2.0` with the published version and `RUN_ID` with the dispatched run.
 Use `-f version=latest` to resolve npm's current `latest` tag. You can also use
 **Actions → Sync npm package to GitHub → Run workflow** in the repository.
 
@@ -30,7 +33,7 @@ The final log should contain:
 ```json
 {
   "package": "@funsaized/pi-pinata",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "published": true,
   "verified": true
 }
