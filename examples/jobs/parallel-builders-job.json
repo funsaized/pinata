@@ -5,7 +5,7 @@
   "config": {
     "models": {
       "default": { "provider": "openai", "id": "gpt-6-luna", "thinking": "medium" },
-      "reviewer": { "provider": "openai", "id": "gpt-6-luna", "thinking": "high" }
+      "reviewer": { "provider": "openai", "id": "gpt-6-astra", "thinking": "medium" }
     },
     "setup": "cp -a --reflink=auto \"$PINATA_ROOT/node_modules\" ."
   },
