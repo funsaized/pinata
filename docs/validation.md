@@ -14,13 +14,17 @@ also reject mismatched tags/versions, lockfiles, package identities, and unexpec
 packed files. The optional pi-web-access branch was not rerun for this release;
 its earlier results are recorded below.
 
-The README demo records a real Pi coordinator using OpenAI `gpt-6-luna` to run a
-scout, builder, and independent reviewer in an isolated Herdr session. They fix a
-whitespace regression in a disposable greeting function. All three tests pass
-before and after integration. Worker panes close automatically; inspection
-worktrees are removed on completion and the builder worktree after verified
-integration. The recording captures Herdr's native terminal output and is sped up
-for viewing. It does not test a graphical terminal emulator.
+The revised README demo records a real Pi orchestrator using OpenAI `gpt-6-luna`
+to launch two independent scouts in parallel: one inspects a disposable HTTP
+retry client, the other its tests. A research task depends on both scouts, reads
+both outcome files, and fetches MDN's Retry-After and Fetch API documentation
+through pi-web-access. All three tasks succeed. The coordinator receives Herdr's
+completion message and returns source-linked recommendations. No project files
+change; all worker panes and worktrees are removed automatically. The recording
+captures Herdr's native terminal output; it does not test a graphical emulator.
+
+Two earlier live demo runs also passed the scout → builder → reviewer cycle,
+fixing a greeting whitespace regression and passing three tests after integration.
 
 ## Recorded run
 

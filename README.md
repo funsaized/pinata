@@ -8,12 +8,7 @@ The npm package is `pi-pinata`, unrelated to the Pinata storage SDK. It contains
 two Pi skills, five agent prompt templates, and a Node helper. It has no runtime
 npm dependencies or resident service.
 
-[![Pinata scouts, builds, reviews, and integrates a real change](https://raw.githubusercontent.com/funsaized/pinata/v0.2.0/media/pinata-demo.gif)](https://github.com/funsaized/pinata/releases/download/v0.2.0/pinata-demo.mp4)
-
-**[Download the 35-second demo (MP4)](https://github.com/funsaized/pinata/releases/download/v0.2.0/pinata-demo.mp4)** —
-a real Pi + Herdr session with `gpt-6-luna`: scout → build → independent review →
-verified integration. All three tests pass; worker panes and worktrees clean up
-automatically. The preview shows excerpts; the full recording plays at 4× speed.
+[![Orchestrator launches two parallel scouts, then research uses both reports](https://raw.githubusercontent.com/funsaized/pinata/master/media/pinata-demo.gif)](https://github.com/funsaized/pinata/releases/download/v0.2.0/pinata-demo.mp4)
 
 ## Install
 
