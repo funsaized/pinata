@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { registerCompletion } from "../lib/completion.mjs";
+import { start } from "../lib/background.mjs";
 import { atomic } from "../lib/core.mjs";
 import { fixture, task, settled } from "./helpers.mjs";
 
@@ -124,6 +125,32 @@ test("reload defers recovery until active work and queued messages have settled"
   await h.events.get("agent_settled")({}, h.ctx);
   await h.events.get("agent_settled")({}, h.ctx);
   assert.equal(h.messages.length, 1);
+});
+
+test("resuming a native job cannot suspend a print process or another Pi session", async (t) => {
+  const f = await fixture(t, [task("one", "scout", { delay: 1200 })], {
+    env: {
+      TEST_COORDINATOR: "/original-session.jsonl",
+      HERDR_SESSION: "fixture",
+      HERDR_PANE_ID: "parent-pane",
+    },
+    config: { passEnv: ["TEST_HERDR_STATE", "TEST_COORDINATOR"] },
+  });
+  await start(f.run, { nativeSession: "/original-session.jsonl" });
+  const h = host();
+  assert.equal((await h.completion.start(f.run, { ...h.ctx, mode: "print" })).waiting, undefined);
+  assert.equal(
+    (
+      await h.completion.start(f.run, {
+        ...h.ctx,
+        sessionManager: { ...h.ctx.sessionManager, getSessionFile: () => "/other.jsonl" },
+      })
+    ).waiting,
+    undefined,
+  );
+  assert.equal(h.entries.length, 0);
+  assert.equal((await h.completion.start(f.run, h.ctx)).waiting, true);
+  assert.equal(h.entries.length, 1);
 });
 
 test("workers never install the native completion receiver", (t) => {
