@@ -130,7 +130,12 @@ still contain sensitive tool output. See [trust and safety](architecture.md#trus
 
 Before a builder's Pi process starts, the worker runs one setup command in the
 builder worktree with `sh -c`. `init` resolves the command once and returns it
-as `setup: {command, source, lockfiles?, reason?}`.
+as `setup: {command, source, lockfiles?, reason?}`. Scout, research, planner, and
+reviewer tasks never run setup, even in a mixed run. With no builders, `init`
+skips detection and reports `command: null, source: "not-needed"`. No override,
+installation decision, or run restart is needed. Adding the first builder
+resolves setup from the saved configuration and base commit; `add` and `status`
+include the current setup decision.
 
 | `config.setup` | Result                                                  |
 | -------------- | ------------------------------------------------------- |

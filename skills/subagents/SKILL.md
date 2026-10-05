@@ -48,13 +48,19 @@ layer around the helper.
    asked to change; `init` reports `config.origins` for every value. Without any
    models, workers use the coordinating Pi's current model. Missing models or
    authentication block work unless an approved fallback exists. Show the user any
-   `setup` that came from a project file before launching.
+   builder `setup` that came from a project file before launching builders.
 6. Builder worktrees lack ignored files such as `node_modules`. `init` returns
-   `setup` resolved from root lockfiles; read it and show it to the user with
+   builder `setup` resolved from root lockfiles; read it and show it to the user with
    the job. If `source` is `none`, decide with the user whether to set
    `config.setup` (one shell command; `$PINATA_ROOT` is the main checkout) or
    proceed without it. A setup failure has `failureStage: "setup"`: retry a
    transient one with `repair`; otherwise start a new run with a corrected command.
+   Scout, research, planner, and reviewer tasks never run dependency setup,
+   including in mixed runs with builders. Without builders, `init` reports
+   `setup.source: "not-needed"` and detects no install command. Continue directly;
+   do not set `config.setup: false`, ask about installs, or cancel/recreate a run
+   for these roles. Adding the first builder resolves setup at that point.
+   Older runs may report a detected command; it still applies only to builders.
 7. Workers get Pi's `codemode` tool by default, limited to their role's tools.
    Set `config.codemode: false` only for a model that handles it poorly.
 8. Research needs pi-web-access. `init` finds it among the user's installed Pi

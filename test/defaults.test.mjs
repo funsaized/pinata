@@ -75,7 +75,7 @@ test("init, add, and repair feedback accept standard input instead of files", as
   const created = await cli(["init", "-"], JSON.stringify(job));
   assert.equal(created.code, 0, created.stderr);
   const { run, setup, research } = JSON.parse(created.stdout);
-  assert.equal(setup.source, "none");
+  assert.equal(setup.source, "not-needed");
   assert.equal(research.webExtension, null);
   const added = await cli(["add", run, "-"], JSON.stringify(task("two", "scout")));
   assert.equal(added.code, 0, added.stderr);
@@ -140,7 +140,9 @@ test("init layers ~/.pi/agent/pinata.json, then the project's .pi/pinata.json, t
   assert.equal(manifest.config.limits.maxTurns, 30);
   assert.equal(manifest.config.limits.maxToolCalls, 50);
   assert.equal(manifest.config.codemode, false);
-  assert.equal(created.setup.command, "true");
+  assert.equal(manifest.config.setup, "true");
+  assert.equal(created.setup.command, null);
+  assert.equal(created.setup.source, "not-needed");
   assert.deepEqual(
     created.config.files.map((f) => f.layer),
     ["global", "project"],
