@@ -12,18 +12,32 @@ In the signatures below, `<run>` is the directory returned by `init`.
 
 ## Preflight and creation
 
-| Command                 | Effect                                                                                                                                      |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `help`, `--help`, `-h`  | Print usage; no command also prints usage                                                                                                   |
-| `doctor [config.json]`  | Check prerequisites, versions, Herdr endpoint/schema, and configured extension file; never install or upgrade                               |
-| `resources [cwd]`       | Verify this package's two global skills and five global prompts; exit nonzero if missing or shadowed                                        |
-| `init <job.json>`       | Record scope and initial Git state, resolve builder setup, create a private run, return `{run, id, versions, setup}`; does not launch tasks |
-| `add <run> <task.json>` | Append one task object or an array; reject invalid dependencies or ownership                                                                |
+| Command                    | Effect                                                                                                                                      |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `help`, `--help`, `-h`     | Print usage; no command also prints usage                                                                                                   |
+| `doctor [config.json]`     | Check prerequisites, versions, Herdr endpoint/schema, and configured extension file; never install or upgrade                               |
+| `resources [cwd]`          | Verify this package's two global skills and five global prompts; exit nonzero if missing or shadowed                                        |
+| `init <job.json\|->`       | Record scope and initial Git state, resolve builder setup, create a private run, return `{run, id, versions, setup}`; does not launch tasks |
+| `add <run> <task.json\|->` | Append one task object or an array; reject invalid dependencies or ownership                                                                |
 
 `doctor` checks Pi >=1.0.2, Herdr >=0.9.1 with a running compatible server,
 Git, and `ps`. It records Node's version and reports npm and gh availability.
 Node >=22.19.0 is the package requirement, not a version check enforced by `doctor`.
 Missing tools or an incompatible endpoint are blockers, not auto-install requests.
+
+`init`, `add`, `note`, `doctor`, and `repair` accept `-` in place of a file and
+read standard input instead. Use a quoted heredoc so the shell does not expand
+the content:
+
+```sh
+node "$PINATA" init - <<'PINATA_JSON'
+{ "cwd": "/absolute/repo", "approval": "...", "tasks": [] }
+PINATA_JSON
+```
+
+`doctor` also reports `research`: the pi-web-access entry it found among your
+installed Pi packages, or why research is unavailable. `init` returns the same
+`research` object.
 
 `resources` probes global resources without trusting project resources. Trusted
 project prompts or extensions may still shadow commands in an active Pi session.
@@ -37,7 +51,7 @@ project prompts or extensions may still shadow commands in an active Pi session.
 | `wait <run> [milliseconds]`  | Repeat ticks until all tasks are terminal or the observation window ends                  |
 | `status <run>`               | Read saved state without reconciling or scheduling                                        |
 | `barrier <run> <task-id>...` | Revalidate every named task's successful outcome                                          |
-| `note <run> <note.json>`     | Append a timestamped JSON note to the run                                                 |
+| `note <run> <note.json\|->`  | Append a timestamped JSON note to the run                                                 |
 
 `wait` defaults to 30000 ms and accepts 1 through 300000 ms. Repeat it while the
 output contains `waiting: true`. When all tasks are terminal, it exits nonzero
@@ -50,12 +64,12 @@ Calling `wait` or `resume` therefore also enforces that deadline.
 
 ## Repair and cancellation
 
-| Command                              | Effect                                                                                                                                  |
-| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `repair <run> <task-id> <text-file>` | Queue repair feedback, reuse retained work, consume a repair, and invalidate dependent reviews                                          |
-| `retry-launch <run> <task-id>`       | Retry one uncertain submission in the same attempt, only after proving no worker claim exists and the original owned shell is available |
-| `cancel <run>`                       | Persist cancellation and attempt verified termination of owned work; retain outputs                                                     |
-| `unlock <run>`                       | Remove a dead coordinator's lock; refuse live or unknown owners                                                                         |
+| Command                                 | Effect                                                                                                                                  |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `repair <run> <task-id> <text-file\|->` | Queue repair feedback, reuse retained work, consume a repair, and invalidate dependent reviews                                          |
+| `retry-launch <run> <task-id>`          | Retry one uncertain submission in the same attempt, only after proving no worker claim exists and the original owned shell is available |
+| `cancel <run>`                          | Persist cancellation and attempt verified termination of owned work; retain outputs                                                     |
+| `unlock <run>`                          | Remove a dead coordinator's lock; refuse live or unknown owners                                                                         |
 
 Repair accepts tasks in `failed`, `blocked`, `succeeded`, or `rejected` state.
 Expired/cancelled runs and exhausted budgets cannot be repaired. Any downstream

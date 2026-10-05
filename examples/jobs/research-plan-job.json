@@ -4,12 +4,27 @@
   "allowWrites": false,
   "config": {
     "models": {
-      "default": { "provider": "openai", "id": "gpt-6-luna", "thinking": "medium" },
-      "scout": { "provider": "openai", "id": "gpt-6-luna", "thinking": "low" },
-      "research": { "provider": "openai", "id": "gpt-6.1-sol", "thinking": "low" },
-      "planner": { "provider": "openai", "id": "gpt-6-astra", "thinking": "medium" }
-    },
-    "webExtension": "/home/YOU/.pi/agent/git/github.com/nicobailon/pi-web-access/index.ts"
+      "default": {
+        "provider": "openai",
+        "id": "gpt-6-luna",
+        "thinking": "medium"
+      },
+      "scout": {
+        "provider": "openai",
+        "id": "gpt-6-luna",
+        "thinking": "low"
+      },
+      "research": {
+        "provider": "openai",
+        "id": "gpt-6.1-sol",
+        "thinking": "medium"
+      },
+      "planner": {
+        "provider": "openai",
+        "id": "gpt-6-astra",
+        "thinking": "medium"
+      }
+    }
   },
   "tasks": [
     {

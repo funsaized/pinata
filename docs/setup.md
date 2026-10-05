@@ -104,13 +104,15 @@ Skip this section if you only need local code tasks.
 
 1. Install and configure [pi-web-access](https://github.com/nicobailon/pi-web-access)
    separately, with permission to change your Pi configuration.
-2. Set `config.webExtension` to its installed entry file, such as
-   `/absolute/path/to/pi-web-access/index.ts`. A package directory is not enough.
+2. Run `doctor`. Its `research` entry should show the extension with
+   `source: "detected"`: pinata finds pi-web-access among your installed Pi
+   packages (from `pi list`, ignoring project packages) and uses the extension
+   entry from its `package.json`. Set `config.webExtension` to an entry file
+   only to use a different copy.
 3. Confirm the approved search provider and its authentication. If credentials
    come from environment variables, add only their names to `config.passEnv`.
-   Never put credential values in job files.
-4. Rerun `doctor` with the updated configuration. This checks the entry file,
-   not live provider availability.
+   Never put credential values in job JSON.
+4. `doctor` checks the entry file, not live provider availability.
 
 [web-search.json](../examples/web-search.json) is a restrictive policy example
 for pi-web-access 0.35.0: Tavily search, direct HTTP fetch, no hosted/cookie

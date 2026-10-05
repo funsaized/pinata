@@ -36,7 +36,7 @@ npm test
 
 This runs `node --test test/*.test.mjs` against disposable Git repos and mock
 Pi and Herdr processes. It makes no model or provider calls and does not touch
-personal Pi configuration. The recorded run reported 50 passed and 0 failed.
+personal Pi configuration. The recorded run reported 53 passed and 0 failed.
 
 ## Run the installed-Pi smoke
 
@@ -137,7 +137,7 @@ deterministic fixture output as a model-quality benchmark.
 
 What a healthy run looks like:
 
-- `npm test` reports 50 passed and 0 failed on the recorded version set.
+- `npm test` reports 53 passed and 0 failed on the recorded version set.
 - `npm run test:pi` prints PASS lines for packed activation, explicit-only
   `engmgmt`, five templates, the unrelated worktree, collision preservation, and
   the real Pi supervision checks, and the codemode containment check. The web

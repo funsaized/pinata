@@ -6,6 +6,7 @@ const args = process.argv.slice(2);
 const arg = (key) => args[args.indexOf(key) + 1];
 const send = (value) => console.log(JSON.stringify(value));
 if (args.includes("--version")) console.log("1.0.2");
+else if (args[0] === "list") console.log(process.env.TEST_PI_LIST ?? "No packages installed.");
 else if (args[0] === "auth") {
   send({ status: process.env.TEST_AUTH_MISSING ? "not_ready" : "ready" });
   process.exitCode = process.env.TEST_AUTH_MISSING ? 1 : 0;

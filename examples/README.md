@@ -271,7 +271,7 @@ own. They use models from a real Pi setup (OpenAI `gpt-6-luna`, `gpt-6-astra`,
 | -------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | [luna.json](configs/luna.json)               | One model for every role, with less thinking for scouts and more for reviews                         |
 | [per-role.json](configs/per-role.json)       | Luna scouts and builds, Sol researches, Astra plans and reviews; DeepSeek Flash backs up the builder |
-| [research.json](configs/research.json)       | Research through pi-web-access; set `webExtension` to your installed entry                           |
+| [research.json](configs/research.json)       | Research on Sol, with a search key passed through; pi-web-access is found automatically              |
 | [no-codemode.json](configs/no-codemode.json) | A model that handles codemode poorly; raises `maxTurns` to compensate                                |
 | [pinata.config.json](pinata.config.json)     | Every default limit written out, for reference                                                       |
 
