@@ -5,6 +5,20 @@ unproven. For the commands that reproduce these runs, see [testing](testing.md).
 For the trust boundaries the results apply to, see
 [architecture](architecture.md#trust-and-safety).
 
+## 0.3.1 release checks
+
+On 2026-10-05, the patch passed **88 tests, 0 failures**, the packed Pi and
+codemode smoke tests on compiled Pi 1.0.3, the owned Herdr smoke on Herdr 0.9.1,
+and formatting/linting. The expanded typed-tool smoke starts a background job,
+collects a verified outcome, enforces a tool budget, delivers completion,
+resumes another worker, and cancels it while active using a localhost model
+fixture. No live provider calls were made.
+
+Pinata now probes standalone Node >=22.19.0 and saves its resolved executable
+for coordinator and worker script launches. Tests also cover version-manager
+wrappers, invalid runtimes, and older manifests without the saved runtime.
+Codemode, thinking levels, and run-wide limit defaults remain unchanged.
+
 ## 0.3.0 release checks
 
 On 2026-10-05, the release passed **84 tests, 0 failures**, packed-Pi
@@ -13,6 +27,12 @@ and formatting/linting. The tests cover fast settled budget overages, final-turn
 boundaries, retryable completion delivery, readiness-cache invalidation, effective
 configuration and metrics, and typed delegation using the shared validation.
 Codemode, thinking levels and run-wide limit defaults remain unchanged.
+
+The packed typed-tool smoke for 0.3.0 checked delegation, status, and cancellation
+of queued tasks; it did not start workers from the compiled Pi host. A Ribbet run
+exposed that `process.execPath` then pointed to Pi instead of Node, starting
+ordinary Pi sessions without supervisors. Version 0.3.1 fixes that launch path
+and expands the smoke to cover it.
 
 One live quality trial used OpenAI `gpt-6-luna` with medium thinking and codemode
 enabled for eight live workers. The builder passed all 28 independent parser

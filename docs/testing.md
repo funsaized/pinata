@@ -48,7 +48,10 @@ Requires Pi >= 1.0.2. The smoke packs the package, installs the tarball into a
 scratch npm prefix and isolated agent directory, and drives real Pi against a
 localhost-only model fixture. It uses no live credentials and leaves your
 personal Pi configuration untouched. It also checks the packed contents and an
-isolated package removal.
+isolated package removal. Typed tools start background work from Pi's runtime,
+collect a verified worker result, enforce a tool budget, deliver completion,
+resume another worker, and cancel it while active. This exercises compiled Pi
+hosts as well as Node-based installations.
 
 To include the real pi-web-access checks, point the override at the installed
 extension entry file, normally its `index.ts`:
