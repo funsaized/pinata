@@ -35,7 +35,31 @@ else {
       return false;
     }
   };
-  if (args[0] === "workspace" && args[1] === "create") {
+  if (args[0] === "agent" && args[1] === "get") {
+    if (!process.env.TEST_COORDINATOR) error("agent_not_found");
+    else
+      send({
+        agent: {
+          pane_id: args[2],
+          terminal_id: "coordinator-terminal",
+          agent: "pi",
+          agent_session: {
+            agent: "pi",
+            kind: "path",
+            source: "fixture",
+            value: state.coordinatorSession ?? process.env.TEST_COORDINATOR,
+          },
+        },
+      });
+  } else if (args[0] === "agent" && args[1] === "prompt") {
+    (state.notifications ??= []).push({ kind: "agent", target: args[2], text: args[3] });
+    await save();
+    send({ type: "agent_prompted" });
+  } else if (args[0] === "notification" && args[1] === "show") {
+    (state.notifications ??= []).push({ kind: "notification", text: arg("--body") });
+    await save();
+    send({ type: "notification_shown" });
+  } else if (args[0] === "workspace" && args[1] === "create") {
     const n = state.resources.length + 1;
     const pane = {
       pane_id: "w" + n + ":p1",
@@ -110,8 +134,11 @@ else {
       }
     } else if (args[1] === "close") {
       resource.closed = true;
+      const ambiguous = process.env.TEST_AMBIGUOUS_CLOSE && !state.closeFailed;
+      if (ambiguous) state.closeFailed = true;
       await save();
-      send({ type: "pane_closed" });
+      if (ambiguous) error("timeout");
+      else send({ type: "pane_closed" });
     } else error("unexpected_fixture_command");
   }
 }

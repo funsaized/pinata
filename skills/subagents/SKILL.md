@@ -20,7 +20,7 @@ to this skill directory, **not the user's working directory**. Resolve
 node <absolute-helper> init - <<'PINATA_JSON'
 { "cwd": "/absolute/repo", "approval": "...", "tasks": [ ... ] }
 PINATA_JSON
-node <absolute-helper> wait <returned-run-directory> 300000
+node <absolute-helper> start <returned-run-directory>
 ```
 
 Pass jobs, added tasks, notes, and repair feedback on standard input with `-`
@@ -99,8 +99,16 @@ ordinary recursive launches through its child marker. These are workflow control
 
 ## Collect, reconcile, and recover
 
-- `wait` is a bounded observation/scheduling call. Keep calling it while
-  `waiting: true`. Do not abandon active work because one call returned.
+- Use `start` to launch the background coordinator and return immediately.
+  It watches outcomes, schedules dependent work, closes finished panes, and
+  sends completion back through Herdr. When `background.completion` is
+  `herdr-agent-message`, continue independent work or yield until the completion
+  message arrives. Do not block Pi's bash tool with a five-minute `wait`.
+  If no coordinator session was identified, completion uses a Herdr notification;
+  use a bounded `wait <run> 10000` when synchronous observation is needed.
+  `waiting: true` means work continues, not a worker timeout or a reason to cancel.
+  After adding tasks or requesting a repair, call `start` again; it reuses a live
+  background coordinator or starts one if the previous group has finished.
 - Use `barrier <run> <every-required-task-id>...` before downstream work.
   Read every required outcome, including failures and blockers. One successful
   worker never means a parallel group succeeded.
@@ -115,7 +123,10 @@ ordinary recursive launches through its child marker. These are workflow control
 - After interruption, `resume` reconciles rather than blindly relaunching. Use
   `unlock` only for a dead coordinator. Unknown ownership is a blocker.
 - Cancel with `cancel`; verify termination. Preserve logs, results, and dirty
-  worktrees. Preview `cleanup` before any approved `cleanup --confirm`.
+  unintegrated worktrees. Finished panes and disposable inspection worktrees
+  close automatically; builder worktrees are removed after verified integration.
+  Results, session logs, and rollback evidence remain available. Preview
+  `cleanup` before manually removing any retained resources.
   Never kill unrelated processes, stop a shared Herdr server, or force-remove
   a worktree.
 

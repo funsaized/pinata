@@ -285,6 +285,7 @@ returned by `init`.
 | --------------------------------------------------------------------------- | ----------------------------------------------------------- |
 | `manifest.json`                                                             | Saved run, tasks, attempts, notes, and integration state    |
 | `coordinator.lock`                                                          | Per-run coordinator ownership                               |
+| `background.log`                                                            | Background coordinator errors                               |
 | `tasks/<id>/<n>/task.json`                                                  | Task specification and correlation digest                   |
 | `tasks/<id>/<n>/environment.json`                                           | Single-use environment capsule; deleted before Pi starts    |
 | `tasks/<id>/<n>/claim.json`                                                 | Exclusive worker claim                                      |
