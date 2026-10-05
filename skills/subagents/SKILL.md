@@ -12,7 +12,7 @@ remain responsible for the result. A successful launch is not successful work.
 
 ## Load the contract
 
-Read `../../docs/configuration.md` before the first run. Paths here are relative
+Read `reference.md` (beside this file) before the first run. Paths here are relative
 to this skill directory, **not the user's working directory**. Resolve
 `../../lib/pinata.mjs` to an absolute path. Invoke it through Pi's **bash tool**:
 
@@ -20,7 +20,7 @@ to this skill directory, **not the user's working directory**. Resolve
 node <absolute-helper> init - <<'PINATA_JSON'
 { "cwd": "/absolute/repo", "approval": "...", "tasks": [ ... ] }
 PINATA_JSON
-node <absolute-helper> wait <returned-run-directory> 30000
+node <absolute-helper> wait <returned-run-directory> 300000
 ```
 
 Pass jobs, added tasks, notes, and repair feedback on standard input with `-`

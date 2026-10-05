@@ -299,7 +299,10 @@ test("restart recovery collects existing work rather than re-launching it", asyn
 
 test("missing models/authentication/extensions block explicitly; no silent model fallback", async (t) => {
   const f = await fixture(t, [task("one"), task("web", "research")], {
-    config: { models: { default: { provider: "fixture", id: "unavailable", thinking: "off" } } },
+    config: {
+      models: { default: { provider: "fixture", id: "unavailable", thinking: "off" } },
+      webExtension: path.join(ROOT, "test/fixtures/pi.mjs"),
+    },
   });
   const s = await settled(f);
   assert(s.tasks.every((x) => x.status === "blocked"));

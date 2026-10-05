@@ -5,8 +5,9 @@ node /absolute/package/lib/pinata.mjs <command> [arguments]
 ```
 
 Use the installed package path, not a helper path guessed from the current
-project. Quote paths containing spaces. Except for help, commands print JSON;
-errors print a JSON error to stderr and exit nonzero.
+project. Quote paths containing spaces. Except for help, commands print JSON:
+indented at a terminal, compact otherwise, since agents read every poll. Errors
+print a JSON error to stderr and exit nonzero.
 
 In the signatures below, `<run>` is the directory returned by `init`.
 
@@ -53,7 +54,8 @@ project prompts or extensions may still shadow commands in an active Pi session.
 | `barrier <run> <task-id>...` | Revalidate every named task's successful outcome                                          |
 | `note <run> <note.json\|->`  | Append a timestamped JSON note to the run                                                 |
 
-`wait` defaults to 30000 ms and accepts 1 through 300000 ms. Repeat it while the
+`wait` defaults to 30000 ms and accepts 1 through 300000 ms. Coordinators should
+use 300000: Pi's bash tool has no default timeout, and each poll costs tokens. Repeat it while the
 output contains `waiting: true`. When all tasks are terminal, it exits nonzero
 if any task is not `succeeded`. `status`, `tick`, and `resume` can return failed
 task states without a nonzero exit; inspect their JSON. Use `barrier` when a

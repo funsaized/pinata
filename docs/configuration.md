@@ -191,7 +191,8 @@ A reviewer can target any non-reviewer task.
 
 With `codemode` enabled (the default), every row also gets `codemode`, loaded with
 `--extension builtin:codemode`. A codemode script can call only the role's tools
-listed here. Research loads only the detected or configured pi-web-access entry. Its dynamic
+listed here. Research loads only the detected or configured pi-web-access entry. Without one,
+`init` and `add` refuse research tasks and say how to install pi-web-access. Its dynamic
 tools require `web_enable` first. See [Use codemode in workers](codemode.md). See [research setup](setup.md#enable-research).
 
 ### Checks
