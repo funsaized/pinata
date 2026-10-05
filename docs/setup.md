@@ -23,6 +23,12 @@ Restart Pi or run `/reload`. For a local checkout, install with
 
 ## 3. Ask Pi to check setup and delegate
 
+For native completion, enable Herdr's Pi integration with
+`herdr integration install pi`, then reload Pi. This lets Pinata identify the
+parent session, end its turn after launch, and resume it when workers finish.
+Without a matching session, Pinata reports a legacy completion route and keeps
+the parent turn active. See [completion and yield](commands.md#typed-pi-tools).
+
 ```text
 Check that pinata is ready in this project. If it is, use a scout subagent to
 identify the main entry points and existing tests. Report findings with file

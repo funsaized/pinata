@@ -14,11 +14,20 @@ In the signatures below, `<run>` is the directory returned by `init`.
 ## Typed Pi tools
 
 The installed extension registers `pinata_delegate`, `pinata_control`,
-`pinata_status`, `pinata_add`, `pinata_repair`, `pinata_barrier`,
+`pinata_yield`, `pinata_status`, `pinata_add`, `pinata_repair`, `pinata_barrier`,
 `pinata_integrate`, and `pinata_rollback`. They accept structured objects and use
 the same library validation as the commands. `pinata_delegate` accepts job fields,
 defaults `cwd` to Pi's directory, and prepares without launching. Inspect returned
 setup and models before `pinata_control({run, action: "start"})`.
+
+In interactive Pi or RPC, when Herdr identifies the same session, start selects
+`pi-extension` completion. Call it alone outside codemode: its tool result ends
+the parent turn without aborting Pi or the workers. Completion starts a later
+turn, or queues a native follow-up behind independent work. Start with
+`yield:false` to keep working, then call `pinata_yield({run})` alone. A start
+nested in codemode cannot end the outer turn; call `pinata_yield` afterward.
+Status is for completion, recovery, and user-requested progress, not repeated
+polling. A missing session match keeps legacy delivery without automatic yield.
 
 `pinata_control` also accepts `resume`, `cancel`, or `cleanup`; cleanup previews
 unless `confirm: true`. `pinata_status({run, includeResults: true})` revalidates and
@@ -80,6 +89,14 @@ outcome files, advances dependencies, and exits when the group settles. It sends
 a message through `herdr agent prompt` only if the original coordinator's terminal
 and agent session still match; otherwise it shows a Herdr notification. `start`
 reports the selected completion route. Call it again after adding or repairing tasks.
+
+Native delivery submits the internal `/pinata-complete` command, which validates
+the saved completion ID, terminal task states, and original Pi session before
+calling Pi's message API. It adds a custom completion message rather than a user
+prompt. Completed messages suppress duplicate delivery, including after reload.
+Saved run bindings allow the original Pi session to recover a completed job whose
+queued message was lost during exit/reload. Worker success still requires saved
+evidence and `barrier`; a Herdr Done badge is not a successful task outcome.
 
 Completion delivery has a durable `background.notification` record with a stable
 ID, status (`pending` or `delivered`), attempt count, and any error. The coordinator

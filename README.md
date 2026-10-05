@@ -63,8 +63,10 @@ recorded validation, and npm publication instructions.
 
 ## Defaults that need no configuration
 
-Workers use your current Pi model. Pi receives completion automatically and
-collects the results. Finished panes and unchanged inspection worktrees are
+Workers use your current Pi model. When Herdr identifies your Pi session, Pi ends
+its parent turn after launch and resumes from a native completion message, without model polling.
+You can continue independent work and yield afterward; completion queues behind
+active work. Herdr panes still show live worker sessions. Finished panes and unchanged inspection worktrees are
 removed automatically; builder worktrees are removed after verified integration.
 Saved results and recovery evidence remain.
 

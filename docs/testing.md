@@ -53,6 +53,14 @@ collect a verified worker result, enforce a tool budget, deliver completion,
 resume another worker, and cancel it while active. This exercises compiled Pi
 hosts as well as Node-based installations.
 
+The packed native completion smoke runs a real Pi parent against a localhost
+provider with disposable workers and a mocked Herdr command transport. It checks
+automatic turn termination, no model requests while waiting, completion queued
+behind active inference, reload, lost-notification recovery, duplicate suppression,
+explicit yield, and a codemode launch followed by direct yield. Worker outcomes
+and barriers are validated after notification; fixture responses do not measure
+model quality.
+
 To include the real pi-web-access checks, point the override at the installed
 extension entry file, normally its `index.ts`:
 
@@ -89,6 +97,18 @@ session:
 ```sh
 PINATA_HERDR_SMOKE=1 PINATA_HERDR_SESSION=your-existing-session npm run test:herdr
 ```
+
+For the actual native completion transport, run inside Herdr with its Pi
+integration installed:
+
+```sh
+PINATA_HERDR_SMOKE=1 node test/completion-herdr-smoke.mjs
+```
+
+This creates an unfocused disposable parent Pi TUI and worker pane, uses only a
+localhost provider, and verifies that Herdr resumes the idle parent with one
+native completion message. It closes its own panes and checks that existing
+workspace IDs remain unchanged. It does not modify the personal Pi installation.
 
 The smoke creates labelled, unfocused owned panes with mock Pi workers, so it
 makes no provider calls. It does not install or start a server, stop or restart

@@ -5,6 +5,23 @@ unproven. For the commands that reproduce these runs, see [testing](testing.md).
 For the trust boundaries the results apply to, see
 [architecture](architecture.md#trust-and-safety).
 
+## 0.4.0 release checks
+
+On 2026-10-05, the release passed **95 tests, 0 failures**, formatting/linting,
+the packed Pi/codemode smoke tests on compiled Pi 1.0.3, and the owned Herdr smoke
+on Herdr 0.9.1. The six native completion scenarios cover an idle parent, an
+active parent, reload, lost-notification recovery, explicit yield, and codemode
+launch followed by direct yield. The idle parent makes one launch request and
+no model requests while waiting; completion collects saved outcomes and checks
+the barrier. Duplicate delivery and reload do not generate another model turn.
+
+A separate real Herdr + compiled Pi TUI smoke verifies the actual terminal
+transport: parent idle during the live worker pane, native completion delivered
+to the original session, validated outcomes, and duplicate suppression. It
+closes only its own panes and preserves existing workspace IDs. All model
+requests in these checks use localhost fixtures, with no live provider calls.
+Codemode, thinking levels, model selection, and run-wide limits remain unchanged.
+
 ## 0.3.1 release checks
 
 On 2026-10-05, the patch passed **88 tests, 0 failures**, the packed Pi and
