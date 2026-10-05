@@ -43,7 +43,15 @@ layer around the helper.
 5. Select exact per-role models through job configuration, outside persona prose.
    Missing overrides/authentication block work unless an explicit approved fallback
    exists. The default is captured from the coordinating Pi bash environment.
-6. Research requires the existing pi-web-access extension entry in
+6. Builder worktrees lack ignored files such as `node_modules`. `init` returns
+   `setup` resolved from root lockfiles; read it and show it to the user with
+   the job. If `source` is `none`, decide with the user whether to set
+   `config.setup` (one shell command; `$PINATA_ROOT` is the main checkout) or
+   proceed without it. A setup failure has `failureStage: "setup"`: retry a
+   transient one with `repair`; otherwise start a new run with a corrected command.
+7. Workers get Pi's `codemode` tool by default, limited to their role's tools.
+   Set `config.codemode: false` only for a model that handles it poorly.
+8. Research requires the existing pi-web-access extension entry in
    `config.webExtension`, an approved provider route, and usable authentication.
    Read its installed configuration behavior without exposing credentials. No
    silent provider fallback, browser cookies, or additional summary-model calls.

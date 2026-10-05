@@ -44,18 +44,30 @@ persona to your current conversation; they do not launch child agents.
 
 ## Documentation
 
-| I want to…                                | Start here                                                      |
-| ----------------------------------------- | --------------------------------------------------------------- |
-| Learn with a small, read-only run         | [Run your first scout](docs/tutorials/first-scout.md)           |
-| Learn the build and review cycle          | [Build and review a change](docs/tutorials/build-and-review.md) |
-| Choose a task for each agent              | [Agent examples](examples/README.md)                            |
-| Install or configure pinata               | [Setup](docs/setup.md)                                          |
-| Resume, repair, or clean up a run         | [Recovery](docs/recovery.md)                                    |
-| Look up commands and JSON fields          | [Reference](docs/configuration.md)                              |
-| Understand worktrees, reviews, and safety | [Concepts](docs/architecture.md)                                |
+| I want to…                                | Start here                                                        |
+| ----------------------------------------- | ----------------------------------------------------------------- |
+| Learn with a small, read-only run         | [Run your first scout](docs/tutorials/first-scout.md)             |
+| Learn the build and review cycle          | [Build and review a change](docs/tutorials/build-and-review.md)   |
+| Choose a task for each agent              | [Agent examples](examples/README.md)                              |
+| Copy a model config or a complete job     | [Example configs and jobs](examples/README.md#files-you-can-copy) |
+| Give builders their dependencies          | [Dependencies](docs/dependencies.md)                              |
+| Install or configure pinata               | [Setup](docs/setup.md)                                            |
+| Resume, repair, or clean up a run         | [Recovery](docs/recovery.md)                                      |
+| Look up commands and JSON fields          | [Reference](docs/configuration.md)                                |
+| Understand worktrees, reviews, and safety | [Concepts](docs/architecture.md)                                  |
 
 The [documentation index](docs/README.md) also links to contributor testing,
 recorded validation, and npm publication instructions.
+
+## Defaults that need no configuration
+
+- **Dependencies in builder worktrees.** `init` detects an install command from
+  your root lockfile (`npm ci`, `pnpm install --frozen-lockfile`, `uv sync
+--frozen`, ...) and runs it before each builder starts. Override it with one
+  string, `config.setup`, or set it to `false`. See
+  [dependencies](docs/dependencies.md).
+- **Codemode.** Workers get Pi's `codemode` tool to batch tool calls in one
+  script, limited to their role's tools. See [codemode](docs/codemode.md).
 
 ## Before delegating writes
 

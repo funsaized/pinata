@@ -36,7 +36,7 @@ npm test
 
 This runs `node --test test/*.test.mjs` against disposable Git repos and mock
 Pi and Herdr processes. It makes no model or provider calls and does not touch
-personal Pi configuration. The recorded run reported 41 passed and 0 failed.
+personal Pi configuration. The recorded run reported 50 passed and 0 failed.
 
 ## Run the installed-Pi smoke
 
@@ -60,6 +60,12 @@ PINATA_TEST_WEB_EXTENSION=/installed/pi-web-access/index.ts npm run test:pi
 Without that override, the web portion reports **SKIP**. The test creates an
 isolated non-secret web policy and permits `127.0.0.1/32` only for its local
 server. That SSRF exception is never a normal configuration suggestion.
+
+`test:pi` then runs `test/codemode-smoke.mjs`: real Pi, launched with pinata's
+own worker arguments, runs a localhost-scripted codemode call as a read-only
+worker. It passes only if the script cannot see or call `bash`, `write`, or
+`edit`, nothing is written, and codemode's overflow file lands in the private
+`TMPDIR`. Rerun it after every Pi upgrade.
 
 ## Check formatting and lint
 
@@ -102,8 +108,23 @@ limit, a 120-second job limit, and no retries scheduled by the smoke. It retains
 artifacts and closes verified owned panes. Provider-internal retries and a single
 expensive request can still incur charges, so set provider or account caps
 externally. The script refuses to run without explicit opt-in and an approved
-model config. It has not been run with live credentials in the recorded
-validation.
+model config.
+
+## Live end-to-end build (separate spending authorization)
+
+```sh
+PINATA_LIVE_SMOKE=I_AUTHORIZE_PAID_MODEL_CALLS \
+PINATA_LIVE_CONFIG=examples/configs/luna.json \
+npm run test:e2e
+```
+
+This creates a disposable npm project that depends on `ms` and has a failing
+test. It installs that project's dependencies in the checkout, then runs scout,
+builder, and reviewer with the configured models in real Herdr panes, and
+integrates the result. It needs npm registry access. It asserts that setup was
+detected and ran in the builder worktree, that every task succeeded, and that
+integration verified. It prints per-task tool-call counts and the integrated
+diff, then cleans up and keeps the evidence.
 
 ## Manual skill and persona evaluation
 
@@ -116,11 +137,11 @@ deterministic fixture output as a model-quality benchmark.
 
 What a healthy run looks like:
 
-- `npm test` reports 41 passed and 0 failed on the recorded version set.
+- `npm test` reports 50 passed and 0 failed on the recorded version set.
 - `npm run test:pi` prints PASS lines for packed activation, explicit-only
   `engmgmt`, five templates, the unrelated worktree, collision preservation, and
-  the real Pi supervision checks. The web line prints PASS with the override and
-  SKIP without it.
+  the real Pi supervision checks, and the codemode containment check. The web
+  line prints PASS with the override and SKIP without it.
 - `npm run check` exits zero.
 - The Herdr smoke prints a JSON object with `passed: true`, versions, a list of
   checks, and `outerTerminalUI: "not tested"`. It verifies pane and terminal IDs

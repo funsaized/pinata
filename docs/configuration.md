@@ -41,7 +41,9 @@ approval, checks, and model placeholders must be replaced before use.
 | `fallbacks`    | `{}`                       | Up to five approved model entries per role, in order       |
 | `passEnv`      | `[]`                       | Additional environment variable names allowed into workers |
 | `webExtension` | Unset                      | Installed pi-web-access entry file; required for research  |
-| `limits`       | Table below                | Worker, time, repair, and turn limits                      |
+| `setup`        | Detected from lockfiles    | Builder worktree setup command, or `false`; see below      |
+| `codemode`     | `true`                     | Give every worker Pi's `codemode` tool                     |
+| `limits`       | Table below                | Worker, time, repair, turn, and tool-call limits           |
 
 Roles are `scout`, `research`, `planner`, `builder`, and `reviewer`. `session`
 accepts letters, digits, underscores, and hyphens. Inside Herdr, the helper
@@ -92,25 +94,67 @@ Entries must match `^[A-Z][A-Z0-9_]*$`. Names beginning with `PINATA_`, `PI_`, o
 `HERDR_` are rejected, as are `NODE_OPTIONS`, `LD_PRELOAD`, and
 `DYLD_INSERT_LIBRARIES`.
 
+Pi itself also gets `TMPDIR` set to the attempt's private `tmp/` directory, so
+codemode overflow files stay in the run directory. Setup commands also get
+`PINATA_ROOT`.
+
 Approved values travel in a private, single-use `environment.json`, not pane
 commands, process arguments, task specifications, or the manifest. Logs may
 still contain sensitive tool output. See [trust and safety](architecture.md#trust-and-safety).
+
+### Setup
+
+Before a builder's Pi process starts, the worker runs one setup command in the
+builder worktree with `sh -c`. `init` resolves the command once and returns it
+as `setup: {command, source, lockfiles?, reason?}`.
+
+| `config.setup` | Result                                                  |
+| -------------- | ------------------------------------------------------- |
+| Omitted        | Detect from root lockfiles committed at the base commit |
+| A string       | Run that command (`source: "config"`)                   |
+| `false`        | Run nothing (`source: "disabled"`)                      |
+
+Detection picks one command per ecosystem and joins them with `&&`:
+
+| Root lockfile                              | Command                                           |
+| ------------------------------------------ | ------------------------------------------------- |
+| `pnpm-lock.yaml`                           | `pnpm install --frozen-lockfile --prefer-offline` |
+| `bun.lock`, `bun.lockb`                    | `bun install --frozen-lockfile`                   |
+| `yarn.lock` with `.yarnrc.yml`             | `yarn install --immutable`                        |
+| `yarn.lock`                                | `yarn install --frozen-lockfile`                  |
+| `package-lock.json`, `npm-shrinkwrap.json` | `npm ci --prefer-offline --no-audit --no-fund`    |
+| `uv.lock`                                  | `uv sync --frozen`                                |
+| `poetry.lock`                              | `poetry install --no-interaction`                 |
+| `Pipfile.lock`                             | `pipenv sync`                                     |
+
+`Cargo.lock` and `go.sum` need no setup; their tools fetch at build time.
+Detection reports `source: "none"` with a `reason`, and runs nothing, when there
+is no lockfile, when one ecosystem has conflicting lockfiles, or when the
+package manager is not on `PATH`.
+
+Setup runs once per builder worktree, keyed by the command and the lockfile
+contents. It gets the worker environment plus `PINATA_ROOT`, the target
+repository path, and counts against the attempt deadline. It fails the attempt
+with `failureStage: "setup"` when it exits nonzero, times out, or changes any
+tracked or unignored file. See [Give builders their dependencies](dependencies.md).
 
 ### Limits
 
 All values are positive integers. Time values use milliseconds.
 
-| Key           | Default                            | Maximum    |
-| ------------- | ---------------------------------- | ---------- |
-| `concurrency` | `3`                                | `16`       |
-| `startupMs`   | `30000` (30 seconds)               | `86400000` |
-| `taskMs`      | `1200000` (20 minutes per attempt) | `86400000` |
-| `jobMs`       | `5400000` (90 minutes per run)     | `86400000` |
-| `repairs`     | `2` per task                       | `10`       |
-| `maxTurns`    | `60` per attempt                   | `1000`     |
+| Key            | Default                                     | Maximum    |
+| -------------- | ------------------------------------------- | ---------- |
+| `concurrency`  | `3`                                         | `16`       |
+| `startupMs`    | `30000` (30 seconds)                        | `86400000` |
+| `taskMs`       | `1200000` (20 minutes per attempt)          | `86400000` |
+| `jobMs`        | `5400000` (90 minutes per run)              | `86400000` |
+| `repairs`      | `2` per task                                | `10`       |
+| `maxTurns`     | `60` per attempt                            | `1000`     |
+| `maxToolCalls` | `400` per attempt, including codemode calls | `10000`    |
 
 Limits are saved with the run. There is at most one same-attempt submission
 retry and one result-format repair. The latter also consumes the repair budget.
+Setup failures have a separate budget of two retries and do not consume it.
 These limits do not impose provider dollar or token caps.
 
 ## Task
@@ -144,8 +188,10 @@ A reviewer can target any non-reviewer task.
 | Builder                             | `read`, `bash`, `edit`, `write`                                                                 |
 | Builder during result-format repair | `read`, `grep`, `find`, `ls`                                                                    |
 
-Research loads only the configured pi-web-access entry. Its dynamic tools require
-`web_enable` first. See [research setup](setup.md#enable-research).
+With `codemode` enabled (the default), every row also gets `codemode`, loaded with
+`--extension builtin:codemode`. A codemode script can call only the role's tools
+listed here. Research loads only the configured pi-web-access entry. Its dynamic
+tools require `web_enable` first. See [Use codemode in workers](codemode.md). See [research setup](setup.md#enable-research).
 
 ### Checks
 
@@ -218,6 +264,9 @@ returned by `init`.
 | `tasks/<id>/<n>/process.json`                                               | Observed process identities for reconciliation              |
 | `tasks/<id>/<n>/cancel.json`                                                | Persisted cancellation request                              |
 | `tasks/<id>/<n>/pi.stdout.log`, `pi.stderr.log`                             | Pi JSON output and stderr                                   |
+| `tasks/<id>/<n>/setup.stdout.log`, `setup.stderr.log`                       | Builder setup output                                        |
+| `tasks/<id>/<n>/tmp/`                                                       | Pi's `TMPDIR`, including codemode overflow files            |
+| `setup/<id>.json`                                                           | Setup marker for a builder worktree                         |
 | `tasks/<id>/<n>/check-<check-id>.stdout.log`, `check-<check-id>.stderr.log` | Supervisor-run check output                                 |
 | `tasks/<id>/<n>/review.diff`                                                | Diff supplied to a reviewer                                 |
 | `tasks/<id>/<n>/files/`                                                     | Content-addressed file evidence                             |
@@ -239,7 +288,10 @@ A review asking for changes produces `rejected`, even if the review process ran
 successfully.
 
 An outcome includes process exit, settlement, final stop reason, actual check
-arguments/cwd/exit/log references, and file evidence. `result.json` alone is not
+arguments/cwd/exit/log references, and file evidence. It also records `setup`
+(the setup command's process evidence, or `{skipped: true}` when the worktree was
+already set up) and `toolCalls`. A failed outcome names its `failureStage`:
+`setup`, `process`, `result`, or `verification`. `result.json` alone is not
 proof of success. Malformed, stale, oversized, symlinked, path-escaping, or
 uncorrelated evidence is rejected. JSON input files are limited to 1 MiB;
 managed regular files are limited to 16 MiB.

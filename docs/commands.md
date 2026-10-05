@@ -12,13 +12,13 @@ In the signatures below, `<run>` is the directory returned by `init`.
 
 ## Preflight and creation
 
-| Command                 | Effect                                                                                                        |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `help`, `--help`, `-h`  | Print usage; no command also prints usage                                                                     |
-| `doctor [config.json]`  | Check prerequisites, versions, Herdr endpoint/schema, and configured extension file; never install or upgrade |
-| `resources [cwd]`       | Verify this package's two global skills and five global prompts; exit nonzero if missing or shadowed          |
-| `init <job.json>`       | Record scope and initial Git state, create a private run, return `{run, id, versions}`; does not launch tasks |
-| `add <run> <task.json>` | Append one task object or an array; reject invalid dependencies or ownership                                  |
+| Command                 | Effect                                                                                                                                      |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `help`, `--help`, `-h`  | Print usage; no command also prints usage                                                                                                   |
+| `doctor [config.json]`  | Check prerequisites, versions, Herdr endpoint/schema, and configured extension file; never install or upgrade                               |
+| `resources [cwd]`       | Verify this package's two global skills and five global prompts; exit nonzero if missing or shadowed                                        |
+| `init <job.json>`       | Record scope and initial Git state, resolve builder setup, create a private run, return `{run, id, versions, setup}`; does not launch tasks |
+| `add <run> <task.json>` | Append one task object or an array; reject invalid dependencies or ownership                                                                |
 
 `doctor` checks Pi >=1.0.2, Herdr >=0.9.1 with a running compatible server,
 Git, and `ps`. It records Node's version and reports npm and gh availability.
@@ -63,6 +63,8 @@ non-reviewer that already has an attempt blocks repair, even if it failed.
 Dependents must be queued, blocked, rejected, succeeded, or failed; active,
 uncertain, and cancelled dependents block it. Previous processes must be gone.
 Successful repair requeues all dependents and invalidates their old reviews.
+After a setup-stage failure, `repair` retries setup without consuming the repair
+budget, at most twice, and only if setup left project files unchanged.
 See [recovery](recovery.md) before retrying uncertain work.
 
 ## Integration and cleanup
@@ -80,7 +82,9 @@ for every builder. The run must not be cancelled or past its job deadline.
 It refuses conflicting edits and preserves the user's index.
 It does not commit. Failed integrated checks leave the changes visible.
 
-Cleanup keeps dirty or uncertain worktrees and retains logs and manifests.
+Cleanup keeps worktrees with modified or untracked files, and uncertain ones, and
+retains logs and manifests. Ignored files, such as installed dependencies, do
+not block removal.
 Removing those artifacts separately requires authorization. No command publishes,
 deploys, pushes, changes global configuration, or stops a shared Herdr server.
 

@@ -9,9 +9,9 @@ For the trust boundaries the results apply to, see
 
 Validation target: Omarchy/Arch Linux, kernel `7.2.5-3-omarchy`, x86_64.
 
-The final deterministic run on 2026-10-04 reported **41 passed, 0 failed**. The
-installed-Pi/web, packed-install, owned-Herdr, format/lint, and package-content
-checks also passed.
+The deterministic run on 2026-10-05 reported **50 passed, 0 failed**. The
+installed-Pi/web, codemode containment, packed-install, owned-Herdr, format/lint,
+and package-content checks also passed, and so did one live end-to-end build.
 
 Installed tool versions at that time:
 
@@ -36,6 +36,8 @@ additional tested runtime here.
 | `npm run test:pi`                                                             | Real installed Pi, localhost-only model fixture, packed artifact installed into a scratch npm prefix, isolated agent directory                                                      |
 | `PINATA_TEST_WEB_EXTENSION=/installed/pi-web-access/index.ts npm run test:pi` | Real pi-web-access 0.35.0: dynamic activation, missing-key errors, denied providers, direct localhost fetch, failed fetch without fallback, stored-result retrieval, sourced result |
 | `PINATA_HERDR_SMOKE=1 npm run test:herdr`                                     | Real Herdr owned panes with mock Pi; three-worker cap, fourth-worker queue, IDs/schema, cancellation, unrelated-resource preservation and cleanup                                   |
+| `npm run test:pi` (codemode smoke)                                            | Real Pi with pinata's worker arguments: a read-only worker's codemode script cannot see or call `bash`/`write`/`edit`; overflow lands in the private `TMPDIR`                       |
+| `npm run test:e2e`                                                            | Live: real Herdr, real Pi, OpenAI `gpt-6-luna`, npm registry; scout, builder, reviewer, integration (see below)                                                                     |
 | `npm run check`                                                               | oxfmt 0.71.0 and oxlint 1.86.0 on authored files                                                                                                                                    |
 | `npm pack` through the Pi smoke                                               | Explicit contents; exactly two skills and five prompts; no tests, logs, generated state, or dependencies bundled                                                                    |
 
@@ -65,6 +67,23 @@ pi-web-access tool activation runs through JSON mode, not a simulated extension.
 All successful fetches in this test are localhost fixtures; they do not establish
 live Tavily availability or research quality.
 
+## Live end-to-end build
+
+Run on 2026-10-05 with `examples/configs/luna.json`, codemode enabled, and setup
+detected as `npm ci --prefer-offline --no-audit --no-fund`.
+
+| Task   | Model                  | Turns | Tool calls                            | Result                       |
+| ------ | ---------------------- | ----- | ------------------------------------- | ---------------------------- |
+| scout  | `gpt-6-luna`, `low`    | 3     | 12 (2 codemode scripts)               | succeeded                    |
+| fix    | `gpt-6-luna`, `medium` | 6     | 13 (3 codemode scripts); setup exit 0 | succeeded, `npm test` passed |
+| review | `gpt-6-luna`, `high`   | 4     | 21 (3 codemode scripts)               | approved                     |
+
+Integration verified with `npm test` in the checkout. The builder's diff was the
+expected one-line fix, `ms(seconds * 1000)`. Each task took 23 to 34 seconds.
+Cleanup closed all three panes, removed the clean scout worktree, and kept the
+builder's modified worktree. One run on one small fixture shows that the
+pipeline works end to end with a live model. It is not a model-quality benchmark.
+
 ## Herdr smoke
 
 The Herdr smoke creates labelled, unfocused resources on the explicitly selected
@@ -75,8 +94,9 @@ mock executables, so it makes no provider calls.
 
 ## Not claimed
 
-- No paid or live model or search-provider calls were made during implementation.
-  The local fixtures validate orchestration, not model judgment or task quality.
+- Live model calls are limited to the end-to-end build above. No live
+  search-provider calls were made. Fixtures validate orchestration, not model
+  judgment or task quality.
 - No independent live-model review, model benchmark, or dollar-budget guarantee.
 - No outer-terminal UI or end-to-end validation. foot 1.28.0 was installed, but
   that is not a foot interaction test. Ghostty was not installed on the Linux host.
