@@ -34,9 +34,12 @@ else if (args[0] === "auth") {
   const scenario = JSON.parse(spec.task.task);
   await fs.appendFile(path.join(dir, "calls.txt"), "call\n");
   await fs.writeFile(path.join(dir, "args.json"), JSON.stringify(args));
+  await fs.writeFile(path.join(dir, "tmpdir.txt"), process.env.TMPDIR ?? "");
   if (scenario.delay) await new Promise((r) => setTimeout(r, scenario.delay));
   send({ type: "session", id: "fixture-session" });
   send({ type: "agent_start" });
+  for (let i = 0; i < (scenario.toolCalls ?? 0); i++)
+    send({ type: "tool_execution_start", toolName: "read" });
   if (scenario.hang) {
     if (scenario.child) {
       const child = spawn(process.execPath, ["-e", "setInterval(()=>{},1000)"], {
