@@ -5,6 +5,29 @@ unproven. For the commands that reproduce these runs, see [testing](testing.md).
 For the trust boundaries the results apply to, see
 [architecture](architecture.md#trust-and-safety).
 
+## 0.6.1 release checks
+
+On 2026-10-06, the patch passed **132 tests, 0 failures** in 43 seconds,
+formatting/linting, the packed Pi 1.0.4 lifecycle, native completion, and
+codemode checks (including real pi-web-access), the owned Herdr 0.9.1 smoke, and
+the real Herdr + compiled Pi TUI completion smoke.
+
+On Linux, worker supervisors now read the worker's own process tree from
+`/proc` instead of running `ps` over every process every 250 ms, and rewrite
+`process.json` only when the tracked processes change. Other platforms keep `ps`
+and poll every second. A tracked identity is refreshed when the same pid and
+start time reappear with a new name or group, as when Node renames its main
+thread after exec.
+
+Both live checks passed again with OpenAI `gpt-6-luna`: the build with an
+uncommitted test case (63,932 tokens, $0.0044) and the review of a seeded
+off-by-one (43,616 tokens, $0.0037).
+
+The `subagents` skill now tells coordinators to review builders with `reviewOf`
+only, after a demo coordinator added a `reviewBase` reviewer to a build job and
+blocked its integration. The README demo is a re-recorded video; see
+`media/README.md`.
+
 ## 0.6.0 release checks
 
 On 2026-10-06, the release passed **132 tests, 0 failures**, formatting/linting,
