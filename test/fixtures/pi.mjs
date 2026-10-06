@@ -1,12 +1,19 @@
 #!/usr/bin/env node
 import fs from "node:fs/promises";
 import path from "node:path";
-import { spawn } from "node:child_process";
+import { spawn, execFileSync } from "node:child_process";
 import { writeSync } from "node:fs";
 const args = process.argv.slice(2);
 if (process.env.TEST_PI_METADATA_LOG && !args.includes("--append-system-prompt"))
   await fs.appendFile(process.env.TEST_PI_METADATA_LOG, JSON.stringify(args) + "\n");
 const arg = (key) => args[args.indexOf(key) + 1];
+const committed = (file) => {
+  try {
+    return execFileSync("git", ["show", `HEAD:${file}`], { encoding: "utf8", stdio: "pipe" });
+  } catch {
+    return null;
+  }
+};
 const interactive = args.includes("--tui-mode");
 const send = (value) =>
   interactive ? writeSync(3, JSON.stringify(value) + "\n") : console.log(JSON.stringify(value));
@@ -76,8 +83,16 @@ else if (args[0] === "auth") {
         throw new Error("Dependency barrier did not provide code");
     }
   const writes = scenario.write ?? {};
+  const reverted = new Set();
   for (const [file, original] of Object.entries(spec.resultRepair ? {} : writes)) {
-    const data = spec.feedback && scenario.repair ? scenario.repair : original;
+    const repaired =
+      typeof scenario.repair === "object" && scenario.repair !== null
+        ? (scenario.repair[file] ?? original)
+        : scenario.repair;
+    const data = spec.feedback && repaired !== undefined ? repaired : original;
+    // A per-file repair that restores the committed content leaves no change.
+    if (spec.feedback && typeof scenario.repair === "object" && data === committed(file))
+      reverted.add(file);
     if (data === null) await fs.unlink(path.join(process.cwd(), file));
     else {
       await fs.mkdir(path.dirname(path.join(process.cwd(), file)), { recursive: true });
@@ -95,7 +110,9 @@ else if (args[0] === "auth") {
     taskDigest: spec.taskDigest,
     status: scenario.blocked ? "blocked" : "succeeded",
     summary: 'Fixture outcome with quotes " and Unicode 雨\nnext line',
-    changedFiles: Object.keys(writes).sort(),
+    changedFiles: Object.keys(writes)
+      .filter((file) => !reverted.has(file))
+      .sort(),
     commit: null,
     checks: [],
     findings: rejected

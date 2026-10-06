@@ -154,8 +154,9 @@ starting contents, and runs the integrated checks. It preserves your Git index
 and does not commit, push, publish, or deploy.
 
 An integration journal records progress. It lets the helper reconcile an
-interruption and refuse to overwrite later edits during rollback. It is not an
-atomic transaction across files. A failed integrated check leaves the changes
+interruption and refuse to overwrite later edits during rollback. Integrating
+again after a repair first reverts the earlier integration, so rollback always
+returns to the original files. It is not an atomic transaction across files. A failed integrated check leaves the changes
 visible for inspection.
 
 Repairs reuse retained work and consume a budget. They preserve the original
