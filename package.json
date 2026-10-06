@@ -1,7 +1,7 @@
 {
   "name": "pi-pinata",
   "version": "0.5.1",
-  "description": "Bash-driven subagents and engineering management for Pi, orchestrated with Herdr.",
+  "description": "Pi subagents you can watch work: parallel agents in Herdr workspaces, reviewed changes, and automatic cleanup.",
   "keywords": [
     "herdr",
     "pi",

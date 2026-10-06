@@ -1,48 +1,114 @@
 # piñata
 
-Run Pi subagents in [Herdr](https://herdr.dev/) workspaces. Give each agent a
-specific task, collect its results, and review changes before bringing them back
-to your working tree.
-
-The npm package is `pi-pinata`. It contains
-two Pi skills, five agent prompt templates, typed Pi tools, and a Node helper. It has no runtime
-npm dependencies or resident service.
+piñata gives Pi a team. Ask for a scout, a researcher, a planner, a builder, or a
+reviewer, and each one opens in its own [Herdr](https://herdr.dev/) workspace
+where you can watch it work. Pi waits quietly while they run, then picks up their
+results on its own. Code changes stay in their own workspace until a second agent
+has reviewed them, and nothing reaches your checkout until then.
 
 [![Orchestrator launches two parallel scouts, research uses both reports, and Pi resumes on native completion](https://raw.githubusercontent.com/funsaized/pinata/master/media/pinata-demo.gif)](https://github.com/funsaized/pinata/blob/master/media/pinata-demo.mp4)
 
 ## Install
 
-You need Pi 1.0.2 or newer, Herdr 0.9.1 or newer with a running compatible server,
-Node 22.19.0 or newer, Git, and access to a model.
-
 ```sh
 pi install npm:pi-pinata
 ```
 
-For a local checkout, use `pi install /absolute/path/to/pinata`. Restart Pi or run
-`/reload`. See [setup](docs/setup.md) for model selection, Herdr sessions, and
-installation checks. Research agents also need an installed
-[pi-web-access](https://github.com/nicobailon/pi-web-access) extension.
+Run Pi inside a Herdr session and you're ready. You'll need Pi 1.0.2+, Herdr
+0.9.1+, Node 22.19+, and Git; research also uses
+[pi-web-access](https://github.com/nicobailon/pi-web-access). [Setup](docs/setup.md)
+covers models, sessions, and checking your install.
 
-## Try it in Pi
+## Try this first
 
-After installing, ask Pi in plain language:
-
-```text
-Use a scout subagent to trace the request-validation path. Return the entry
-points, callers, and existing tests. Do not change files.
-```
-
-For a coding job that needs coordination, invoke the engineering-management skill:
+Ask Pi in plain language:
 
 ```text
-/skill:engmgmt Fix the approved issue, run the relevant tests, have a separate
-reviewer inspect the changes, and integrate them locally. Do not commit or push.
+Have a scout figure out how request validation works in this repo.
 ```
 
-`subagents` responds to explicit delegation requests. `engmgmt` is explicit-only.
-The `/scout`, `/research`, `/planner`, `/builder`, and `/reviewer` commands apply a
-persona to your current conversation; they do not launch child agents.
+```text
+Send two scouts out in parallel, one on the retry logic and one on its tests.
+Then have research check both reports against the official docs.
+```
+
+```text
+/skill:engmgmt Fix this bug, test it, and have a reviewer sign off before it
+touches my checkout.
+```
+
+```text
+Clean up anything old pinata runs left behind.
+```
+
+That's enough to start. Pi picks the agents, writes their briefs, and decides
+who waits for whom.
+
+## Meet the team
+
+| Agent      | Use it when you want…                                                         |
+| ---------- | ----------------------------------------------------------------------------- |
+| `scout`    | A quick map of unfamiliar code: entry points, call paths, data flow, tests    |
+| `research` | Answers from the web or official docs, with sources                           |
+| `planner`  | The smallest correct plan, with the order of work and the risks               |
+| `builder`  | Code written in its own worktree, with your checks run before it reports back |
+| `reviewer` | A second opinion that approves or rejects a builder's exact change            |
+
+Rule of thumb: scout before you understand the code, research before you trust
+an outside fact, plan when the change is big, build when the path is clear, and
+always review before you merge.
+
+## What it's like to use
+
+- **You can watch every agent work.** Each one is a real Pi session in its own
+  Herdr workspace, not a summary streamed back to you. Switch to it any time.
+- **Pi waits quietly.** After handing off the work, Pi goes idle and spends no
+  tokens checking in. When the team finishes, it picks up by itself, reads every
+  result, and answers you.
+- **Agents hand off to each other.** "Research once both scouts are done" is a
+  single request. Agents that don't depend on each other run at the same time.
+- **Nothing lands without review.** Builders work on a copy of your repo. A
+  separate reviewer must approve the exact change before it is applied to your
+  checkout, and one rollback undoes it. You decide what gets committed.
+- **It cleans up after itself.** Finished workspaces close, and each agent's
+  worktree is removed once its work is done or merged. Results stay, so you can
+  look back at what each agent found.
+- **It uses the model you're on.** Every agent uses your current Pi model. You
+  can give each role its own model and thinking level when you want to.
+
+## Common asks
+
+| Want                            | Ask naturally                                                            |
+| ------------------------------- | ------------------------------------------------------------------------ |
+| Understand unfamiliar code      | "Have a scout map how payments flow through this service."               |
+| Investigate from several angles | "Send three scouts in parallel: API, database, and tests."               |
+| Check facts against sources     | "Have research verify these claims against the official docs."           |
+| Plan before changing anything   | "Have a planner propose the smallest fix for this issue."                |
+| Build, review, and apply        | "/skill:engmgmt Implement the approved plan with an independent review." |
+| Check on a run                  | "How is the pinata run going?"                                           |
+| Undo the last integration       | "Roll back the latest pinata integration."                               |
+| Tidy up old runs                | "Preview cleanup of old pinata runs, then clean up what's safe."         |
+
+## Where to look while it runs
+
+Each agent gets its own Herdr workspace in the sidebar. Open one to watch that
+agent think, read files, and call tools as it goes. Ask Pi how the run is going
+to see each agent's status, model, time, and token cost.
+
+## If something feels off
+
+Ask Pi for the run's status first; it says which agent is stuck and why.
+[Recovery](docs/recovery.md) covers resuming, repairing, and cleaning up a run,
+and [setup](docs/setup.md#3-ask-pi-to-check-setup-and-delegate) helps when an agent won't
+start.
+
+## Good to know
+
+- Agents start from your last commit. Commit first if you want them to see work
+  in progress.
+- Builders run commands with your permissions, so read a builder's task before
+  you approve it. [Concepts](docs/architecture.md#trust-and-safety) has details.
+- Tested on Linux; macOS should work. See [validation](docs/validation.md).
 
 ## Documentation
 
@@ -55,46 +121,11 @@ persona to your current conversation; they do not launch child agents.
 | Give builders their dependencies          | [Dependencies](docs/dependencies.md)                              |
 | Install or configure pinata               | [Setup](docs/setup.md)                                            |
 | Resume, repair, or clean up a run         | [Recovery](docs/recovery.md)                                      |
+| See every command and tool                | [Commands](docs/commands.md)                                      |
 | Use the helper directly                   | [Helper tutorial](docs/tutorials/helper-first-scout.md)           |
 | Understand worktrees, reviews, and safety | [Concepts](docs/architecture.md)                                  |
 
 The [documentation index](docs/README.md) also links to contributor testing,
 recorded validation, and npm publication instructions.
-
-## Defaults that need no configuration
-
-Workers use your current Pi model. When Herdr identifies your Pi session, Pi ends
-its parent turn after launch and resumes from a native completion message, without model polling.
-You can continue independent work and yield afterward; completion queues behind
-active work. Herdr panes still show live worker sessions. Finished panes and unchanged inspection worktrees are
-removed automatically; builder worktrees are removed after verified integration.
-Saved results and recovery evidence remain.
-
-For historical leftovers, ask Pi to preview cleanup with `pinata_gc`, or run
-`node /absolute/pinata/lib/pinata.mjs gc /absolute/repo`. Add `--confirm` to retire
-eligible owned resources after reviewing the preview. GC reports why anything
-is retained and preserves validated results. See [commands](docs/commands.md).
-
-Pi uses typed delegation, status, repair, and integration tools. Status shows
-resolved models and thinking levels, configuration origins, phase timings, and
-token usage. Failed completion delivery remains pending and can be retried with
-`start` without repeating completed workers.
-
-Builder dependencies are prepared from committed root lockfiles. See
-[dependencies](docs/dependencies.md) to customize setup, or
-[configuration](docs/configuration.md#config-files) to choose models per role.
-
-## Before delegating writes
-
-Workers start from committed Git `HEAD`, not your uncommitted changes. Builders
-work in separate worktrees. Integration requires a current independent approval
-for every builder, preserves your Git index, and does not commit.
-
-Builders have bash and run with your OS permissions. pinata is not a sandbox.
-Review the task and check commands before approving them. Keep private run logs
-out of bug reports unless you have inspected them for sensitive content.
-
-Linux is the current validation target. macOS is designed for compatibility but
-has not been validated. See [recorded validation](docs/validation.md).
 
 MIT licensed.
