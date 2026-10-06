@@ -22,16 +22,18 @@ outcome-based synthesis, and the limits of committed worker checkouts. These
 guidance changes have not yet been benchmarked with live models. Runtime checks
 used local fixtures; model, thinking, codemode, and budget defaults are unchanged.
 
-The README demo was re-recorded on 2026-10-06 against 0.5.0 with OpenAI
-`gpt-6-luna`. Pi loaded only the Pinata extension and `subagents` skill, without
-Pinata-specific system-prompt instructions. The orchestrator used the typed tools:
-its first `pinata_delegate` gave scouts checks and was rejected by validation, and
-the corrected job launched. Two scouts ran in parallel; research waited for both,
-read their outcomes, and fetched MDN's Retry-After and Fetch documentation. Pi
-stayed idle with no model polling, resumed once from the native completion, and
-passed `pinata_barrier` for all three tasks. No project files changed, and all
-worker panes and worktrees were removed. The rejected `pinata_delegate` call left
-an empty run directory behind.
+The README demo was re-recorded on 2026-10-06 against 0.5.0 plus the
+builder-only `ownership`/`checks` guidance, with OpenAI `gpt-6-luna`. Pi loaded
+only the Pinata extension and `subagents` skill, without Pinata-specific
+system-prompt instructions. Every orchestrator tool call succeeded, and
+`pinata_delegate` accepted the job on the first call. Two scouts ran in parallel;
+research waited for both, read their outcomes, and fetched MDN's Retry-After and
+Fetch documentation. Pi stayed idle with no model polling, resumed once from the
+native completion, and passed `pinata_barrier` for all three tasks. No project
+files changed, and all worker panes and worktrees were removed. An earlier take,
+before that guidance fix, had its first `pinata_delegate` rejected because the
+coordinator gave a scout `ownership`; that rejected call also left an empty run
+directory behind.
 
 ## 0.4.0 release checks
 
