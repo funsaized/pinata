@@ -32,7 +32,9 @@ checks, validates the tag, lockfile, package identity, and packed paths, then
 publishes the exact tarball with provenance using the repository's `NPM_TOKEN`
 secret. The token must belong to `funsaized` and permit publication of `pi-pinata`.
 CI checks the npm integrity hash before calling the GitHub Packages mirror for
-the same version. It does not require a Herdr server or model credentials.
+the same version. After both registries succeed, CI creates the GitHub release for
+the tag with generated notes, unless one already exists; edit its notes afterward
+if needed. It does not require a Herdr server or model credentials.
 
 For a failed run, inspect its result before retrying. The workflow can also be
 manually dispatched against an existing release tag:

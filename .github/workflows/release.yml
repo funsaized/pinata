@@ -1,4 +1,4 @@
-name: Release npm and GitHub Packages
+name: Release npm, GitHub Packages, and GitHub release
 
 on:
   push:
@@ -56,3 +56,23 @@ jobs:
     uses: ./.github/workflows/sync-github-package.yml
     with:
       version: ${{ needs.npm.outputs.version }}
+
+  release:
+    needs: [npm, github]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Create the GitHub release once both registries have the version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+          VERSION: ${{ needs.npm.outputs.version }}
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists"
+          else
+            gh release create "$RELEASE_TAG" --verify-tag --title "pi-pinata $VERSION" --generate-notes
+          fi
