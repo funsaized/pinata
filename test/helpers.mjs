@@ -67,7 +67,9 @@ export async function fixture(t, tasks, options = {}) {
     tasks,
     ...options.job,
   };
-  const { run } = await init(job);
+  if (options.before) await options.before(repo);
+  const created = await init(job);
+  const { run } = created;
   t.after(async () => {
     try {
       await cancel(run);
@@ -79,7 +81,14 @@ export async function fixture(t, tasks, options = {}) {
       await fs.rm(repo.dir, { recursive: true, force: true });
     }
   });
-  return { ...repo, run, cfg, job, manifest: () => readJson(path.join(run, "manifest.json")) };
+  return {
+    ...repo,
+    run,
+    created,
+    cfg,
+    job,
+    manifest: () => readJson(path.join(run, "manifest.json")),
+  };
 }
 export async function settled(f) {
   const s = await wait(f.run, 30_000);
@@ -98,4 +107,21 @@ export async function started(f, name) {
   const file = path.join(f.run, "tasks", name, "1", "process.json");
   await untilFile(file);
   return readJson(file);
+}
+
+export async function gitIn(cwd, ...args) {
+  const r = await command([
+    "git",
+    "-C",
+    cwd,
+    "-c",
+    "user.name=pinata fixture",
+    "-c",
+    "user.email=fixture@example.invalid",
+    "-c",
+    "commit.gpgsign=false",
+    ...args,
+  ]);
+  if (r.code) throw new Error(r.stderr);
+  return r.stdout.trim();
 }

@@ -8,12 +8,13 @@ helper commands for everyday use.
 - [Set up pinata](setup.md): install, reload, and check readiness with Pi.
 - [Run your first scout](tutorials/first-scout.md): ask a code question and read the findings.
 - [Build and review a change](tutorials/build-and-review.md): delegate a fix through local integration.
+- [Review your own changes](../examples/README.md#review-your-own-changes): `/pinata-review` for uncommitted work, a branch, or a pull request.
 - [Agent examples](../examples/README.md): copy and adapt prompts for each role.
 - [Recover and clean up a run](recovery.md): ask Pi to resume, repair, cancel, or undo work.
 
 ## Configure and understand pinata
 
-- [Builder dependencies](dependencies.md): understand automatic setup and override it when needed.
+- [Builder dependencies](dependencies.md): automatic setup, overrides, and `.worktreeinclude` for local files.
 - [Models and configuration files](configuration.md#config-files): set global or project preferences.
 - [Codemode](codemode.md): advanced worker tool configuration and limits.
 - [How pinata runs a job](architecture.md): worktrees, review, integration, and trust boundaries.

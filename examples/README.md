@@ -142,6 +142,25 @@ and whether the proposed tests can detect failure. Separate blocking defects
 from optional improvements. Do not implement the plan.
 ```
 
+### Review your own changes
+
+`/pinata-review` sends three reviewers (correctness, risk, and tests) over your
+uncommitted changes and merges their findings. Name a branch or a pull request
+to review that instead, and add a focus if you have one:
+
+```text
+/pinata-review
+/pinata-review main Check the migration for data loss.
+/pinata-review 482
+```
+
+You can also ask in your own words:
+
+```text
+Have two reviewers look at everything on this branch since main, one for
+security and one for test coverage. Keep it under a dollar. Don't change files.
+```
+
 ## Coordinate the whole coding job
 
 `engmgmt` is a coordinator skill, not a sixth worker role:

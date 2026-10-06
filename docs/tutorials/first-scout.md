@@ -2,7 +2,7 @@
 
 Ask Pi to delegate a small code question, then read the scout's findings.
 Complete [setup](../setup.md) first and open Pi in a Herdr pane in your project.
-Workers read committed Git `HEAD`, so choose a repository with an existing commit.
+Choose a Git repository with at least one commit.
 This makes model calls using your current Pi model unless you configured overrides.
 
 ## 1. Ask Pi to delegate
@@ -26,9 +26,12 @@ Herdr workspace. When the scout finishes, Pi receives completion and collects
 its report. You do not need to create job JSON or poll helper commands.
 
 The scout can read and search files, but cannot edit, run tests, or browse the web.
-It sees committed files, including their committed contents rather than your
-uncommitted edits. If the run is blocked, ask Pi to explain the blocker; see
-[recovery](../recovery.md).
+It sees your files as they were when you asked, including uncommitted edits and
+new files, but not ignored files such as `node_modules`. If the run is blocked,
+ask Pi to explain the blocker; see [recovery](../recovery.md).
+
+While it runs, Pi shows the scout's state, time, and cost above the editor. Type
+`/pinata` at any point for the same view without asking the model.
 
 ## 3. Read the findings
 

@@ -62,6 +62,19 @@ else if (args[0] === "auth") {
   if (scenario.delay) await new Promise((r) => setTimeout(r, scenario.delay));
   send({ type: "session", id: "fixture-session" });
   send({ type: "agent_start" });
+  // A tool-use turn that spent money before the final answer.
+  if (scenario.spend)
+    send({
+      type: "message_end",
+      message: {
+        role: "assistant",
+        provider: spec.model.provider,
+        model: spec.model.id,
+        stopReason: "toolUse",
+        content: [],
+        usage: scenario.spend,
+      },
+    });
   for (let i = 0; i < (scenario.toolCalls ?? 0); i++)
     send({ type: "tool_execution_start", toolName: "read" });
   if (scenario.hang) {
@@ -82,6 +95,9 @@ else if (args[0] === "auth") {
       if ((await fs.readFile(path.join(process.cwd(), file), "utf8")) !== value)
         throw new Error("Dependency barrier did not provide code");
     }
+  for (const file of scenario.absent ?? [])
+    if (await fs.stat(path.join(process.cwd(), file)).catch(() => null))
+      throw new Error(`Unexpected file in worker checkout: ${file}`);
   const writes = scenario.write ?? {};
   const reverted = new Set();
   for (const [file, original] of Object.entries(spec.resultRepair ? {} : writes)) {
@@ -159,6 +175,7 @@ else if (args[0] === "auth") {
         model: spec.model.id,
         stopReason: scenario.error ? "error" : "stop",
         content: [{ type: "text", text: JSON.stringify(result) }],
+        ...(scenario.usage && { usage: scenario.usage }),
       },
     });
     send({ type: "turn_end" });

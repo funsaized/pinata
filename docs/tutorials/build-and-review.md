@@ -3,10 +3,11 @@
 Ask Pi to coordinate a small fix, have a separate reviewer inspect it, and bring
 the approved change back to your working tree.
 
-Complete [setup](../setup.md) and choose a small, understood issue in a repository
-with a committed starting point. [A scout](first-scout.md) can help locate the
-relevant code first. Workers start from committed `HEAD`; commit any prerequisites
-you want them to see before delegating.
+Complete [setup](../setup.md) and choose a small, understood issue in a Git
+repository. [A scout](first-scout.md) can help locate the relevant code first.
+Workers start from your files as they are, uncommitted changes included. The
+builder's change is applied on top of them, so keep editing other files if you
+like, but leave the ones the builder owns alone until it is integrated.
 
 ## 1. Describe the change and its checks
 
@@ -25,7 +26,7 @@ Do not stage, commit, or push.
 This authorizes a local coding job and its model calls. Builders have bash and
 run with your OS permissions. Keep the scope and approved checks specific.
 For projects with dependencies, pinata normally detects a setup command from
-committed root lockfiles; see [builder dependencies](../dependencies.md).
+root lockfiles; see [builder dependencies](../dependencies.md).
 
 ## 2. Let Pi coordinate the work
 

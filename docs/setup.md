@@ -9,8 +9,9 @@ Node 22.19.0 or newer, Git, and an authenticated model supported by Pi. Linux ha
 been validated; macOS has not. See [validation](validation.md) for tested versions.
 
 Run Pi inside a Herdr pane in a Git repository with an existing commit. Workers
-start from committed `HEAD`. If you run outside Herdr, configure an existing named
-session as described below.
+start from your checkout as it is, uncommitted changes included. If you run
+outside Herdr, configure an existing named session as described below.
+Reviewing GitHub pull requests also needs the GitHub CLI (`gh`), signed in.
 
 ## 2. Install and reload
 
@@ -121,7 +122,7 @@ PINATA=/absolute/installed/package/lib/pinata.mjs
 node "$PINATA" resources /absolute/path/to/a/project
 ```
 
-The output should have `ok: true` and resolve two skills and five prompts to the
+The output should have `ok: true` and resolve two skills and six prompts to the
 installed package. If a personal resource uses the same name, resolve the
 collision in Pi configuration. Do not overwrite existing skills or prompts.
 The probe ignores untrusted project resources, so also check the active

@@ -81,16 +81,17 @@ Layered: `~/.pi/agent/pinata.json`, then `<repo>/.pi/pinata.json`, then the job'
 `config`. `models`, `fallbacks`, `limits` merge per entry; other keys replace.
 `init` returns `config.origins` (which layer set each value).
 
-| Key            | Default                                                                                                                                                 |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `models`       | `{default?, scout?, research?, planner?, builder?, reviewer?}`, each `{provider, id, thinking}`. Thinking: off, minimal, low, medium, high, xhigh, max. |
-| `fallbacks`    | `{role: [model, ...]}`, at most 5; used only if the preferred model is unavailable or unauthenticated.                                                  |
-| `setup`        | Builders only: detected from root lockfile; a shell string to override (`$PINATA_ROOT` = main checkout), or `false`.                                    |
-| `codemode`     | `true`                                                                                                                                                  |
-| `webExtension` | Detected pi-web-access entry; override path.                                                                                                            |
-| `passEnv`      | Extra env var names for workers (never values).                                                                                                         |
-| `session`      | Herdr session name; required only outside a Herdr pane.                                                                                                 |
-| `limits`       | `concurrency` 3, `startupMs` 30000, `taskMs` 1200000, `jobMs` 5400000, `repairs` 2, `maxTurns` 60, `maxToolCalls` 400.                                  |
+| Key                  | Default                                                                                                                                                 |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `models`             | `{default?, scout?, research?, planner?, builder?, reviewer?}`, each `{provider, id, thinking}`. Thinking: off, minimal, low, medium, high, xhigh, max. |
+| `fallbacks`          | `{role: [model, ...]}`, at most 5; used only if the preferred model is unavailable or unauthenticated.                                                  |
+| `setup`              | Builders only: detected from root lockfile; a shell string to override (`$PINATA_ROOT` = main checkout), or `false`.                                    |
+| `codemode`           | `true`                                                                                                                                                  |
+| `includeUncommitted` | `true`: workers start from the user's checkout with uncommitted and untracked changes. `false` starts from `HEAD`.                                      |
+| `webExtension`       | Detected pi-web-access entry; override path.                                                                                                            |
+| `passEnv`            | Extra env var names for workers (never values).                                                                                                         |
+| `session`            | Herdr session name; required only outside a Herdr pane.                                                                                                 |
+| `limits`             | `concurrency` 3, `startupMs` 30000, `taskMs` 1200000, `jobMs` 5400000, `repairs` 2, `maxTurns` 60, `maxToolCalls` 400; optional `costUsd` (dollars).    |
 
 Model order per task: `task.model`, `models[role]`, `models.default`, then the
 coordinating Pi's current model. Use the thinking level Pi actually applies;
@@ -109,9 +110,18 @@ a changed level is treated as not ready.
 | `ownership`               | Builders only, required: repo-relative files or dir prefixes, no trailing slash. Independent builders must not overlap. |
 | `checks`                  | Builders only: `[{id, argv, timeoutMs?}]`, no shell parsing; else `noChecksReason`                                      |
 | `reviewOf`                | Reviewers only: target ID, which must also be in `after`                                                                |
+| `reviewBase`              | Reviewers only, instead of `reviewOf`: review the starting checkout against a revision (`HEAD` = uncommitted changes)   |
+| `reviewPr`                | Reviewers only, instead of `reviewOf`: GitHub pull request number, fetched with `gh`                                    |
 
 Builders need `allowWrites: true`. Research needs pi-web-access (`init` reports
-`research.webExtension`; `null` means not installed).
+`research.webExtension`; `null` means not installed). A reviewer takes exactly
+one of `reviewOf`, `reviewBase`, `reviewPr`; the last two cannot depend on a
+builder, and `init`/`add` reject them when there is nothing to review.
+
+Workers start from `base.commit`: the user's `HEAD` plus uncommitted and
+untracked changes captured at `init` (`base.uncommittedFiles`). Ignored files are
+absent except those copied from `.worktreeinclude` (`included` in status).
+Integration needs the user's `HEAD` unchanged and refuses files edited since.
 
 ## Reading results
 
@@ -125,7 +135,9 @@ without using the repair budget. Self-reported checks are claims; trust the
 supervisor's `checks`.
 
 Status reports configured/selected/verified models, thinking, model origins and
-approved fallbacks used, plus effective codemode and limits. Task `metrics` contain
+approved fallbacks used, plus effective codemode and limits, `base`, and `spend`
+(`costUsd`, `tokens`, `limitUsd`). `costLimit` means the run stopped at
+`limits.costUsd`: it accepts no tasks or repairs; a new run needs a higher limit. Task `metrics` contain
 elapsed, readiness, startup, setup, model, checks and verification milliseconds,
 turns, tool calls by name and usage (input, output, cached tokens, total, cost).
 Missing usage is `null`, never an inferred zero. Readiness metadata is cached only

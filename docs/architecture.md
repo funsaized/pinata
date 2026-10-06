@@ -63,12 +63,20 @@ reports if a recorded background coordinator has stopped.
 
 ## Worktrees and ownership
 
-Each run records the repository's committed `HEAD`. Worker worktrees begin at
-that commit. They do not receive arbitrary uncommitted changes from your working
-tree. A dependent builder receives verified changes from predecessor builders.
+Each run records your `HEAD` and, if the checkout has uncommitted or untracked
+changes, a snapshot of them. The snapshot is a commit on top of `HEAD`, built
+on a copy of your index, so your own index and staging are never touched. A private ref,
+`refs/pinata/<run-id>/base`, keeps it available for later repairs. Worker
+worktrees begin at the snapshot, so agents see the files as you left them. Set
+`config.includeUncommitted` to `false` to start from `HEAD` instead. A dependent
+builder receives verified changes from predecessor builders.
 
-Because ignored files are not in the commit, a fresh worktree has no installed
-dependencies. Before a builder starts, its worker runs one setup command there,
+Ignored files are not part of the snapshot, so a fresh worktree has no installed
+dependencies and no local secrets. Files you list in `.worktreeinclude` are the
+exception: pinata copies those ignored files into each new worktree. They stay
+ignored there, so they never show up in a change or an integration.
+
+Before a builder starts, its worker runs one setup command in its worktree,
 detected from the root lockfiles or set with `config.setup`. The supervisor runs
 it, not the model, and it must leave tracked and unignored files unchanged, so
 setup output can never become part of a deliverable. Workers themselves still
@@ -84,6 +92,15 @@ shared ownership lock.
 A reviewer inspects its target's actual worktree and evidence. It does not review
 a paraphrase of the change. When a repair changes the evidence, the old review
 no longer approves it.
+
+A reviewer can also review changes that already exist, instead of another task.
+`reviewBase` compares your checkout (uncommitted changes included) with a Git
+revision: `HEAD` for only the uncommitted changes, or a branch such as `main` for
+everything since your branch left it. `reviewPr` fetches a GitHub pull request
+with `gh` into a private ref, refusing it if the head moved while fetching, and
+reviews it in its own worktree. Your checkout never changes. Either way the
+reviewer gets the diff, the changed-file list, and a checkout of the reviewed
+revision, and its verdict names a fingerprint of the base and head commits.
 
 ## Why an idle pane is not success
 
@@ -148,8 +165,9 @@ terminal.
 
 ## Integration and recovery
 
-Integration requires all tasks to succeed and every builder to have a current
-approving review. The helper applies verified file deltas in order, checks their
+Integration requires all tasks to succeed, every builder to have a current
+approving review, and your `HEAD` to be where it was when the run started. The
+helper applies verified file deltas in order, checks their
 starting contents, and runs the integrated checks. It preserves your Git index
 and does not commit, push, publish, or deploy.
 
@@ -196,6 +214,12 @@ background services, releases, and global configuration changes. The helper also
 blocks ordinary recursive launches through a child marker. These workflow rules
 are not protection against a malicious bash-capable worker.
 
+Workers can read whatever reaches their worktree. That includes your
+uncommitted files, and any ignored files you list in `.worktreeinclude`, such as
+`.env`. List only what the agents need. When pinata fetches a pull request, it
+uses your `gh` login and SSH agent itself; workers never receive those
+credentials.
+
 Process cleanup checks PID, start time, command, process group, and observed
 descendants. A rapidly daemonizing process can escape observation. The helper
 retains and reports processes or workspaces whose ownership it cannot prove.
@@ -220,8 +244,16 @@ worker starts.
 
 Builder checks may update files; those changes become part of the evidence and
 must respect ownership. Integrated checks must not alter managed code or the
-index. Live-credential checks require explicit approval. Time, turn, and tool-call limits
-are not spending caps; enforce monetary limits with your provider.
+index. Live-credential checks require explicit approval.
+
+Workers report token usage and cost as they go, using the prices Pi has for the
+model. Status, the Pi widget, and completion messages show the total. With
+`limits.costUsd` set, each worker stops when it has spent what was left of the
+budget when it launched, and the coordinator cancels the rest of the run once
+the combined total reaches the limit. The check runs after each model turn, so a
+run can end slightly over the limit. It only counts what Pi reports: a provider
+whose usage Pi cannot price is not limited. Keep a hard limit with your provider
+as well.
 
 pinata coordinates local, single-host work. It does not schedule remote workers
 or implement remote deployment transactions.
@@ -235,8 +267,9 @@ or implement remote deployment transactions.
 | `cli.mjs`        | Argument handling and help text                                  |
 | `config.mjs`     | Configuration validation and model selection                     |
 | `preflight.mjs`  | `doctor` and `resources`                                         |
-| `run.mjs`        | Run creation, manifest state, the task graph, and locking        |
-| `workspace.mjs`  | Worktree creation and setup detection                            |
+| `run.mjs`        | Run creation, manifest state, the task graph, locking, and spend |
+| `workspace.mjs`  | Uncommitted snapshots, worktrees, `.worktreeinclude`, and setup  |
+| `subject.mjs`    | Resolving reviews of existing changes and pull requests          |
 | `launch.mjs`     | Building a task payload and submitting it to a Herdr pane        |
 | `herdr.mjs`      | Herdr transport, pane ownership checks, and workspace creation   |
 | `schedule.mjs`   | `tick`, `wait`, `barrier`, `repair`, `retry-launch`, `cancel`    |
@@ -246,6 +279,8 @@ or implement remote deployment transactions.
 | `evidence.mjs`   | Revalidating a task's outcome before anything depends on it      |
 | `integrate.mjs`  | `integrate` and `rollback`                                       |
 | `cleanup.mjs`    | Automatic pane/worktree retirement, `cleanup`, and `unlock`      |
+| `progress.mjs`   | Read-only run views: `runs`, the widget, and `/pinata` text      |
+| `monitor.mjs`    | Pi widget, footer status, and the `/pinata` command              |
 | `worker.mjs`     | The per-attempt supervisor: setup, Pi, checks, and evidence      |
 | `core.mjs`       | Validation, Git and file snapshots, processes, role tool tables  |
 
