@@ -8,7 +8,7 @@ The npm package is `pi-pinata`. It contains
 two Pi skills, five agent prompt templates, typed Pi tools, and a Node helper. It has no runtime
 npm dependencies or resident service.
 
-[![Orchestrator launches two parallel scouts, then research uses both reports](https://raw.githubusercontent.com/funsaized/pinata/master/media/pinata-demo.gif)](https://github.com/funsaized/pinata/releases/download/v0.2.0/pinata-demo.mp4)
+[![Orchestrator launches two parallel scouts, research uses both reports, and Pi resumes on native completion](https://raw.githubusercontent.com/funsaized/pinata/master/media/pinata-demo.gif)](https://github.com/funsaized/pinata/blob/master/media/pinata-demo.mp4)
 
 ## Install
 

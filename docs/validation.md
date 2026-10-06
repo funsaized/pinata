@@ -22,6 +22,17 @@ outcome-based synthesis, and the limits of committed worker checkouts. These
 guidance changes have not yet been benchmarked with live models. Runtime checks
 used local fixtures; model, thinking, codemode, and budget defaults are unchanged.
 
+The README demo was re-recorded on 2026-10-06 against 0.5.0 with OpenAI
+`gpt-6-luna`. Pi loaded only the Pinata extension and `subagents` skill, without
+Pinata-specific system-prompt instructions. The orchestrator used the typed tools:
+its first `pinata_delegate` gave scouts checks and was rejected by validation, and
+the corrected job launched. Two scouts ran in parallel; research waited for both,
+read their outcomes, and fetched MDN's Retry-After and Fetch documentation. Pi
+stayed idle with no model polling, resumed once from the native completion, and
+passed `pinata_barrier` for all three tasks. No project files changed, and all
+worker panes and worktrees were removed. The rejected `pinata_delegate` call left
+an empty run directory behind.
+
 ## 0.4.0 release checks
 
 On 2026-10-05, the release passed **96 tests, 0 failures**, formatting/linting,
@@ -91,7 +102,7 @@ also reject mismatched tags/versions, lockfiles, package identities, and unexpec
 packed files. The optional pi-web-access branch was not rerun for this release;
 its earlier results are recorded below.
 
-The revised README demo records a real Pi orchestrator using OpenAI `gpt-6-luna`
+The 0.2.0 README demo recorded a real Pi orchestrator using OpenAI `gpt-6-luna`
 to launch two independent scouts in parallel: one inspects a disposable HTTP
 retry client, the other its tests. A research task depends on both scouts, reads
 both outcome files, and fetches MDN's Retry-After and Fetch API documentation
