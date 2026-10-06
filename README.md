@@ -2,7 +2,7 @@
 
 piñata gives Pi a team. Ask for a scout, a researcher, a planner, a builder, or a
 reviewer, and each one opens in its own [Herdr](https://herdr.dev/) workspace
-where you can watch it work. When they finish, Pi brings their results back.
+**where you can watch it work**. When they finish, Pi brings their results back.
 Every builder change gets a separate review before it reaches your checkout.
 
 [![Orchestrator launches two parallel scouts, research uses both reports, and Pi resumes on native completion](https://raw.githubusercontent.com/funsaized/pinata/master/media/pinata-demo.gif)](https://github.com/funsaized/pinata/blob/master/media/pinata-demo.mp4)
