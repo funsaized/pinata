@@ -150,4 +150,4 @@ start.
 The [documentation index](docs/README.md) also links to contributor testing,
 recorded validation, and npm publication instructions.
 
-MIT licensed.
+MIT licensed. Made w/ Opus 5.5, a bit of hand crafted code, and a lot of stepping through & debugging :P
