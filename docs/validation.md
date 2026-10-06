@@ -5,6 +5,18 @@ unproven. For the commands that reproduce these runs, see [testing](testing.md).
 For the trust boundaries the results apply to, see
 [architecture](architecture.md#trust-and-safety).
 
+## 0.5.1 release checks
+
+On 2026-10-06, the patch passed **109 tests, 0 failures**, formatting/linting,
+the packed Pi 1.0.3 lifecycle/codemode checks, and the owned Herdr 0.9.1 smoke.
+A new regression covers integrating again after a repair drops a file: the
+earlier integration is reverted first, so no unreviewed content remains and
+rollback restores the original files. Delegation guidance and the typed tool
+schema now mark `ownership` and `checks` as builder-only, and validation errors
+name the task and field. In the re-recorded live demo, the coordinator's
+delegation was accepted on the first call. Model, thinking, codemode, and budget
+defaults are unchanged.
+
 ## 0.5.0 release checks
 
 On 2026-10-05, the release passed **108 tests, 0 failures**, formatting/linting,
