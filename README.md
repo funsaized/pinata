@@ -5,7 +5,9 @@ reviewer, and each one opens in its own [Herdr](https://herdr.dev/) workspace
 **where you can watch it work**. When they finish, Pi brings their results back.
 Every builder change gets a separate review before it reaches your checkout.
 
-[![Two scouts and research run in parallel on uncommitted work, then a builder, a reviewer, integration, /pinata, and /pinata-review. Click to play the video.](https://raw.githubusercontent.com/funsaized/pinata/master/media/pinata-demo.png)](https://github.com/funsaized/pinata/blob/master/media/pinata-demo.mp4)
+
+https://github.com/user-attachments/assets/28283e98-8e80-4484-abaa-8bfef3277c86
+
 
 ## Install
 
