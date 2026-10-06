@@ -126,6 +126,26 @@ test("builder repair retains earlier edits; reviewer re-reviews; integrated chec
   assert.equal(report.report.length, 0, "Verified integration already retired the worktrees");
 });
 
+test("re-integrating after a repair replaces the earlier integration and rollback restores the originals", async (t) => {
+  const build = task(
+    "build",
+    "builder",
+    { write: { "a.txt": "A1", "b.txt": "B1" }, repair: { "a.txt": "A2", "b.txt": "original" } },
+    { ownership: ["a.txt", "b.txt"], noChecksReason: "Fixture text change inspected directly" },
+  );
+  const f = await fixture(t, [build, review("audit", "build")]);
+  const read = (file) => fs.readFile(path.join(f.cwd, file), "utf8");
+  await settled(f);
+  assert.equal((await integrate(f.run)).integration.status, "verified");
+  assert.deepEqual([await read("a.txt"), await read("b.txt")], ["A1", "B1"]);
+  await repair(f.run, "build", "Keep only the a.txt change");
+  await settled(f);
+  assert.equal((await integrate(f.run)).integration.status, "verified");
+  assert.deepEqual([await read("a.txt"), await read("b.txt")], ["A2", "original"]);
+  await rollback(f.run);
+  assert.deepEqual([await read("a.txt"), await read("b.txt")], ["original", "original"]);
+});
+
 test("parallel builders own separate worktrees; downstream builder receives dependency code", async (t) => {
   const downstream = task(
     "next",
@@ -376,6 +396,14 @@ test("delegation and integration work through paths with spaces, quotes, Unicode
 test("input contracts reject path escapes, unknown fields, and unsafe environment inheritance", async () => {
   assert.throws(() => validateTask(builder("x", { "../outside": "X" })), /Unsafe/);
   assert.throws(() => validateTask(task("x", "unknown")), /Unknown persona/);
+  assert.throws(
+    () => validateTask({ ...task("look", "scout"), ownership: ["client.mjs"] }),
+    /Task look: ownership is for builders only; remove it from this scout task/,
+  );
+  assert.throws(
+    () => validateTask({ ...task("dig", "research"), checks: [{ id: "c", argv: ["true"] }] }),
+    /Task dig: checks is for builders only; remove it from this research task/,
+  );
   assert.throws(() => config({ passEnv: ["NODE_OPTIONS"] }), /Unsafe/);
   assert.throws(() => config({ mystery: true }), /Unknown/);
   assert.equal(environment().NPM_TOKEN, undefined);
