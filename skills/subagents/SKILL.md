@@ -131,7 +131,9 @@ its checkout does not contain.
 To review work that already exists, use reviewers with `reviewBase` (`HEAD` for
 uncommitted changes, a branch for everything since it) or `reviewPr` (a GitHub
 pull request number; needs `gh`) instead of `reviewOf`, with `allowWrites:
-false`. Give each reviewer a distinct focus. `/pinata-review` does this.
+false`. Give each reviewer a distinct focus. `/pinata-review` does this. In a
+build job, review builders with `reviewOf` only: integration needs every task
+to succeed, so a `reviewBase` reviewer that asks for changes blocks it.
 
 If the user names a budget, set `config.limits.costUsd`. Report `spend` from
 status with the results; a `costLimit` entry means the run stopped there.

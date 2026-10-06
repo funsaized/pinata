@@ -66,30 +66,31 @@ always review before you merge.
 
 ## What it's like to use
 
-- **You can watch every agent work.** Each one is a real Pi session in its own
-  Herdr workspace, not a summary streamed back to you. Switch to it any time.
-- **Pi brings the results back.** With Herdr's Pi integration enabled, Pi
-  resumes when the agents finish and collects their reports. It spends no tokens
-  checking in while they work.
-- **Agents see what you see.** They start from your checkout as it is,
-  uncommitted and untracked changes included. You don't have to commit first.
-- **Agents hand off to each other.** "Research once both scouts are done" is a
-  single request. Agents that don't depend on each other run at the same time.
-- **Every builder change gets a separate review.** Builders work in their own
-  worktree, and a reviewer must approve the exact change before it is applied to
-  your checkout. You can roll back an integration while its files remain
-  unchanged. You decide what gets committed.
-- **Reviewers can check your own work too.** `/pinata-review` sends independent
-  reviewers over your uncommitted changes, your branch, or a GitHub pull request,
-  then merges what they find into one list.
-- **You can see what it costs.** Pi shows each running agent's time, tokens, and
-  cost above the editor. Set `limits.costUsd` and the run stops when it reaches
-  that amount.
-- **It cleans up after itself.** Finished workspaces close, and each agent's
-  worktree is removed once its work is done or merged. Results stay, so you can
-  look back at what each agent found.
-- **It uses the model you're on.** Every agent uses your current Pi model. You
-  can give each role its own model and thinking level when you want to.
+- **Watch any agent.** Each agent is a real Pi session in its own Herdr
+  workspace. Switch to one whenever you like and see what it's reading and
+  running.
+- **Pi picks up the results.** With Herdr's Pi integration enabled, Pi resumes
+  on its own when the agents finish and reads their reports. While they work, it
+  sits idle and uses no tokens.
+- **Agents work from your current files.** Uncommitted edits and new files come
+  along, so agents see the same code you're looking at.
+- **Agents can wait on each other.** Ask for "research once both scouts are
+  done" and Pi sets up the order. Anything that doesn't depend on other work
+  runs in parallel.
+- **Builder changes are reviewed before they land.** Each builder works in its
+  own worktree, and a separate reviewer has to approve that exact change before
+  pinata applies it to your checkout. You can roll an integration back as long
+  as you haven't edited those files since. Committing is left to you.
+- **Review your own work, too.** `/pinata-review` points several reviewers at
+  your uncommitted changes, a branch, or a GitHub pull request and gives you one
+  combined list of findings.
+- **Cost is visible.** Above the editor, Pi lists each running agent with its
+  time, tokens, and cost. Set `limits.costUsd` to stop a run at a dollar amount.
+- **Cleanup is automatic.** Finished workspaces close, and worktrees are removed
+  once their work is done or merged. Results are kept, so you can go back and
+  read what each agent found.
+- **Same model as you.** Agents use your current Pi model by default. You can
+  give each role its own model and thinking level.
 
 ## Common asks
 
@@ -124,9 +125,9 @@ start.
 
 ## Good to know
 
-- Agents start from your checkout as it was when you asked, including
-  uncommitted and untracked files. Ignored files, such as `node_modules` and
-  `.env`, stay out unless you list them in [`.worktreeinclude`](docs/dependencies.md#copy-local-files-with-worktreeinclude).
+- Agents get a copy of your files as they were when you asked, uncommitted
+  changes included. Ignored files like `node_modules` and `.env` are left out
+  unless you list them in [`.worktreeinclude`](docs/dependencies.md#copy-local-files-with-worktreeinclude).
 - Builders run commands with your permissions, so read a builder's task before
   you approve it. [Concepts](docs/architecture.md#trust-and-safety) has details.
 - Tested on Linux; macOS should work. See [validation](docs/validation.md).

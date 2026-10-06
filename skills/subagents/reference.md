@@ -116,7 +116,8 @@ a changed level is treated as not ready.
 Builders need `allowWrites: true`. Research needs pi-web-access (`init` reports
 `research.webExtension`; `null` means not installed). A reviewer takes exactly
 one of `reviewOf`, `reviewBase`, `reviewPr`; the last two cannot depend on a
-builder, and `init`/`add` reject them when there is nothing to review.
+builder, and `init`/`add` reject them when there is nothing to review. Keep them
+out of build jobs: a rejected one blocks integration.
 
 Workers start from `base.commit`: the user's `HEAD` plus uncommitted and
 untracked changes captured at `init` (`base.uncommittedFiles`). Ignored files are
