@@ -52,8 +52,10 @@ layer around the helper.
 3. Detect tools and model readiness. The helper does not install tools, change
    global configuration, start a server, or upgrade a shared server.
 4. Jobs require a Git root with an existing commit. Do not create an initial
-   commit without authorization. Resolve dirty overlapping work before delegating
-   writes. Unrelated user changes must remain untouched.
+   commit without authorization. Workers see the user's uncommitted and untracked
+   changes, so there is no need to commit first. Integration applies on top of
+   those files and refuses ones edited after `init`; tell the user not to edit a
+   builder's files until integration. Unrelated user changes must remain untouched.
 5. pinata layers the user's `~/.pi/agent/pinata.json`, then the project's
    `.pi/pinata.json`, under the job's `config`. Put in the job only what the user
    asked to change; `init` reports `config.origins` for every value. Without any
@@ -119,10 +121,20 @@ Independent builders get separate worktrees and non-overlapping ownership.
 Dependent builders receive the verified changes of their predecessors. Reviewers
 inspect their target's real worktree, diff, outcome, and check logs.
 
-Worker checkouts start from committed `HEAD`. Uncommitted, untracked, and ignored
-local files (including a local `.pi` directory) are absent unless explicitly
-prepared by the helper. Supply relevant local configuration facts as scoped
-context rather than asking a worker to read files its checkout does not contain.
+Worker checkouts start from the user's checkout at `init`, uncommitted and
+untracked files included (`base` in the `init` result). Ignored local files
+(including a local `.pi` directory) are absent unless listed in
+`.worktreeinclude` or created by builder setup. Supply relevant local
+configuration facts as scoped context rather than asking a worker to read files
+its checkout does not contain.
+
+To review work that already exists, use reviewers with `reviewBase` (`HEAD` for
+uncommitted changes, a branch for everything since it) or `reviewPr` (a GitHub
+pull request number; needs `gh`) instead of `reviewOf`, with `allowWrites:
+false`. Give each reviewer a distinct focus. `/pinata-review` does this.
+
+If the user names a budget, set `config.limits.costUsd`. Report `spend` from
+status with the results; a `costLimit` entry means the run stopped there.
 
 Children must not delegate, stage, commit, install dependencies, start background
 services, push, publish, deploy, or change global configuration. The helper denies

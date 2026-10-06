@@ -56,18 +56,19 @@ command that runs in builder worktrees, so read it before approving a run.
 
 ## Config
 
-| Field          | Default                    | Meaning                                                    |
-| -------------- | -------------------------- | ---------------------------------------------------------- |
-| `pi`           | `pi` on `PATH`             | Pi executable path or name                                 |
-| `herdr`        | `herdr` on `PATH`          | Herdr executable path or name                              |
-| `session`      | Captured Herdr environment | Existing named session; required outside Herdr             |
-| `models`       | `{}`                       | Model entries keyed by `default` or role                   |
-| `fallbacks`    | `{}`                       | Up to five approved model entries per role, in order       |
-| `passEnv`      | `[]`                       | Additional environment variable names allowed into workers |
-| `webExtension` | Detected from Pi packages  | pi-web-access entry file; required for research            |
-| `setup`        | Detected from lockfiles    | Builder worktree setup command, or `false`; see below      |
-| `codemode`     | `true`                     | Give every worker Pi's `codemode` tool                     |
-| `limits`       | Table below                | Worker, time, repair, turn, and tool-call limits           |
+| Field                | Default                    | Meaning                                                    |
+| -------------------- | -------------------------- | ---------------------------------------------------------- |
+| `pi`                 | `pi` on `PATH`             | Pi executable path or name                                 |
+| `herdr`              | `herdr` on `PATH`          | Herdr executable path or name                              |
+| `session`            | Captured Herdr environment | Existing named session; required outside Herdr             |
+| `models`             | `{}`                       | Model entries keyed by `default` or role                   |
+| `fallbacks`          | `{}`                       | Up to five approved model entries per role, in order       |
+| `passEnv`            | `[]`                       | Additional environment variable names allowed into workers |
+| `webExtension`       | Detected from Pi packages  | pi-web-access entry file; required for research            |
+| `setup`              | Detected from lockfiles    | Builder worktree setup command, or `false`; see below      |
+| `codemode`           | `true`                     | Give every worker Pi's `codemode` tool                     |
+| `includeUncommitted` | `true`                     | Start workers from your uncommitted changes; see below     |
+| `limits`             | Table below                | Worker, time, repair, turn, tool-call, and cost limits     |
 
 Roles are `scout`, `research`, `planner`, `builder`, and `reviewer`. `session`
 accepts letters, digits, underscores, and hyphens. Inside Herdr, the helper
@@ -137,11 +138,11 @@ installation decision, or run restart is needed. Adding the first builder
 resolves setup from the saved configuration and base commit; `add` and `status`
 include the current setup decision.
 
-| `config.setup` | Result                                                  |
-| -------------- | ------------------------------------------------------- |
-| Omitted        | Detect from root lockfiles committed at the base commit |
-| A string       | Run that command (`source: "config"`)                   |
-| `false`        | Run nothing (`source: "disabled"`)                      |
+| `config.setup` | Result                                                    |
+| -------------- | --------------------------------------------------------- |
+| Omitted        | Detect from root lockfiles in the run's starting checkout |
+| A string       | Run that command (`source: "config"`)                     |
+| `false`        | Run nothing (`source: "disabled"`)                        |
 
 Detection picks one command per ecosystem and joins them with `&&`:
 
@@ -167,9 +168,34 @@ repository path, and counts against the attempt deadline. It fails the attempt
 with `failureStage: "setup"` when it exits nonzero, times out, or changes any
 tracked or unignored file. See [Give builders their dependencies](dependencies.md).
 
+### Uncommitted changes
+
+`init` records your `HEAD`. If the checkout also has tracked changes or untracked
+files that are not ignored, it saves them as a commit on top of `HEAD` and starts
+every worker there. It works on a copy of your index, so your index and staging
+are unchanged. The commit is kept under `refs/pinata/<run-id>/base`. `init` and
+`status` report it as `base`:
+
+```json
+"base": {
+  "head": "4be7…",
+  "commit": "91c0…",
+  "uncommittedFiles": ["src/retry.mjs", "notes.md"]
+}
+```
+
+With a clean checkout, `commit` equals `head` and no ref is created. Set
+`includeUncommitted` to `false` to start from `HEAD` regardless. Ignored files
+are never included; see [`.worktreeinclude`](dependencies.md#copy-local-files-with-worktreeinclude)
+for the ones workers need.
+
+Integration applies reviewed changes on top of your files as they were at
+`init`. It refuses if `HEAD` has moved, or if a file it would change has been
+edited since.
+
 ### Limits
 
-All values are positive integers. Time values use milliseconds.
+Values other than `costUsd` are positive integers. Time values use milliseconds.
 
 | Key            | Default                                     | Maximum    |
 | -------------- | ------------------------------------------- | ---------- |
@@ -180,11 +206,20 @@ All values are positive integers. Time values use milliseconds.
 | `repairs`      | `2` per task                                | `10`       |
 | `maxTurns`     | `60` per attempt                            | `1000`     |
 | `maxToolCalls` | `400` per attempt, including codemode calls | `10000`    |
+| `costUsd`      | None                                        | `10000`    |
 
 Limits are saved with the run. There is at most one same-attempt submission
 retry and one result-format repair. The latter also consumes the repair budget.
 Setup failures have a separate budget of two retries and do not consume it.
-These limits do not impose provider dollar or token caps.
+
+`costUsd` is a dollar amount, such as `2` or `0.5`, for the whole run. It
+counts the cost Pi reports for each model call, across every attempt and repair.
+A worker stops when it has spent what was left of the budget when it launched.
+Once the run's total reaches the limit, the coordinator cancels the remaining
+work, and `status` reports `costLimit: {limitUsd, spentUsd, at}`. A run that
+reached its limit accepts no more tasks or repairs; start a new run with a
+higher limit. The check runs after each model turn, so a run can end slightly
+over. Usage that Pi cannot price is not counted.
 
 ## Task
 
@@ -201,12 +236,36 @@ These limits do not impose provider dollar or token caps.
 | `ownership`      | `[]`; required for builders | Repository-relative files or directory prefixes, not globs |
 | `checks`         | `[]`                        | Approved checks for a builder                              |
 | `noChecksReason` | Conditional                 | Required for a builder without checks                      |
-| `reviewOf`       | Required only for reviewers | Target task ID; must also appear directly in `after`       |
+| `reviewOf`       | Reviewers: one of three     | Target task ID; must also appear directly in `after`       |
+| `reviewBase`     | Reviewers: one of three     | Review your checkout against this Git revision; see below  |
+| `reviewPr`       | Reviewers: one of three     | Review this GitHub pull request; see below                 |
 
 Ownership rejects absolute paths, traversal, and `.git`. Independent builders
 cannot overlap ownership; builders ordered by dependencies can. Only builders
 can have nonempty ownership or checks. Builder tasks require `allowWrites: true`.
 A reviewer can target any non-reviewer task.
+
+### Reviewing existing changes
+
+A reviewer takes exactly one target. `reviewOf` reviews another task in the same
+run. The other two review changes that already exist:
+
+- `reviewBase` reviews your checkout at `init`, uncommitted changes included,
+  against its merge base with this revision. `HEAD` reviews only the uncommitted
+  changes; `main` reviews everything since your branch left `main`.
+- `reviewPr` reviews a GitHub pull request in this repository, by number. It
+  needs `gh`, signed in.
+
+`init` and `add` resolve the target before anything runs, and reject it when
+there is nothing to review. For a pull request, pinata asks `gh` for the head
+and base, fetches both from the matching remote into `refs/pinata/<run-id>/`,
+and refuses if the fetched head differs from what `gh` reported. The reviewer
+works in its own worktree at the reviewed revision. It cannot depend on a
+builder; use `reviewOf` for that.
+
+The reviewer's task file includes `reviewTarget.subject` (`kind`, `ref`, `base`,
+`head`, and `pr` for pull requests), `changedFiles`, and `diff`. Its review
+object uses `taskId: null` and the fingerprint of the subject.
 
 ### Tools by role
 
@@ -264,11 +323,11 @@ Finding severities are `critical`, `high`, `medium`, `low`, and `info`.
 
 Additional fields required for successful results:
 
-| Role           | Fields                                                               |
-| -------------- | -------------------------------------------------------------------- |
-| Scout, planner | Nonempty `brief`                                                     |
-| Research       | `brief` of at most 8000 characters; nonempty `sources` array         |
-| Reviewer       | `review: {taskId, fingerprint, verdict}` matching the current target |
+| Role           | Fields                                                                                                        |
+| -------------- | ------------------------------------------------------------------------------------------------------------- |
+| Scout, planner | Nonempty `brief`                                                                                              |
+| Research       | `brief` of at most 8000 characters; nonempty `sources` array                                                  |
+| Reviewer       | `review: {taskId, fingerprint, verdict}` matching the current target; `taskId` is `null` for existing changes |
 
 Each research source has `url`, `title`, `supports`, and `applicability`.
 URLs must use HTTP or HTTPS without embedded credentials. Review verdicts are
@@ -295,6 +354,7 @@ returned by `init`.
 | `tasks/<id>/<n>/process.json`                                               | Observed process identities for reconciliation              |
 | `tasks/<id>/<n>/cancel.json`                                                | Persisted cancellation request                              |
 | `tasks/<id>/<n>/pi.stdout.log`, `pi.stderr.log`                             | Private Pi events; headless JSON output and stderr          |
+| `tasks/<id>/<n>/usage.json`                                                 | Live token usage and cost, updated after each model turn    |
 | `tasks/<id>/<n>/setup.stdout.log`, `setup.stderr.log`                       | Builder setup output                                        |
 | `tasks/<id>/<n>/tmp/`                                                       | Pi's `TMPDIR`, including codemode overflow files            |
 | `setup/<id>.json`                                                           | Setup marker for a builder worktree                         |
@@ -305,6 +365,12 @@ returned by `init`.
 | `worktrees/<id>/`                                                           | Task worktree; a reviewer uses its target's tree            |
 | `integration/journal.json`                                                  | Local integration progress and rollback evidence            |
 | `integration/before/`                                                       | File contents retained for rollback                         |
+
+Two kinds of Git ref live under `refs/pinata/<run-id>/`: `base` for the
+uncommitted snapshot, and `pr-<number>` and `pr-<number>-base` for fetched pull
+requests. They keep those commits for repairs. They do not appear in
+`git branch`, and you can delete them with `git update-ref -d` once you no longer
+need the run.
 
 `<n>` is the 1-based attempt number, for example `tasks/build/1/`. It is not
 the result's `attemptId`, which has a value such as `build-1`. Log pairs in the
