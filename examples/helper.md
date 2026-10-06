@@ -118,6 +118,11 @@ To review the planner instead, use a distinct review ID, set `reviewOf` to
 `plan`, and set `after` to `["plan"]`. Include that plan in the run. Reviewers
 cannot review another reviewer.
 
+To review changes that already exist, replace `reviewOf` and `after` with
+`"reviewBase": "HEAD"` (your uncommitted changes), `"reviewBase": "main"` (your
+branch since `main`), or `"reviewPr": 482` (a GitHub pull request, fetched with
+`gh`). Such a job needs no builder and can keep `allowWrites` false.
+
 Expect a fingerprint-bound `approve` or `changes_requested` verdict. Approval
 cannot include unresolved medium, high, or critical findings. A rejection needs
 [repair and re-review](../docs/recovery.md#repair-a-failed-task-or-rejected-review),
@@ -161,6 +166,7 @@ Each file in [jobs/](jobs/) is a complete job for `init`. Replace `cwd`,
 | [monorepo-setup-job.json](jobs/monorepo-setup-job.json)       | Explicit `setup` that installs one pnpm workspace package                       |
 | [parallel-builders-job.json](jobs/parallel-builders-job.json) | Two independent builders with separate ownership, each with its own review      |
 | [research-plan-job.json](jobs/research-plan-job.json)         | Read-only: scout, then version-specific research, then a plan                   |
+| [review-changes-job.json](jobs/review-changes-job.json)       | Read-only: two reviewers on the branch since `main`, with a $2 cost limit       |
 
 In `parallel-builders-job.json`, setup copies `node_modules` from your checkout
 (`$PINATA_ROOT`) instead of installing. That copy is nearly instant on

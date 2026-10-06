@@ -40,8 +40,8 @@ authorization, exhausted budgets, or genuine blockers.
    dependency on each builder. Reviewers inspect actual diffs/source and logs,
    challenge assumptions, and distinguish defects from speculation.
    A builder that needs a new dependency must report a blocker; it cannot
-   install. Add the dependency in the user's checkout with authorization,
-   commit it if approved, and start a new run so setup installs it.
+   install. Add the dependency in the user's checkout with authorization and
+   start a new run; its snapshot includes the new lockfile, and setup installs it.
 6. **Repair.** Convert actionable review findings into bounded builder feedback.
    Use `repair`, wait, and re-review the new evidence. Preserve unrelated changes.
    Do not bypass a rejection or reset counters by inventing another task.

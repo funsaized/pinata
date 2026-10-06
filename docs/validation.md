@@ -5,6 +5,62 @@ unproven. For the commands that reproduce these runs, see [testing](testing.md).
 For the trust boundaries the results apply to, see
 [architecture](architecture.md#trust-and-safety).
 
+## 0.6.0 release checks
+
+On 2026-10-06, the release passed **132 tests, 0 failures**, formatting/linting,
+the packed Pi 1.0.4 lifecycle, native completion, and codemode checks (including
+real pi-web-access), the owned Herdr 0.9.1 smoke, and the real Herdr + compiled
+Pi TUI completion smoke. Node 26.7.0 and Git 2.55.0 on Linux.
+
+New fixture tests cover:
+
+- Uncommitted and untracked files reaching workers, while ignored files stay out
+  and the user's `HEAD`, index, and `git status` are unchanged.
+- A builder changing a file the user had already edited, integration applying on
+  top of that edit, rollback restoring it, and integration refusing a file the
+  user edited again after `init`.
+- `includeUncommitted: false`, a clean checkout creating no ref, and a rejected
+  job leaving neither a run directory nor a ref.
+- A sparse checkout, whose snapshot still contains the files outside the sparse
+  patterns.
+- Reviews of uncommitted changes and of a branch, the subject fingerprint and
+  diff, rejection when there is nothing to review, and the field rules.
+- A pull request fetched from a local bare remote through a stand-in `gh`, and
+  refusal when the fetched head differs from what `gh` reported.
+- Recorded and live spend, a worker stopping at its share of `costUsd`, parallel
+  workers cancelled once their total reaches the limit, and `add`/`repair`
+  refused afterwards.
+- `progress`, `runs`, the Pi widget and footer, `/pinata`, and recovery of
+  watched runs on session start.
+- `.worktreeinclude` copying only ignored files, to every role, and none of them
+  reaching integration.
+
+Live checks with OpenAI `gpt-6-luna`:
+
+- `test/e2e-build.mjs`: the builder fixed the bug with an uncommitted test case
+  present, and integration kept that test. 67,710 tokens, $0.0047, under a $10
+  limit.
+- `test/e2e-review.mjs`: two reviewers on an uncommitted off-by-one both asked
+  for changes; the correctness reviewer cited `page.mjs:5` with a failing input.
+  24,501 tokens, $0.0028.
+- In a real Pi TUI in a Herdr pane, `/pinata-review` started three reviewers on
+  an uncommitted change. The widget showed queued, then running with live cost,
+  then each rejection, and cleared when the run finished. `/pinata` and
+  `/pinata runs` printed the run without a model turn. Reviewers ran on
+  `gpt-6-astra` from the personal per-role config; the run cost $0.30. Pi then
+  called `pinata_barrier` on the rejected reviews, which failed as designed;
+  `/pinata-review` now says to skip the barrier. That wording change was not
+  re-run live.
+
+`reviewPr` was also resolved against this repository's pull request 5 on
+github.com, from a scratch clone and without model calls: the fetched head
+matched GitHub's `headRefOid`, and the base was the merge base with `master`.
+
+Before this release, the live scripts picked up the unit tests' isolated Pi
+agent directory and found no models. They now use the real one.
+
+macOS remains unvalidated.
+
 ## 0.5.1 release checks
 
 On 2026-10-06, the patch passed **109 tests, 0 failures**, formatting/linting,

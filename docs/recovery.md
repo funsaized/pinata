@@ -43,6 +43,17 @@ the existing budget. If the setup command needs changing, show me the correction
 A wrong setup command or one that changed project files requires a corrected
 new run. See [builder dependencies](dependencies.md#fix-a-setup-failure).
 
+## Continue after a cost limit
+
+```text
+The pinata run stopped at its cost limit. Show me what each agent finished and
+what it spent, then propose a new run for the rest with a limit I can approve.
+```
+
+A run that reached `limits.costUsd` keeps everything its agents finished, but it
+accepts no more tasks or repairs. Finished results stay readable with `/pinata`
+and status. Continue in a new run with a higher limit.
+
 ## Resolve an uncertain launch
 
 ```text

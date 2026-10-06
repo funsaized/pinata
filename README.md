@@ -43,6 +43,10 @@ Then have research check both reports against the official docs.
 touches my checkout.
 ```
 
+```text
+/pinata-review Focus on the error handling.
+```
+
 That's enough to start. Pi picks the agents, writes their briefs, and decides
 who waits for whom.
 
@@ -67,12 +71,20 @@ always review before you merge.
 - **Pi brings the results back.** With Herdr's Pi integration enabled, Pi
   resumes when the agents finish and collects their reports. It spends no tokens
   checking in while they work.
+- **Agents see what you see.** They start from your checkout as it is,
+  uncommitted and untracked changes included. You don't have to commit first.
 - **Agents hand off to each other.** "Research once both scouts are done" is a
   single request. Agents that don't depend on each other run at the same time.
 - **Every builder change gets a separate review.** Builders work in their own
   worktree, and a reviewer must approve the exact change before it is applied to
   your checkout. You can roll back an integration while its files remain
   unchanged. You decide what gets committed.
+- **Reviewers can check your own work too.** `/pinata-review` sends independent
+  reviewers over your uncommitted changes, your branch, or a GitHub pull request,
+  then merges what they find into one list.
+- **You can see what it costs.** Pi shows each running agent's time, tokens, and
+  cost above the editor. Set `limits.costUsd` and the run stops when it reaches
+  that amount.
 - **It cleans up after itself.** Finished workspaces close, and each agent's
   worktree is removed once its work is done or merged. Results stay, so you can
   look back at what each agent found.
@@ -86,17 +98,22 @@ always review before you merge.
 | Understand unfamiliar code      | "Have a scout map how payments flow through this service."               |
 | Investigate from several angles | "Send three scouts in parallel: API, database, and tests."               |
 | Check facts against sources     | "Have research verify these claims against the official docs."           |
+| Review your changes             | "/pinata-review", "/pinata-review main", or "/pinata-review 123"         |
 | Plan before changing anything   | "Have a planner propose the smallest fix for this issue."                |
 | Build, review, and apply        | "/skill:engmgmt Implement the approved plan with an independent review." |
-| Check on a run                  | "How is the pinata run going?"                                           |
+| Check on a run                  | `/pinata` (no model turn), or "How is the pinata run going?"             |
 | Undo the last integration       | "Roll back the latest pinata integration."                               |
 | Tidy up old runs                | "Preview cleanup of old pinata runs, then clean up what's safe."         |
 
 ## Where to look while it runs
 
 Each agent gets its own Herdr workspace in the sidebar. Open one to watch that
-agent think, read files, and call tools as it goes. Ask Pi how the run is going
-to see each agent's status, model, time, and token cost.
+agent think, read files, and call tools as it goes.
+
+While a run is going, Pi shows each agent's state, time, tokens, and cost above
+the editor, and a one-line summary in the footer. Type `/pinata` for the same
+view in the transcript, or `/pinata runs` for past runs in this repository.
+Neither sends anything to the model.
 
 ## If something feels off
 
@@ -107,8 +124,9 @@ start.
 
 ## Good to know
 
-- Agents start from your last commit. Commit first if you want them to see work
-  in progress.
+- Agents start from your checkout as it was when you asked, including
+  uncommitted and untracked files. Ignored files, such as `node_modules` and
+  `.env`, stay out unless you list them in [`.worktreeinclude`](docs/dependencies.md#copy-local-files-with-worktreeinclude).
 - Builders run commands with your permissions, so read a builder's task before
   you approve it. [Concepts](docs/architecture.md#trust-and-safety) has details.
 - Tested on Linux; macOS should work. See [validation](docs/validation.md).

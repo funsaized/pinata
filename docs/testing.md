@@ -141,13 +141,22 @@ PINATA_LIVE_CONFIG=examples/configs/luna.json \
 npm run test:e2e
 ```
 
-This creates a disposable npm project that depends on `ms` and has a failing
-test. It installs that project's dependencies in the checkout, then runs scout,
-builder, and reviewer with the configured models in real Herdr panes, and
-integrates the result. It needs npm registry access. It asserts that setup was
-detected and ran in the builder worktree, that every task succeeded, and that
-integration verified. It prints per-task tool-call counts and the integrated
-diff, then cleans up and keeps the evidence.
+This runs two scripts. The first creates a disposable npm project that depends
+on `ms` and has a failing test, plus an uncommitted extra test case. It installs
+that project's dependencies in the checkout, then runs scout, builder, and
+reviewer with the configured models in real Herdr panes, and integrates the
+result under a $10 cost limit. It needs npm registry access. It asserts that
+setup was detected and ran in the builder worktree, that the uncommitted test
+reached the workers and survived integration, that every task succeeded, and
+that integration verified. It prints per-task tool-call counts, spend, and the
+integrated diff.
+
+The second leaves an off-by-one bug in an uncommitted change and has two
+reviewers review it with `reviewBase: "HEAD"` under a $5 limit. It asserts that
+the correctness reviewer rejects the change with evidence in `page.mjs`, that the
+verdict names the subject's fingerprint, and that the checkout is unchanged.
+Both scripts clean up and keep the evidence. They use your real Pi agent
+directory for models and authentication.
 
 ## Manual skill and persona evaluation
 

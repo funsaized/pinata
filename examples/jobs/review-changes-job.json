@@ -1,0 +1,30 @@
+{
+  "cwd": "/absolute/path/to/repository",
+  "approval": "Replace with your approval for a read-only review of the current branch against main",
+  "allowWrites": false,
+  "config": {
+    "limits": { "costUsd": 2 }
+  },
+  "tasks": [
+    {
+      "id": "review-correctness",
+      "role": "reviewer",
+      "task": "Review the changes since main for logic errors, broken invariants, edge cases, error handling, and regressions in callers.",
+      "acceptance": [
+        "Every finding cites file:line evidence and a concrete failure scenario.",
+        "Approve only if no critical, high, or medium defect remains."
+      ],
+      "reviewBase": "main"
+    },
+    {
+      "id": "review-tests",
+      "role": "reviewer",
+      "task": "Review whether the tests and checks in these changes actually establish that the change works, and name what is untested.",
+      "acceptance": [
+        "Name the tests that cover each changed behavior, or say none do.",
+        "Approve only if the changed behavior is covered."
+      ],
+      "reviewBase": "main"
+    }
+  ]
+}

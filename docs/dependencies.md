@@ -1,12 +1,15 @@
 # Give builders their dependencies
 
-Builder worktrees start from committed `HEAD`, so ignored directories such as
-`node_modules` or `.venv` are missing. Before a builder starts, pinata runs one
+Builder worktrees start from your checkout as it was when the run began, but
+only the files Git tracks or would track. Ignored directories such as
+`node_modules` or `.venv` are missing, and so are ignored local files such as
+`.env`. Before a builder starts, pinata runs one
 setup command in its worktree. For most projects that command is detected for
 you. Scout, research, planner, and reviewer tasks never run setup. Runs without
 builders skip detection and report `source: "not-needed"`; leave setup alone and
 continue the run. If you add a builder later, `add` resolves and reports its setup.
-Use this guide to check builder setup, change it, or turn it off.
+Use this guide to check builder setup, change it, or turn it off, and to give
+every worker the local files it needs.
 
 ## Check what pinata detected
 
@@ -25,13 +28,13 @@ When using the helper directly, `init` resolves setup once per run and prints it
 
 Read it before approving the run. `source` is one of:
 
-| Source       | Meaning                                                |
-| ------------ | ------------------------------------------------------ |
-| `detected`   | Chosen from lockfiles committed at the repository root |
-| `config`     | Your `config.setup` command                            |
-| `none`       | Nothing will run; `reason` says why                    |
-| `disabled`   | You set `config.setup` to `false`                      |
-| `not-needed` | No builder tasks; setup is not detected or run         |
+| Source       | Meaning                                        |
+| ------------ | ---------------------------------------------- |
+| `detected`   | Chosen from lockfiles at the repository root   |
+| `config`     | Your `config.setup` command                    |
+| `none`       | Nothing will run; `reason` says why            |
+| `disabled`   | You set `config.setup` to `false`              |
+| `not-needed` | No builder tasks; setup is not detected or run |
 
 Detection uses only root lockfiles and only commands that refuse to rewrite the
 lockfile. See the [detection table](configuration.md#setup) for the exact
@@ -75,7 +78,36 @@ installing:
 On btrfs, XFS, and APFS (use `cp -c -R` on macOS) the copy shares disk blocks and
 finishes almost instantly. Run directories live under `.git/pinata`, on the same
 filesystem as the repository, so the clone works there. Check that your checkout's
-dependencies match the committed lockfile first; a copy does not verify that.
+dependencies match the lockfile first; a copy does not verify that.
+
+## Copy local files with .worktreeinclude
+
+Some checks need ignored files that an install does not create: a `.env` with
+test settings, or a local config file. List them in `.worktreeinclude` at the
+repository root, using `.gitignore` patterns:
+
+```gitignore
+.env
+config/local.json
+```
+
+When pinata creates a worktree, it copies each ignored file that matches into
+it. This applies to every role, not only builders. Claude Code uses the same file
+for its worktrees, so one list can serve both.
+
+A few rules keep the copies out of your results:
+
+- Only files that are ignored in the worktree are copied. A file Git would track
+  already reaches the worktree through the run's snapshot.
+- Copies stay ignored, so they never appear in a builder's changes, a review
+  diff, or an integration.
+- Symbolic links, files over 16 MiB, and files that already exist in the
+  worktree are skipped. More than 1000 matches fails the task; narrow the
+  patterns.
+- `status` lists what each task received as `included`.
+
+Workers can read these files, and builders can run commands with them. List only
+what the agents need.
 
 ## Turn setup off
 
@@ -110,12 +142,13 @@ A failed setup stops the attempt before Pi starts. The outcome has
 ## What setup does not do
 
 - It runs only for builders. Scouts, planners, and researchers read files;
-  reviewers share their target builder's worktree.
+  reviewers share their target builder's worktree, or get their own worktree
+  when they review existing changes.
 - It runs once per worktree. A repair attempt reuses the installed worktree and
   skips setup unless a lockfile changed.
 - Workers still cannot install packages. If a builder needs a new dependency,
-  it reports a blocker. Add the dependency in your checkout, commit it, and start
-  a new run.
+  it reports a blocker. Add the dependency in your checkout and start a new run;
+  the new lockfile reaches the worktree even before you commit it.
 - It is not a sandbox. Setup runs with your user's permissions and network
   access, like any approved check.
 

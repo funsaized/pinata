@@ -44,13 +44,35 @@ Each retained resource or run includes a reason; GC never resumes or cancels wor
 Workers do not load the coordinator extension. The CLI remains available for
 scripts and less frequent operations such as `note`, `unlock`, and `retry-launch`.
 
+## Pi commands for people
+
+The extension also adds two slash commands and a prompt. The commands read
+saved state and never send anything to the model.
+
+| Command                 | Effect                                                                          |
+| ----------------------- | ------------------------------------------------------------------------------- |
+| `/pinata`               | Show a status card for the runs started in this session, or recent runs if none |
+| `/pinata runs`          | List the last ten runs in this repository with state, task counts, and cost     |
+| `/pinata <run-id>`      | Show one run by ID prefix, including each finished task's summary or error      |
+| `/pinata-review [what]` | Ask Pi to review your changes, a branch, or a pull request with reviewers       |
+
+While a run started from this session is active, Pi also shows each task's
+state, time, tokens, and cost above the editor and a summary in the footer. Both
+refresh every two seconds and disappear when the run finishes. In RPC mode they
+are sent as `setWidget` and `setStatus` requests; JSON and print modes have no UI.
+
+`/pinata-review` with nothing after it reviews your uncommitted changes, or your
+branch against its default base when the checkout is clean. Name a branch to
+review against it, or a pull request number or URL. Anything else you write is
+passed to the reviewers as their focus.
+
 ## Preflight and creation
 
 | Command                    | Effect                                                                                                                                      |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | `help`, `--help`, `-h`     | Print usage; no command also prints usage                                                                                                   |
 | `doctor [config.json]`     | Check prerequisites, versions, Herdr endpoint/schema, and configured extension file; never install or upgrade                               |
-| `resources [cwd]`          | Verify this package's two global skills and five global prompts; exit nonzero if missing or shadowed                                        |
+| `resources [cwd]`          | Verify this package's two global skills and six global prompts; exit nonzero if missing or shadowed                                         |
 | `init <job.json\|->`       | Record scope and initial Git state, resolve builder setup, create a private run, return `{run, id, versions, setup}`; does not launch tasks |
 | `add <run> <task.json\|->` | Append one task object or an array; reject invalid dependencies or ownership                                                                |
 
@@ -86,6 +108,7 @@ project prompts or extensions may still shadow commands in an active Pi session.
 | `resume <run>`               | Alias of `tick`; use after an interruption                                                |
 | `wait <run> [milliseconds]`  | Repeat ticks until all tasks are terminal or the observation window ends                  |
 | `status <run>`               | Read saved state without reconciling or scheduling                                        |
+| `runs [cwd]`                 | List recent runs in a repository, newest first, with state, task counts, and cost         |
 | `barrier <run> <task-id>...` | Revalidate every named task's successful outcome                                          |
 | `note <run> <note.json\|->`  | Append a timestamped JSON note to the run                                                 |
 
@@ -110,9 +133,13 @@ a completed job's deadline or cancellation, without launching workers. Herdr has
 key, so an accepted request whose reply is lost may be delivered twice; matching
 completion IDs identify the same result group. `notifiedAt` is set only on success.
 
-`status` includes effective codemode, limits, models and their configuration
-origins. Each task shows its configured/selected/verified model and thinking,
-fallback decisions, elapsed time, phase metrics, tool counts, available token usage
+`status` includes the run's `base` (your `HEAD`, the commit workers started
+from, and the uncommitted files it captured), `spend` (`costUsd`, `tokens`, and
+`limitUsd` for collected attempts), and `costLimit` when the run stopped there.
+A review of existing changes shows its `reviewSubject`, and a task that received
+`.worktreeinclude` files lists them as `included`. It also includes effective
+codemode, limits, models and their configuration origins. Each task shows its
+configured/selected/verified model and thinking, fallback decisions, elapsed time, phase metrics, tool counts, available token usage
 and failure stage. Older runs may have no metrics. Usage is `null` when Pi did not
 report it; reasoning tokens are already included in output and are not added twice.
 `actualModel` records the provider/model reported by Pi's final assistant message,
