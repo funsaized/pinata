@@ -5,9 +5,7 @@ reviewer, and each one opens in its own [Herdr](https://herdr.dev/) workspace
 **where you can watch it work**. When they finish, Pi brings their results back.
 Every builder change gets a separate review before it reaches your checkout.
 
-
 https://github.com/user-attachments/assets/28283e98-8e80-4484-abaa-8bfef3277c86
-
 
 ## Install
 
