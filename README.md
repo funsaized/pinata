@@ -2,9 +2,8 @@
 
 piñata gives Pi a team. Ask for a scout, a researcher, a planner, a builder, or a
 reviewer, and each one opens in its own [Herdr](https://herdr.dev/) workspace
-where you can watch it work. Pi waits quietly while they run, then picks up their
-results on its own. Code changes stay in their own workspace until a second agent
-has reviewed them, and nothing reaches your checkout until then.
+where you can watch it work. When they finish, Pi brings their results back.
+Every builder change gets a separate review before it reaches your checkout.
 
 [![Orchestrator launches two parallel scouts, research uses both reports, and Pi resumes on native completion](https://raw.githubusercontent.com/funsaized/pinata/master/media/pinata-demo.gif)](https://github.com/funsaized/pinata/blob/master/media/pinata-demo.mp4)
 
@@ -14,8 +13,15 @@ has reviewed them, and nothing reaches your checkout until then.
 pi install npm:pi-pinata
 ```
 
-Run Pi inside a Herdr session and you're ready. You'll need Pi 1.0.2+, Herdr
-0.9.1+, Node 22.19+, and Git; research also uses
+Then enable Herdr's Pi integration, so Pi can resume on its own when the agents
+finish:
+
+```sh
+herdr integration install pi
+```
+
+Reload Pi, run it inside a Herdr session, and you're ready. You'll need Pi
+1.0.2+, Herdr 0.9.1+, Node 22.19+, and Git; research also uses
 [pi-web-access](https://github.com/nicobailon/pi-web-access). [Setup](docs/setup.md)
 covers models, sessions, and checking your install.
 
@@ -37,22 +43,18 @@ Then have research check both reports against the official docs.
 touches my checkout.
 ```
 
-```text
-Clean up anything old pinata runs left behind.
-```
-
 That's enough to start. Pi picks the agents, writes their briefs, and decides
 who waits for whom.
 
 ## Meet the team
 
-| Agent      | Use it when you want…                                                         |
-| ---------- | ----------------------------------------------------------------------------- |
-| `scout`    | A quick map of unfamiliar code: entry points, call paths, data flow, tests    |
-| `research` | Answers from the web or official docs, with sources                           |
-| `planner`  | The smallest correct plan, with the order of work and the risks               |
-| `builder`  | Code written in its own worktree, with your checks run before it reports back |
-| `reviewer` | A second opinion that approves or rejects a builder's exact change            |
+| Agent                   | What it does                                    |
+| ----------------------- | ----------------------------------------------- |
+| Scout (`scout`)         | Finds where the behavior lives.                 |
+| Researcher (`research`) | Checks the docs and brings sources.             |
+| Planner (`planner`)     | Turns findings into a workable plan.            |
+| Builder (`builder`)     | Makes the change and runs the checks.           |
+| Reviewer (`reviewer`)   | Checks the diff and challenges the assumptions. |
 
 Rule of thumb: scout before you understand the code, research before you trust
 an outside fact, plan when the change is big, build when the path is clear, and
@@ -62,14 +64,15 @@ always review before you merge.
 
 - **You can watch every agent work.** Each one is a real Pi session in its own
   Herdr workspace, not a summary streamed back to you. Switch to it any time.
-- **Pi waits quietly.** After handing off the work, Pi goes idle and spends no
-  tokens checking in. When the team finishes, it picks up by itself, reads every
-  result, and answers you.
+- **Pi brings the results back.** With Herdr's Pi integration enabled, Pi
+  resumes when the agents finish and collects their reports. It spends no tokens
+  checking in while they work.
 - **Agents hand off to each other.** "Research once both scouts are done" is a
   single request. Agents that don't depend on each other run at the same time.
-- **Nothing lands without review.** Builders work on a copy of your repo. A
-  separate reviewer must approve the exact change before it is applied to your
-  checkout, and one rollback undoes it. You decide what gets committed.
+- **Every builder change gets a separate review.** Builders work in their own
+  worktree, and a reviewer must approve the exact change before it is applied to
+  your checkout. You can roll back an integration while its files remain
+  unchanged. You decide what gets committed.
 - **It cleans up after itself.** Finished workspaces close, and each agent's
   worktree is removed once its work is done or merged. Results stay, so you can
   look back at what each agent found.
