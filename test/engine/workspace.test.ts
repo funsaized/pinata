@@ -183,6 +183,8 @@ test(
     t.diagnostic(
       `capture ms: median ${times[2].toFixed(1)} min ${times[0].toFixed(1)} (${process.platform})`,
     );
-    assert(times[2] < (process.env.CI ? 100 : 50), `capture median ${times[2].toFixed(1)} ms`);
+    // Windows: three git processes at tens of ms each set the floor (see the plan's notes).
+    const limit = process.platform === "win32" ? 250 : process.env.CI ? 100 : 50;
+    assert(times[2] < limit, `capture median ${times[2].toFixed(1)} ms`);
   },
 );
