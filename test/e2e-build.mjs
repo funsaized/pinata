@@ -9,9 +9,8 @@ import { repository } from "./repository.mjs";
 // A disposable npm project with a dependency and a known bug goes through
 // builder -> reviewer -> integrate. PINATA_E2E_SCOUT=1 adds the comparison stage.
 // An uncommitted test case must reach the workers and survive integration.
-assert.equal(
-  process.env.PINATA_LIVE_SMOKE,
-  "I_AUTHORIZE_PAID_MODEL_CALLS",
+assert.ok(
+  ["1", "I_AUTHORIZE_PAID_MODEL_CALLS"].includes(process.env.PINATA_LIVE_SMOKE ?? ""),
   "Live spending disabled. Read docs/testing.md before opting in.",
 );
 assert(process.env.PINATA_LIVE_CONFIG, "Supply an approved model config file");

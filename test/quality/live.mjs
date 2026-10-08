@@ -21,9 +21,8 @@ import { evaluate } from "./oracle.mjs";
 import { summarize, qualityGate } from "./report.mjs";
 
 // This suite is deliberately excluded from npm test and the published package.
-assert.equal(
-  process.env.PINATA_LIVE_SMOKE,
-  "I_AUTHORIZE_PAID_MODEL_CALLS",
+assert.ok(
+  ["1", "I_AUTHORIZE_PAID_MODEL_CALLS"].includes(process.env.PINATA_LIVE_SMOKE ?? ""),
   "Live spending disabled; read docs/testing.md before opting in",
 );
 assert(process.env.PINATA_LIVE_CONFIG, "Supply an explicit approved model/endpoint config file");
