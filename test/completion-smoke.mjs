@@ -21,6 +21,8 @@ const env = {
   HOME: home,
   LANG: "C",
   PI_CODING_AGENT_DIR: agent,
+  // The package's extension is the engine; this 0.7.0 smoke loads 0.7.0's instead.
+  PINATA_LEGACY: "1",
   PI_OFFLINE: "1",
   TEST_HERDR_STATE: path.join(repo.dir, "herdr.json"),
   TEST_PARENT_SOCKET: path.join(repo.dir, "parent.sock"),
