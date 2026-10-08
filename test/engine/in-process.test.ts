@@ -162,8 +162,11 @@ test("budgets with the faux provider: turns, tool calls, cost and wall clock", a
 test("a live-checkout reader flags a checkout that changed mid-run and creates no worktree", async (t) => {
   let world!: Awaited<ReturnType<typeof fauxWorld>>;
   world = await fauxWorld(t, async (turn) => {
-    if (turn.agent === "watch" && turn.round === 0) {
-      await writeFile(join(world.repo, "README.md"), "# Changed by the user\n");
+    // The user edits the checkout after the reader's first round (its starting fingerprint
+    // is measured in the background while it starts).
+    if (turn.agent === "watch" && turn.round < 2) {
+      if (turn.round === 1)
+        await writeFile(join(world.repo, "README.md"), "# Changed by the user\n");
       return fauxAssistantMessage([fauxToolCall("read", { path: "README.md" })], {
         stopReason: "toolUse",
       });

@@ -7,6 +7,7 @@ import { BlobReader, capture, writeTree } from "../../engine/workspace/changes.t
 import { copyIncluded } from "../../engine/workspace/include.ts";
 import { dropRefs, snapshotBase } from "../../engine/workspace/snapshot.ts";
 import { Worktree, composeBase } from "../../engine/workspace/worktree.ts";
+import { git as gitAsync } from "../../engine/workspace/git.ts";
 import { gitRepo } from "./faux.ts";
 import { bestOf, tempDir } from "./helpers.ts";
 
@@ -180,6 +181,16 @@ test(
           : process.platform === "darwin"
             ? 150
             : 100;
+    // On CI, a runner much slower than usual (seen on Windows: 400-1200 ms) is measured
+    // against its own git: capture must stay within 4x one `git status` there.
+    const gitStatus: number[] = [];
+    for (let i = 0; i < 3; i++) {
+      const t0 = performance.now();
+      await gitAsync(tree.path, ["status", "--porcelain"]);
+      gitStatus.push(performance.now() - t0);
+    }
+    gitStatus.sort((a, b) => a - b);
+    const bound = process.env.CI ? Math.max(limit, 4 * gitStatus[1]) : limit;
     let attempt = 0;
     const result = await bestOf(t, async () => {
       attempt++;
@@ -197,8 +208,8 @@ test(
       }
       times.sort((a, b) => a - b);
       return {
-        ok: times[2] < limit,
-        report: `capture ms: median ${times[2].toFixed(1)} min ${times[0].toFixed(1)} (${process.platform})`,
+        ok: times[2] < bound,
+        report: `capture ms: median ${times[2].toFixed(1)} min ${times[0].toFixed(1)}; bound ${bound.toFixed(1)} (git status ${gitStatus[1].toFixed(1)}) (${process.platform})`,
       };
     });
     assert(result.ok, result.report);
