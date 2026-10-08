@@ -21,6 +21,7 @@ import { prepareRun, verificationStages } from "../verify/stages.ts";
 import { writeRunRecord } from "../verify/integrate.ts";
 import { headCommit } from "../workspace/snapshot.ts";
 import type { PinataUI } from "./ui.ts";
+import { RunServer } from "../ipc/server.ts";
 
 export const RESEARCH_UNAVAILABLE =
   "Research tasks need pi-web-access, which is not loaded in this Pi. Install it with `pi install git:github.com/nicobailon/pi-web-access`, or set config.webExtension.";
@@ -124,6 +125,8 @@ export class PinataHost {
   readonly background = new Set<string>();
   // The widget, footer and live overlay; absent in tests that need no UI.
   ui: PinataUI | undefined;
+  // Socket servers of this session's runs (observe mode, or after /pinata watch).
+  readonly servers = new Map<string, Promise<RunServer>>();
 
   constructor(pi: ExtensionAPI, stages: PipelineStages = verificationStages()) {
     this.pi = pi;
@@ -232,6 +235,8 @@ export class PinataHost {
     this.handles.set(handle.id, handle);
     this.ui?.bind(ctx);
     this.ui?.follow(handle, engine);
+    // Observe mode starts the run's socket with the run; lean mode on the first /pinata watch.
+    if (handle.view().mode === "observe") await this.serve(handle);
     // What integration needs after a reload: the run's tasks, base HEAD and checks.
     await writeRunRecord(handle.dir, {
       id: handle.id,
@@ -245,6 +250,29 @@ export class PinataHost {
       taskMs: config.limits.taskMs,
     });
     return { handle, notices: layered.notices };
+  }
+
+  // Starts (or returns) the run's socket server, for viewers.
+  serve(handle: RunHandle): Promise<RunServer> {
+    const existing = this.servers.get(handle.id);
+    if (existing) return existing;
+    const engine = this.engineInstance!;
+    const settings = (this.pi.getSettings?.() ?? {}) as { theme?: unknown };
+    const started = RunServer.start({
+      run: handle.id,
+      dir: handle.dir,
+      theme: typeof settings.theme === "string" ? settings.theme : null,
+      source: {
+        view: () => handle.view(),
+        subscribe: (consumer) => engine.subscribe(handle.id, consumer),
+        steer: (agent, text, as) => engine.steer(handle.id, agent, text, as, "user"),
+        abort: (agent) => engine.cancel(handle.id, agent, "cancelled from a viewer"),
+      },
+      onClose: () => this.servers.delete(handle.id),
+    });
+    this.servers.set(handle.id, started);
+    started.catch(() => this.servers.delete(handle.id));
+    return started;
   }
 
   // Waits for a foreground run, streaming progress; aborting the tool cancels the run.
@@ -307,6 +335,7 @@ export class PinataHost {
     this.shuttingDown = true;
     while (this.starting.size) await Promise.allSettled(this.starting);
     await this.engineInstance?.shutdown(reason);
+    for (const server of this.servers.values()) await (await server.catch(() => null))?.close();
     this.cache.dispose();
   }
 

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
@@ -426,4 +427,53 @@ test("/pinata open replays a finished run from disk in a session that never ran 
   await pending;
   await command.handler("open nope", second.ctx);
   assert.match(second.notes.at(-1)!, /no task nope/);
+});
+
+test("modes: lean by default with the socket on /pinata watch; observe starts it with the run", async (t) => {
+  const { validateConfig } = await import("../../engine/pi/config.ts");
+  const { IpcClient } = await import("../../engine/ipc/client.ts");
+  assert.equal(validateConfig({}).config.mode, "lean");
+  assert.equal(validateConfig({ mode: "observe" }).config.mode, "observe");
+  assert.throws(() => validateConfig({ mode: "loud" }));
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  let finish!: () => void;
+  const later = new Promise<void>((resolve) => (finish = resolve));
+  const a = await adapter(t, async (turn) => {
+    if (turn.agent === "slow" && turn.round === 0) await gate;
+    if (turn.agent === "seen" && turn.round === 0) await later;
+    return submit(turn);
+  });
+  const command = a.commands.get("pinata");
+  const started = await a.call("pinata_run", { tasks: [spec("slow")], background: true });
+  const { run, dir } = started.details.result;
+  assert(!existsSync(join(dir, "link.json")), "lean mode starts no socket");
+  await command.handler("watch slow", a.ctx);
+  assert.match(a.notes.at(-1)!, /pinata view [0-9a-f]{8} slow/);
+  const viewer = await IpcClient.connect(dir);
+  assert.equal(viewer.view?.run, run);
+  assert.equal(viewer.view?.mode, "lean");
+  release();
+  await new Promise<void>((resolve) => {
+    const check = () => viewer.view?.status === "succeeded" && resolve();
+    viewer.on(check);
+    check();
+  });
+  viewer.close();
+  // The config's mode, then the session override.
+  const observed = await a.call("pinata_run", {
+    tasks: [spec("seen")],
+    config: { mode: "observe" },
+    background: true,
+  });
+  assert(existsSync(join(observed.details.result.dir, "link.json")), "observe starts the socket");
+  await command.handler("mode lean", a.ctx);
+  const lean = await a.call("pinata_run", {
+    tasks: [spec("quiet")],
+    config: { mode: "observe" },
+    background: true,
+  });
+  assert(!existsSync(join(lean.details.result.dir, "link.json")), "the session override wins");
+  finish();
+  for (const handler of a.handlers.session_shutdown) await handler({ reason: "quit" }, a.ctx);
 });
