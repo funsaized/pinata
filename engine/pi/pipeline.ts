@@ -30,9 +30,21 @@ export interface PiRunData {
   instructions: string[];
   codemode: boolean;
   backend: BackendKind;
+  // The run must outlive this Pi: in-process agents run as processes instead.
+  survive?: boolean;
   // Repair feedback per task.
   feedback?: Record<string, string>;
   webExtension?: string | null;
+}
+
+// A task's backend: its own, else the run's config, default in-process. A run that must
+// survive this Pi cannot use in-process agents, so they run as processes.
+export function selectBackend(
+  task: BackendKind | undefined,
+  data: Pick<PiRunData, "backend" | "survive">,
+): BackendKind {
+  const kind = task ?? data.backend ?? "in-process";
+  return data.survive && kind === "in-process" ? "process" : kind;
 }
 
 // Optional stages that later milestones plug in (builders, checks, reviews).
@@ -96,7 +108,7 @@ export function piPipeline(stages: PipelineStages = {}): Pipeline {
       return model;
     },
     backend(run, task) {
-      return task.backend ?? runData(run).backend;
+      return selectBackend(task.backend, runData(run));
     },
     workspaceRef(run, task) {
       return stages.workspaceRef?.(run, task) ?? { kind: "live", path: run.cwd };

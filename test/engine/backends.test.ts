@@ -263,3 +263,18 @@ for (const [kind, make] of worlds) {
     );
   });
 }
+
+test("backend selection: in-process by default, then config, then the task; survive needs processes", async () => {
+  const { selectBackend } = await import("../../engine/pi/pipeline.ts");
+  const { validateConfig } = await import("../../engine/pi/config.ts");
+  const config = validateConfig({}).config;
+  assert.equal(config.backend, "in-process");
+  assert.equal(selectBackend(undefined, config), "in-process");
+  assert.equal(selectBackend(undefined, { backend: "process" }), "process");
+  assert.equal(selectBackend("in-process", { backend: "process" }), "in-process", "task wins");
+  assert.equal(selectBackend("herdr-pi", { backend: "in-process" }), "herdr-pi");
+  assert.equal(selectBackend(undefined, { backend: "in-process", survive: true }), "process");
+  assert.equal(selectBackend("in-process", { backend: "in-process", survive: true }), "process");
+  assert.equal(selectBackend("herdr-pi", { backend: "in-process", survive: true }), "herdr-pi");
+  assert.throws(() => validateConfig({ backend: "thread" }), /backend must be one of/);
+});

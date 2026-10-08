@@ -861,7 +861,7 @@ Gate 1 passes.
     `taskkill /T /F`.
   - Port 0.7.0's identity checks (pid + start time) for cleanup of detached agents.
   - Done when tests prove no survivors after cancel on three OSes.
-- [ ] **E6.5 Backend selection (S).**
+- [x] **E6.5 Backend selection (S).**
   - Default `in-process`. The override is a per-task `backend`, or a run-level
     `config.backend`.
   - `survive: true` implies `process` for agents that would otherwise be in-process.
@@ -1153,7 +1153,8 @@ Read this section and the plan before resuming after a context reset.
   `Telemetry.processes`). M5 is done.
 - M6: E6.1 is done (`engine/backends/process.ts`, `engine/sources/jsonl.ts`; conformance suite
   `test/engine/backends.test.ts` runs every case on both backends through
-  `test/engine/worlds.ts`). Next: E6.5 selection and host wiring, then E6.2–E6.4, E6.6.
+  `test/engine/worlds.ts`). E6.5 is done (`selectBackend` in `engine/pi/pipeline.ts`; `survive` on `pinata_run`, which
+  needs `background`). Next: E6.2–E6.4, E6.6.
 - E0.7 upstream issue: not opened yet (outward-facing; include the `ensureTool` finding).
 
 ### Decisions and deviations

@@ -13,6 +13,7 @@ import { statusText } from "../ui/text.ts";
 import { compactRun, compactTask, type PinataHost, type RunParams } from "./host.ts";
 import { deliverWhenDone } from "./delivery.ts";
 import { integrate, rollback } from "../verify/integrate.ts";
+import { ValidationError } from "../core/validate.ts";
 
 const object = (fields: Record<string, TSchema>, options: Record<string, unknown> = {}) =>
   Type.Object(fields, { additionalProperties: false, ...options });
@@ -122,6 +123,12 @@ export function schemas() {
       background: optional(
         Type.Boolean({
           description: "Return at once; the result arrives later as a follow-up message.",
+        }),
+      ),
+      survive: optional(
+        Type.Boolean({
+          description:
+            "With background:true, keep the run going if Pi exits (agents run as separate processes).",
         }),
       ),
       cwd: optional(string()),
@@ -284,6 +291,8 @@ export function registerTools(pi: ExtensionAPI, host: PinataHost): void {
     async execute(_id, input, signal, onUpdate, ctx) {
       const params = input as unknown as RunParams;
       try {
+        if (params.survive && !params.background)
+          throw new ValidationError("survive:true needs background:true");
         const { handle, notices } = await host.start(params, ctx);
         if (params.background) {
           host.background.add(handle.id);
