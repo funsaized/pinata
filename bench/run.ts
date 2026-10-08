@@ -142,6 +142,7 @@ async function main() {
           spawnMs: null,
           toolCallMs: null,
           dependentMs: null,
+          dependentRequestMs: null,
           memoryPerAgentMB: null,
           peakRssMB: null,
           loopLagP99Ms: null,

@@ -246,8 +246,12 @@ export function judge(outcome: AgentOutcome): Verdict {
       result: null,
     };
   const r = outcome.result;
+  // A review that reached a verdict is a completed review: changes_requested is "rejected"
+  // even when the reviewer also called its own status failed. An approval must say succeeded.
   const status: AgentStatus =
-    r.status === "succeeded" && r.review?.verdict === "changes_requested" ? "rejected" : r.status;
+    r.review?.verdict === "changes_requested" && (r.status === "succeeded" || r.status === "failed")
+      ? "rejected"
+      : r.status;
   return {
     status,
     summary: r.summary,

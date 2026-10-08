@@ -8,6 +8,9 @@ import { createEngine } from "../../engine/core/engine.ts";
 import { Limiter } from "../../engine/core/limiter.ts";
 import type { AgentEvent, ModelRef, TaskSpec } from "../../engine/core/types.ts";
 import { piPipeline } from "../../engine/pi/pipeline.ts";
+import { validateConfig } from "../../engine/pi/config.ts";
+import { validateGraph } from "../../engine/core/validate.ts";
+import { prepareRun, verificationStages } from "../../engine/verify/stages.ts";
 import { RuntimeCache } from "../../engine/pi/runtime.ts";
 import {
   benchText,
@@ -22,6 +25,8 @@ import {
 
 export interface EngineRaw {
   t0: number;
+  // BENCH_TRACE=1: per-agent phase times (ms after t0), for diagnosis.
+  trace?: Record<string, Record<string, number>>;
   setupAt: Record<string, number>;
   wallMs: number;
   startedAt: Record<string, number>;
@@ -37,10 +42,8 @@ export interface EngineRaw {
   errors: string[];
 }
 
-export function supported(scenario: Scenario): string | null {
-  return scenario.tasks.some((t) => t.role === "builder" || t.reviewOf)
-    ? "builders and reviews of builders arrive in M3"
-    : null;
+export function supported(_scenario: Scenario): string | null {
+  return null;
 }
 
 function gc() {
@@ -103,9 +106,35 @@ export async function runEngineScenario(
     onSetup: (task) => (setupAt[task] ??= now()),
   });
   // The adaptive limiter starts a provider at 8; open it so N agents really run at once.
+  const trace: Record<string, Record<string, number>> = {};
+  const mark = (task: string, phase: string) => {
+    if (process.env.BENCH_TRACE) (trace[task] ??= {})[phase] ??= now();
+  };
+  const pipeline = piPipeline(verificationStages());
+  const prepare = pipeline.prepare;
+  pipeline.prepare = async (run, task, signal, options) => {
+    mark(task.id, "prepare");
+    const prepared = await prepare(run, task, signal, options);
+    mark(task.id, "prepared");
+    return prepared;
+  };
+  const start = backend.start.bind(backend);
+  backend.start = async (launch, sink, signal) => {
+    mark(launch.task.id, "backend");
+    const handle = await start(
+      launch,
+      (e) => {
+        if (e.t === "turn_start") mark(launch.task.id, "turn");
+        sink(e);
+      },
+      signal,
+    );
+    mark(launch.task.id, "session");
+    return handle;
+  };
   const engine = createEngine({
     backends: { "in-process": backend },
-    pipeline: piPipeline(),
+    pipeline,
     limiter: new Limiter({ cap: 64, initial: 64 }),
   });
   await cache.get(setup.registry);
@@ -157,13 +186,29 @@ export async function runEngineScenario(
     task: benchText(t),
     acceptance: ["Benchmark acceptance"],
     ...(t.after?.length && { after: t.after }),
+    ...(t.reviewOf && { reviewOf: t.reviewOf }),
+    ...(t.role === "builder" && {
+      ownership: t.ownership ?? [],
+      checks: [{ id: "noop", argv: ["git", "--version"], timeoutMs: 30_000 }],
+    }),
   }));
-  gc();
+  const config = validateConfig({ setup: false, codemode: false }).config;
+  const prep = await prepareRun(
+    setup.repo,
+    `bench-${scenario.name}`,
+    validateGraph(tasks, { allowWrites: true }),
+    config,
+  );
+  if (!process.env.BENCH_NO_GC) gc();
   const baselineRss = process.memoryUsage().rss;
   let peakRss = baselineRss;
-  const sampler = setInterval(() => (peakRss = Math.max(peakRss, process.memoryUsage().rss)), 10);
+  const sampler = setInterval(
+    () => (peakRss = Math.max(peakRss, process.memoryUsage().rss)),
+    process.env.BENCH_NO_SAMPLER ? 1_000_000 : 10,
+  );
   let lag: ReturnType<typeof monitorEventLoopDelay> | undefined;
   try {
+    if (process.env.BENCH_NO_LAG) throw new Error("off");
     lag = monitorEventLoopDelay({ resolution: 1 });
     lag.enable();
   } catch {
@@ -175,11 +220,14 @@ export async function runEngineScenario(
     cwd: setup.repo,
     dir: join(setup.runsDir, scenario.name),
     limits: { concurrency: 64 },
+    allowWrites: true,
     data: {
       models: Object.fromEntries(tasks.map((t) => [t.id, setup.model])),
       instructions: [],
       codemode: false,
       backend: "in-process",
+      config,
+      prep,
     },
   });
   await handle.done;
@@ -194,8 +242,17 @@ export async function runEngineScenario(
   } catch {
     lagP99Ms = null;
   }
+  const relative = Object.fromEntries(
+    Object.entries(trace).map(([task, phases]) => [
+      task,
+      Object.fromEntries(
+        Object.entries(phases).map(([k, v]) => [k, Math.round((v - t0) * 100) / 100]),
+      ),
+    ]),
+  );
   return {
     t0,
+    ...(process.env.BENCH_TRACE && { trace: relative }),
     setupAt,
     wallMs,
     startedAt,
@@ -230,11 +287,18 @@ export function summarize(
   const toolCall = scenario.tasks
     .filter((t) => !t.after?.length)
     .flatMap((t) => (firstRequest[t.id] !== undefined ? [firstRequest[t.id] - raw.t0] : []));
-  const dependent = scenario.tasks.flatMap((t) => {
-    if (!t.after?.length || firstRequest[t.id] === undefined) return [];
-    const ready = Math.max(...t.after.map((p) => raw.settledAt[p] ?? Number.NaN));
-    return Number.isFinite(ready) ? [firstRequest[t.id] - ready] : [];
-  });
+  const ready = (t: (typeof scenario.tasks)[number]) =>
+    Math.max(...t.after!.map((p) => raw.settledAt[p] ?? Number.NaN));
+  const dependent = scenario.tasks.flatMap((t) =>
+    t.after?.length && raw.startedAt[t.id] !== undefined && Number.isFinite(ready(t))
+      ? [raw.startedAt[t.id] - ready(t)]
+      : [],
+  );
+  const dependentRequest = scenario.tasks.flatMap((t) =>
+    t.after?.length && firstRequest[t.id] !== undefined && Number.isFinite(ready(t))
+      ? [firstRequest[t.id] - ready(t)]
+      : [],
+  );
   const notes = [
     "memoryPerAgentMB: (peak RSS - RSS before the run) / most agents running at once",
     `${raw.maxRunning} agents ran at once (limiter opened to 64)`,
@@ -251,12 +315,13 @@ export function summarize(
     setupMs: stat(setupMs),
     toolCallMs: stat(toolCall),
     dependentMs: stat(dependent),
+    dependentRequestMs: stat(dependentRequest),
     memoryPerAgentMB: raw.maxRunning ? mb((raw.peakRss - raw.baselineRss) / raw.maxRunning) : null,
     peakRssMB: mb(raw.peakRss),
     loopLagP99Ms: raw.lagP99Ms,
     cpuMs: raw.cpuMs,
     wallMs: Math.round(raw.wallMs),
-    notes,
+    notes: raw.trace ? [...notes, `trace: ${JSON.stringify(raw.trace)}`] : notes,
   };
 }
 

@@ -16,5 +16,5 @@
     "checkJs": false,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["engine", "bench", "test/engine"]
+  "include": ["engine", "bench", "test/engine", "test/quality/engine.ts"]
 }

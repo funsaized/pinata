@@ -119,3 +119,24 @@ test("core never imports Pi", async () => {
     assert(!/@earendil-works|@mariozechner/.test(source), `${file} imports Pi`);
   }
 });
+
+test("a reviewer that found defects is rejected even if it called its own status failed", async (t) => {
+  const { run } = await fakeEngine(t, {
+    review: {
+      result: fakeResult({
+        status: "failed",
+        review: { taskId: "b", fingerprint: "f", verdict: "changes_requested" },
+      }),
+    },
+  });
+  const view = await (
+    await run(
+      [
+        spec("b", "builder", { ownership: ["x"], noChecksReason: "fixture" }),
+        spec("review", "reviewer", { reviewOf: "b", after: ["b"] }),
+      ],
+      { allowWrites: true },
+    )
+  ).done;
+  assert.equal(view.agents.review.status, "rejected");
+});

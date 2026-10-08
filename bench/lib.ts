@@ -48,8 +48,10 @@ export interface ScenarioResult {
   toolCallMs: Stat | null;
   // Engine only: the agent's own setup (after the startup gate) to its first provider request.
   setupMs?: Stat | null;
-  // Predecessor settled to dependent's first provider request.
+  // Predecessor settled to the dependent's launch (the plan's "a dependent starts").
   dependentMs: Stat | null;
+  // Predecessor settled to the dependent's first provider request.
+  dependentRequestMs?: Stat | null;
   memoryPerAgentMB: number | null;
   peakRssMB: number | null;
   loopLagP99Ms: number | null;
