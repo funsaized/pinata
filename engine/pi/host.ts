@@ -1,12 +1,16 @@
 // One host per parent Pi session: the engine, the shared child model runtime, the session's
 // mode, and the run-level operations behind the model-facing tools and /pinata commands.
-import { realpathSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { closeSync, existsSync, openSync, realpathSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { InProcessBackend } from "../backends/in-process.ts";
 import { ProcessBackend } from "../backends/process.ts";
+import { piCommand } from "../backends/pi-command.ts";
+import { launch } from "../verify/checks.ts";
 import { HerdrPiBackend } from "../backends/herdr-pi.ts";
 import { closeWorkspace, insideHerdr, notify, type PaneResource } from "../herdr/client.ts";
 import { openViewerPane } from "../herdr/panes.ts";
@@ -22,7 +26,7 @@ import { agentDir, layeredConfig, modelCandidates, type PinataConfig } from "./c
 import { piPipeline, type PipelineStages, type PiRunData } from "./pipeline.ts";
 import { RuntimeCache, inherited, selectModel } from "./runtime.ts";
 import { prepareRun, verificationStages } from "../verify/stages.ts";
-import { readRunRecord, writeRunRecord } from "../verify/integrate.ts";
+import { readRunRecord, writeRunRecord, type RunRecord } from "../verify/integrate.ts";
 import { alive, identify } from "../backends/supervise.ts";
 import { headCommit } from "../workspace/snapshot.ts";
 import { agentMessages, type PinataUI } from "./ui.ts";
@@ -115,6 +119,45 @@ export async function repositoryRoot(cwd: string): Promise<string> {
     throw new ValidationError(
       `${cwd} is not inside a Git repository; pinata runs from a repository`,
     );
+  }
+}
+
+const HEADLESS = join(dirname(fileURLToPath(import.meta.url)), "..", "headless", "main.ts");
+
+// Starts a detached headless host that continues a run after its Pi exited (E8.4). Its
+// output goes to <run>/headless.log.
+export function continueHeadless(dir: string, root: string): void {
+  const log = openSync(join(dir, "headless.log"), "a", 0o600);
+  try {
+    const { file, args, verbatim } = launch(
+      [
+        ...piCommand(),
+        "-p",
+        "--no-session",
+        "--offline",
+        "--no-extensions",
+        "--no-skills",
+        "--no-prompt-templates",
+        "--no-themes",
+        "--no-context-files",
+        "--extension",
+        HEADLESS,
+        `/pinata-resume ${JSON.stringify({ dir })}`,
+      ],
+      process.env,
+    );
+    const child = spawn(file, args, {
+      cwd: root,
+      env: { ...process.env, PI_SKIP_VERSION_CHECK: "1", PI_TELEMETRY: "0" },
+      stdio: ["ignore", log, log],
+      detached: true,
+      windowsHide: true,
+      windowsVerbatimArguments: verbatim,
+    });
+    child.on("error", () => {});
+    child.unref();
+  } finally {
+    closeSync(log);
   }
 }
 
@@ -405,9 +448,22 @@ export class PinataHost {
   async shutdown(reason: string): Promise<void> {
     this.shuttingDown = true;
     while (this.starting.size) await Promise.allSettled(this.starting);
+    // Surviving runs still working when Pi exits continue in a headless host (E8.4). A reload
+    // resumes them in the reloaded extension instead.
+    const continuing =
+      reason === "parent exit"
+        ? [...this.survivors].filter((id) => this.handles.get(id)?.view().status === "running")
+        : [];
     await this.engineInstance?.shutdown(reason, {
       detach: (run) => this.survivors.has(run.id),
     });
+    for (const id of continuing) {
+      const dir = this.handles.get(id)!.dir;
+      const record = await readRunRecord(dir).catch(() => null);
+      if (!record?.resume) continue;
+      await writeRunRecord(dir, { ...record, resume: { ...record.resume, owner: null } });
+      if (process.env.PINATA_NO_CONTINUE !== "1") continueHeadless(dir, record.root);
+    }
     for (const server of this.servers.values()) await (await server.catch(() => null))?.close();
     this.cache.dispose();
   }
@@ -433,21 +489,7 @@ export class PinataHost {
       const owner = record.resume.owner;
       if (owner && owner.pid !== process.pid && (await alive(owner))) continue;
       try {
-        const handle = await this.engine(ctx).resume(dir, {
-          cwd: record.root,
-          limits: record.resume.limits,
-          allowWrites: record.allowWrites,
-          data: { ...record.resume.data },
-          reason: "Pi restarted",
-        });
-        this.handles.set(handle.id, handle);
-        this.roots.set(handle.id, record.root);
-        if (record.resume.survive) this.survivors.add(handle.id);
-        if (record.resume.background) this.background.add(handle.id);
-        await writeRunRecord(dir, {
-          ...record,
-          resume: { ...record.resume, owner: await this.owner() },
-        });
+        const handle = await this.resumeRecord(dir, record, ctx, "Pi restarted");
         this.ui?.bind(ctx);
         this.ui?.follow(handle, this.engine(ctx));
         resumed.push(handle.id);
@@ -456,6 +498,69 @@ export class PinataHost {
       }
     }
     return resumed;
+  }
+
+  // Resumes one run directory (the headless host continuing a run that outlived its Pi).
+  async resumeDir(dir: string, ctx: ExtensionContext): Promise<RunHandle> {
+    const record = await readRunRecord(dir);
+    if (!record.resume) throw new Error(`${dir} cannot be resumed (no resume record)`);
+    const owner = record.resume.owner;
+    if (owner && owner.pid !== process.pid && (await alive(owner)))
+      throw new Error(`Run ${record.id.slice(0, 8)} is owned by a running Pi (pid ${owner.pid})`);
+    return this.resumeRecord(dir, record, ctx, "continued without Pi");
+  }
+
+  private async resumeRecord(
+    dir: string,
+    record: RunRecord,
+    ctx: ExtensionContext,
+    reason: string,
+  ): Promise<RunHandle> {
+    const resume = record.resume!;
+    // Claim the run first, so another Pi starting now leaves it alone.
+    await writeRunRecord(dir, { ...record, resume: { ...resume, owner: await this.owner() } });
+    const handle = await this.engine(ctx).resume(dir, {
+      cwd: record.root,
+      limits: resume.limits,
+      allowWrites: record.allowWrites,
+      data: { ...resume.data },
+      reason,
+    });
+    this.handles.set(handle.id, handle);
+    this.roots.set(handle.id, record.root);
+    if (resume.survive) this.survivors.add(handle.id);
+    if (resume.background) this.background.add(handle.id);
+    return handle;
+  }
+
+  // Background runs that settled while no Pi was attached (a headless host finished them)
+  // and whose result was never delivered: their handles, for one delivery each.
+  async undelivered(cwd: string): Promise<RunHandle[]> {
+    const root = await repositoryRoot(cwd).catch(() => null);
+    if (!root) return [];
+    const out: RunHandle[] = [];
+    for (const dir of (await listRuns(await runsRoot(root))).slice(0, 50)) {
+      if (existsSync(join(dir, "delivered.json"))) continue;
+      const record = await readRunRecord(dir).catch(() => null);
+      if (!record?.resume?.background || this.handles.has(record.id)) continue;
+      const owner = record.resume.owner;
+      if (owner && owner.pid !== process.pid && (await alive(owner))) continue;
+      const view = await replay(dir).catch(() => null);
+      if (!view || view.status === "running") continue;
+      const results = new Map<string, Settled>();
+      for (const id of view.order) {
+        const saved = (await this.readResult(dir, id)) as (Settled & { task?: string }) | null;
+        if (saved) results.set(id, saved);
+      }
+      out.push({
+        id: view.run,
+        dir,
+        done: Promise.resolve(view),
+        view: () => view,
+        results: () => results,
+      });
+    }
+    return out;
   }
 
   // Runs a previous Pi left unsettled (it crashed or was killed): their in-process agents are gone.

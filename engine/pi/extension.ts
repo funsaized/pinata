@@ -27,9 +27,11 @@ export default async function pinata(pi: ExtensionAPI): Promise<void> {
     // was lost (in-process agents). Background runs deliver their results as before.
     void host
       .resumeOrphans(ctx)
-      .then((ids) => {
+      .then(async (ids) => {
         for (const id of ids)
           if (host.background.has(id)) deliverWhenDone(pi, host, host.handles.get(id)!);
+        // Background runs a headless host finished while Pi was closed deliver now, once.
+        for (const handle of await host.undelivered(ctx.cwd)) deliverWhenDone(pi, host, handle);
         if (ids.length && ctx.hasUI)
           ctx.ui.notify(
             `pinata: resumed ${ids.length} run${ids.length > 1 ? "s" : ""} left by an earlier Pi (${ids.map((id) => id.slice(0, 8)).join(", ")}). /pinata for status.`,

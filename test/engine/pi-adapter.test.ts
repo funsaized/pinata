@@ -316,7 +316,9 @@ test("the widget and footer follow a run in the TUI and clear when it settles; i
   for (const handler of a.handlers.session_start) await handler({}, a.ctx);
   await a.commands.get("pinata").handler("", a.ctx);
   await settle();
-  assert.equal(timeouts(), before, "an idle Pi has no pinata timers");
+  // Session start scans for runs to resume (git calls); then nothing is left running.
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  assert(timeouts() <= before, "an idle Pi has no pinata timers");
   assert.equal(widgets.length, 0);
   const out = await a.call("pinata_run", { tasks: [spec("one"), spec("two")] });
   assert(!out.isError, JSON.stringify(out));
