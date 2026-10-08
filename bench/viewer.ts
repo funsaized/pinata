@@ -124,4 +124,4 @@ console.log(JSON.stringify({ os: process.platform, results }, null, 2));
 await engine.cancel(handle.id);
 await handle.done;
 await server.close();
-await rm(dir, { recursive: true, force: true });
+await rm(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });

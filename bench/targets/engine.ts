@@ -248,6 +248,6 @@ export async function runEngine(
     return result;
   } finally {
     await loopback?.close();
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 }
