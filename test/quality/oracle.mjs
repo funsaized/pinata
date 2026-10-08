@@ -9,6 +9,7 @@ export const cases = [
   ["trim", " 2 ", 2000],
   ["leading-zero", "002", 2000],
   ["future-date", "Tue, 01 Jan 2030 00:00:02 GMT", 2000],
+  ["date-overflow", "Fri, 01 Jan 9999 00:00:00 GMT", null, -9_007_199_254_740_991],
   ["past-date", "Wed, 01 Jan 2020 00:00:00 GMT", 0],
   ["null", null, null],
   ["undefined", undefined, null],

@@ -2,11 +2,54 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { candidates, retry, scoutClaims, scoreClaims } from "./quality/fixtures.mjs";
 import { evaluate } from "./quality/oracle.mjs";
+import { qualityGate } from "./quality/report.mjs";
 import path from "node:path";
 import { ROOT, command } from "../lib/core.mjs";
 
 const moduleFrom = (source) =>
   import(`data:text/javascript;base64,${Buffer.from(source).toString("base64")}`);
+
+test("quality fails incorrect facts and review verdicts even when every worker completed", () => {
+  const summary = {
+    infrastructureErrors: 0,
+    failedLiveTasks: 0,
+    liveTasks: 8,
+    builderOracle: [{ passed: 28, total: 28 }],
+    reviewControls: {
+      total: 4,
+      evaluated: 4,
+      falseApprovals: 0,
+      falseRejections: 0,
+      missingVerdicts: 0,
+    },
+    factualClaims: {
+      total: 14,
+      correct: 14,
+      incorrect: 0,
+      missing: 0,
+      supported: 14,
+      noncanonical: 14,
+    },
+  };
+  assert.equal(qualityGate(summary).passed, true, "format drift alone is not a factual error");
+  assert.equal(
+    qualityGate({
+      ...summary,
+      factualClaims: { ...summary.factualClaims, correct: 13, incorrect: 1, supported: 13 },
+    }).passed,
+    false,
+  );
+  assert.equal(
+    qualityGate({ ...summary, reviewControls: { ...summary.reviewControls, falseApprovals: 1 } })
+      .passed,
+    false,
+  );
+  assert.equal(qualityGate({ ...summary, builderOracle: [] }).passed, false);
+  assert.equal(
+    qualityGate({ ...summary, factualClaims: { ...summary.factualClaims, supported: 13 } }).passed,
+    false,
+  );
+});
 
 test("independent oracle validates the reference and catches every seeded defect", async () => {
   for (const [name, source] of Object.entries(candidates)) {
@@ -19,6 +62,15 @@ test("independent oracle validates the reference and catches every seeded defect
         `${name}: ${JSON.stringify(result)}`,
       );
   }
+  const unsafeDate = candidates.reference.replace(
+    "const ms = Math.max(0, date.getTime() - now);",
+    "const ms = Math.max(0, date.getTime() - now); if (Number.isFinite(ms)) return ms;",
+  );
+  const { parseRetryAfter } = await moduleFrom(unsafeDate);
+  assert.deepEqual(
+    evaluate(parseRetryAfter).failed.map((c) => c.name),
+    ["date-overflow"],
+  );
 });
 
 test("factual scoring is grounded in actual execution and rejects wrong, duplicate, missing or misplaced claims", async () => {

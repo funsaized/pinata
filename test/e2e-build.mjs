@@ -3,16 +3,11 @@ import * as fs from "node:fs/promises";
 import path from "node:path";
 import { command, readJson } from "../lib/core.mjs";
 import { init, wait, integrate, cleanup, cancel } from "../lib/pinata.mjs";
-// helpers.mjs isolates unit tests from the personal Pi agent directory; a live
-// run needs the real one for its models and authentication.
-const agentDir = process.env.PI_CODING_AGENT_DIR;
-const { repository } = await import("./helpers.mjs");
-if (agentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-else process.env.PI_CODING_AGENT_DIR = agentDir;
+import { repository } from "./repository.mjs";
 
 // Opt-in live end-to-end run: real Pi, Herdr, models, and npm registry access.
-// A disposable npm project with a dependency and a bug goes through scout ->
-// builder -> reviewer -> integrate, with detected setup and codemode enabled.
+// A disposable npm project with a dependency and a known bug goes through
+// builder -> reviewer -> integrate. PINATA_E2E_SCOUT=1 adds the comparison stage.
 // An uncommitted test case must reach the workers and survive integration.
 assert.equal(
   process.env.PINATA_LIVE_SMOKE,
@@ -21,6 +16,7 @@ assert.equal(
 );
 assert(process.env.PINATA_LIVE_CONFIG, "Supply an approved model config file");
 const cfg = await readJson(process.env.PINATA_LIVE_CONFIG);
+const withScout = process.env.PINATA_E2E_SCOUT === "1";
 const repo = await repository("pinata-e2e-");
 const run$ = async (argv) => {
   const r = await command(argv, { cwd: repo.cwd, timeoutMs: 300_000 });
@@ -73,6 +69,7 @@ await fs.writeFile(
 
 const test = { id: "unit", argv: ["npm", "test"], timeoutMs: 120_000 };
 let run;
+const startedAt = Date.now();
 try {
   const created = await init({
     cwd: repo.cwd,
@@ -87,20 +84,25 @@ try {
         maxTurns: 40,
         repairs: 1,
         costUsd: 10,
+        ...cfg.limits,
       },
     },
     integratedChecks: [test],
     tasks: [
-      {
-        id: "scout",
-        role: "scout",
-        task: "Find why src/duration.test.mjs fails. Identify the function, its dependency, and the minimal fix. Do not edit files.",
-        acceptance: ["Names src/duration.mjs formatSeconds and the unit mismatch with ms()"],
-      },
+      ...(withScout
+        ? [
+            {
+              id: "scout",
+              role: "scout",
+              task: "Find why src/duration.test.mjs fails. Identify the function, its dependency, and the minimal fix. Do not edit files.",
+              acceptance: ["Names src/duration.mjs formatSeconds and the unit mismatch with ms()"],
+            },
+          ]
+        : []),
       {
         id: "fix",
         role: "builder",
-        after: ["scout"],
+        after: withScout ? ["scout"] : [],
         task: "Fix formatSeconds in src/duration.mjs so it converts seconds to milliseconds before calling ms(). Keep the change minimal.",
         acceptance: ["npm test passes", "Only src/duration.mjs changes"],
         ownership: ["src/duration.mjs"],
@@ -142,6 +144,8 @@ try {
     JSON.stringify(
       {
         passed: true,
+        workflow: withScout ? "scout-build-review" : "build-review",
+        elapsedMs: Date.now() - startedAt,
         run,
         setup: created.setup,
         base: created.base,

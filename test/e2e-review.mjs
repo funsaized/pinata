@@ -3,12 +3,7 @@ import * as fs from "node:fs/promises";
 import path from "node:path";
 import { readJson } from "../lib/core.mjs";
 import { init, wait, cleanup, cancel } from "../lib/pinata.mjs";
-// helpers.mjs isolates unit tests from the personal Pi agent directory; a live
-// run needs the real one for its models and authentication.
-const agentDir = process.env.PI_CODING_AGENT_DIR;
-const { repository, gitIn } = await import("./helpers.mjs");
-if (agentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-else process.env.PI_CODING_AGENT_DIR = agentDir;
+import { repository, gitIn } from "./repository.mjs";
 
 // Opt-in live run: real Pi, Herdr, and models review uncommitted work with a
 // seeded bug, under a cost limit. Nothing is written to the fixture checkout.
@@ -40,7 +35,7 @@ try {
     cwd: repo.cwd,
     approval: "Explicit PINATA_LIVE_SMOKE authorization for this disposable read-only review",
     allowWrites: false,
-    config: { ...cfg, limits: { taskMs: 900_000, jobMs: 1_800_000, costUsd: 5 } },
+    config: { ...cfg, limits: { taskMs: 900_000, jobMs: 1_800_000, costUsd: 5, ...cfg.limits } },
     tasks: [
       {
         id: "correctness",

@@ -294,7 +294,7 @@ try {
   )[0];
   const paths = packed.files.map((x) => x.path);
   assert.equal(paths.filter((p) => p.startsWith("skills/") && p.endsWith("/SKILL.md")).length, 2);
-  assert.equal(paths.filter((p) => p.startsWith("prompts/")).length, 6);
+  assert.equal(paths.filter((p) => p.startsWith("prompts/")).length, 7);
   assert(
     !paths.some((p) => /^(test|node_modules|\.git)\/|PLAN\.md|\.log$|\.env/.test(p)),
     "Development or sensitive files in tarball",
@@ -321,7 +321,7 @@ try {
         .stdout,
     );
     assert(resolved.ok, JSON.stringify(resolved));
-    assert.equal(resolved.mappings.length, 8);
+    assert.equal(resolved.mappings.length, 9);
     const rpc = await rpcProbe(
       "pi",
       cwd,
@@ -333,7 +333,7 @@ try {
     const commands = rpc
       .get("commands")
       .commands.filter((c) => c.sourceInfo?.path?.startsWith(installed));
-    assert.equal(commands.length, 8);
+    assert.equal(commands.length, 9);
     assert(
       commands.every((c) => c.sourceInfo.scope === "user" && c.sourceInfo.origin === "package"),
     );
@@ -434,7 +434,7 @@ try {
   );
   assert(!JSON.stringify(requests.at(-1).messages).includes("USER TEMPLATE MUST REMAIN"));
   console.log(
-    "PASS packed global resource activation, explicit-only engmgmt, six templates, unrelated worktree, collision preservation, and explicit child template",
+    "PASS packed global resource activation, explicit-only engmgmt, seven templates, unrelated worktree, collision preservation, and explicit child template",
   );
 
   // Run the real installed Pi behind a mocked Herdr transport, with captured

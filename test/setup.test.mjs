@@ -161,6 +161,18 @@ test("setup failure has its own retry budget and never consumes repairs", async 
   assert.equal(manifest.tasks[0].setupRetries, 1);
 });
 
+test("a failed repair after skipped setup is failed rather than falsely uncertain", async (t) => {
+  const f = await fixture(t, [builder({ noResult: true })], {
+    config: { setup: "mkdir -p ignored" },
+  });
+  assert.equal((await settled(f)).tasks[0].status, "failed");
+  await repair(f.run, "build", "Retry the report");
+  assert.equal((await settled(f)).tasks[0].status, "failed");
+  const result = await readJson(path.join(attempt(f, "build", 2), "outcome.json"));
+  assert.equal(result.setup.skipped, true);
+  assert.equal(result.setup.terminated, true);
+});
+
 test("setup that changes project files fails and cannot be retried in place", async (t) => {
   const f = await fixture(t, [builder({ write: { "a.txt": "A" } })], {
     config: { setup: "echo changed > b.txt" },

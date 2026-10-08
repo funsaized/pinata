@@ -1,43 +1,14 @@
 import * as fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import { ROOT, command, readJson, sleep, exists } from "../lib/core.mjs";
+import { ROOT, readJson, sleep, exists } from "../lib/core.mjs";
 import { init, tick, wait, cancel } from "../lib/pinata.mjs";
+import { repository } from "./repository.mjs";
+export { repository, gitIn } from "./repository.mjs";
 
 // Never read the developer's real ~/.pi/agent (for example a personal pinata.json).
 process.env.PI_CODING_AGENT_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "pinata-agent-"));
 
-export async function repository(prefix = "pinata-test-") {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
-  const cwd = path.join(dir, "repo");
-  await fs.mkdir(cwd);
-  for (const [file, data] of Object.entries({
-    "a.txt": "original",
-    "b.txt": "original",
-    "untouched.txt": "original",
-    ".gitignore": "ignored/\n",
-  }))
-    await fs.writeFile(path.join(cwd, file), data);
-  for (const args of [
-    ["init", "-q"],
-    ["add", "--", "a.txt", "b.txt", "untouched.txt", ".gitignore"],
-    [
-      "-c",
-      "user.name=pinata fixture",
-      "-c",
-      "user.email=fixture@example.invalid",
-      "-c",
-      "commit.gpgsign=false",
-      "commit",
-      "-qm",
-      "Fixture baseline",
-    ],
-  ]) {
-    const r = await command(["git", "-C", cwd, ...args]);
-    if (r.code) throw new Error(r.stderr);
-  }
-  return { dir, cwd };
-}
 export function task(id, role = "scout", scenario = {}, extra = {}) {
   return { id, role, task: JSON.stringify(scenario), acceptance: ["Fixture acceptance"], ...extra };
 }
@@ -107,21 +78,4 @@ export async function started(f, name) {
   const file = path.join(f.run, "tasks", name, "1", "process.json");
   await untilFile(file);
   return readJson(file);
-}
-
-export async function gitIn(cwd, ...args) {
-  const r = await command([
-    "git",
-    "-C",
-    cwd,
-    "-c",
-    "user.name=pinata fixture",
-    "-c",
-    "user.email=fixture@example.invalid",
-    "-c",
-    "commit.gpgsign=false",
-    ...args,
-  ]);
-  if (r.code) throw new Error(r.stderr);
-  return r.stdout.trim();
 }

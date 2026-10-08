@@ -1,7 +1,7 @@
 # Testing pinata
 
-How to reproduce the recorded runs and exercise the opt-in checks. The results
-themselves, and the limits of what they prove, live in
+Run the local suites, check an installed Pi, and exercise opt-in live tests.
+Tested versions, coverage, and limitations are listed in
 [validation](validation.md). This page covers prerequisites, each test level,
 what a pass looks like, and how to recover from a failure.
 
@@ -36,7 +36,7 @@ npm test
 
 This runs `node --test test/*.test.mjs` against disposable Git repos and mock
 Pi and Herdr processes. It makes no model or provider calls and does not touch
-personal Pi configuration. See [validation](validation.md) for recorded results.
+personal Pi configuration. See [validation](validation.md#coverage) for coverage.
 
 ## Run the installed-Pi smoke
 
@@ -126,8 +126,9 @@ PINATA_LIVE_CONFIG=/absolute/approved-config.json \
 npm run test:live
 ```
 
-This runs one read-only scout in a disposable repo: four turns, a 60-second task
-limit, a 120-second job limit, and no retries scheduled by the smoke. It retains
+This runs one read-only scout in a disposable repo. Defaults are four turns, a
+60-second task limit, and a 120-second job limit; supplied config limits take
+precedence. No retries are scheduled by the smoke. It retains
 artifacts and closes verified owned panes. Provider-internal retries and a single
 expensive request can still incur charges, so set provider or account caps
 externally. The script refuses to run without explicit opt-in and an approved
@@ -143,16 +144,19 @@ npm run test:e2e
 
 This runs two scripts. The first creates a disposable npm project that depends
 on `ms` and has a failing test, plus an uncommitted extra test case. It installs
-that project's dependencies in the checkout, then runs scout, builder, and
+that project's dependencies in the checkout, then runs builder and independent
 reviewer with the configured models in real Herdr panes, and integrates the
-result under a $10 cost limit. It needs npm registry access. It asserts that
+result with a default $10 cost limit (the supplied config takes precedence). It needs npm registry access. It asserts that
 setup was detected and ran in the builder worktree, that the uncommitted test
 reached the workers and survived integration, that every task succeeded, and
 that integration verified. It prints per-task tool-call counts, spend, and the
-integrated diff.
+integrated diff. Set `PINATA_E2E_SCOUT=1` when running
+`node test/e2e-build.mjs` to add a scout for a like-for-like workflow comparison.
+Both variants require the same checks and independent approval; elapsed time and
+tool calls are recorded rather than constrained by a brittle timing assertion.
 
 The second leaves an off-by-one bug in an uncommitted change and has two
-reviewers review it with `reviewBase: "HEAD"` under a $5 limit. It asserts that
+reviewers review it with `reviewBase: "HEAD"` with a default $5 limit, also overridden by the supplied config. It asserts that
 the correctness reviewer rejects the change with evidence in `page.mjs`, that the
 verdict names the subject's fingerprint, and that the checkout is unchanged.
 Both scripts clean up and keep the evidence. They use your real Pi agent
@@ -177,16 +181,22 @@ Requires separate spending authorization and a running Herdr session selected in
 the config. Trials default to one and are bounded to 1–10. Each trial makes eight
 live worker calls: two scouts, a builder, its independent reviewer, and four
 reviewers of deterministic seeded candidates. Each worker has a three-minute,
-20-turn, 100-tool-call limit; each case has a ten-minute deadline. There are no
+20-turn, 100-tool-call limit by default; each case has a ten-minute deadline.
+The supplied config limits override these defaults. There are no
 scheduled repairs. Provider retries may still cost money.
 
-The suite checks a parser against 28 independent oracle cases kept outside worker
+The suite checks a parser against 29 independent oracle cases kept outside worker
 checkouts, including small years, invalid calendar dates and leading zeroes. The
 control reviewers receive one verified correct patch and three defective patches
 in blind, separate repositories. Seeded builders make no model calls. Scouts
 answer seven precise questions about a retry fixture; scoring checks values and
 file:line evidence against actual behavior. Ordinary `npm test` verifies the
 reference, defect controls and scorer without live calls.
+
+The runner exits nonzero unless every live task completes, the live builder
+passes all oracle cases, every scored factual value and source reference is
+correct, and all review verdicts match the controls. Full raw trials remain in
+`results.json`, including failures.
 
 Minor answer-format drift is recorded separately from factual accuracy, so using
 a colon or line range cannot hide a wrong numeric claim as a missing answer.
@@ -200,13 +210,35 @@ Candidates are never integrated; cleanup closes owned panes and preserves dirty
 worktrees and evidence. Treat results as a small fixture evaluation, not a general
 model benchmark. Repetitions are needed before changing defaults.
 
+## Workspace benchmark (no model calls)
+
+```sh
+PINATA_BENCH_ROOT=/path/on/the/filesystem/to/test npm run bench:workspace
+```
+
+This creates and removes a disposable mixed repository with 2,131 tracked files
+and about 144 MiB of source/asset data. It alternates ordinary Git checkout and
+verified native CoW attempts over three trials, then tests a 91-package pinned
+npm dependency fixture with cold downloads, warm downloads, and a prepared
+restore. It checks the resulting Git trees and runs installed package binaries.
+Registry access is required; no models or Herdr panes are used. The JSON report
+records the actual materialization method, so unsupported CoW filesystems are
+visible. Set `PINATA_BENCH_KEEP=1` to retain the fixture. Do not infer physical disk
+savings from ordinary `du`, which can count shared extents more than once.
+
+## CI
+
+The Linux CI matrix runs formatting/lint, deterministic tests, and installed-Pi
+compatibility checks on Node 22.19 and 24 with Pi 1.1.0. Its local provider makes
+no paid model calls. Live model, real Herdr, and web checks remain opt-in.
+
 ## Verification
 
 What a healthy run looks like:
 
 - `npm test` reports no failures, cancellations, or skipped tests.
 - `npm run test:pi` prints PASS lines for packed activation, explicit-only
-  `engmgmt`, five templates, the unrelated worktree, collision preservation, and
+  `engmgmt`, seven templates, the unrelated worktree, collision preservation, and
   the real Pi supervision checks, and the codemode containment check. The web
   line prints PASS with the override and SKIP without it.
 - `npm run check` exits zero.

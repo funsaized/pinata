@@ -122,7 +122,7 @@ PINATA=/absolute/installed/package/lib/pinata.mjs
 node "$PINATA" resources /absolute/path/to/a/project
 ```
 
-The output should have `ok: true` and resolve two skills and six prompts to the
+The output should have `ok: true` and resolve two skills and seven prompts to the
 installed package. If a personal resource uses the same name, resolve the
 collision in Pi configuration. Do not overwrite existing skills or prompts.
 The probe ignores untrusted project resources, so also check the active
