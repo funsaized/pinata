@@ -989,10 +989,9 @@ Gate 1 passes.
 | Gate 1 | End of M3 | In-process targets from [Targets](#targets), faux and loopback, on 3 OSes. Luna quality eval ≥ the 0.7.0 baseline score, with 0 result-format failures. Loopback A/B against 0.7.0 shows the engine faster on every scenario. CI green. |
 | Gate 2 | End of M8 | Every target per backend and mode. UX lag target. Luna quality eval ≥ baseline. A Luna live smoke for each backend (in-process, process, herdr-pi) on Linux, and in-process on macOS and Windows where credentials allow. CI green.     |
 
-Luna runs use `PINATA_LIVE_SMOKE=1 PINATA_LIVE_CONFIG=examples/configs/luna.json`. Record
-the cost of every live run in the Results log. Stop and report if a single eval would exceed
-$10 or the cumulative live spend on this plan would exceed $50. The user approved real Luna
-tokens; these caps keep that approval bounded.
+Luna runs use `PINATA_LIVE_SMOKE=1 PINATA_LIVE_CONFIG=examples/configs/luna.json`. The user
+approved real Luna tokens for benchmarks, evals and live smokes. Record the cost of every live
+run in the Results log.
 
 ## Risks
 
