@@ -1,6 +1,7 @@
 // Builder worktrees: `git worktree add --detach <run>/worktrees/<task> <base>`. A dependent
 // builder starts from a commit that already contains its predecessors' verified changes,
 // composed with git plumbing (temporary index, update-index, write-tree, commit-tree).
+import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -83,6 +84,7 @@ export class Worktree implements Workspace {
   // A private index kept between captures, inside the worktree's git directory.
   readonly captureIndex: string;
   private serial: Promise<unknown> = Promise.resolve();
+  warmTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(root: string, path: string, baseCommit: string, baseTree: string, gitDir: string) {
     this.root = root;
@@ -102,8 +104,11 @@ export class Worktree implements Workspace {
     const tree = new Worktree(root, path, baseCommit, baseTree, gitDir);
     // A fresh checkout's index entries are racily clean, so every capture would rehash every
     // file. Refresh the private capture index once while the builder works.
-    const timer = setTimeout(() => void tree.warm().catch(() => {}), WARM_AFTER_MS);
-    (timer as { unref?: () => void }).unref?.();
+    tree.warmTimer = setTimeout(() => {
+      tree.warmTimer = undefined;
+      if (existsSync(path)) void tree.warm().catch(() => {});
+    }, WARM_AFTER_MS);
+    (tree.warmTimer as { unref?: () => void }).unref?.();
     return tree;
   }
 
@@ -124,6 +129,9 @@ export class Worktree implements Workspace {
   }
 
   capture(): Promise<ChangeSet> {
+    // A capture brings the index up to date itself; the pending warm-up is not needed.
+    if (this.warmTimer) clearTimeout(this.warmTimer);
+    this.warmTimer = undefined;
     return this.exclusive(() => capture(this.path, this.baseTree, this.captureIndex));
   }
 
@@ -137,6 +145,7 @@ export class Worktree implements Workspace {
 
   // Removes the worktree, retrying while Windows holds files open.
   async remove(): Promise<void> {
+    if (this.warmTimer) clearTimeout(this.warmTimer);
     for (let attempt = 0; ; attempt++) {
       try {
         await git(this.root, ["worktree", "remove", "--force", this.path]);

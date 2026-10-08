@@ -31,7 +31,9 @@ export async function writeTree(worktree: string, indexFile?: string): Promise<s
       );
       await copyIndex(index, env.GIT_INDEX_FILE);
     }
-    await git(worktree, ["add", "-A"], { env });
+    // The untracked cache, kept in the private index, lets later captures skip directories
+    // whose contents did not change.
+    await git(worktree, ["-c", "core.untrackedCache=true", "add", "-A"], { env });
     return line(await git(worktree, ["write-tree"], { env }));
   } finally {
     if (tmp) await rm(tmp, { recursive: true, force: true });
