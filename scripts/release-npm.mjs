@@ -26,7 +26,8 @@ export function validateRelease(tag, manifest, lock, packed) {
   assert.equal(packed.name, NAME);
   assert.equal(packed.version, manifest.version);
   assert.equal(packed.filename, `${NAME}-${manifest.version}.tgz`);
-  const allowed = /^(?:package\.json|README\.md|LICENSE|(?:skills|prompts|lib|docs|examples)\/.+)$/;
+  const allowed =
+    /^(?:package\.json|README\.md|LICENSE|(?:engine|skills|prompts|lib|docs|examples)\/.+)$/;
   for (const { path: file } of packed.files) {
     assert(allowed.test(file), `Unexpected packed file: ${file}`);
     assert(!file.split("/").some((part) => part.startsWith(".") || part === "node_modules"));

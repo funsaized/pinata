@@ -157,12 +157,28 @@ export class PinataHost {
     return this.modeOverride ?? config.mode;
   }
 
-  async start(
+  // Runs being created; shutdown waits for them so none starts after Pi shuts down.
+  private readonly starting = new Set<Promise<unknown>>();
+
+  start(
     params: RunParams,
     ctx: ExtensionContext,
   ): Promise<{ handle: RunHandle; notices: string[] }> {
     if (this.shuttingDown)
-      throw new Error("Pi is shutting down; start the run again after it restarts");
+      return Promise.reject(
+        new Error("Pi is shutting down; start the run again after it restarts"),
+      );
+    const pending = this.create(params, ctx);
+    const tracked = pending.catch(() => {});
+    this.starting.add(tracked);
+    void tracked.then(() => this.starting.delete(tracked));
+    return pending;
+  }
+
+  private async create(
+    params: RunParams,
+    ctx: ExtensionContext,
+  ): Promise<{ handle: RunHandle; notices: string[] }> {
     const root = await repositoryRoot(params.cwd ?? ctx.cwd);
     const layered = layeredConfig(params.config ?? {}, root);
     const config = layered.config;
@@ -263,6 +279,7 @@ export class PinataHost {
 
   async shutdown(reason: string): Promise<void> {
     this.shuttingDown = true;
+    while (this.starting.size) await Promise.allSettled(this.starting);
     await this.engineInstance?.shutdown(reason);
     this.cache.dispose();
   }
