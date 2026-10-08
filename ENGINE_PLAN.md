@@ -458,7 +458,7 @@ M3, M4–M8 can run in parallel, except that M6, M7 and M8 need E5.3 and E5.4.
 
 ### M1: Engine core (no Pi UI)
 
-- [ ] **E1.1 Task model and validation (M).**
+- [x] **E1.1 Task model and validation (M).**
   - Path: `engine/core/validate.ts`. Port `validateTask`, `validateChecks`, `validateModel`
     and `relative`/`owns` from `lib/core.mjs`, and the run-level rules from `lib/run.mjs`:
     - unique ids;
@@ -469,7 +469,7 @@ M3, M4–M8 can run in parallel, except that M6, M7 and M8 need E5.3 and E5.4.
   - Errors name the task and field.
   - Done when every 0.7.0 validation test case has an equivalent engine test, and invalid
     graphs fail before any agent starts.
-- [ ] **E1.2 Graph and scheduler (M).**
+- [x] **E1.2 Graph and scheduler (M).**
   - Path: `graph.ts` keeps indegrees and a ready queue. `scheduler.ts` starts ready tasks
     through the limiter. On `agent_settled` it decrements dependents' indegrees in the same
     call stack and starts any that become ready.
@@ -489,26 +489,26 @@ M3, M4–M8 can run in parallel, except that M6, M7 and M8 need E5.3 and E5.4.
       semantics).
   - Exceeding a limit aborts with a stop reason recorded in `agent_settled.reason`.
   - Done when each budget has a test with the faux provider.
-- [ ] **E1.4 Adaptive concurrency (S).**
+- [x] **E1.4 Adaptive concurrency (S).**
   - Path: `limiter.ts` keeps one limiter per `provider` and a global cap (default 16).
   - A provider's limit starts at 8. It halves on a 429 or overload error, which arrives as
     an assistant `stopReason: "error"` whose message matches provider rate-limit patterns.
     It grows by 1 after every 10 successes. Limits never drop below 1.
   - Done when tests simulate 429 storms and show it backs off and recovers.
-- [ ] **E1.5 Events and view model (M).**
+- [x] **E1.5 Events and view model (M).**
   - Path: `events.ts` holds the [schema v1](#events-schema-v1) types and runtime validation
     for socket input. `view.ts` provides `fromSnapshot` and `reduce`, plus throttle helpers
     for consumers. Deltas are coalesced per consumer, not in the reducer.
   - Done when property-style tests show that replaying any event sequence equals
     incremental reduction, and that a late join from a snapshot followed by later events
     equals full replay.
-- [ ] **E1.6 Result schemas (S).**
+- [x] **E1.6 Result schemas (S).**
   - Path: `results.ts` holds per-role TypeBox schemas, ported from `envelope()` and
     `validateResult` in `lib/worker.mjs` and `lib/core.mjs`. Reviewer verdict rules carry
     over: approval needs no unresolved critical, high or medium findings.
   - Done when schema tests cover every role, and invalid submissions return a tool error
     that tells the model what to fix.
-- [ ] **E1.7 Run store (M).**
+- [x] **E1.7 Run store (M).**
   - Path: `store.ts`.
   - **State:** in memory. The run directory is
     `<git common dir>/pinata/<run id>/`, as in 0.7.0, which keeps GC compatible.
@@ -522,11 +522,11 @@ M3, M4–M8 can run in parallel, except that M6, M7 and M8 need E5.3 and E5.4.
   - **Replay:** `replay(dir)` rebuilds the `RunView`.
   - Done when a crash-and-replay test reproduces the final view, and lean mode writes at
     most O(agents) lines plus usage ticks.
-- [ ] **E1.8 Interfaces and fake backend (S).**
+- [x] **E1.8 Interfaces and fake backend (S).**
   - Path: `backends/types.ts` and `workspace` types. `backends/fake.ts` is scripted per
     task: latency, events, result or error.
   - Done when the scheduler, budget and store tests all run on the fake backend.
-- [ ] **E1.9 Engine facade (S).**
+- [x] **E1.9 Engine facade (S).**
   - Path: `engine.ts` exposes `createEngine({ backends, workspaces, store, clock })` with
     `run(specs, opts)`, `status`, `steer`, `cancel`, `subscribe(run, consumer)` and
     `snapshot(run, agent?)`. No Pi imports in `core/`.
@@ -1077,19 +1077,20 @@ Verified against Pi 1.1.0 source. Re-check when upgrading.
 
 ## Results log
 
-| Date       | Item      | OS    | Measurement                                                      | Value                              | Notes                                                    |
-| ---------- | --------- | ----- | ---------------------------------------------------------------- | ---------------------------------- | -------------------------------------------------------- |
-| 2026-10-08 | prototype | Linux | in-process SDK session spawn / memory                            | ~1–2 ms / ~1–1.5 MB                | `bench/prototypes/inprocess-bench.ts`, faux, Pi 1.1.0    |
-| 2026-10-08 | prototype | Linux | `pi --mode rpc` worker flags ready / RSS                         | ~320 ms / ~114 MB                  |                                                          |
-| 2026-10-08 | prototype | Linux | `git worktree add`                                               | 35–40 ms                           | this repository                                          |
-| 2026-10-08 | E0.4      | Linux | 0.7.0 fan-out 1: spawn / tool call → 1st request / RSS per agent | 1.41 s / 1.99 s / 219.5 MB         | loopback, 1 ms/token; `bench/baselines/0.7.0-linux.json` |
-| 2026-10-08 | E0.4      | Linux | 0.7.0 fan-out 8: spawn p50 (p95) / tool call p50 / peak RSS      | 2.39 s (3.31 s) / 2.99 s / 913 MB  | RSS per agent 218 MB                                     |
-| 2026-10-08 | E0.4      | Linux | 0.7.0 fan-out 32: spawn p50 (p95) / tool call p50 / wall         | 3.12 s (5.46 s) / 6.30 s / 12.6 s  | 0.7.0 concurrency max 16                                 |
-| 2026-10-08 | E0.4      | Linux | 0.7.0 fan-out 64: spawn p50 (p95) / tool call p50 / wall         | 2.72 s (4.85 s) / 11.96 s / 22.4 s | peak RSS 1.30 GB                                         |
-| 2026-10-08 | E0.4      | Linux | 0.7.0 chain: dependent launch p50 / p99 / wall                   | 848 ms / 1.47 s / 6.2 s            | scout → planner → builder → reviewer                     |
-| 2026-10-08 | E0.4      | Linux | 0.7.0 stress-64: dependent launch p50 / p99 / wall               | 4.58 s / 8.44 s / 24.2 s           | 16 chains + 32 fans                                      |
-| 2026-10-08 | E0.4      | Linux | 0.7.0 builder → reviewer: dependent launch / wall                | 1.56 s / 4.3 s                     |                                                          |
-| 2026-10-08 | E0.4      | Linux | 0.7.0 ux-8: coordinator lag p99 / RSS per agent                  | 4.8 ms / 242 MB                    | 6,000-char streamed briefs                               |
+| Date       | Item      | OS    | Measurement                                                                   | Value                              | Notes                                                    |
+| ---------- | --------- | ----- | ----------------------------------------------------------------------------- | ---------------------------------- | -------------------------------------------------------- |
+| 2026-10-08 | prototype | Linux | in-process SDK session spawn / memory                                         | ~1–2 ms / ~1–1.5 MB                | `bench/prototypes/inprocess-bench.ts`, faux, Pi 1.1.0    |
+| 2026-10-08 | prototype | Linux | `pi --mode rpc` worker flags ready / RSS                                      | ~320 ms / ~114 MB                  |                                                          |
+| 2026-10-08 | prototype | Linux | `git worktree add`                                                            | 35–40 ms                           | this repository                                          |
+| 2026-10-08 | E0.4      | Linux | 0.7.0 fan-out 1: spawn / tool call → 1st request / RSS per agent              | 1.41 s / 1.99 s / 219.5 MB         | loopback, 1 ms/token; `bench/baselines/0.7.0-linux.json` |
+| 2026-10-08 | E0.4      | Linux | 0.7.0 fan-out 8: spawn p50 (p95) / tool call p50 / peak RSS                   | 2.39 s (3.31 s) / 2.99 s / 913 MB  | RSS per agent 218 MB                                     |
+| 2026-10-08 | E0.4      | Linux | 0.7.0 fan-out 32: spawn p50 (p95) / tool call p50 / wall                      | 3.12 s (5.46 s) / 6.30 s / 12.6 s  | 0.7.0 concurrency max 16                                 |
+| 2026-10-08 | E0.4      | Linux | 0.7.0 fan-out 64: spawn p50 (p95) / tool call p50 / wall                      | 2.72 s (4.85 s) / 11.96 s / 22.4 s | peak RSS 1.30 GB                                         |
+| 2026-10-08 | E0.4      | Linux | 0.7.0 chain: dependent launch p50 / p99 / wall                                | 848 ms / 1.47 s / 6.2 s            | scout → planner → builder → reviewer                     |
+| 2026-10-08 | E0.4      | Linux | 0.7.0 stress-64: dependent launch p50 / p99 / wall                            | 4.58 s / 8.44 s / 24.2 s           | 16 chains + 32 fans                                      |
+| 2026-10-08 | E0.4      | Linux | 0.7.0 builder → reviewer: dependent launch / wall                             | 1.56 s / 4.3 s                     |                                                          |
+| 2026-10-08 | E0.4      | Linux | 0.7.0 ux-8: coordinator lag p99 / RSS per agent                               | 4.8 ms / 242 MB                    | 6,000-char streamed briefs                               |
+| 2026-10-08 | E1.2      | Linux | fake backend, 64 agents (8 fans + 8 chains): dependent launch p50 / p99 / max | 0.031 / 0.216 / 0.816 ms           | 480 samples over 10 runs; limiter opened to 64           |
 
 ## Progress notes
 
@@ -1098,7 +1099,11 @@ Read this section and the plan before resuming after a context reset.
 ### Done
 
 - E0.2: `tsconfig.json`, exact-pinned devDependencies, `check` = format + lint + `tsc`,
-  `test` = `test:legacy` (0.7.0) + `test:engine`.
+  `npm test` = `scripts/test.mjs` (0.7.0 suite, skipped on Windows, then the engine suite).
+- E0.4: 0.7.0 Linux baselines in `bench/baselines/0.7.0-linux.json`.
+- E0.6: CI matrix (3 OSes × Node 22.19.0/24); `.gitattributes` forces LF.
+- M1 (except E1.3's faux-provider tests): `engine/core/*`, `engine/backends/fake.ts`,
+  tests in `test/engine/`.
 
 ### In flight
 
@@ -1106,6 +1111,9 @@ Read this section and the plan before resuming after a context reset.
   engine target (`bench/targets/engine.ts`) is a stub until the in-process backend exists
   (E2.2); check E0.3 off then.
 - E0.5 (0.7.0 accuracy baseline, live Luna) runs after M1 lands.
+- E1.3: budgets are implemented and tested on the fake backend; the plan asks for a
+  faux-provider test of each budget, which lands with the in-process backend (E2.2).
+- E0.7 upstream issue: not opened yet.
 
 ### Decisions and deviations
 
@@ -1125,6 +1133,21 @@ Read this section and the plan before resuming after a context reset.
   Herdr). Windows has engine targets only, as planned.
 - Live scripts accept `PINATA_LIVE_SMOKE=1` (the plan's spelling) as well as 0.7.0's
   `I_AUTHORIZE_PAID_MODEL_CALLS`.
+
+- Engine design (M1): `createEngine({ backends, pipeline, limiter, clock })`. The
+  `Pipeline` hooks (`model`, `backend`, `workspaceRef`, `prepare`, `verify`, `settled`,
+  `finish`) hold everything Pi-, git- or role-specific, so `core/` stays Pi-free.
+  `agent_started` is emitted when the scheduler starts an agent (before workspace and
+  session setup), so spawn latency includes them. Budgets fail an agent (`failed` with the
+  reason); user cancel, failFast, cost limit and parent reload cancel it.
+- Contract additions: `agent_queued.task?` (added or requeued tasks), a `usage` event
+  (cumulative per agent, at most 1/s, the lean-mode "usage tick"), `message_end.stopReason`
+  and `error` (for the limiter), and `turns`/`toolCalls` in `agent_settled` so a lean log
+  replays exactly. The reducer applies usage only from `usage` and `agent_settled`.
+- The run's `limits.concurrency` (default 16, max 64) caps its running agents; the
+  engine-wide limiter adds the per-provider adaptive limit (starts at 8).
+- Reviewer results may omit `review.taskId`/`fingerprint`; the engine binds the verdict to
+  the target it launched the reviewer against, and rejects mismatching values.
 
 ### Open questions
 
