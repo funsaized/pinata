@@ -4,7 +4,7 @@
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import { git, line, zsplit } from "../workspace/git.ts";
-import { environment, launch } from "./checks.ts";
+import { environment, killTree, launch } from "./checks.ts";
 
 export interface Subject {
   kind: "uncommitted" | "branch" | "pull-request";
@@ -65,12 +65,15 @@ function run(
       cwd,
       env,
       stdio: ["ignore", "pipe", "pipe"],
+      // Its own process group, so a timeout also stops helpers (credential managers) that
+      // would otherwise hold the pipes open.
+      detached: process.platform !== "win32",
       windowsHide: true,
       windowsVerbatimArguments: verbatim,
     });
     let stdout = "";
     let stderr = "";
-    const timer = setTimeout(() => child.kill(), timeoutMs);
+    const timer = setTimeout(() => child.pid !== undefined && killTree(child.pid), timeoutMs);
     child.stdout.setEncoding("utf8").on("data", (d: string) => (stdout += d));
     child.stderr.setEncoding("utf8").on("data", (d: string) => (stderr += d));
     child.on("error", (e) => (clearTimeout(timer), reject(e)));
@@ -81,7 +84,8 @@ function run(
 // gh and git fetch get the allowlist plus the variables that carry GitHub and SSH credentials,
 // which agents and checks never receive.
 function networkEnv(passEnv: readonly string[]): NodeJS.ProcessEnv {
-  const env = environment(passEnv, { GIT_TERMINAL_PROMPT: "0" });
+  // Never prompt: not in the terminal, and not through Git Credential Manager's windows.
+  const env = environment(passEnv, { GIT_TERMINAL_PROMPT: "0", GCM_INTERACTIVE: "never" });
   delete env.PINATA_AGENT;
   for (const name of [
     "SSH_AUTH_SOCK",
@@ -107,6 +111,7 @@ async function remotesFor(
     const [name, url = ""] = row.split(/\s+/);
     const clean = url
       .toLowerCase()
+      .replaceAll("\\", "/")
       .replace(/\.git$/, "")
       .replace(/\/$/, "");
     if (
