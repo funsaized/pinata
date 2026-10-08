@@ -87,11 +87,12 @@ async function once(argv: string[], i: number): Promise<{ startupMs: number; rss
       PI_TELEMETRY: "0",
       TERM: "xterm-256color",
     },
-    stdio: ["pipe", "pipe", "pipe"],
+    // macOS `script` calls tcgetattr on stdin: a pipe (a socket in Node) fails, /dev/null works.
+    stdio: [process.platform === "darwin" ? "ignore" : "pipe", "pipe", "pipe"],
   });
   let output = "";
-  child.stdout.on("data", (d: Buffer) => (output = (output + d).slice(-2000)));
-  child.stderr.on("data", (d: Buffer) => (output = (output + d).slice(-2000)));
+  child.stdout!.on("data", (d: Buffer) => (output = (output + d).slice(-2000)));
+  child.stderr!.on("data", (d: Buffer) => (output = (output + d).slice(-2000)));
   try {
     const deadline = Date.now() + 30_000;
     while (!existsSync(ready)) {

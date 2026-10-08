@@ -138,6 +138,14 @@ export class PinataHost {
   // Socket servers of this session's runs (observe mode, or after /pinata watch).
   readonly servers = new Map<string, Promise<RunServer>>();
 
+  // This Pi's process identity, for run ownership (PowerShell on Windows takes seconds, so
+  // it is measured once, in the background).
+  private ownerIdentity: ReturnType<typeof identify> | undefined;
+  owner(): ReturnType<typeof identify> {
+    this.ownerIdentity ??= identify(process.pid).catch(() => null);
+    return this.ownerIdentity;
+  }
+
   constructor(pi: ExtensionAPI, stages: PipelineStages = verificationStages()) {
     this.pi = pi;
     this.stages = stages;
@@ -272,7 +280,7 @@ export class PinataHost {
         data: saved,
         survive: params.survive === true,
         background: params.background === true,
-        owner: await identify(process.pid),
+        owner: await this.owner(),
       },
     });
     if (params.survive) this.survivors.add(handle.id);
@@ -438,7 +446,7 @@ export class PinataHost {
         if (record.resume.background) this.background.add(handle.id);
         await writeRunRecord(dir, {
           ...record,
-          resume: { ...record.resume, owner: await identify(process.pid) },
+          resume: { ...record.resume, owner: await this.owner() },
         });
         this.ui?.bind(ctx);
         this.ui?.follow(handle, this.engine(ctx));
