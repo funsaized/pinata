@@ -214,6 +214,23 @@ async function main() {
     assert.equal(received.length, 1, "one resumed turn");
     const runs = await readdir(join(repo, ".git", "pinata"));
     assert.equal(runs.length, 2);
+    // `pinata logs` prints a finished run through the pi binary in print mode.
+    const logs = spawnSync(
+      process.execPath,
+      [join(ROOT, "bin", "pinata.mjs"), "logs", runs[0].slice(0, 8), "--json"],
+      {
+        cwd: repo,
+        encoding: "utf8",
+        env: { ...process.env, PINATA_PI: PI.at(-1)!, PI_CODING_AGENT_DIR: agent },
+        timeout: 60_000,
+      },
+    );
+    assert.equal(logs.status, 0, logs.stderr);
+    const lines = logs.stdout.split("\n").filter((l) => l.startsWith("{"));
+    assert(lines.length > 1, `pinata logs printed: ${logs.stdout}\n${logs.stderr}`);
+    const logged = lines.map((l) => JSON.parse(l));
+    assert.equal(logged[0].t, "run_started");
+    assert.equal(logged.at(-1).t, "run_settled");
     console.log(
       JSON.stringify({
         ok: true,

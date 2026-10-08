@@ -1,8 +1,10 @@
 // `pinata view`: a Pi extension that opens the viewer full-screen in interactive Pi, attached
 // to a run's socket. bin/pinata.mjs starts Pi with only this extension and PINATA_VIEW set.
-import { writeFileSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { join } from "node:path";
 import { IpcClient } from "../ipc/client.ts";
+import { LogClient } from "../sources/log.ts";
 import { ViewerScreen } from "./screen.ts";
 
 export interface ViewSpec {
@@ -44,6 +46,8 @@ export async function openViewer(ctx: ExtensionContext, spec: ViewSpec): Promise
         cwd: spec.cwd,
         task: spec.task,
         connect: async (dir) => {
+          // A run without a socket opens from its log (the post-mortem viewer).
+          if (!existsSync(join(dir, "link.json"))) return LogClient.open(dir, { follow: true });
           const client = await IpcClient.connect(dir);
           // The parent Pi's theme, for this session only (a Theme instance is not saved).
           const match = !themed && client.theme ? ctx.ui.getTheme(client.theme) : undefined;

@@ -4,11 +4,26 @@
 import { truncateToWidth } from "@earendil-works/pi-tui";
 import type { AgentEvent } from "../core/types.ts";
 import type { RunView } from "../core/view.ts";
-import type { IpcClient } from "../ipc/client.ts";
+import type { Update } from "../ipc/client.ts";
 import { AgentDetail, type DetailSource } from "../ui/detail.ts";
 import type { Keys } from "../ui/live.ts";
 import { GLYPHS, progressLine, short } from "../ui/text.ts";
 import type { Paint } from "../ui/widget.ts";
+
+// What the screen needs from a connection: IpcClient (live, over the socket) or LogClient
+// (a run read from its directory).
+export interface ViewerClient {
+  readonly source: "socket" | "log";
+  view: RunView | null;
+  theme: string | null;
+  closed: boolean;
+  on(listener: (update: Update) => void): () => void;
+  messages(
+    agent: string,
+  ): Promise<{ messages: unknown[]; streaming?: { text: string; thinking: string } }>;
+  steer(agent: string, text: string, as: "steer" | "followUp"): void;
+  close(): void;
+}
 
 export interface ViewerOptions {
   tui: { requestRender(): void; terminal?: { rows: number } };
@@ -17,7 +32,7 @@ export interface ViewerOptions {
   done: () => void;
   // Live runs to pick from (run directories), and how to connect to one.
   runs: string[];
-  connect(dir: string): Promise<IpcClient>;
+  connect(dir: string): Promise<ViewerClient>;
   cwd: string;
   task?: string;
 }
@@ -26,7 +41,7 @@ const HEADER_ROWS = 2;
 
 export class ViewerScreen {
   readonly options: ViewerOptions;
-  client: IpcClient | null = null;
+  client: ViewerClient | null = null;
   detail: AgentDetail | null = null;
   index = 0;
   following = true;
@@ -53,7 +68,7 @@ export class ViewerScreen {
     this.index = index;
     this.status = "connecting…";
     this.options.tui.requestRender();
-    let client: IpcClient;
+    let client: ViewerClient;
     try {
       client = await this.options.connect(this.options.runs[index]);
     } catch (error) {
@@ -65,7 +80,7 @@ export class ViewerScreen {
     }
     if (this.disposed || generation !== this.generation) return client.close();
     this.client = client;
-    this.status = "live";
+    this.status = client.source === "socket" ? "live" : "from the run's log";
     const view = client.view!;
     const first =
       (this.options.task && view.agents[this.options.task] && this.options.task) ||
@@ -106,7 +121,7 @@ export class ViewerScreen {
     };
   }
 
-  private source(client: IpcClient): DetailSource {
+  private source(client: ViewerClient): DetailSource {
     const run = client.view!.run;
     return {
       run,
@@ -119,10 +134,12 @@ export class ViewerScreen {
           if (update.kind !== "events") return;
           for (const e of update.events) if (e.agent === agent) onEvent(e);
         }),
-      steer: async (agent, text, as) => {
-        if (client.closed) throw new Error("The viewer is disconnected");
-        client.steer(agent, text, as);
-      },
+      ...(client.source === "socket" && {
+        steer: async (agent: string, text: string, as: "steer" | "followUp") => {
+          if (client.closed) throw new Error("The viewer is disconnected");
+          client.steer(agent, text, as);
+        },
+      }),
     };
   }
 

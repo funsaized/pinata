@@ -43,6 +43,7 @@ export interface ClientOptions {
 }
 
 export class IpcClient {
+  readonly source = "socket" as const;
   view: RunView | null = null;
   theme: string | null = null;
   runs: RunSummary[] = [];
