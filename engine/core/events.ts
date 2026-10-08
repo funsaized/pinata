@@ -91,6 +91,12 @@ const BODY: Record<EventType, (e: any) => boolean> = {
     isCount(e.turns) &&
     isCount(e.toolCalls),
   run_resumed: (e) => isString(e.reason, 64_000),
+  telemetry: (e) =>
+    typeof e.sample === "object" &&
+    e.sample !== null &&
+    Number.isFinite(e.sample.rssMB) &&
+    Number.isFinite(e.sample.heapUsedMB) &&
+    Number.isFinite(e.sample.elu),
   run_settled: (e) => ["succeeded", "failed", "cancelled"].includes(e.status) && isUsage(e.usage),
 };
 
