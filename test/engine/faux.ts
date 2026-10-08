@@ -160,6 +160,8 @@ export async function fauxWorld(
   });
   const registry = new ModelRegistry(parent);
   registry.registerProvider(faux.provider);
+  // A registered provider counts as configured after the asynchronous availability refresh.
+  await registry.refresh({ allowNetwork: false });
   const cache = new RuntimeCache(agentDir);
   const backend = new InProcessBackend({
     runtime: () => cache.get(registry),

@@ -93,7 +93,9 @@ export function selectModel(
       skipped.push(`${model.provider}/${model.id}: unknown model`);
       continue;
     }
-    if (!registry.hasConfiguredAuth(found)) {
+    // The parent session's current model is in use, so it is usable; other candidates need
+    // configured authentication.
+    if (origin !== "session" && !registry.hasConfiguredAuth(found)) {
       skipped.push(`${model.provider}/${model.id}: no configured authentication`);
       continue;
     }
