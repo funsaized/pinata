@@ -31,7 +31,10 @@ if (actual !== expected) throw new Error(`${asset}: sha256 ${actual} does not ma
 await mkdir(dir, { recursive: true });
 const file = join(dir, asset);
 await writeFile(file, archive);
-const r = spawnSync("tar", ["-xf", asset], { cwd: dir, stdio: "inherit" });
+// Windows' own tar (bsdtar) reads zip archives; Git Bash's GNU tar, first on PATH there, does not.
+const tar =
+  os === "windows" ? join(process.env.SystemRoot ?? "C:\\Windows", "System32", "tar.exe") : "tar";
+const r = spawnSync(tar, ["-xf", asset], { cwd: dir, stdio: "inherit" });
 if (r.status !== 0) throw new Error(`tar could not extract ${asset}`);
 
 async function find(root) {
