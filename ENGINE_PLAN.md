@@ -1,6 +1,6 @@
 # Pinata engine plan
 
-Status: approved plan, not started. Branch `engine`, created from `v0.7.0` (`bcf4bcf`).
+Status: in progress (see [Progress notes](#progress-notes)). Branch `engine`, created from `v0.7.0` (`bcf4bcf`).
 Owner of this document: whoever implements it. Check items off as they land, and record
 measured numbers in [Results log](#results-log). Do not silently relax a target: if one cannot
 be met, record the data and the proposed new target here.
@@ -21,6 +21,7 @@ be met, record the data and the proposed new target here.
 12. [Porting map from 0.7.0](#porting-map-from-070)
 13. [Pi API reference](#pi-api-reference)
 14. [Results log](#results-log)
+15. [Progress notes](#progress-notes)
 
 ## Goal
 
@@ -404,7 +405,7 @@ M3, M4–M8 can run in parallel, except that M6, M7 and M8 need E5.3 and E5.4.
 ### M0: Branch, harness, baselines
 
 - [x] **E0.1 Branch.** `git worktree add -b engine ../pinata-engine v0.7.0`. Done.
-- [ ] **E0.2 Tooling (S).**
+- [x] **E0.2 Tooling (S).**
   - Path: add `tsconfig.json` and the exact-pinned devDependencies listed in
     [Conventions](#conventions), plus `typescript`.
   - Extend the `lint`, `format` and `check` scripts to `engine bench test/engine`.
@@ -1081,3 +1082,28 @@ Verified against Pi 1.1.0 source. Re-check when upgrading.
 | 2026-10-08 | prototype | Linux | in-process SDK session spawn / memory    | ~1–2 ms / ~1–1.5 MB | `bench/prototypes/inprocess-bench.ts`, faux, Pi 1.1.0 |
 | 2026-10-08 | prototype | Linux | `pi --mode rpc` worker flags ready / RSS | ~320 ms / ~114 MB   |                                                       |
 | 2026-10-08 | prototype | Linux | `git worktree add`                       | 35–40 ms            | this repository                                       |
+
+## Progress notes
+
+Read this section and the plan before resuming after a context reset.
+
+### Done
+
+- E0.2: `tsconfig.json`, exact-pinned devDependencies, `check` = format + lint + `tsc`,
+  `test` = `test:legacy` (0.7.0) + `test:engine`.
+
+### In flight
+
+- E0.3 benchmark harness.
+
+### Decisions and deviations
+
+- devDependencies also include `@types/node` 22.19.1 (needed by `tsc`; matches the Node
+  floor) and `typescript` 7.0.2 (the native compiler). `typebox` is pinned to 1.3.27, the
+  exact version Pi 1.1.0 depends on.
+- Pi 1.1.0 source for API verification: a shallow clone of `v1.1.0` outside the worktree,
+  plus the installed packages in `node_modules/@earendil-works/*`.
+
+### Open questions
+
+- None yet.
