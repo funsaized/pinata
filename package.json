@@ -36,7 +36,7 @@
   ],
   "type": "module",
   "scripts": {
-    "test": "npm run test:legacy && npm run test:engine",
+    "test": "node scripts/test.mjs",
     "test:legacy": "node --test test/*.test.mjs",
     "test:engine": "node --test \"test/engine/**/*.test.ts\"",
     "test:pi": "node test/pi-smoke.mjs && node test/completion-smoke.mjs && node test/codemode-smoke.mjs",
