@@ -11,11 +11,11 @@ like, but leave the ones the builder owns alone until it is integrated.
 
 ## 1. Describe the change and its checks
 
-Invoke the engineering-management skill in Pi. Replace the paths, behavior, and
+Use `/pinata-fix` in Pi. Replace the paths, behavior, and
 test command with those for your issue:
 
 ```text
-/skill:engmgmt Fix greet so it trims surrounding whitespace from a name while
+/pinata-fix Make greet trim surrounding whitespace from a name while
 preserving internal spaces and the greeting for plain names. Keep changes to
 greet.mjs and greet.test.mjs. Add a regression test and run
 node --test greet.test.mjs. Have an independent reviewer inspect the change,
@@ -30,7 +30,8 @@ root lockfiles; see [builder dependencies](../dependencies.md).
 
 ## 2. Let Pi coordinate the work
 
-Pi assigns the builder's files and checks, collects the result, and sends the
+For this understood fix, Pi starts a builder and an independent reviewer. Pi
+assigns the builder's files and checks, collects the result, and sends the
 actual change and check evidence to a separate reviewer. A rejected change needs
 repair and a new review before integration. You can ask Pi for progress or clarify
 the expected behavior during the run.

@@ -1,7 +1,7 @@
 # Testing pinata
 
-How to reproduce the recorded runs and exercise the opt-in checks. The results
-themselves, and the limits of what they prove, live in
+Run the local suites, check an installed Pi, and exercise opt-in live tests.
+Tested versions, coverage, and limitations are listed in
 [validation](validation.md). This page covers prerequisites, each test level,
 what a pass looks like, and how to recover from a failure.
 
@@ -36,7 +36,7 @@ npm test
 
 This runs `node --test test/*.test.mjs` against disposable Git repos and mock
 Pi and Herdr processes. It makes no model or provider calls and does not touch
-personal Pi configuration. See [validation](validation.md) for recorded results.
+personal Pi configuration. See [validation](validation.md#coverage) for coverage.
 
 ## Run the installed-Pi smoke
 

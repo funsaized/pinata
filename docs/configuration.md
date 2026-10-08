@@ -180,18 +180,28 @@ inspections of the same revision when they have no executable checks and no
 builder ancestors. Builders and check-bearing inspections keep private writable
 trees. A reviewer of a task continues to use its target’s tree.
 
-Detected npm installs with registry dependencies, no lifecycle hooks, no
-workspaces, and no local links can reuse a prepared dependency tree. Copies
-have distinct file inodes; no builder shares a writable `node_modules` with
-your checkout or another builder. Other setup commands run normally. See
-[dependency reuse](dependencies.md#prepared-dependencies).
+Prepared dependency caching applies only to detected `npm ci` setup with a
+registry-only lockfile v2/v3, no lifecycle hooks or native install scripts, no
+workspaces, and no local dependencies or links. It is populated after successful
+supervisor setup, before the worker starts. The cache never uses an existing
+`node_modules` in the main checkout as its source.
 
-Set `workspaceReuse: "copy-on-write"` to additionally attempt native CoW copies
-for regular-file source trees of at least 16 MiB. Git verifies their contents
-against the requested commit; unsupported filesystems or changed source contents
-fall back to ordinary checkout. Ordinary Git checkout remains the default because
-it was faster in the recorded local benchmark. Set `workspaceReuse: false` to
-disable inspection sharing, prepared dependency caching, and CoW materialization.
+The key includes package and lockfile contents, npm executable/version/settings,
+Node version, OS/architecture, and relevant environment. Concurrent builders can
+wait for the same preparation. Each receives a private copy, with distinct file
+inodes and a verified content digest. Internal relative links are allowed;
+external or absolute symlinks prevent caching. A failed install never publishes
+an entry, and a damaged cache falls back to setup. `setup.cache` reports `hit`
+or `miss` when caching applies. Custom commands and other package managers use
+normal setup. See [dependency setup](dependencies.md#reuse-prepared-dependencies)
+for operational steps.
+
+`workspaceReuse: "copy-on-write"` additionally attempts native CoW copies for
+regular-file source trees of at least 16 MiB. Git verifies their contents against
+the requested commit; unsupported filesystems or changed source contents fall
+back to ordinary checkout. Ordinary Git checkout is the default.
+`workspaceReuse: false` disables inspection sharing, prepared dependency caching,
+and CoW source copies.
 
 ### Uncommitted changes
 

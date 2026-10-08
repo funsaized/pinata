@@ -82,8 +82,9 @@ they have no executable checks or builder ancestors. Builders retain separate
 writable trees. A shared checkout is retired only after every reader has finished
 and its evidence validates. `workspaceReuse: "copy-on-write"` additionally attempts
 CoW source copies for large regular-file trees, verifies them against Git, and
-falls back to checkout if needed. Ordinary Git checkout is the default because
-the local benchmark was faster with it.
+falls back to checkout if needed. Ordinary Git checkout is the default; the
+[workspace benchmark](validation.md#workspace-performance) measured it faster
+than verified CoW copying on the tested repository.
 
 Ignored files are not part of the snapshot, so a fresh worktree has no installed
 dependencies and no local secrets. Files you list in `.worktreeinclude` are the
@@ -92,12 +93,13 @@ ignored there, so they never show up in a change or an integration.
 
 Before a builder starts, its worker runs one setup command in its worktree,
 detected from the root lockfiles or set with `config.setup`. The supervisor runs
-it, or restores an eligible verified npm dependency cache. Both paths must leave
-tracked and unignored files unchanged, so
-setup output can never become part of a deliverable. Workers themselves still
-may not install packages. This is the same split Codex cloud uses: a setup phase
-prepares the environment, then the agent works in it. See
-[Give builders their dependencies](dependencies.md).
+it, or restores eligible prepared npm dependencies. Both paths must leave tracked
+and unignored files unchanged, so setup output cannot become part of a deliverable.
+Each builder receives a private dependency copy; changes in one worktree cannot
+alter the cache, another builder, or the main checkout. Custom setup and
+nonportable environments run their normal install commands because their output
+can depend on the checkout path or other setup effects. Workers themselves may
+not install packages. See [builder setup](dependencies.md).
 
 Each builder declares the files or directory prefixes it may change. Independent
 builders cannot own overlapping paths. Dependent builders can, because their

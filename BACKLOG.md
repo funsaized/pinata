@@ -9,23 +9,15 @@ configuration, and offer at most one simple override.
 
 ## Current implementation
 
-The workflow and reuse work keeps supervisor-run checks, independent review of
-exact evidence, and journaled integration. The feature branch implements:
+Well-specified fixes use builder → independent review through `/pinata-fix`.
+Optional factual checks distinguish reproduced claims from completed reports.
+Memory telemetry reports current usage and sampled peaks without adding limits.
+Readiness caching, concurrent preparation, shared inspection trees, and private
+prepared npm dependencies reduce repeated setup work. Verified copy-on-write
+source trees remain opt-in.
 
-| Priority | Change                                                                                                              | Validation                                                                                                         |
-| -------- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| P0       | Preserve live Pi authentication/configuration, honor caller limits, and run installed-Pi compatibility checks in CI | Unmodified live smoke; fixture isolation tests; Node 22.19/24 Linux CI                                             |
-| P1-1     | Default well-specified fixes to builder → independent review; `/pinata-fix`                                         | Same live patch and checks with and without an optional scout; elapsed time and tool calls retained                |
-| P1-2     | Separate completed reports from factual evidence; optional `evidenceChecks`; strict quality-evaluation gates        | Tampering, failed reproduction, read-only invariants, scorer controls, and raw live trials                         |
-| P1-3     | Memory telemetry only: RSS/PSS, current readings, sampled peaks, status and widget                                  | Real process sampling, stale/PID-reuse handling, worker metrics; no new limits or admission controls               |
-| P1-4     | Five-minute readiness metadata cache across processes; overlapping probes/preparation                               | Invalidation, failed-probe retry, concurrent preparations, real startup measurements                               |
-| P1-5     | Shared eligible inspection trees, private prepared npm dependencies, optional verified CoW source trees             | Isolation, invalidation, lifecycle/link exclusions, corruption/cleanup tests, cold/warm mixed-repository benchmark |
-
-Ordinary Git checkout remains the default: verified CoW copies were slower in
-the measured fixture. `workspaceReuse: "copy-on-write"` enables them where sharing
-data extents is preferable. Prepared dependencies and eligible inspection sharing
-are on by default. See [validation](docs/validation.md#workflow-and-reuse-validation)
-and [testing](docs/testing.md) for evidence and reproducible commands.
+See the [configuration reference](docs/configuration.md),
+[architecture](docs/architecture.md), and [testing guide](docs/testing.md).
 
 ## P0: shipped in 0.6.0
 

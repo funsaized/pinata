@@ -46,20 +46,27 @@ scripts and less frequent operations such as `note`, `unlock`, and `retry-launch
 
 ## Pi commands for people
 
-The extension also adds two slash commands and a prompt. The commands read
-saved state and never send anything to the model.
+The `/pinata` command reads saved state without a model turn. The
+`/pinata-fix` and `/pinata-review` prompt templates ask Pi to coordinate work.
 
 | Command                 | Effect                                                                          |
 | ----------------------- | ------------------------------------------------------------------------------- |
 | `/pinata`               | Show a status card for the runs started in this session, or recent runs if none |
 | `/pinata runs`          | List the last ten runs in this repository with state, task counts, and cost     |
 | `/pinata <run-id>`      | Show one run by ID prefix, including each finished task's summary or error      |
+| `/pinata-fix <fix>`     | Delegate a well-specified fix to a builder and independent reviewer             |
 | `/pinata-review [what]` | Ask Pi to review your changes, a branch, or a pull request with reviewers       |
 
 While a run started from this session is active, Pi also shows each task's
-state, time, tokens, and cost above the editor and a summary in the footer. Both
+state, time, tokens, cost, and sampled memory above the editor and a summary in the footer. Both
 refresh every two seconds and disappear when the run finishes. In RPC mode they
 are sent as `setWidget` and `setStatus` requests; JSON and print modes have no UI.
+
+`/pinata-fix` takes the desired behavior, affected files, and acceptance checks.
+It starts with builder → review when those are known, and adds investigation
+only when needed. Local integration follows the user's authorized scope;
+committing, pushing, and publishing are separate actions. See the
+[build-and-review tutorial](tutorials/build-and-review.md).
 
 `/pinata-review` with nothing after it reviews your uncommitted changes, or your
 branch against its default base when the checkout is clean. Name a branch to
@@ -72,7 +79,7 @@ passed to the reviewers as their focus.
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | `help`, `--help`, `-h`     | Print usage; no command also prints usage                                                                                                   |
 | `doctor [config.json]`     | Check prerequisites, versions, Herdr endpoint/schema, and configured extension file; never install or upgrade                               |
-| `resources [cwd]`          | Verify this package's two global skills and six global prompts; exit nonzero if missing or shadowed                                         |
+| `resources [cwd]`          | Verify this package's two global skills and seven global prompts; exit nonzero if missing or shadowed                                       |
 | `init <job.json\|->`       | Record scope and initial Git state, resolve builder setup, create a private run, return `{run, id, versions, setup}`; does not launch tasks |
 | `add <run> <task.json\|->` | Append one task object or an array; reject invalid dependencies or ownership                                                                |
 

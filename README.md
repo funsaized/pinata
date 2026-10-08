@@ -1,7 +1,9 @@
 # piñata
 
-piñata gives Pi a team. Ask for a scout, a researcher, a planner, a builder, or a
-reviewer, and each one opens in its own [Herdr](https://herdr.dev/) workspace
+Fast, observable subagents for Pi.
+
+Ask for a scout, a researcher, a planner, a builder, or a reviewer, and each one
+opens in its own [Herdr](https://herdr.dev/) workspace
 **where you can watch it work**. When they finish, Pi brings their results back.
 Every builder change gets a separate review before it reaches your checkout.
 
@@ -89,7 +91,8 @@ always review before you merge.
   your uncommitted changes, a branch, or a GitHub pull request and gives you one
   combined list of findings.
 - **Cost and memory are visible.** Above the editor, Pi lists each running agent
-  with time, tokens, cost, and sampled memory usage. Set `limits.costUsd` to stop a run at a dollar amount.
+  with time, tokens, cost, and sampled memory usage. Set `limits.costUsd` to stop
+  a run at a dollar amount.
 - **Cleanup is automatic.** Finished workspaces close, and worktrees are removed
   once their work is done or merged. Results are kept, so you can go back and
   read what each agent found.
@@ -104,6 +107,7 @@ always review before you merge.
 | Investigate from several angles | "Send three scouts in parallel: API, database, and tests."               |
 | Check facts against sources     | "Have research verify these claims against the official docs."           |
 | Review your changes             | "/pinata-review", "/pinata-review main", or "/pinata-review 123"         |
+| Fix an understood bug           | "/pinata-fix Correct the conversion in src/duration.mjs; run npm test."  |
 | Plan before changing anything   | "Have a planner propose the smallest fix for this issue."                |
 | Build, review, and apply        | "/skill:engmgmt Implement the approved plan with an independent review." |
 | Check on a run                  | `/pinata` (no model turn), or "How is the pinata run going?"             |
@@ -115,9 +119,9 @@ always review before you merge.
 Each agent gets its own Herdr workspace in the sidebar. Open one to watch that
 agent think, read files, and call tools as it goes.
 
-While a run is going, Pi shows each agent's state, time, tokens, and cost above
-the editor, and a one-line summary in the footer. Type `/pinata` for the same
-view in the transcript, or `/pinata runs` for past runs in this repository.
+While a run is going, Pi shows each agent's state, time, tokens, cost, and sampled
+memory above the editor, and a one-line summary in the footer. Type `/pinata`
+for the same view in the transcript, or `/pinata runs` for past runs in this repository.
 Neither sends anything to the model.
 
 ## If something feels off
@@ -126,6 +130,12 @@ Ask Pi for the run's status first; it says which agent is stuck and why.
 [Recovery](docs/recovery.md) covers resuming, repairing, and cleaning up a run,
 and [setup](docs/setup.md#3-ask-pi-to-check-setup-and-delegate) helps when an agent won't
 start.
+
+## Process overhead
+
+Each agent runs in its own Pi process. For a tiny task, starting the agent can
+take longer than doing the work. piñata is built for jobs with several independent
+tasks, where running them in parallel can make up for that overhead.
 
 ## Good to know
 

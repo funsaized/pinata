@@ -75,10 +75,11 @@ installing:
 }
 ```
 
-On btrfs, XFS, and APFS (use `cp -c -R` on macOS) the copy shares disk blocks and
-finishes almost instantly. Run directories live under `.git/pinata`, on the same
-filesystem as the repository, so the clone works there. Check that your checkout's
-dependencies match the lockfile first; a copy does not verify that.
+On filesystems that support reflinks, this can share data blocks while keeping
+each copy independently writable. On macOS, use `cp -c -R` where supported.
+Copy performance depends on the filesystem and dependency tree. Check that your
+checkout's dependencies match the lockfile first; this custom command does not
+verify that.
 
 ## Copy local files with .worktreeinclude
 
@@ -139,41 +140,34 @@ A failed setup stops the attempt before Pi starts. The outcome has
 - **Wrong command**: setup is fixed for the life of a run. Start a new run with
   a corrected `config.setup`.
 
-## Prepared dependencies
+## Reuse prepared dependencies
 
-With the default `workspaceReuse: true`, detected npm installs can reuse a
-prepared `node_modules` from an earlier builder or run in the same repository.
-The cache accepts registry-only lockfile v2/v3 installs without lifecycle hooks,
-workspaces, or local links. It is populated only after successful supervisor
-setup, before Pi starts. It never trusts an existing `node_modules` in your
-checkout as a prepared environment.
+Detected npm installs reuse prepared dependencies automatically when the project
+has a registry-only lockfile v2/v3 and no install hooks, workspaces, or local
+links. Each builder gets its own writable copy. Custom setup commands and other
+package managers continue to run normally.
 
-The key includes package and lockfile contents, npm executable/version/settings,
-Node version, OS/architecture, and relevant environment. Concurrent builders can
-wait for the same preparation. Each receives a private copy, using native CoW
-where available. Internal relative `.bin` links remain relative; external or
-absolute symlinks prevent caching. A content digest verifies restored files.
-A failed install never publishes an entry; damaged entries are bypassed.
+To check whether reuse applied, read `setup.cache` in the task outcome:
 
-Outcome `setup.cache` reports `hit` or `miss` when this path applies. A hit
-skips `npm ci`, while retaining the same check that dependency preparation left
-managed project files untouched. The per-worktree setup marker also supports
-repairs without copying or installing again when its inputs are unchanged.
+- `hit`: the worker restored and verified a prepared dependency tree.
+- `miss`: the worker ran the detected install to prepare dependencies.
+- Absent: a repair reused its existing setup, or setup was not eligible for this cache.
 
-Custom setup, install hooks/native builds, pnpm/yarn/bun, Python environments,
-and local/workspace packages retain their normal setup commands and package
-manager caches. These can depend on absolute paths or arbitrary setup effects;
-pinata does not relocate them automatically. `workspaceReuse: false` disables
-prepared dependencies and inspection sharing for a job. The cache lives at
-`<git-common-dir>/pinata/cache/dependencies/` and is retained across normal run
-cleanup; it can be removed when no runs are using it.
+Changes to the dependency manifests, runtime, npm configuration, or relevant
+environment invalidate the cache. Failed installs never publish an entry;
+damaged entries fall back to normal setup. See the [reuse reference](configuration.md#workspace-reuse)
+for the exact eligibility and invalidation rules.
 
-This keeps the separate dependency environments described by
-[Codex worktrees](https://learn.chatgpt.com/docs/environments/git-worktrees) and
-[Cursor worktrees](https://cursor.com/docs/configuration/worktrees). Cursor also
-advises against symlinking mutable dependencies into the main checkout. See
-[performance measurements](validation.md#workflow-and-reuse-validation) for the
-measured cold/warm behavior and its limits.
+To turn reuse off for a job or project:
+
+```json
+"config": { "workspaceReuse": false }
+```
+
+In `.pi/pinata.json`, put `workspaceReuse` at the top level. This also disables
+shared inspection checkouts. Normal run cleanup keeps the prepared cache for
+later jobs. To reclaim its disk space, wait until all runs in the repository have
+finished, then remove `<git-common-dir>/pinata/cache/dependencies/`.
 
 ## What setup does not do
 
