@@ -237,6 +237,9 @@ export function verificationStages(): PipelineStages {
     },
 
     async reviewTarget(run, task) {
+      // Only reviewers touch the disk here: a reader's prepare stays free of I/O, so agents in a
+      // burst start without waiting behind each other's tool work.
+      if (task.role !== "reviewer") return undefined;
       const reviews = join(run.dir, "reviews");
       await mkdir(reviews, { recursive: true, mode: 0o700 });
       if (task.reviewOf) {

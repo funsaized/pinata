@@ -43,7 +43,12 @@ function common(role: Role) {
   return {
     status: Type.Union(
       (["succeeded", "failed", "blocked", "cancelled"] as const).map((v) => Type.Literal(v)),
-      { description: "succeeded only when the acceptance criteria are met with evidence" },
+      {
+        description:
+          role === "reviewer"
+            ? "succeeded when you completed the review, whatever the verdict (put the verdict in review.verdict); failed or blocked only when you could not complete it"
+            : "succeeded only when the acceptance criteria are met with evidence",
+      },
     ),
     summary: text("concise outcome"),
     changedFiles: Type.Array(Type.String({ minLength: 1, maxLength: 4096 }), {
@@ -104,6 +109,18 @@ function fail(message: string): never {
   throw new ResultError(message);
 }
 
+// Binds a review to the target the reviewer was launched against.
+function bind(
+  review: NonNullable<AgentResult["review"]>,
+  target: NonNullable<ResultContext["reviewTarget"]>,
+) {
+  if (review.fingerprint !== undefined && review.fingerprint !== target.fingerprint)
+    fail(`review.fingerprint must be ${target.fingerprint}, the target you reviewed.`);
+  if (review.taskId !== undefined && review.taskId !== target.taskId)
+    fail(`review.taskId must be ${JSON.stringify(target.taskId)}.`);
+  return { ...review, taskId: target.taskId, fingerprint: target.fingerprint };
+}
+
 // Checks the rules a schema cannot express. Returns the result with reviewer bindings filled in.
 export function validateResult(input: AgentResult, ctx: ResultContext): AgentResult {
   const result: AgentResult = { ...input };
@@ -123,6 +140,8 @@ export function validateResult(input: AgentResult, ctx: ResultContext): AgentRes
   }
   if (ctx.role !== "builder" && result.changedFiles.length)
     fail(`A ${ctx.role} does not change files; changedFiles must be empty.`);
+  if (ctx.role === "reviewer" && result.review && ctx.reviewTarget)
+    result.review = bind(result.review, ctx.reviewTarget);
   if (result.status !== "succeeded") return result;
   if ((ctx.role === "scout" || ctx.role === "planner" || ctx.role === "research") && !result.brief)
     fail(`A succeeded ${ctx.role} result needs brief: the findings, with file:line evidence.`);
@@ -142,14 +161,7 @@ export function validateResult(input: AgentResult, ctx: ResultContext): AgentRes
   if (ctx.role === "reviewer") {
     const review = result.review;
     if (!review) fail("A succeeded reviewer result needs review: { verdict }.");
-    const target = ctx.reviewTarget;
-    if (target) {
-      if (review.fingerprint !== undefined && review.fingerprint !== target.fingerprint)
-        fail(`review.fingerprint must be ${target.fingerprint}, the target you reviewed.`);
-      if (review.taskId !== undefined && review.taskId !== target.taskId)
-        fail(`review.taskId must be ${JSON.stringify(target.taskId)}.`);
-      result.review = { ...review, taskId: target.taskId, fingerprint: target.fingerprint };
-    }
+
     if (
       review.verdict === "approve" &&
       result.findings.some(

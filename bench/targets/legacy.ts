@@ -150,11 +150,17 @@ export async function runLegacy(
       .flatMap((t) =>
         loopback.firstRequest.has(t.id) ? [loopback.firstRequest.get(t.id)! - t0] : [],
       );
-    const dependent = scenario.tasks.flatMap((t) => {
-      if (!t.after?.length || !loopback.firstRequest.has(t.id)) return [];
-      const ready = Math.max(...t.after.map((p) => settled.get(p) ?? Number.NaN));
-      return Number.isFinite(ready) ? [loopback.firstRequest.get(t.id)! - ready] : [];
-    });
+    const ready = (t: BenchTask) => Math.max(...t.after!.map((p) => settled.get(p) ?? Number.NaN));
+    const dependent = scenario.tasks.flatMap((t) =>
+      t.after?.length && launched.has(t.id) && Number.isFinite(ready(t))
+        ? [launched.get(t.id)! - ready(t)]
+        : [],
+    );
+    const dependentRequest = scenario.tasks.flatMap((t) =>
+      t.after?.length && loopback.firstRequest.has(t.id) && Number.isFinite(ready(t))
+        ? [loopback.firstRequest.get(t.id)! - ready(t)]
+        : [],
+    );
     if (loopback.errors.length)
       notes.push(
         `loopback errors: ${loopback.errors.length}; first: ${loopback.errors[0].split("\n")[0]}`,
@@ -176,6 +182,7 @@ export async function runLegacy(
       spawnMs: stat(spawn),
       toolCallMs: stat(toolCall),
       dependentMs: stat(dependent),
+      dependentRequestMs: stat(dependentRequest),
       memoryPerAgentMB: meanPeak === null ? null : mb(meanPeak),
       peakRssMB: mb(workers.peakTotal + peakCoordinator),
       loopLagP99Ms: Math.round((lag.percentile(99) / 1e6) * 100) / 100,
@@ -208,7 +215,7 @@ function toSpec(task: BenchTask) {
     ...(task.reviewOf && { reviewOf: task.reviewOf }),
     ...(task.ownership?.length && { ownership: task.ownership }),
     ...(task.role === "builder" && {
-      checks: [{ id: "noop", argv: [process.execPath, "-e", "0"], timeoutMs: 30_000 }],
+      checks: [{ id: "noop", argv: ["git", "--version"], timeoutMs: 30_000 }],
     }),
   };
 }
