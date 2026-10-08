@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import type { TestContext } from "node:test";
 import { randomUUID } from "node:crypto";
 import { fauxAssistantMessage, fauxText, fauxToolCall } from "@earendil-works/pi-ai";
+import { HerdrPiBackend } from "../../engine/backends/herdr-pi.ts";
 import { ProcessBackend } from "../../engine/backends/process.ts";
 import { createEngine, type RunOptions } from "../../engine/core/engine.ts";
 import { Limiter } from "../../engine/core/limiter.ts";
@@ -42,10 +43,12 @@ export type Script = (turn: Turn) => Reply | Promise<Reply>;
 export interface WorldOptions {
   files?: Record<string, string>;
   priced?: boolean;
+  // Agents in Herdr panes (herdr-pi) instead of child processes.
+  herdr?: boolean;
 }
 
 export interface World {
-  kind: "in-process" | "process";
+  kind: "in-process" | "process" | "herdr-pi";
   dir: string;
   repo: string;
   turns: Turn[];
@@ -171,13 +174,18 @@ export async function processWorld(
   await loopback.writeModels(agentDir, options.priced ? 1_000_000 : 0);
   const command = devPi();
   // A fresh engine, as a new Pi session would create (resume tests use a second one).
+  const kind = options.herdr ? "herdr-pi" : "process";
   const newEngine = () => {
     const backend = new ProcessBackend({
       env: { PI_CODING_AGENT_DIR: agentDir },
       ...(command.length && { command }),
     });
+    const herdrPi = new HerdrPiBackend({
+      env: { PI_CODING_AGENT_DIR: agentDir },
+      ...(command.length && { command }),
+    });
     const engine = createEngine({
-      backends: { process: backend },
+      backends: { process: backend, "herdr-pi": herdrPi },
       pipeline: piPipeline(verificationStages()),
       limiter: new Limiter({ cap: 64, initial: 64 }),
     });
@@ -194,7 +202,7 @@ export async function processWorld(
       models: Object.fromEntries(tasks.map((task) => [task.id, LOOPBACK])),
       instructions: [],
       codemode: false,
-      backend: "process",
+      backend: kind,
       config,
       prep,
       ...opts.data,
@@ -218,5 +226,12 @@ export async function processWorld(
     });
     return { ...next, handle };
   };
-  return { kind: "process", dir, repo, turns, run, engine, backend, resume };
+  return { kind, dir, repo, turns, run, engine, backend, resume };
 }
+
+// herdr-pi agents need a Herdr session to open panes in (local runs inside Herdr).
+export const herdrAvailable = () =>
+  process.env.HERDR_ENV === "1" && !!process.env.HERDR_SOCKET_PATH && !process.env.CI;
+
+export const herdrWorld: typeof processWorld = (t, script, options = {}) =>
+  processWorld(t, script, { ...options, herdr: true });

@@ -7,13 +7,16 @@ import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { InProcessBackend } from "../backends/in-process.ts";
 import { ProcessBackend } from "../backends/process.ts";
+import { HerdrPiBackend } from "../backends/herdr-pi.ts";
+import { closeWorkspace, insideHerdr, notify, type PaneResource } from "../herdr/client.ts";
+import { openViewerPane } from "../herdr/panes.ts";
+import { progressLine } from "../ui/text.ts";
 import { DEPENDENCY_CAP } from "../agent/brief.ts";
 import { createEngine, type Engine, type RunHandle, type Settled } from "../core/engine.ts";
 import { listRuns, replay, runsRoot } from "../core/store.ts";
 import type { AgentEvent, Check, Mode, Task, TaskSpec } from "../core/types.ts";
 import { validateChecks, validateGraph, ValidationError } from "../core/validate.ts";
 import { coalesce, type RunView } from "../core/view.ts";
-import { progressLine } from "../ui/text.ts";
 import { git, line } from "../workspace/git.ts";
 import { agentDir, layeredConfig, modelCandidates, type PinataConfig } from "./config.ts";
 import { piPipeline, type PipelineStages, type PiRunData } from "./pipeline.ts";
@@ -128,6 +131,8 @@ export class PinataHost {
   readonly background = new Set<string>();
   // The widget, footer and live overlay; absent in tests that need no UI.
   ui: PinataUI | undefined;
+  // Each run's repository root.
+  readonly roots = new Map<string, string>();
   // Runs that outlive this Pi (survive): detached at shutdown instead of cancelled.
   readonly survivors = new Set<string>();
   // Socket servers of this session's runs (observe mode, or after /pinata watch).
@@ -150,7 +155,11 @@ export class PinataHost {
       ...(settings.shellCommandPrefix && { shellCommandPrefix: settings.shellCommandPrefix }),
     });
     this.engineInstance = createEngine({
-      backends: { "in-process": backend, process: new ProcessBackend() },
+      backends: {
+        "in-process": backend,
+        process: new ProcessBackend(),
+        "herdr-pi": new HerdrPiBackend(),
+      },
       pipeline: piPipeline(this.stages),
     });
     return this.engineInstance;
@@ -241,6 +250,7 @@ export class PinataHost {
       data,
     });
     this.handles.set(handle.id, handle);
+    this.roots.set(handle.id, root);
     this.ui?.bind(ctx);
     this.ui?.follow(handle, engine);
     // Observe mode starts the run's socket with the run; lean mode on the first /pinata watch.
@@ -266,13 +276,25 @@ export class PinataHost {
       },
     });
     if (params.survive) this.survivors.add(handle.id);
+    // Inside Herdr, a settled run shows a Herdr notification.
+    if (insideHerdr())
+      void handle.done
+        .then((view) =>
+          notify(`pinata ${handle.id.slice(0, 8)} ${view.status}`, progressLine(view)),
+        )
+        .catch(() => {});
     return { handle, notices: layered.notices };
   }
 
   // Starts (or returns) the run's socket server, for viewers.
-  serve(handle: RunHandle): Promise<RunServer> {
+  serve(handle: RunHandle, task?: string): Promise<RunServer> {
+    // Inside Herdr the viewer opens in its own workspace, closed when the run settles.
+    const pane = (server: Promise<RunServer>) => {
+      if (insideHerdr()) void server.then(() => this.viewerPane(handle, task)).catch(() => {});
+      return server;
+    };
     const existing = this.servers.get(handle.id);
-    if (existing) return existing;
+    if (existing) return pane(existing);
     const engine = this.engineInstance!;
     const settings = (this.pi.getSettings?.() ?? {}) as { theme?: unknown };
     const started = RunServer.start({
@@ -290,7 +312,30 @@ export class PinataHost {
     });
     this.servers.set(handle.id, started);
     started.catch(() => this.servers.delete(handle.id));
-    return started;
+    return pane(started);
+  }
+
+  // Viewer panes opened inside Herdr, by run.
+  readonly viewerPanes = new Map<string, Promise<PaneResource>>();
+
+  viewerPane(handle: RunHandle, task?: string): Promise<PaneResource> {
+    const open = this.viewerPanes.get(handle.id);
+    if (open) return open;
+    const pane = openViewerPane({
+      run: handle.id,
+      dir: handle.dir,
+      cwd: handle.view().agents[handle.view().order[0]]?.workspace?.path ?? process.cwd(),
+      task,
+    });
+    this.viewerPanes.set(handle.id, pane);
+    void pane
+      .then(async (resource) => {
+        await handle.done;
+        await closeWorkspace(resource);
+      })
+      .catch(() => {})
+      .finally(() => this.viewerPanes.delete(handle.id));
+    return pane;
   }
 
   // Waits for a foreground run, streaming progress; aborting the tool cancels the run.
@@ -388,6 +433,7 @@ export class PinataHost {
           reason: "Pi restarted",
         });
         this.handles.set(handle.id, handle);
+        this.roots.set(handle.id, record.root);
         if (record.resume.survive) this.survivors.add(handle.id);
         if (record.resume.background) this.background.add(handle.id);
         await writeRunRecord(dir, {
