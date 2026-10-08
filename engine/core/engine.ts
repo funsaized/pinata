@@ -163,6 +163,8 @@ interface RunState extends RunContext {
   settledResults: Map<string, Settled>;
   policy: "allSettled" | "failFast";
   finished: boolean;
+  // Result files and settle hooks still being written; the run settles after them.
+  pending: Set<Promise<unknown>>;
   resolve: (view: RunView) => void;
   done: Promise<RunView>;
   usage: Usage;
@@ -414,7 +416,17 @@ export function createEngine(options: EngineOptions): Engine {
       ...(outcome?.model && { model: outcome.model }),
     };
     settle(run, id, settled);
-    if (pipeline.settled) await pipeline.settled(run, task, prepared, settled).catch(() => {});
+    if (pipeline.settled) await track(run, pipeline.settled(run, task, prepared, settled));
+  }
+
+  function track(run: RunState, work: Promise<unknown>): Promise<void> {
+    const p = work.then(
+      () => {},
+      () => {},
+    );
+    run.pending.add(p);
+    void p.then(() => run.pending.delete(p));
+    return p;
   }
 
   function settle(run: RunState, id: string, settled: Settled) {
@@ -423,7 +435,7 @@ export function createEngine(options: EngineOptions): Engine {
     state.status = settled.status;
     state.handle = undefined;
     run.settledResults.set(id, settled);
-    void run.store.writeResult(id, { task: id, ...settled }).catch(() => {});
+    void track(run, run.store.writeResult(id, { task: id, ...settled }));
     emit(run, id, {
       t: "agent_settled",
       status: settled.status,
@@ -506,6 +518,9 @@ export function createEngine(options: EngineOptions): Engine {
     emit(run, undefined, { t: "run_settled", status, usage });
     const view = run.current;
     void (async () => {
+      // Settle hooks of the last agent are tracked right after it settles; let them register.
+      await Promise.resolve();
+      while (run.pending.size) await Promise.allSettled(run.pending);
       await run.store.close();
       if (pipeline.finish) await pipeline.finish(run, view).catch(() => {});
       run.resolve(view);
@@ -548,6 +563,7 @@ export function createEngine(options: EngineOptions): Engine {
         consumers: new Set<Consumer>(),
         policy: opts.policy ?? "allSettled",
         finished: false,
+        pending: new Set(),
         resolve,
         done,
         usage: ZERO_USAGE,
