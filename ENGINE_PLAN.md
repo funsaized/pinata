@@ -1251,8 +1251,10 @@ Read this section and the plan before resuming after a context reset.
   private capture index warm and git's untracked cache on; Linux 21.5 ms locally, and macOS
   and Linux CI pass under 100 ms. Cause: a capture runs three git processes (`add -A`,
   `write-tree`, `diff-tree`) and git for Windows starts each in tens of milliseconds, plus
-  NTFS stat costs for the index refresh. Proposed target: < 50 ms on Linux and macOS
-  (100 ms on CI runners), < 250 ms on Windows CI; the test encodes this. Git's fsmonitor
+  NTFS stat costs for the index refresh. macOS CI runners vary by machine: 44–47 ms on some,
+  108–134 ms on others (three attempts each, same commit). Proposed target: < 50 ms on Linux
+  and macOS machines like the reference one, < 100 ms on Linux CI, < 150 ms on macOS CI,
+  < 250 ms on Windows CI; the test encodes this. Git's fsmonitor
   daemon could cut the refresh if Windows builder runs show capture matters.
 - UX (M4): the live scene lives in `engine/ui/live.ts` (the plan said `ui/mascot.ts`; the
   mascot geometry stays there). The host pushes RunViews to the widget, footer and scene

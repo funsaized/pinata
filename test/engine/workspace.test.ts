@@ -170,8 +170,16 @@ test(
     const tree = await Worktree.create(root, join(dir, "wt"), base.commit);
     // The builder works while the capture index warms in the background (WARM_AFTER_MS).
     await new Promise((r) => setTimeout(r, 2500));
-    // Windows: three git processes at tens of ms each set the floor (see the plan's notes).
-    const limit = process.platform === "win32" ? 250 : process.env.CI ? 100 : 50;
+    // Windows: three git processes at tens of ms each set the floor; macOS CI runners vary
+    // (47-134 ms). See the plan's notes.
+    const limit =
+      process.platform === "win32"
+        ? 250
+        : !process.env.CI
+          ? 50
+          : process.platform === "darwin"
+            ? 150
+            : 100;
     let attempt = 0;
     const result = await bestOf(t, async () => {
       attempt++;

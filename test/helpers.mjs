@@ -67,7 +67,8 @@ export async function settled(f) {
   if (s.waiting) throw new Error(JSON.stringify(s));
   return s;
 }
-export async function untilFile(file, max = 5000) {
+// Slow CI runners (macOS) can take longer than 5 s to produce a fixture's files.
+export async function untilFile(file, max = process.env.CI ? 20_000 : 5000) {
   const end = Date.now() + max;
   while (!(await exists(file))) {
     if (Date.now() >= end) throw new Error("Missing fixture artifact: " + file);
