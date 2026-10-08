@@ -767,7 +767,7 @@ Gate 1 passes.
 
 ### M5: Observe mode, local socket, external viewer
 
-- [ ] **E5.1 Mode switch (S).**
+- [x] **E5.1 Mode switch (S).**
   - Path: `pi/config.ts` reads `mode` from pinata config (default `lean`).
     `/pinata mode <m>` sets it for the session.
   - `/pinata watch [task]` starts the socket on demand in either mode.
@@ -781,7 +781,7 @@ Gate 1 passes.
       `Get-Process` through PowerShell on Windows), sampled at most every 2 s, and only
       in observe mode.
   - Done when observe-mode overhead is measured and lean mode is unchanged.
-- [ ] **E5.3 Socket server (M).**
+- [x] **E5.3 Socket server (M).**
   - Path: `ipc/server.ts` uses `node:net`. The socket lives in the run directory on POSIX
     (0700 directory), or is a named pipe on Windows.
   - The token is in `link.json`, and a connection is dropped unless its first frame is a
@@ -789,7 +789,7 @@ Gate 1 passes.
   - It starts lazily, and shuts down when the last run settles and no clients remain.
   - Done when tests on three OSes connect, authenticate, reject a bad token, and
     reconnect.
-- [ ] **E5.4 Stream protocol (M).**
+- [x] **E5.4 Stream protocol (M).**
   - Path: `ipc/protocol.ts` (shared frames and validation) and `ipc/client.ts`.
   - Snapshot on attach, then events batched every 50 ms, and a fresh snapshot for a client
     that falls behind.
@@ -1139,7 +1139,11 @@ Read this section and the plan before resuming after a context reset.
   in `test/engine/ui.test.ts` and `pi-adapter.test.ts`). E4.4 and E4.5 are done (`test/engine/detail.test.ts`, `pi-adapter.test.ts`).
   E4.3 and E4.6: `npm run bench -- --host tui --scenario ux-8` runs interactive `pi` under
   `script` with the widget, footer and the first agent's detail view open (CI: Linux, macOS).
-  M4 is done. Next: M5 (observe mode, socket, viewer).
+  M4 is done.
+- M5: E5.1, E5.3 and E5.4 are done (`engine/ipc/*`, `test/engine/ipc.test.ts`, the modes test
+  in `pi-adapter.test.ts`; CI covers the three OSes). Next: E5.2 telemetry, E5.5 viewer
+  (`pinata view` through a small `bin/pinata.mjs` that starts `pi` with the viewer extension),
+  E5.6, E5.7.
 - E0.7 upstream issue: not opened yet (outward-facing; include the `ensureTool` finding).
 
 ### Decisions and deviations
@@ -1252,6 +1256,11 @@ Read this section and the plan before resuming after a context reset.
   (`tui.select.cancel/up/down`, `tui.editor.cursorLeft/Right`); Space, M and D stay letters.
 - The UX benchmark runs on Linux and macOS only: Windows has no `script` and a ConPTY host
   would need a dependency. The Windows detail view shares all its code with the others.
+- Socket (M5): one server per run, started by observe mode or `/pinata watch`, socket in the
+  run directory unless the path exceeds 100 bytes (then a private `mkdtemp` directory), named
+  pipe `\\.\pipe\pinata-<run>-<random>` on Windows. Clients acknowledge batches with an
+  `ack { seq }` frame (a protocol addition); a client more than 1,000 events behind gets a
+  snapshot. Agent connections (`role: "agent"`) are refused until the process backend (M6).
 - Detail view: tool calls use `ToolExecutionComponent`'s generic renderers, because Pi 1.1.0
   does not export its built-in tool renderers (`withBuiltInRenderers` is internal). New
   messages come from a fresh snapshot at each `message_end`; text streams from deltas

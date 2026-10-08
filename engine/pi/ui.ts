@@ -15,6 +15,7 @@ import { PinataWidget, widgetLines } from "../ui/widget.ts";
 export const WIDGET = "pinata";
 export const MOTION = "pinata-motion";
 const UPDATE_MS = 250;
+const OBSERVE_UPDATE_MS = 100;
 // The detail view streams text at up to 20 frames per second.
 const DETAIL_MS = 50;
 
@@ -74,7 +75,9 @@ export class PinataUI {
   follow(handle: RunHandle, engine: Pick<Engine, "subscribe" | "snapshot" | "steer">): void {
     this.engine = engine;
     if (this.followed.has(handle.id)) return;
-    const updates = coalesce(() => this.refresh(), UPDATE_MS);
+    // Observe mode refreshes at up to 10/s, lean mode at up to 4/s.
+    const interval = handle.view().mode === "observe" ? OBSERVE_UPDATE_MS : UPDATE_MS;
+    const updates = coalesce(() => this.refresh(), interval);
     const unsubscribe = engine.subscribe(handle.id, (event) => updates.push(event));
     this.followed.set(handle.id, {
       handle,

@@ -10,6 +10,7 @@ export const USAGE = [
   "/pinata mode lean|observe   footprint mode for this session",
   "/pinata live [run|demo]      the mascot overlay",
   "/pinata open [run] <task>    an agent's conversation, live (Enter steers)",
+  "/pinata watch [run] [task]   start the run's socket for an external viewer",
 ].join("\n");
 
 // Runs for /pinata live: this session's newest first, else the repository's history.
@@ -73,6 +74,20 @@ export async function pinataCommand(
     }
     return (await host.ui.openDetail(found, second ?? first, ctx)) ?? "";
   }
+  if (sub === "watch") {
+    const [first, second] = rest;
+    // `watch <task>` names a task of the latest run; `watch <run> [task]` a run.
+    const latest = [...host.handles.values()].at(-1);
+    const byTask = first && latest?.view().agents[first] ? first : undefined;
+    const handle = first && !byTask ? (await host.find(first, ctx.cwd)).handle : latest;
+    if (!handle)
+      return "No run of this session to watch; viewers of finished runs read them from disk.";
+    if (handle.view().status !== "running" && !host.servers.has(handle.id))
+      return `Run ${short(handle.id)} has settled. Replay it with /pinata open ${short(handle.id)} <task>.`;
+    await host.serve(handle);
+    const task = second ?? byTask;
+    return `Watching ${short(handle.id)}: run \`pinata view ${short(handle.id)}${task ? ` ${task}` : ""}\` in another terminal (socket and token in ${handle.dir}/link.json).`;
+  }
   if (sub === "mode") {
     const mode = rest[0];
     if (mode !== "lean" && mode !== "observe")
@@ -87,7 +102,7 @@ export function registerCommands(pi: ExtensionAPI, host: PinataHost): void {
   pi.registerCommand("pinata", {
     description: "pinata status, runs and mode (no model turn)",
     getArgumentCompletions: (prefix) =>
-      ["status", "runs", "live", "live demo", "open", "mode lean", "mode observe"]
+      ["status", "runs", "live", "live demo", "open", "watch", "mode lean", "mode observe"]
         .filter((c) => c.startsWith(prefix))
         .map((value) => ({ value, label: value })),
     handler: async (args, ctx) => {
