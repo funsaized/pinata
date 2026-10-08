@@ -6,7 +6,8 @@
 //   node bench/run.ts --ci                         fail when a result exceeds 2x its budget
 //
 // Options: --target engine|legacy (repeatable), --compare (both), --provider faux|loopback|live,
-// --scenario <name> (repeatable), --host node|pi, --token-delay <ms>, --out <file>.
+// --scenario <name> (repeatable), --host node|pi|tui, --token-delay <ms>, --out <file>.
+// --host tui runs interactive Pi under a pseudo-terminal (Linux and macOS; the UX benchmark).
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { arch, cpus, platform, release, totalmem } from "node:os";
 import { dirname, join } from "node:path";
@@ -29,7 +30,7 @@ interface Args {
   targets: Array<"engine" | "legacy">;
   provider: "faux" | "loopback" | "live";
   scenarios: string[];
-  host: "node" | "pi";
+  host: "node" | "pi" | "tui";
   tokenDelayMs: number;
   out?: string;
   ci: boolean;
