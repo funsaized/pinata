@@ -275,15 +275,12 @@ test("a reviewer of uncommitted changes reviews the subject with its diff", asyn
   assert.match(brief, /"kind":"uncommitted"/);
   assert.match(brief, /Changed files: \[\{"status":"M","path":"a.txt"\}\]/);
   assert.equal(handle.results().get("check")!.result!.review!.taskId, null);
-  await assert
-    .rejects(
-      world.run([spec("none", "reviewer", { reviewBase: "HEAD" })], {}).then(async (h) => {
-        await writeFile(join(world.repo, "a.txt"), "old\n");
-        return h;
-      }),
-      () => true,
-    )
-    .catch(() => {});
+  // With nothing uncommitted there is nothing to review, and nothing starts.
+  await writeFile(join(world.repo, "a.txt"), "old\n");
+  await assert.rejects(
+    world.run([spec("none", "reviewer", { reviewBase: "HEAD" })]),
+    /Nothing to review/,
+  );
 });
 
 async function pullRequest(
