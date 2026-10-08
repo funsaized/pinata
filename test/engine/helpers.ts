@@ -12,7 +12,8 @@ export function spec(id: string, role: Role = "scout", extra: Partial<TaskSpec> 
 
 export async function tempDir(t: TestContext, prefix = "pinata-engine-test-"): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), prefix));
-  t.after(() => rm(dir, { recursive: true, force: true }));
+  // Retries cover files a settled run is still closing (slow CI file systems).
+  t.after(() => rm(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }));
   return dir;
 }
 

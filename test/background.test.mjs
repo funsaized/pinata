@@ -21,6 +21,19 @@ async function complete(f) {
   throw new Error("Background coordinator did not finish: " + JSON.stringify(await f.manifest()));
 }
 
+// A coordinator that start() resumed holds the run lock briefly; mutate once it is free.
+async function unlocked(fn) {
+  const until = Date.now() + 10_000;
+  for (;;) {
+    try {
+      return await fn();
+    } catch (error) {
+      if (!/Run is locked/.test(error.message) || Date.now() > until) throw error;
+      await sleep(50);
+    }
+  }
+}
+
 function parent(t) {
   for (const [key, value] of Object.entries({
     HERDR_SESSION: "fixture",
@@ -66,10 +79,10 @@ test("start returns immediately; background completion advances dependencies, cl
     tasks: ["first", "next"],
   });
   for (const t of run.tasks) assert(!(await exists(t.worktree)));
-  await add(f.run, task("later", "scout", {}, { after: ["next"] }));
+  await unlocked(() => add(f.run, task("later", "scout", {}, { after: ["next"] })));
   await start(f.run);
   assert.equal((await complete(f)).tasks.at(-1).status, "succeeded");
-  await add(f.run, task("manual", "scout"));
+  await unlocked(() => add(f.run, task("manual", "scout")));
   await settled(f); // New group finishes before start observes it.
   await start(f.run);
   const last = await complete(f);
