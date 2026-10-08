@@ -20,6 +20,7 @@ import { RuntimeCache, inherited, selectModel } from "./runtime.ts";
 import { prepareRun, verificationStages } from "../verify/stages.ts";
 import { writeRunRecord } from "../verify/integrate.ts";
 import { headCommit } from "../workspace/snapshot.ts";
+import type { PinataUI } from "./ui.ts";
 
 export const RESEARCH_UNAVAILABLE =
   "Research tasks need pi-web-access, which is not loaded in this Pi. Install it with `pi install git:github.com/nicobailon/pi-web-access`, or set config.webExtension.";
@@ -121,6 +122,8 @@ export class PinataHost {
   private shuttingDown = false;
   // Runs whose background completion is delivered as a follow-up message.
   readonly background = new Set<string>();
+  // The widget, footer and live overlay; absent in tests that need no UI.
+  ui: PinataUI | undefined;
 
   constructor(pi: ExtensionAPI, stages: PipelineStages = verificationStages()) {
     this.pi = pi;
@@ -227,6 +230,8 @@ export class PinataHost {
       data,
     });
     this.handles.set(handle.id, handle);
+    this.ui?.bind(ctx);
+    this.ui?.follow(handle, engine);
     // What integration needs after a reload: the run's tasks, base HEAD and checks.
     await writeRunRecord(handle.dir, {
       id: handle.id,

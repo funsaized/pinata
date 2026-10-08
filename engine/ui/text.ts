@@ -41,6 +41,17 @@ export function tokens(n: number): string {
       : String(n);
 }
 
+// Model output and error messages are data, never terminal control sequences.
+export function clean(text: string | null | undefined): string {
+  return (
+    String(text ?? "")
+      // oxlint-disable-next-line no-control-regex
+      .replace(/[\x00-\x1f\x7f-\x9f]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+  );
+}
+
 export function short(run: string): string {
   return run.slice(0, 8);
 }
@@ -101,4 +112,20 @@ export function statusText(view: RunView, now = Date.now()): string {
   const lines = [`${progressLine(view, now)} · ${view.mode}`];
   for (const id of view.order) lines.push(`  ${agentLine(view.agents[id], now)}`);
   return lines.join("\n");
+}
+
+// The footer status (ctx.ui.setStatus) for the runs this session is running.
+export function footerLine(views: readonly RunView[]): string {
+  let total = 0,
+    done = 0,
+    running = 0,
+    cost = 0;
+  for (const view of views) {
+    const c = counts(view);
+    total += view.order.length;
+    running += c.running ?? 0;
+    done += view.order.length - (c.running ?? 0) - (c.queued ?? 0);
+    cost += view.usage.cost;
+  }
+  return `pinata ${done}/${total}${running ? ` · ${running} running` : ""} · ${money(cost)}`;
 }
