@@ -91,7 +91,8 @@ export async function processRss(pids: readonly number[]): Promise<Map<number, n
       if (out.has(pid) && Number.isFinite(bytes)) out.set(pid, mb(bytes));
     }
   } else {
-    const stdout = await run("ps", ["-o", "pid=,rss=", "-p", pids.join(",")]);
+    // macOS ps refuses the whole list when one pid is out of range; list everything once.
+    const stdout = await run("ps", ["-A", "-o", "pid=,rss="]);
     for (const row of stdout.split("\n")) {
       const [pid, kb] = row.trim().split(/\s+/).map(Number);
       if (out.has(pid) && Number.isFinite(kb)) out.set(pid, mb(kb * 1024));
