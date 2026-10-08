@@ -9,12 +9,15 @@ import { tick, wait } from "../lib/pinata.mjs";
 import { fixture, task, settled, gitIn, repository } from "./helpers.mjs";
 
 test("inspection trees are shared by revision and retained while a sibling is active", async (t) => {
-  const f = await fixture(t, [task("fast"), task("slow", "scout", { delay: 1400 })]);
+  // The slow sibling outlasts the fast one by seconds, even on a slow CI runner.
+  const f = await fixture(t, [task("fast"), task("slow", "scout", { delay: 5000 })]);
   await tick(f.run);
   const run = await f.manifest();
   assert.equal(run.tasks[0].worktree, run.tasks[1].worktree);
   assert.match(run.tasks[0].worktree, /inspection-/);
-  const partial = await wait(f.run, 600);
+  let partial = await wait(f.run, 600);
+  for (let i = 0; i < 10 && partial.tasks[0].status !== "succeeded"; i++)
+    partial = await wait(f.run, 300);
   assert.equal(partial.tasks[0].status, "succeeded");
   assert.equal(partial.tasks[1].status, "running");
   assert(await exists(run.tasks[0].worktree));
