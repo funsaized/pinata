@@ -385,7 +385,9 @@ export function registerTools(pi: ExtensionAPI, host: PinataHost): void {
       const params = input as { run: string };
       try {
         const { id, dir } = await host.find(params.run, ctx.cwd);
-        return ok({ run: id, ...(await integrate(dir, signal)) });
+        const result = await integrate(dir, signal);
+        host.ui?.integrated(id, result.status);
+        return ok({ run: id, ...result });
       } catch (error) {
         return fail(error);
       }
@@ -403,7 +405,9 @@ export function registerTools(pi: ExtensionAPI, host: PinataHost): void {
       try {
         if (params.confirm !== true) throw new Error("Rollback needs confirm:true");
         const { id, dir } = await host.find(params.run, ctx.cwd);
-        return ok({ run: id, ...(await rollback(dir)) });
+        const result = await rollback(dir);
+        host.ui?.integrated(id, result.status);
+        return ok({ run: id, ...result });
       } catch (error) {
         return fail(error);
       }

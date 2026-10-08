@@ -726,7 +726,7 @@ Gate 1 passes.
 
 ### M4: Unified UX in Pi (lean)
 
-- [ ] **E4.1 Widget (M).**
+- [x] **E4.1 Widget (M).**
   - Path: `ui/widget.ts` uses `ctx.ui.setWidget("pinata", factory, { placement: "aboveEditor" })`.
   - One row per agent: state glyph, role, task id, backend badge (`in`, `proc`, `herdr`),
     elapsed time, turns, tool calls, tokens, cost, and current activity (the last tool
@@ -734,7 +734,7 @@ Gate 1 passes.
   - Rows come from `RunView`, re-rendered on change and coalesced to at most 4/s. With
     nothing changing, no timers run.
   - Done when the snapshot tests render the expected lines at several widths.
-- [ ] **E4.2 Mascot and footer (S).**
+- [x] **E4.2 Mascot and footer (S).**
   - Path: port `lib/mascot.mjs` and `lib/live.mjs` into `ui/mascot.ts`. Feed `mood()` from
     `RunView` instead of the 2 s poll of saved runs.
   - The animation timer runs only while some agent is active and motion is enabled.
@@ -1077,33 +1077,42 @@ Verified against Pi 1.1.0 source. Re-check when upgrading.
 
 ## Results log
 
-| Date       | Item      | OS    | Measurement                                                                        | Value                              | Notes                                                                                            |
-| ---------- | --------- | ----- | ---------------------------------------------------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------ |
-| 2026-10-08 | prototype | Linux | in-process SDK session spawn / memory                                              | ~1–2 ms / ~1–1.5 MB                | `bench/prototypes/inprocess-bench.ts`, faux, Pi 1.1.0                                            |
-| 2026-10-08 | prototype | Linux | `pi --mode rpc` worker flags ready / RSS                                           | ~320 ms / ~114 MB                  |                                                                                                  |
-| 2026-10-08 | prototype | Linux | `git worktree add`                                                                 | 35–40 ms                           | this repository                                                                                  |
-| 2026-10-08 | E0.4      | Linux | 0.7.0 fan-out 1: spawn / tool call → 1st request / RSS per agent                   | 1.41 s / 1.99 s / 219.5 MB         | loopback, 1 ms/token; `bench/baselines/0.7.0-linux.json`                                         |
-| 2026-10-08 | E0.4      | Linux | 0.7.0 fan-out 8: spawn p50 (p95) / tool call p50 / peak RSS                        | 2.39 s (3.31 s) / 2.99 s / 913 MB  | RSS per agent 218 MB                                                                             |
-| 2026-10-08 | E0.4      | Linux | 0.7.0 fan-out 32: spawn p50 (p95) / tool call p50 / wall                           | 3.12 s (5.46 s) / 6.30 s / 12.6 s  | 0.7.0 concurrency max 16                                                                         |
-| 2026-10-08 | E0.4      | Linux | 0.7.0 fan-out 64: spawn p50 (p95) / tool call p50 / wall                           | 2.72 s (4.85 s) / 11.96 s / 22.4 s | peak RSS 1.30 GB                                                                                 |
-| 2026-10-08 | E0.4      | Linux | 0.7.0 chain: dependent launch p50 / p99 / wall                                     | 848 ms / 1.47 s / 6.2 s            | scout → planner → builder → reviewer                                                             |
-| 2026-10-08 | E0.4      | Linux | 0.7.0 stress-64: dependent launch p50 / p99 / wall                                 | 4.58 s / 8.44 s / 24.2 s           | 16 chains + 32 fans                                                                              |
-| 2026-10-08 | E0.4      | Linux | 0.7.0 builder → reviewer: dependent launch / wall                                  | 1.56 s / 4.3 s                     |                                                                                                  |
-| 2026-10-08 | E0.4      | Linux | 0.7.0 ux-8: coordinator lag p99 / RSS per agent                                    | 4.8 ms / 242 MB                    | 6,000-char streamed briefs                                                                       |
-| 2026-10-08 | E0.5      | Linux | 0.7.0 Luna quality eval, 3 trials: composite score / result-format failures / cost | 0.6944 / 2 / $0.0528               | builder oracle 58/87, review controls 11/12, factual 21/42; `bench/baselines/quality-0.7.0.json` |
-| 2026-10-08 | M2 exit   | Linux | Luna live smoke in pi: 3 scouts + dependent planner (all succeeded)                | 70 s, $0.0046                      | `test/engine/live-smoke.ts`, models pinned to `examples/configs/luna.json`                       |
-| 2026-10-08 | live cost | Linux | two earlier live smoke runs (planner on the user's global `gpt-6-astra`)           | $0.1071 + $0.1149                  | led to pinning each task's model in the smoke                                                    |
-| 2026-10-08 | live cost | Linux | total live spend so far                                                            | $0.2794                            | E0.5 eval $0.0528 + smokes $0.2266                                                               |
-| 2026-10-08 | E3.3      | Linux | change capture on 0.7.0's benchmark shape (2,131 files, 144 MiB), 5 changed files  | 21.5 ms median                     | target < 50 ms; private capture index warmed during the builder's run                            |
-| 2026-10-08 | E1.2      | Linux | fake backend, 64 agents (8 fans + 8 chains): dependent launch p50 / p99 / max      | 0.031 / 0.216 / 0.816 ms           | 480 samples over 10 runs; limiter opened to 64                                                   |
-| 2026-10-08 | E2.2      | Linux | pi binary (Bun), faux, fan-out 1 / 8 / 32 / 64: spawn p50                          | 1.4 / 6.2 / 18.8 / 36.2 ms         | target < 10 ms met at 1 and 8; see notes for 32 and 64                                           |
-| 2026-10-08 | E2.2      | Linux | pi binary, faux: per-agent setup p50 (gate → first request)                        | 1.3–2.2 ms                         | after skipping package discovery and starting agents in order                                    |
-| 2026-10-08 | E2.2      | Linux | pi binary, faux: memory per running agent at 8 / 32 / 64                           | 0.8 / 1.1 / 1.2 MB                 | target < 5 MB                                                                                    |
-| 2026-10-08 | E2.2      | Linux | pi binary, faux, stress-64: dependent launch p50 / p99                             | 0.78 / 4.7 ms                      | target < 5 ms                                                                                    |
-| 2026-10-08 | E0.3      | Linux | pi binary, loopback: engine spawn p50, fan-out 1 / 8 / 32 / 64                     | 3.4 / 8.6 / 29.8 / 55.2 ms         | 0.7.0: 1.41 / 2.39 / 3.12 / 2.72 s                                                               |
-| 2026-10-08 | E0.3      | Linux | pi binary, loopback: engine memory per agent, fan-out 8 / 32 / 64                  | 0.97 / 2.0 / 2.1 MB                | 0.7.0: 218 MB                                                                                    |
-| 2026-10-08 | E0.3      | Linux | pi binary, loopback, stress-64: dependent p50 / p99, wall                          | 1.2 / 2.4 ms, 0.69 s               | 0.7.0: 4.58 / 8.44 s, 24.2 s                                                                     |
-| 2026-10-08 | E0.3      | Linux | pi binary, loopback, ux-8: lag p99 / wall                                          | 1.9 ms / 1.87 s                    | 0.7.0 coordinator lag 4.8 ms, wall 5.7 s                                                         |
+| Date       | Item      | OS    | Measurement                                                                         | Value                              | Notes                                                                                                                           |
+| ---------- | --------- | ----- | ----------------------------------------------------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-10-08 | prototype | Linux | in-process SDK session spawn / memory                                               | ~1–2 ms / ~1–1.5 MB                | `bench/prototypes/inprocess-bench.ts`, faux, Pi 1.1.0                                                                           |
+| 2026-10-08 | prototype | Linux | `pi --mode rpc` worker flags ready / RSS                                            | ~320 ms / ~114 MB                  |                                                                                                                                 |
+| 2026-10-08 | prototype | Linux | `git worktree add`                                                                  | 35–40 ms                           | this repository                                                                                                                 |
+| 2026-10-08 | E0.4      | Linux | 0.7.0 fan-out 1: spawn / tool call → 1st request / RSS per agent                    | 1.41 s / 1.99 s / 219.5 MB         | loopback, 1 ms/token; `bench/baselines/0.7.0-linux.json`                                                                        |
+| 2026-10-08 | E0.4      | Linux | 0.7.0 fan-out 8: spawn p50 (p95) / tool call p50 / peak RSS                         | 2.39 s (3.31 s) / 2.99 s / 913 MB  | RSS per agent 218 MB                                                                                                            |
+| 2026-10-08 | E0.4      | Linux | 0.7.0 fan-out 32: spawn p50 (p95) / tool call p50 / wall                            | 3.12 s (5.46 s) / 6.30 s / 12.6 s  | 0.7.0 concurrency max 16                                                                                                        |
+| 2026-10-08 | E0.4      | Linux | 0.7.0 fan-out 64: spawn p50 (p95) / tool call p50 / wall                            | 2.72 s (4.85 s) / 11.96 s / 22.4 s | peak RSS 1.30 GB                                                                                                                |
+| 2026-10-08 | E0.4      | Linux | 0.7.0 chain: dependent launch p50 / p99 / wall                                      | 848 ms / 1.47 s / 6.2 s            | scout → planner → builder → reviewer                                                                                            |
+| 2026-10-08 | E0.4      | Linux | 0.7.0 stress-64: dependent launch p50 / p99 / wall                                  | 4.58 s / 8.44 s / 24.2 s           | 16 chains + 32 fans                                                                                                             |
+| 2026-10-08 | E0.4      | Linux | 0.7.0 builder → reviewer: dependent launch / wall                                   | 1.56 s / 4.3 s                     |                                                                                                                                 |
+| 2026-10-08 | E0.4      | Linux | 0.7.0 ux-8: coordinator lag p99 / RSS per agent                                     | 4.8 ms / 242 MB                    | 6,000-char streamed briefs                                                                                                      |
+| 2026-10-08 | E0.5      | Linux | 0.7.0 Luna quality eval, 3 trials: composite score / result-format failures / cost  | 0.6944 / 2 / $0.0528               | builder oracle 58/87, review controls 11/12, factual 21/42; `bench/baselines/quality-0.7.0.json`                                |
+| 2026-10-08 | M2 exit   | Linux | Luna live smoke in pi: 3 scouts + dependent planner (all succeeded)                 | 70 s, $0.0046                      | `test/engine/live-smoke.ts`, models pinned to `examples/configs/luna.json`                                                      |
+| 2026-10-08 | live cost | Linux | two earlier live smoke runs (planner on the user's global `gpt-6-astra`)            | $0.1071 + $0.1149                  | led to pinning each task's model in the smoke                                                                                   |
+| 2026-10-08 | live cost | Linux | total live spend so far                                                             | $0.2794                            | E0.5 eval $0.0528 + smokes $0.2266                                                                                              |
+| 2026-10-08 | E3.3      | Linux | change capture on 0.7.0's benchmark shape (2,131 files, 144 MiB), 5 changed files   | 21.5 ms median                     | target < 50 ms; private capture index warmed during the builder's run                                                           |
+| 2026-10-08 | E1.2      | Linux | fake backend, 64 agents (8 fans + 8 chains): dependent launch p50 / p99 / max       | 0.031 / 0.216 / 0.816 ms           | 480 samples over 10 runs; limiter opened to 64                                                                                  |
+| 2026-10-08 | E2.2      | Linux | pi binary (Bun), faux, fan-out 1 / 8 / 32 / 64: spawn p50                           | 1.4 / 6.2 / 18.8 / 36.2 ms         | target < 10 ms met at 1 and 8; see notes for 32 and 64                                                                          |
+| 2026-10-08 | E2.2      | Linux | pi binary, faux: per-agent setup p50 (gate → first request)                         | 1.3–2.2 ms                         | after skipping package discovery and starting agents in order                                                                   |
+| 2026-10-08 | E2.2      | Linux | pi binary, faux: memory per running agent at 8 / 32 / 64                            | 0.8 / 1.1 / 1.2 MB                 | target < 5 MB                                                                                                                   |
+| 2026-10-08 | E2.2      | Linux | pi binary, faux, stress-64: dependent launch p50 / p99                              | 0.78 / 4.7 ms                      | target < 5 ms                                                                                                                   |
+| 2026-10-08 | E0.3      | Linux | pi binary, loopback: engine spawn p50, fan-out 1 / 8 / 32 / 64                      | 3.4 / 8.6 / 29.8 / 55.2 ms         | 0.7.0: 1.41 / 2.39 / 3.12 / 2.72 s                                                                                              |
+| 2026-10-08 | E0.3      | Linux | pi binary, loopback: engine memory per agent, fan-out 8 / 32 / 64                   | 0.97 / 2.0 / 2.1 MB                | 0.7.0: 218 MB                                                                                                                   |
+| 2026-10-08 | E0.3      | Linux | pi binary, loopback, stress-64: dependent p50 / p99, wall                           | 1.2 / 2.4 ms, 0.69 s               | 0.7.0: 4.58 / 8.44 s, 24.2 s                                                                                                    |
+| 2026-10-08 | E0.3      | Linux | pi binary, loopback, ux-8: lag p99 / wall                                           | 1.9 ms / 1.87 s                    | 0.7.0 coordinator lag 4.8 ms, wall 5.7 s                                                                                        |
+| 2026-10-08 | E3.7      | Linux | engine Luna quality eval, 3 trials: composite score / result-format failures / cost | 0.9406 / 0 / $0.0499               | builder oracle 0.9885, review controls 12/12, factual 0.8333; `bench/results/quality-engine-2026-10-08.json`; 0.7.0: 0.6944 / 2 |
+| 2026-10-08 | live cost | Linux | aborted first engine eval (reviewers reported `failed` for a rejection; fixed)      | $0.0191                            | stopped after trial 1                                                                                                           |
+| 2026-10-08 | live cost | Linux | total live spend so far                                                             | $0.3484                            | evals $0.1218 + smokes $0.2266                                                                                                  |
+| 2026-10-08 | E3.7      | Linux | pi binary, loopback A/B: wall, engine vs 0.7.0, fan-out 1 / 8 / 32 / 64             | 0.28 / 0.34 / 0.55 / 0.79 s        | 0.7.0: 2.51 / 4.76 / 13.4 / 24.6 s; `bench/results/linux-2026-10-08-ab.json`                                                    |
+| 2026-10-08 | E3.7      | Linux | pi binary, loopback A/B: spawn p50, fan-out 1 / 8 / 32 / 64                         | 2.2 / 8.0 / 25.1 / 47.6 ms         | 0.7.0: 1.43 / 2.47 / 3.25 / 2.84 s                                                                                              |
+| 2026-10-08 | E3.7      | Linux | pi binary, loopback A/B: wall, chain / stress-64 / builder / ux-8                   | 0.68 / 0.64 / 0.42 / 1.85 s        | 0.7.0: 6.53 / 21.6 / 4.40 / 6.52 s                                                                                              |
+| 2026-10-08 | E3.7      | Linux | pi binary, loopback A/B: dependent launch p50, chain / stress-64 / builder          | 0.11 / 0.03 / 0.10 ms              | 0.7.0: 52 / 1574 / 89 ms                                                                                                        |
+| 2026-10-08 | E3.7      | Linux | pi binary, loopback A/B: memory per agent, fan-out 8 / 32 / 64                      | 1.08 / 2.03 / 2.14 MB              | 0.7.0: 218.5 / 217.9 / 217.5 MB                                                                                                 |
+| 2026-10-08 | E3.7      | Linux | pi binary, loopback A/B: parent event-loop lag p99, fan-out 32 / 64 / stress-64     | 85 / 248 / 71 ms                   | 0.7.0 coordinator ~5 ms; in-process agents set up on the parent's thread (see notes)                                            |
 
 ## Progress notes
 
@@ -1121,9 +1130,13 @@ Read this section and the plan before resuming after a context reset.
 ### In flight (resume here)
 
 - M3: E3.1–E3.6 are done (tests in `test/engine/{workspace,paths,checks,builders,integrate}.test.ts`).
-  Next: E3.7 Gate 1 (engine quality eval driver, builder bench scenarios, loopback A/B, 3-OS CI).
-- E0.7 upstream issue: not opened yet.
-- Then M3 (builders: worktrees, change capture, checks, reviews, integration) and Gate 1.
+  E3.7 Gate 1: the Luna eval (0.9406 vs 0.6944, 0 format failures) and the loopback A/B
+  (engine faster on every scenario) are recorded; waiting for green CI on all three OSes
+  (Windows had a hanging pull-request test and three Windows-only failures, fixed in
+  1808de0; check `gh run list --branch engine`), then record Gate 1 and check off E3.7.
+- M4: E4.1 and E4.2 are done (`engine/ui/{widget,live,mascot}.ts`, `engine/pi/ui.ts`, tests
+  in `test/engine/ui.test.ts` and `pi-adapter.test.ts`). Next: E4.3 detail view.
+- E0.7 upstream issue: not opened yet (outward-facing; include the `ensureTool` finding).
 
 ### Decisions and deviations
 
@@ -1217,6 +1230,17 @@ Read this section and the plan before resuming after a context reset.
   blamed on the check that made it.
 - `reviewPr` reviewers read a worktree at the PR head (shared per PR); `reviewBase` reviewers
   read the live checkout.
+
+- UX (M4): the live scene lives in `engine/ui/live.ts` (the plan said `ui/mascot.ts`; the
+  mascot geometry stays there). The host pushes RunViews to the widget, footer and scene
+  from engine events coalesced to 250 ms; nothing polls. The widget's only timer (the
+  ears, 600 ms) and the scene's frame timer (100 ms) run only while an agent is running and
+  motion is on (the scene also while a bonk or cheer plays). The widget and footer clear
+  when no run of this session is active (0.7.0 behavior). The scene uses Pi's keybindings
+  (`tui.select.cancel/up/down`, `tui.editor.cursorLeft/Right`); Space, M and D stay letters.
+- Parent event-loop lag during a 32–64 agent burst is 70–250 ms (pi binary, loopback): all
+  agents set up on the parent's thread at once. Streaming 8 agents (ux-8) stays at 1.5 ms.
+  The UX target (E4.6) is measured on ux-8; bursts are covered by the spawn deviation above.
 
 ### Open questions
 

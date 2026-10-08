@@ -4,6 +4,7 @@ import { registerCommands } from "./commands.ts";
 import { registerDelivery } from "./delivery.ts";
 import { PinataHost } from "./host.ts";
 import { registerTools } from "./tools.ts";
+import { PinataUI } from "./ui.ts";
 
 export default async function pinata(pi: ExtensionAPI): Promise<void> {
   // Recursion guard: agents (and anything they start) never get pinata tools.
@@ -15,10 +16,13 @@ export default async function pinata(pi: ExtensionAPI): Promise<void> {
     return legacy.default(pi);
   }
   const host = new PinataHost(pi);
+  host.ui = new PinataUI(pi);
   registerTools(pi, host);
   registerCommands(pi, host);
   registerDelivery(pi);
+  pi.on("session_start", (_event, ctx) => host.ui?.bind(ctx));
   pi.on("session_shutdown", async (event) => {
+    host.ui?.dispose();
     // In-process agents cannot outlive this Pi: cancel them cleanly and flush their logs.
     await host.shutdown(event.reason === "reload" ? "parent reload" : "parent exit");
   });

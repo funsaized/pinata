@@ -2,17 +2,33 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { duration, money, progressLine, short, statusText } from "../ui/text.ts";
 import type { PinataHost } from "./host.ts";
+import { integrationStatus, type RunSource } from "./ui.ts";
 
 export const USAGE = [
   "/pinata              status of the latest run",
   "/pinata runs         runs in this repository",
   "/pinata mode lean|observe   footprint mode for this session",
+  "/pinata live [run|demo]      the mascot overlay",
 ].join("\n");
+
+// Runs for /pinata live: this session's newest first, else the repository's history.
+export function runSource(host: PinataHost): RunSource {
+  return {
+    async runs(ctx) {
+      const session = [...host.handles.keys()].reverse();
+      return session.length ? session : (await host.history(ctx.cwd, 10)).map((v) => v.run);
+    },
+    async read(run, ctx) {
+      const found = await host.find(run, ctx.cwd);
+      return { view: found.view, integration: await integrationStatus(found.dir) };
+    },
+  };
+}
 
 export async function pinataCommand(
   host: PinataHost,
   args: string,
-  ctx: Pick<ExtensionCommandContext, "cwd" | "ui">,
+  ctx: Pick<ExtensionCommandContext, "cwd" | "ui" | "hasUI" | "mode" | "sessionManager">,
 ): Promise<string> {
   const [sub, ...rest] = args.trim().split(/\s+/).filter(Boolean);
   if (!sub || sub === "status") {
@@ -35,6 +51,10 @@ export async function pinataCommand(
       )
       .join("\n");
   }
+  if (sub === "live") {
+    if (!host.ui) return "The live view needs interactive Pi.";
+    return (await host.ui.openLive(rest.join(" "), ctx, runSource(host))) ?? "";
+  }
   if (sub === "mode") {
     const mode = rest[0];
     if (mode !== "lean" && mode !== "observe")
@@ -49,7 +69,7 @@ export function registerCommands(pi: ExtensionAPI, host: PinataHost): void {
   pi.registerCommand("pinata", {
     description: "pinata status, runs and mode (no model turn)",
     getArgumentCompletions: (prefix) =>
-      ["status", "runs", "mode lean", "mode observe"]
+      ["status", "runs", "live", "live demo", "mode lean", "mode observe"]
         .filter((c) => c.startsWith(prefix))
         .map((value) => ({ value, label: value })),
     handler: async (args, ctx) => {
@@ -59,7 +79,7 @@ export function registerCommands(pi: ExtensionAPI, host: PinataHost): void {
       } catch (error) {
         text = `pinata: ${(error as Error).message}`;
       }
-      ctx.ui.notify(text, "info");
+      if (text) ctx.ui.notify(text, "info");
     },
   });
 }

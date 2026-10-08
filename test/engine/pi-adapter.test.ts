@@ -38,7 +38,10 @@ async function adapter(t: TestContext, respond: (turn: FauxTurn) => any) {
   const handlers: Record<string, Array<(e: any, ctx: any) => any>> = {};
   const messages: Array<{ message: any; options: any }> = [];
   const notes: string[] = [];
+  const entries: any[] = [];
   const pi: any = {
+    appendEntry: (customType: string, data: unknown) =>
+      entries.push({ type: "custom", customType, data }),
     registerTool: (tool: any) => tools.set(tool.name, tool),
     registerCommand: (name: string, options: any) => commands.set(name, options),
     registerMessageRenderer() {},
@@ -57,7 +60,7 @@ async function adapter(t: TestContext, respond: (turn: FauxTurn) => any) {
   };
   const call = (name: string, params: unknown, signal?: AbortSignal, updates: any[] = []) =>
     tools.get(name).execute("call-1", params, signal, (u: any) => updates.push(u), ctx);
-  return { world, tools, commands, handlers, messages, notes, ctx, call };
+  return { world, tools, commands, handlers, messages, notes, entries, ctx, call };
 }
 
 const reader = (turn: FauxTurn) =>
@@ -275,4 +278,102 @@ test("/pinata reports runs, modes and runs a crashed Pi left unsettled", async (
   assert.match(events, /"t":"run_started"[^\n]*"mode":"observe"/);
   assert.match(events, /"t":"turn_start"/, "observe mode logs everything");
   void fauxText;
+});
+
+const timeouts = () => process.getActiveResourcesInfo().filter((r) => r === "Timeout").length;
+const settle = () => new Promise((resolve) => setImmediate(resolve));
+
+test("the widget and footer follow a run in the TUI and clear when it settles; idle Pi runs no timers", async (t) => {
+  const a = await adapter(t, reader);
+  const widgets: any[] = [];
+  const statuses: Array<string | undefined> = [];
+  let widget: any;
+  let renders = 0;
+  Object.assign(a.ctx, {
+    mode: "tui",
+    hasUI: true,
+    sessionManager: { getBranch: () => a.entries },
+  });
+  a.ctx.ui = {
+    notify: (text: string) => a.notes.push(text),
+    setWidget: (key: string, content: any, options: any) => {
+      widgets.push({ key, content, options });
+      if (typeof content === "function")
+        widget = content({ requestRender: () => renders++ }, { fg: (_: string, x: string) => x });
+    },
+    setStatus: (_key: string, text: string | undefined) => statuses.push(text),
+  };
+  const before = timeouts();
+  for (const handler of a.handlers.session_start) await handler({}, a.ctx);
+  await a.commands.get("pinata").handler("", a.ctx);
+  await settle();
+  assert.equal(timeouts(), before, "an idle Pi has no pinata timers");
+  assert.equal(widgets.length, 0);
+  const out = await a.call("pinata_run", { tasks: [spec("one"), spec("two")] });
+  assert(!out.isError, JSON.stringify(out));
+  assert.equal(widgets[0].key, "pinata");
+  assert.equal(widgets[0].options.placement, "aboveEditor");
+  assert(renders >= 1, "the widget re-renders as events arrive");
+  assert(
+    statuses.some((s) => /^pinata \d\/2/.test(s ?? "")),
+    `footer: ${JSON.stringify(statuses)}`,
+  );
+  // Settled: the coalesced update clears the widget and the footer, and the ears stop.
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  assert.equal(widgets.at(-1).content, undefined);
+  assert.equal(statuses.at(-1), undefined);
+  assert(widget.disposed && !widget.animating);
+});
+
+test("/pinata live opens the demo without runs or model calls, persists motion, and closes on shutdown", async (t) => {
+  const a = await adapter(t, () => {
+    throw new Error("the demo never calls a model");
+  });
+  let scene: any;
+  const shown: Promise<unknown>[] = [];
+  Object.assign(a.ctx, {
+    mode: "tui",
+    hasUI: true,
+    sessionManager: { getBranch: () => a.entries },
+  });
+  a.ctx.ui = {
+    notify: (text: string) => a.notes.push(text),
+    setWidget() {},
+    setStatus() {},
+    custom: (factory: any, options: any) => {
+      assert.equal(options.overlay, true);
+      const p = new Promise((done) => {
+        scene = factory(
+          { terminal: { rows: 30 }, requestRender() {} },
+          { fg: (_: string, x: string) => x },
+          { matches: (data: string, id: string) => id === "tui.select.cancel" && data === "\x1b" },
+          done,
+        );
+      });
+      shown.push(p);
+      return p;
+    },
+  };
+  const command = a.commands.get("pinata");
+  assert(
+    command.getArgumentCompletions("li").some((o: any) => o.value === "live demo"),
+    "live demo is offered",
+  );
+  const pending = command.handler("live demo", a.ctx);
+  await settle();
+  assert(scene.demo);
+  assert.match(scene.render(100).join("\n"), /DEMO/);
+  scene.handleInput("m");
+  assert.deepEqual(a.entries.at(-1), {
+    type: "custom",
+    customType: "pinata-motion",
+    data: { enabled: false },
+  });
+  for (const handler of a.handlers.session_shutdown) await handler({ reason: "quit" }, a.ctx);
+  await pending;
+  assert(scene.disposed, "shutdown closes the overlay");
+  assert.equal(scene.frameTimer, null);
+  a.ctx.mode = "rpc";
+  await command.handler("live demo", a.ctx);
+  assert.match(a.notes.at(-1)!, /needs interactive Pi/);
 });
