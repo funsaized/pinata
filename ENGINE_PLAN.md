@@ -755,7 +755,7 @@ Gate 1 passes.
   - Every steer is a `steer` event and appears in the reviewer's brief as "this agent was
     steered: …" (0.7.0 backlog #9).
   - Done when tests show a steer reaches an in-process agent and the reviewer sees it.
-- [ ] **E4.5 History (S).**
+- [x] **E4.5 History (S).**
   - Path: `/pinata runs` lists runs from `<git common dir>/pinata/*` (port `history()`).
   - `/pinata open <run> <task>` replays a finished transcript in the detail view from disk.
   - Done when finished runs open without the engine having run them in this session.
@@ -1135,7 +1135,7 @@ Read this section and the plan before resuming after a context reset.
   (Windows had a hanging pull-request test and three Windows-only failures, fixed in
   1808de0; check `gh run list --branch engine`), then record Gate 1 and check off E3.7.
 - M4: E4.1 and E4.2 are done (`engine/ui/{widget,live,mascot}.ts`, `engine/pi/ui.ts`, tests
-  in `test/engine/ui.test.ts` and `pi-adapter.test.ts`). E4.4 is done (`test/engine/detail.test.ts`).
+  in `test/engine/ui.test.ts` and `pi-adapter.test.ts`). E4.4 and E4.5 are done (`test/engine/detail.test.ts`, `pi-adapter.test.ts`).
   E4.3's view is in `engine/ui/detail.ts` (`/pinata open [run] <task>`); it is checked off once
   E4.6 measures it in interactive Pi under a pseudo-terminal (RPC mode has no overlays).
 - E0.7 upstream issue: not opened yet (outward-facing; include the `ensureTool` finding).
