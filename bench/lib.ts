@@ -46,6 +46,8 @@ export interface ScenarioResult {
   spawnMs: Stat | null;
   // Tool call (run creation) to each root agent's first provider request; includes queueing.
   toolCallMs: Stat | null;
+  // Engine only: the agent's own setup (after the startup gate) to its first provider request.
+  setupMs?: Stat | null;
   // Predecessor settled to dependent's first provider request.
   dependentMs: Stat | null;
   memoryPerAgentMB: number | null;
@@ -70,6 +72,9 @@ export function stat(values: number[]): Stat | null {
     max: round(sorted.at(-1)!),
   };
 }
+
+// High-resolution absolute time in milliseconds, comparable across processes on one machine.
+export const now = () => performance.timeOrigin + performance.now();
 
 export const mb = (bytes: number) => Math.round((bytes / 1048576) * 100) / 100;
 

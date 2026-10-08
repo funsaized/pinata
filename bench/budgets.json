@@ -1,0 +1,13 @@
+{
+  "note": "Engine targets from ENGINE_PLAN.md (Targets, E2.2, M1). bench --ci fails a result above twice its budget. Large-burst spawn uses the proposed per-agent setup target recorded in the plan's Progress notes.",
+  "budgets": [
+    { "scenario": "fanout-1", "metric": "spawnMs.p50", "max": 10 },
+    { "scenario": "fanout-8", "metric": "spawnMs.p50", "max": 10 },
+    { "scenario": "fanout-8", "metric": "memoryPerAgentMB", "max": 5 },
+    { "scenario": "fanout-32", "metric": "memoryPerAgentMB", "max": 5 },
+    { "scenario": "fanout-32", "metric": "setupMs.p50", "max": 5 },
+    { "scenario": "fanout-64", "metric": "setupMs.p50", "max": 5 },
+    { "scenario": "stress-64", "metric": "dependentMs.p99", "max": 5 },
+    { "scenario": "ux-8", "metric": "loopLagP99Ms", "max": 20 }
+  ]
+}

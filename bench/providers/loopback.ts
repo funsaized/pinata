@@ -42,7 +42,7 @@ export interface LoopbackRecord {
 export interface Loopback {
   origin: string;
   records: LoopbackRecord[];
-  // First request time per agent, in performance.timeOrigin-relative milliseconds.
+  // First request time per agent, in absolute milliseconds (performance.timeOrigin + now()).
   firstRequest: Map<string, number>;
   errors: string[];
   setResponder(responder: Responder): void;
@@ -76,7 +76,7 @@ export async function startLoopback(
   let sequence = 0;
 
   const handle = async (req: IncomingMessage, res: ServerResponse) => {
-    const at = performance.now();
+    const at = performance.timeOrigin + performance.now();
     let data = "";
     for await (const chunk of req) data += chunk;
     const body = JSON.parse(data);
@@ -107,6 +107,16 @@ export async function startLoopback(
         })}\n\n`,
       );
     let completion = 0;
+    // Text streams first; tool calls follow in the same response.
+    const parts = tokens(reply.text ?? "");
+    if (parts.length || !reply.toolCalls?.length) {
+      completion += parts.length;
+      emit({ role: "assistant", content: "" });
+      for (let i = 0; i < parts.length; i += chunkTokens) {
+        if (tokenDelayMs > 0) await sleep(chunkTokens * tokenDelayMs);
+        emit({ content: parts.slice(i, i + chunkTokens).join("") });
+      }
+    }
     if (reply.toolCalls?.length) {
       const calls = reply.toolCalls.map((call, index) => ({
         index,
@@ -114,20 +124,12 @@ export async function startLoopback(
         type: "function",
         function: { name: call.name, arguments: JSON.stringify(call.arguments) },
       }));
-      completion = tokens(JSON.stringify(calls)).length;
-      if (tokenDelayMs > 0) await sleep(completion * tokenDelayMs);
-      emit({ role: "assistant", tool_calls: calls });
+      const n = tokens(JSON.stringify(calls)).length;
+      completion += n;
+      if (tokenDelayMs > 0) await sleep(n * tokenDelayMs);
+      emit({ ...(parts.length ? {} : { role: "assistant" }), tool_calls: calls });
       emit({}, "tool_calls");
-    } else {
-      const parts = tokens(reply.text ?? "");
-      completion = parts.length;
-      emit({ role: "assistant", content: "" });
-      for (let i = 0; i < parts.length; i += chunkTokens) {
-        if (tokenDelayMs > 0) await sleep(chunkTokens * tokenDelayMs);
-        emit({ content: parts.slice(i, i + chunkTokens).join("") });
-      }
-      emit({}, "stop");
-    }
+    } else emit({}, "stop");
     const prompt = tokens(text).length;
     res.write(
       `data: ${JSON.stringify({

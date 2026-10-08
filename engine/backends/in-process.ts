@@ -42,6 +42,8 @@ export interface InProcessOptions {
   webExtension?: string | null;
   // The repository root, so worktrees inside .git do not load the main checkout's context files twice.
   repoRoot?: string;
+  // Called when an agent's own setup begins (after the startup gate), for benchmarks.
+  onSetup?: (task: string) => void;
 }
 
 type ContextFile = { path: string; content: string };
@@ -90,10 +92,49 @@ function partialText(message: any): { text: string; thinking: string } | undefin
   return { text, thinking };
 }
 
+// Agents set up one at a time, each until it sends its first model request (or 200 ms pass).
+// Setup is main-thread work, so interleaving N setups would make every agent wait for all of
+// them; in order, the k-th agent waits for k setups.
+export class StartupGate {
+  private tail: Promise<void> = Promise.resolve();
+  readonly fallbackMs: number;
+
+  constructor(fallbackMs = 200) {
+    this.fallbackMs = fallbackMs;
+  }
+
+  async acquire(): Promise<() => void> {
+    let open!: () => void;
+    const next = new Promise<void>((resolve) => (open = resolve));
+    const previous = this.tail;
+    this.tail = previous.then(() => next);
+    await previous;
+    let done = false;
+    const release = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      open();
+    };
+    const timer = setTimeout(release, this.fallbackMs);
+    (timer as { unref?: () => void }).unref?.();
+    return release;
+  }
+}
+
+// Every discovery switch is off for agents, so the loader ignores what package discovery finds.
+// Skipping it saves most of DefaultResourceLoader.reload() (about 0.8 ms per agent).
+function skipDiscovery(loader: DefaultResourceLoader): void {
+  const manager = (loader as unknown as { packageManager?: { resolve?: unknown } }).packageManager;
+  if (manager && typeof manager.resolve === "function")
+    manager.resolve = async () => ({ extensions: [], skills: [], prompts: [], themes: [] });
+}
+
 export class InProcessBackend implements AgentBackend {
   readonly kind = "in-process" as const;
   private readonly options: InProcessOptions;
   readonly contextFiles = new ContextFileCache();
+  readonly gate = new StartupGate();
 
   constructor(options: InProcessOptions) {
     this.options = options;
@@ -103,6 +144,22 @@ export class InProcessBackend implements AgentBackend {
     launch: AgentLaunch,
     sink: (e: AgentEventInput) => void,
     signal: AbortSignal,
+  ): Promise<AgentHandle> {
+    const release = await this.gate.acquire();
+    this.options.onSetup?.(launch.task.id);
+    try {
+      return await this.create(launch, sink, signal, release);
+    } catch (error) {
+      release();
+      throw error;
+    }
+  }
+
+  private async create(
+    launch: AgentLaunch,
+    sink: (e: AgentEventInput) => void,
+    signal: AbortSignal,
+    release: () => void,
   ): Promise<AgentHandle> {
     const options = this.options;
     const runtime = await options.runtime();
@@ -144,6 +201,7 @@ export class InProcessBackend implements AgentBackend {
       appendSystemPromptOverride: () => [launch.persona],
       agentsFilesOverride: () => ({ agentsFiles: contextFiles }),
     });
+    skipDiscovery(loader);
     await loader.reload();
     const { session } = await createAgentSession({
       cwd: launch.cwd,
@@ -156,7 +214,7 @@ export class InProcessBackend implements AgentBackend {
       settingsManager,
       tools: [...launch.tools, SUBMIT, ...(launch.codemode ? ["codemode"] : [])],
     });
-    return attach(session, launch, sink, signal, () => result);
+    return attach(session, launch, sink, signal, () => result, release);
   }
 }
 
@@ -167,6 +225,7 @@ function attach(
   sink: (e: AgentEventInput) => void,
   signal: AbortSignal,
   submitted: () => AgentResult | null,
+  release: () => void = () => {},
 ): AgentHandle {
   const mapper = sessionMapper();
   let usage: Usage = ZERO_USAGE;
@@ -175,6 +234,8 @@ function attach(
   const live = launch.mode === "observe" && launch.transcript;
   let writes: Promise<void> = Promise.resolve();
   const unsubscribe = session.subscribe((event: any) => {
+    // The first model request is about to go out: let the next agent set up.
+    if (event.type === "turn_start") release();
     if (event.type === "message_update") partial = event.message;
     if (event.type === "message_end") {
       partial = undefined;
@@ -219,6 +280,8 @@ function attach(
         await session.prompt(REMINDER, { expandPromptTemplates: false });
     } catch (e) {
       error = (e as Error).message;
+    } finally {
+      release();
     }
     const last = mapper.lastAssistant;
     if (!error && last?.stopReason === "error") error = last.errorMessage ?? "provider error";

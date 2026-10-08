@@ -411,7 +411,7 @@ M3, M4–M8 can run in parallel, except that M6, M7 and M8 need E5.3 and E5.4.
   - Extend the `lint`, `format` and `check` scripts to `engine bench test/engine`.
   - Add `test:engine` and `bench*` scripts.
   - Done when `npm run check` and `npm test` pass with an empty `engine/core/types.ts`.
-- [ ] **E0.3 Benchmark harness (M).** Path: `bench/run.ts` runs scenarios with two
+- [x] **E0.3 Benchmark harness (M).** Path: `bench/run.ts` runs scenarios with two
       providers.
   - **Faux:** pi-ai `fauxProvider`. Pure orchestration cost.
   - **Loopback:** port the localhost OpenAI-compatible server from `test/pi-smoke.mjs` into
@@ -553,7 +553,7 @@ exact, and the suite is green on three OSes.
     connection pool is shared.
   - Done when a test using a provider registered by an extension (the faux provider) runs a
     child, and readiness costs under 1 ms after the first call.
-- [ ] **E2.2 In-process backend (M).** Path: `backends/in-process.ts`.
+- [x] **E2.2 In-process backend (M).** Path: `backends/in-process.ts`.
   - **Session:** `createAgentSession` with:
     - `cwd`, `agentDir`, `model`, `thinkingLevel`, `modelRuntime`;
     - `sessionManager: SessionManager.inMemory(cwd)`;
@@ -1092,6 +1092,14 @@ Verified against Pi 1.1.0 source. Re-check when upgrading.
 | 2026-10-08 | E0.4      | Linux | 0.7.0 ux-8: coordinator lag p99 / RSS per agent                                    | 4.8 ms / 242 MB                    | 6,000-char streamed briefs                                                                       |
 | 2026-10-08 | E0.5      | Linux | 0.7.0 Luna quality eval, 3 trials: composite score / result-format failures / cost | 0.6944 / 2 / $0.0528               | builder oracle 58/87, review controls 11/12, factual 21/42; `bench/baselines/quality-0.7.0.json` |
 | 2026-10-08 | E1.2      | Linux | fake backend, 64 agents (8 fans + 8 chains): dependent launch p50 / p99 / max      | 0.031 / 0.216 / 0.816 ms           | 480 samples over 10 runs; limiter opened to 64                                                   |
+| 2026-10-08 | E2.2      | Linux | pi binary (Bun), faux, fan-out 1 / 8 / 32 / 64: spawn p50                          | 1.4 / 6.2 / 18.8 / 36.2 ms         | target < 10 ms met at 1 and 8; see notes for 32 and 64                                           |
+| 2026-10-08 | E2.2      | Linux | pi binary, faux: per-agent setup p50 (gate → first request)                        | 1.3–2.2 ms                         | after skipping package discovery and starting agents in order                                    |
+| 2026-10-08 | E2.2      | Linux | pi binary, faux: memory per running agent at 8 / 32 / 64                           | 0.8 / 1.1 / 1.2 MB                 | target < 5 MB                                                                                    |
+| 2026-10-08 | E2.2      | Linux | pi binary, faux, stress-64: dependent launch p50 / p99                             | 0.78 / 4.7 ms                      | target < 5 ms                                                                                    |
+| 2026-10-08 | E0.3      | Linux | pi binary, loopback: engine spawn p50, fan-out 1 / 8 / 32 / 64                     | 3.4 / 8.6 / 29.8 / 55.2 ms         | 0.7.0: 1.41 / 2.39 / 3.12 / 2.72 s                                                               |
+| 2026-10-08 | E0.3      | Linux | pi binary, loopback: engine memory per agent, fan-out 8 / 32 / 64                  | 0.97 / 2.0 / 2.1 MB                | 0.7.0: 218 MB                                                                                    |
+| 2026-10-08 | E0.3      | Linux | pi binary, loopback, stress-64: dependent p50 / p99, wall                          | 1.2 / 2.4 ms, 0.69 s               | 0.7.0: 4.58 / 8.44 s, 24.2 s                                                                     |
+| 2026-10-08 | E0.3      | Linux | pi binary, loopback, ux-8: lag p99 / wall                                          | 1.9 ms / 1.87 s                    | 0.7.0 coordinator lag 4.8 ms, wall 5.7 s                                                         |
 
 ## Progress notes
 
@@ -1108,15 +1116,11 @@ Read this section and the plan before resuming after a context reset.
 
 ### In flight (resume here)
 
-- M2 adapter is written and tested but E2.2, E2.6, E2.7, E2.8, E2.9 are not checked off yet:
-  - E2.2: still needs the in-Pi-binary spawn/memory measurement (wire `bench/targets/engine.ts`,
-    then check off E0.3 too).
-  - E2.6: packed-package test (`npm pack`, `npm install --prefix`, `pi -e <pkg dir>`; never
-    `pi install`) still to write; skills and prompts are rewritten.
-  - E2.7/E2.8: covered by `test/engine/pi-smoke.ts` (real `pi` binary) and
-    `test/engine/pi-adapter.test.ts`; add the smoke to CI (`node test/engine/pi-smoke.ts`).
-  - E2.9: `pi.extensions` now points at `engine/pi/extension.ts`. `PINATA_LEGACY=1` makes it
-    load 0.7.0's `lib/extension.ts` instead (0.7.0 smokes set it); E9.5 removes the shim.
+- M2: E2.6 (packed-package test: `npm pack`, `npm install --prefix`, `pi -e <pkg dir>`;
+  never `pi install`), E2.7, E2.8 and E2.9 remain to be checked off; the smoke
+  (`test/engine/pi-smoke.ts`) and `bench --ci` now run in CI with `PINATA_PI` set to the npm
+  CLI. `pi.extensions` points at `engine/pi/extension.ts`; `PINATA_LEGACY=1` loads 0.7.0's
+  extension instead for 0.7.0's smokes (E9.5 removes the shim).
 - E0.7 upstream issue: not opened yet.
 - Then M3 (builders: worktrees, change capture, checks, reviews, integration) and Gate 1.
 
@@ -1173,6 +1177,23 @@ Read this section and the plan before resuming after a context reset.
   dependent launch. The test encodes exactly this.
 - Shutdown waits for runs that are still being created, so a `/reload` that arrives while
   `pinata_run` resolves the repository cannot leave a run going (found by Windows CI).
+
+- **Target not met: spawn p50 < 10 ms at 32 and 64 agents in one burst.** Data (pi binary,
+  faux): spawn p50 18.8 ms at 32, 36.2 ms at 64; per-agent setup p50 1.3–2.2 ms. Cause: an
+  agent's setup (Pi's resource loader, `createAgentSession`, and the prompt path up to the
+  request) is about 1.5–2 ms of main-thread work, and all agents share one thread, so the
+  k-th agent of a burst waits for k setups (p50 ≈ N/2 × setup). Two fixes landed: package
+  discovery is skipped for agents (it found nothing they use; 0.8 ms each), and a startup gate
+  runs setups in order so earlier agents send their first request before later ones start
+  (before: everyone waited for the whole burst, p50 56 ms at 32 in Node). Proposed target:
+  spawn p50 < 10 ms for bursts up to 8 agents, and per-agent setup p50 < 5 ms (2.5x margin)
+  at any burst size; the bench budgets encode this. Worker threads (L9) could parallelize
+  setup if data later shows large bursts matter.
+- Pi's `grep` and `find` call `ensureTool()` on every call, which runs `spawnSync("rg
+--version")` unless rg is in `~/.pi/agent/bin`; that blocks the event loop per call for
+  in-process agents. Reported upstream with E0.7.
+- Live fingerprints: at most one `git status` per repository runs at a time; requests that
+  arrive meanwhile share the next one.
 
 ### Open questions
 
