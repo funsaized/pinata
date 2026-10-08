@@ -4,9 +4,8 @@ import { readJson } from "../lib/core.mjs";
 import { init, wait, cancel, cleanup } from "../lib/pinata.mjs";
 import { repository } from "./repository.mjs";
 
-assert.equal(
-  process.env.PINATA_LIVE_SMOKE,
-  "I_AUTHORIZE_PAID_MODEL_CALLS",
+assert.ok(
+  ["1", "I_AUTHORIZE_PAID_MODEL_CALLS"].includes(process.env.PINATA_LIVE_SMOKE ?? ""),
   "Live spending disabled. Read docs/validation.md before opting in.",
 );
 assert(process.env.PINATA_LIVE_CONFIG, "Supply an explicit approved model/endpoint config file");

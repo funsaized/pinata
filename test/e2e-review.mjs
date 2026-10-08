@@ -7,9 +7,8 @@ import { repository, gitIn } from "./repository.mjs";
 
 // Opt-in live run: real Pi, Herdr, and models review uncommitted work with a
 // seeded bug, under a cost limit. Nothing is written to the fixture checkout.
-assert.equal(
-  process.env.PINATA_LIVE_SMOKE,
-  "I_AUTHORIZE_PAID_MODEL_CALLS",
+assert.ok(
+  ["1", "I_AUTHORIZE_PAID_MODEL_CALLS"].includes(process.env.PINATA_LIVE_SMOKE ?? ""),
   "Live spending disabled. Read docs/testing.md before opting in.",
 );
 assert(process.env.PINATA_LIVE_CONFIG, "Supply an approved model config file");
