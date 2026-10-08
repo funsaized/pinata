@@ -6,7 +6,7 @@ boundaries enforced at runtime, see [trust and safety](architecture.md#trust-and
 
 ## Tested environment
 
-The latest local validation on 2026-10-08 passed 152 deterministic tests,
+The latest local validation on 2026-10-08 passed 153 deterministic tests,
 formatting/lint, and the installed-Pi packed-package, native completion, and
 codemode checks. The live smoke and both builder → review and
 scout → builder → review workflows also passed.
@@ -14,7 +14,7 @@ scout → builder → review workflows also passed.
 | Component           | Latest local version |
 | ------------------- | -------------------- |
 | OS                  | Linux, x86_64        |
-| Node                | 24.19.0 and 26.7.0   |
+| Node                | 24.21.0              |
 | Pi                  | 1.1.0                |
 | Herdr client/server | 0.9.1                |
 | Git                 | 2.55.0               |
@@ -54,8 +54,8 @@ use local scripted providers and do not assess model judgment.
 
 ## Workspace performance
 
-The local Btrfs benchmark used 2,131 tracked files with about 144 MiB of source
-and assets, plus a pinned 91-package npm fixture.
+The local Btrfs benchmark used Node 26.7.0, 2,131 tracked files with about
+144 MiB of source and assets, and a pinned 91-package npm fixture.
 
 | Operation                                     | Observed elapsed time  |
 | --------------------------------------------- | ---------------------- |

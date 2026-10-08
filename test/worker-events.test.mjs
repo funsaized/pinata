@@ -112,6 +112,26 @@ test("private interactive events still enforce tool budgets and malformed-stream
   }
 });
 
+test(
+  "supervision retries termination after an owned process renames itself",
+  { skip: process.platform !== "linux" },
+  async (t) => {
+    const { result } = await run(
+      t,
+      `
+      import { writeSync } from 'node:fs';
+      process.on('SIGTERM', () => { process.title = 'pinata-renamed'; });
+      writeSync(3, 'not JSON\\n');
+      // Bound the regression even if the supervisor stops retrying shutdown.
+      setTimeout(() => process.exit(7), 6000);
+    `,
+    );
+    assert.equal(result.reason, "invalid Pi JSON stream");
+    assert.equal(result.signal, "SIGKILL");
+    assert.equal(result.terminated, true);
+  },
+);
+
 test("fast settled workers cannot escape tool or turn budgets in either Pi transport", async (t) => {
   for (const interactive of [false, true]) {
     for (const [turns, tools, reason] of [
