@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { delimiter, join } from "node:path";
 import test from "node:test";
 import { fauxAssistantMessage, fauxText, fauxToolCall } from "@earendil-works/pi-ai";
 import type { AgentEvent, TaskSpec } from "../../engine/core/types.ts";
@@ -284,4 +284,92 @@ test("a reviewer of uncommitted changes reviews the subject with its diff", asyn
       () => true,
     )
     .catch(() => {});
+});
+
+async function pullRequest(
+  dir: string,
+  repo: string,
+  git: (...args: string[]) => string,
+  headOverride?: string,
+) {
+  const main = git("rev-parse", "--abbrev-ref", "HEAD").trim();
+  const remote = join(dir, "github.com", "acme", "widget.git");
+  await mkdir(join(dir, "github.com", "acme"), { recursive: true });
+  git("init", "-q", "--bare", remote);
+  git("remote", "add", "origin", remote);
+  git("push", "-q", "origin", main);
+  git("checkout", "-qb", "contributor");
+  await writeFile(join(repo, "b.txt"), "from the pull request\n");
+  git("add", "b.txt");
+  git(
+    "-c",
+    "user.name=t",
+    "-c",
+    "user.email=t@e",
+    "-c",
+    "commit.gpgsign=false",
+    "commit",
+    "-qm",
+    "PR change",
+  );
+  const head = git("rev-parse", "HEAD").trim();
+  git("push", "-q", "origin", "HEAD:refs/pull/7/head");
+  git("checkout", "-q", main);
+  git("branch", "-qD", "contributor");
+  const bin = join(dir, "bin");
+  await mkdir(bin);
+  const view = {
+    number: 7,
+    title: "Fix the widget",
+    url: "https://github.com/acme/widget/pull/7",
+    headRefOid: headOverride ?? head,
+    baseRefName: main,
+  };
+  const fake = join(bin, "fake-gh.mjs");
+  await writeFile(
+    fake,
+    `if (process.argv.slice(2, 5).join(" ") !== "pr view 7") process.exit(2);\nconsole.log(${JSON.stringify(JSON.stringify(view))});\n`,
+  );
+  if (process.platform === "win32")
+    await writeFile(join(bin, "gh.cmd"), `@"${node}" "${fake}" %*\r\n`);
+  else
+    await writeFile(join(bin, "gh"), `#!/bin/sh\nexec "${node}" "${fake}" "$@"\n`, { mode: 0o755 });
+  return { head, bin };
+}
+
+test("a pull request is fetched into a private ref and reviewed at its head", async (t) => {
+  const world = await fauxWorld(t, responder, { files: { "b.txt": "original\n" } });
+  const pr = await pullRequest(world.dir, world.repo, world.fixture.git);
+  const PATH = process.env.PATH;
+  process.env.PATH = `${pr.bin}${delimiter}${PATH}`;
+  t.after(() => void (process.env.PATH = PATH));
+  const handle = await world.run([spec("look", "reviewer", { reviewPr: 7 })]);
+  const view = await handle.done;
+  assert.equal(view.status, "succeeded", JSON.stringify(view.agents));
+  const brief = world.turns.find((x) => x.agent === "look")!.text;
+  assert.match(brief, /"kind":"pull-request"/);
+  assert.match(brief, /Changed files: \[\{"status":"M","path":"b.txt"\}\]/);
+  assert.equal(world.fixture.git("rev-parse", `refs/pinata/${handle.id}/pr-7`).trim(), pr.head);
+  assert.equal(
+    await readFile(join(view.agents.look.workspace!.path, "b.txt"), "utf8"),
+    "from the pull request\n",
+  );
+  assert.equal(
+    await readFile(join(world.repo, "b.txt"), "utf8"),
+    "original\n",
+    "the checkout never moves",
+  );
+});
+
+test("a pull request whose head changed while fetching is refused and leaves no refs", async (t) => {
+  const world = await fauxWorld(t, responder, { files: { "b.txt": "original\n" } });
+  const pr = await pullRequest(world.dir, world.repo, world.fixture.git, "0".repeat(40));
+  const PATH = process.env.PATH;
+  process.env.PATH = `${pr.bin}${delimiter}${PATH}`;
+  t.after(() => void (process.env.PATH = PATH));
+  await assert.rejects(
+    world.run([spec("look", "reviewer", { reviewPr: 7 })]),
+    /changed while it was fetched/,
+  );
+  assert.equal(world.fixture.git("for-each-ref", "refs/pinata/"), "");
 });

@@ -4,7 +4,7 @@
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import { git, line, zsplit } from "../workspace/git.ts";
-import { environment } from "./checks.ts";
+import { environment, launch } from "./checks.ts";
 
 export interface Subject {
   kind: "uncommitted" | "branch" | "pull-request";
@@ -59,11 +59,14 @@ function run(
   timeoutMs = 120_000,
 ): Promise<{ code: number | null; stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
-    const child = spawn(argv[0], argv.slice(1), {
+    // gh may be a .cmd launcher on Windows.
+    const { file, args, verbatim } = launch(argv, env);
+    const child = spawn(file, args, {
       cwd,
       env,
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true,
+      windowsVerbatimArguments: verbatim,
     });
     let stdout = "";
     let stderr = "";
