@@ -811,7 +811,7 @@ Gate 1 passes.
   startup < 1 s or memory < 150 MB. The headless host (E8.1) uses the same decision.
   Done when the decision and numbers are recorded here.
 
-- [ ] **E5.7 Log adapter (S).**
+- [x] **E5.7 Log adapter (S).**
   - Path: `sources/log.ts` replays `events.jsonl`, and tails Pi session JSONL files
     (`--session-dir`) into `AgentEvent`s.
   - `pinata logs [run] [task] [--follow]` prints them through the headless reporter.
@@ -1146,9 +1146,11 @@ Read this section and the plan before resuming after a context reset.
 - M5: E5.1, E5.3 and E5.4 are done (`engine/ipc/*`, `test/engine/ipc.test.ts`, the modes test
   in `pi-adapter.test.ts`; CI covers the three OSes). Next: E5.2 telemetry, E5.5 viewer
   (`pinata view` through a small `bin/pinata.mjs` that starts `pi` with the viewer extension),
-  E5.7. E5.5 (`engine/viewer/*`, `bin/pinata.mjs`, `test/engine/viewer.test.ts`) and E5.6
-  (decision (a), `bench/viewer.ts`) are done. E5.2 is done (`engine/core/telemetry.ts`; `processRss` is ready for M6 to
-  report agent processes through `Telemetry.processes`).
+  E5.5 (`engine/viewer/*`, `bin/pinata.mjs`, `test/engine/viewer.test.ts`), E5.6 (decision (a),
+  `bench/viewer.ts`) and E5.7 (`engine/sources/log.ts`, `engine/headless/*`,
+  `test/engine/log.test.ts`, `pinata logs` in the Pi smoke) are done. E5.2 is done
+  (`engine/core/telemetry.ts`; `processRss` is ready for M6 to report agent processes through
+  `Telemetry.processes`). M5 is done. Next: M6 (process backend).
 - E0.7 upstream issue: not opened yet (outward-facing; include the `ensureTool` finding).
 
 ### Decisions and deviations
@@ -1275,6 +1277,11 @@ Read this section and the plan before resuming after a context reset.
   settings (`setTheme(name)` would). Windows has no pseudo-terminal for E5.6's measurement
   (and E4.6), so Windows numbers are not recorded; the viewer's code is shared and its
   attach/steer/re-attach test runs on Windows.
+- `pinata logs` and the headless host run in the pi binary's print mode (E5.6's decision);
+  `bin/pinata.mjs` is plain JavaScript because Node does not strip types under
+  `node_modules`. Print mode needs stdin closed, and routes extensions' `process.stdout`
+  writes to stderr, so the log is written to file descriptor 1. A run without a socket opens
+  in `pinata view` from its log (`LogClient`, read-only), which is the post-mortem viewer.
 - Telemetry (E5.2): a run-level `telemetry` event (schema addition) every 2 s in observe mode
   with RSS, heap, event-loop utilization and `lateMs` (how late the sampling timer fired).
   It does not use `monitorEventLoopDelay`: under Bun a second histogram reset the host's own

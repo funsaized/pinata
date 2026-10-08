@@ -294,7 +294,11 @@ export class AgentDetail implements Component {
 
   private openInput(): void {
     const status = this.options.source.view(this.agent)?.status;
-    if (!this.options.source.steer || status !== "running") {
+    if (!this.options.source.steer) {
+      this.notice = "This view is read-only: the run is read from disk.";
+      return;
+    }
+    if (status !== "running") {
       this.notice = "Only a running agent can be steered.";
       return;
     }

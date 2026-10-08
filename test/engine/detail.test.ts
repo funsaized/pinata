@@ -223,5 +223,5 @@ test("a finished run opens from its directory alone, read-only", async (t) => {
   assert.match(text, /Task look \(scout\)/);
   assert.match(text, /# Fixture/);
   detail.handleInput("\r");
-  assert.match(detail.notice!, /Only a running agent/);
+  assert.match(detail.notice!, /read-only/);
 });
