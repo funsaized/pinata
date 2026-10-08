@@ -95,9 +95,14 @@ export class FakeBackend implements AgentBackend {
         await sleep(script.stepMs ?? 0, stop);
       }
       if (script.hang && !stop.aborted)
-        await new Promise<void>((resolve) =>
-          stop.addEventListener("abort", () => resolve(), { once: true }),
-        );
+        await new Promise<void>((resolve) => {
+          // A real agent waiting on its provider holds a socket open; so does this one.
+          const keepAlive = setInterval(() => {}, 60_000);
+          stop.addEventListener("abort", () => (clearInterval(keepAlive), resolve()), {
+            once: true,
+          });
+        });
+
       const base = {
         usage,
         turns,

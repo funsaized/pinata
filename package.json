@@ -32,7 +32,8 @@
   ],
   "os": [
     "linux",
-    "darwin"
+    "darwin",
+    "win32"
   ],
   "type": "module",
   "scripts": {
