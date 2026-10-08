@@ -246,3 +246,15 @@ export async function listRuns(root: string): Promise<string[]> {
   );
   return runs.sort((a, b) => b.at - a.at).map((r) => r.dir);
 }
+
+// Transcript helpers for backends, which write their own transcripts: the whole transcript
+// once (lean) or one message at a time (observe).
+export async function writeJsonl(file: string, items: readonly unknown[]): Promise<void> {
+  const tmp = `${file}.${randomUUID()}.tmp`;
+  await appendFile(tmp, items.map((m) => JSON.stringify(m) + "\n").join(""), { mode: 0o600 });
+  await rename(tmp, file);
+}
+
+export function appendJsonl(file: string, item: unknown): Promise<void> {
+  return appendFile(file, JSON.stringify(item) + "\n", { mode: 0o600 });
+}
