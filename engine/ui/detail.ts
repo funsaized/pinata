@@ -96,16 +96,19 @@ export class AgentDetail implements Component {
   private dirty = false;
   private generation = 0;
   private lastHeight = 20;
+  // Called when the user switches agents (the viewer stops following new agents).
+  onSwitch?: (agent: string) => void;
   // Resolves after the current sync (tests and the first paint wait on it).
   ready: Promise<void> = Promise.resolve();
 
   constructor(options: DetailOptions) {
     this.options = options;
     this.agent = options.agent;
-    this.open(options.agent);
+    this.select(options.agent);
   }
 
-  private open(agent: string): void {
+  // Shows another agent of the run.
+  select(agent: string): void {
     this.unsubscribe?.();
     this.generation++;
     this.agent = agent;
@@ -260,7 +263,8 @@ export class AgentDetail implements Component {
     const agents = this.options.source.agents();
     if (agents.length < 2) return;
     const i = agents.indexOf(this.agent);
-    this.open(agents[(i + step + agents.length) % agents.length]);
+    this.select(agents[(i + step + agents.length) % agents.length]);
+    this.onSwitch?.(this.agent);
   }
 
   handleInput(data: string): void {

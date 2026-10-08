@@ -51,6 +51,13 @@ export class IpcClient {
   private readonly socket: Socket;
   private readonly listeners = new Set<(update: Update) => void>();
   private readonly manualAck: boolean;
+  private readonly requests = new Map<
+    string,
+    Array<{
+      resolve: (m: { messages: unknown[]; streaming?: { text: string; thinking: string } }) => void;
+      reject: (e: Error) => void;
+    }>
+  >();
 
   private constructor(socket: Socket, options: ClientOptions) {
     this.socket = socket;
@@ -95,6 +102,9 @@ export class IpcClient {
     socket.on("error", () => {});
     socket.on("close", () => {
       client.closed = true;
+      for (const queue of client.requests.values())
+        for (const waiting of queue) waiting.reject(new Error("The viewer is disconnected"));
+      client.requests.clear();
       client.emit({ kind: "closed" });
     });
     socket.once("connect", () =>
@@ -133,7 +143,22 @@ export class IpcClient {
         if (!this.manualAck) this.ack();
         this.emit({ kind: "events", view: this.view, events: frame.events });
         break;
+      case "messages": {
+        const waiting = this.requests.get(frame.agent)?.shift();
+        waiting?.resolve({
+          messages: frame.messages,
+          ...(frame.streaming && { streaming: frame.streaming }),
+        });
+        break;
+      }
       case "error":
+        // A failed request answers its oldest waiter; anything else goes to listeners.
+        for (const [agent, queue] of this.requests)
+          if (queue.length) {
+            queue.shift()!.reject(new Error(frame.message));
+            if (!queue.length) this.requests.delete(agent);
+            return;
+          }
         this.emit({ kind: "error", message: frame.message });
         break;
     }
@@ -151,6 +176,19 @@ export class IpcClient {
 
   send(frame: ClientFrame): void {
     if (!this.socket.destroyed) this.socket.write(encode(frame));
+  }
+
+  // An agent's conversation, from the server's snapshot or transcript.
+  messages(
+    agent: string,
+  ): Promise<{ messages: unknown[]; streaming?: { text: string; thinking: string } }> {
+    if (this.closed) return Promise.reject(new Error("The viewer is disconnected"));
+    return new Promise((resolve, reject) => {
+      const queue = this.requests.get(agent) ?? [];
+      queue.push({ resolve, reject });
+      this.requests.set(agent, queue);
+      this.send({ type: "messages", agent });
+    });
   }
 
   steer(agent: string, text: string, as: "steer" | "followUp" = "steer"): void {

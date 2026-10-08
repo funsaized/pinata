@@ -21,7 +21,11 @@
     "type": "git",
     "url": "git+https://github.com/funsaized/pinata.git"
   },
+  "bin": {
+    "pinata": "bin/pinata.mjs"
+  },
   "files": [
+    "bin/",
     "engine/",
     "skills/",
     "prompts/",
@@ -51,10 +55,10 @@
     "bench:live": "node bench/run.ts --provider live",
     "bench:workspace": "node test/benchmark-workspace.mjs",
     "check": "npm run format:check && npm run lint && npm run typecheck",
-    "lint": "oxlint lib test scripts engine bench",
+    "lint": "oxlint lib test scripts engine bench bin",
     "typecheck": "tsc -p tsconfig.json",
-    "format:check": "oxfmt --check package.json tsconfig.json lib test scripts .github examples README.md BACKLOG.md ENGINE_PLAN.md docs skills prompts engine bench",
-    "format": "oxfmt package.json tsconfig.json lib test scripts .github examples README.md BACKLOG.md ENGINE_PLAN.md docs skills prompts engine bench"
+    "format:check": "oxfmt --check package.json tsconfig.json lib test scripts .github examples README.md BACKLOG.md ENGINE_PLAN.md docs skills prompts engine bench bin",
+    "format": "oxfmt package.json tsconfig.json lib test scripts .github examples README.md BACKLOG.md ENGINE_PLAN.md docs skills prompts engine bench bin"
   },
   "devDependencies": {
     "@earendil-works/pi-agent-core": "1.1.0",

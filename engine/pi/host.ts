@@ -20,7 +20,7 @@ import { RuntimeCache, inherited, selectModel } from "./runtime.ts";
 import { prepareRun, verificationStages } from "../verify/stages.ts";
 import { writeRunRecord } from "../verify/integrate.ts";
 import { headCommit } from "../workspace/snapshot.ts";
-import type { PinataUI } from "./ui.ts";
+import { agentMessages, type PinataUI } from "./ui.ts";
 import { RunServer } from "../ipc/server.ts";
 
 export const RESEARCH_UNAVAILABLE =
@@ -267,6 +267,7 @@ export class PinataHost {
         subscribe: (consumer) => engine.subscribe(handle.id, consumer),
         steer: (agent, text, as) => engine.steer(handle.id, agent, text, as, "user"),
         abort: (agent) => engine.cancel(handle.id, agent, "cancelled from a viewer"),
+        messages: (agent) => agentMessages(engine, handle.id, handle.dir, handle.view(), agent),
       },
       onClose: () => this.servers.delete(handle.id),
     });

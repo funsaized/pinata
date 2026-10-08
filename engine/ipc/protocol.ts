@@ -20,6 +20,8 @@ export type ClientFrame =
   | { type: "ack"; seq: number }
   | { type: "steer"; agent: string; text: string; as: "steer" | "followUp" }
   | { type: "abort"; agent: string }
+  // An agent's conversation (Pi AgentMessage shape), for the detail view.
+  | { type: "messages"; agent: string }
   | { type: "events"; events: AgentEvent[] }
   | { type: "outcome"; outcome: Record<string, unknown> };
 
@@ -32,6 +34,12 @@ export type ServerFrame =
   | { type: "welcome"; v: number; theme: string | null; runs: RunSummary[] }
   | { type: "snapshot"; run: string; agent?: string; view: RunView }
   | { type: "events"; events: AgentEvent[] }
+  | {
+      type: "messages";
+      agent: string;
+      messages: unknown[];
+      streaming?: { text: string; thinking: string };
+    }
   | { type: "steer"; text: string; as: "steer" | "followUp" }
   | { type: "abort" }
   | { type: "error"; message: string };
@@ -91,6 +99,7 @@ export function clientFrame(value: unknown): ClientFrame {
       ok(value.as === "steer" || value.as === "followUp", "as");
       break;
     case "abort":
+    case "messages":
       ok(str(value.agent, 64), "agent");
       break;
     case "events":
@@ -108,7 +117,9 @@ export function clientFrame(value: unknown): ClientFrame {
 export function serverFrame(value: unknown): ServerFrame {
   if (!isObject(value) || typeof value.type !== "string")
     throw new ProtocolError("A frame is an object with a type");
-  if (!["welcome", "snapshot", "events", "steer", "abort", "error"].includes(value.type))
+  if (
+    !["welcome", "snapshot", "events", "messages", "steer", "abort", "error"].includes(value.type)
+  )
     throw new ProtocolError(`Unknown frame type ${JSON.stringify(value.type).slice(0, 40)}`);
   if (value.type === "welcome" && value.v !== PROTOCOL_VERSION)
     throw new ProtocolError(`The server speaks protocol ${String(value.v)}`);
