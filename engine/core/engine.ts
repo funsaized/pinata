@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { AgentBudget } from "./budgets.ts";
+import { Telemetry } from "./telemetry.ts";
 import { Graph } from "./graph.ts";
 import { Limiter, isRateLimit } from "./limiter.ts";
 import { Scheduler } from "./scheduler.ts";
@@ -264,6 +265,8 @@ export interface EngineOptions {
   backends: Partial<Record<BackendKind | "fake", AgentBackend>>;
   pipeline?: Pipeline;
   clock?: Clock;
+  // Observe-mode telemetry interval (default 2 s).
+  telemetryMs?: number;
   limiter?: Limiter;
   defaultBackend?: BackendKind | "fake";
 }
@@ -542,11 +545,24 @@ export function createEngine(options: EngineOptions): Engine {
     maybeFinish(run);
   }
 
+  function startTelemetry(run: RunState) {
+    const holder = run as { telemetry?: Telemetry };
+    holder.telemetry ??= new Telemetry();
+    holder.telemetry.start((sample) => {
+      if (!run.finished) emit(run, undefined, { t: "telemetry", sample });
+    }, options.telemetryMs);
+  }
+
   function maybeFinish(run: RunState) {
     if (run.finished) return;
     for (const state of run.agents.values())
       if (state.status === "queued" || state.status === "running") return;
     run.finished = true;
+    const telemetry = (run as { telemetry?: Telemetry }).telemetry;
+    if (telemetry?.running) {
+      emit(run, undefined, { t: "telemetry", sample: telemetry.sample() });
+      telemetry.stop();
+    }
     const statuses = [...run.agents.values()].map((s) => s.status);
     const status: RunStatus = statuses.every((s) => s === "succeeded")
       ? "succeeded"
@@ -631,6 +647,7 @@ export function createEngine(options: EngineOptions): Engine {
       for (const listener of runListeners) listener(handle);
       emit(run, undefined, { t: "run_started", tasks: tasks as TaskSpec[], mode });
       for (const task of tasks) emit(run, task.id, { t: "agent_queued" });
+      if (mode === "observe") startTelemetry(run);
       const deadline = setTimeout(() => {
         if (!run.finished) cancelRun(run, new StopSignal("run deadline exceeded", "failed"));
       }, limits.jobMs);
@@ -714,6 +731,7 @@ export function createEngine(options: EngineOptions): Engine {
         run.finished = false;
         run.done = new Promise<RunView>((resolve) => (run.resolve = resolve));
         emit(run, undefined, { t: "run_resumed", reason: `repair of ${task}` });
+        if (run.mode === "observe") startTelemetry(run);
       }
       state.repairs = (state.repairs ?? 0) + 1;
       for (const name of reopened) {

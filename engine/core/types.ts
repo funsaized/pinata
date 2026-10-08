@@ -131,7 +131,19 @@ export type EventBody =
       toolCalls: number;
     }
   | { t: "run_settled"; status: RunStatus; usage: Usage }
-  | { t: "run_resumed"; reason: string }; // a settled run reopened (a repair)
+  | { t: "run_resumed"; reason: string } // a settled run reopened (a repair)
+  | { t: "telemetry"; sample: TelemetrySample }; // observe mode, at most every 2 s
+
+// Observe-mode telemetry for a run: the host process, and each agent process (M6).
+export interface TelemetrySample {
+  rssMB: number;
+  heapUsedMB: number;
+  // Event-loop utilization since the previous sample (0..1).
+  elu: number;
+  // How late the sampling timer fired, in ms (event-loop lag at that moment).
+  lateMs: number;
+  processes?: Array<{ agent: string; pid: number; rssMB: number | null }>;
+}
 
 export type AgentEvent = Envelope & EventBody;
 export type EventType = EventBody["t"];

@@ -222,6 +222,8 @@ export async function runEngineScenario(
     cwd: setup.repo,
     dir: join(setup.runsDir, scenario.name),
     limits: { concurrency: 64 },
+    // BENCH_MODE=observe measures observe mode's overhead (E5.2).
+    mode: process.env.BENCH_MODE === "observe" ? "observe" : "lean",
     allowWrites: true,
     data: {
       models: Object.fromEntries(tasks.map((t) => [t.id, setup.model])),

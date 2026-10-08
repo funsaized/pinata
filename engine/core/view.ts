@@ -11,6 +11,7 @@ import {
   type Role,
   type RunStatus,
   type TaskSpec,
+  type TelemetrySample,
   type ToolRecord,
   type Usage,
   type WorkspaceRef,
@@ -61,6 +62,8 @@ export interface RunView {
   order: string[];
   agents: Record<string, AgentView>;
   usage: Usage;
+  // Observe mode: the latest telemetry sample.
+  telemetry?: TelemetrySample;
 }
 
 function agentView(task: TaskSpec, at: number): AgentView {
@@ -293,6 +296,8 @@ function apply(view: RunView, e: AgentEvent): RunView {
     }
     case "run_settled":
       return { ...view, status: e.status, settledAt: e.at, usage: e.usage };
+    case "telemetry":
+      return { ...view, telemetry: e.sample };
     case "run_resumed": {
       const { settledAt: _settled, ...rest } = view;
       return { ...rest, status: "running" };

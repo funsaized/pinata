@@ -109,3 +109,30 @@ test("transcripts are written once in lean mode and appended live in observe mod
   assert.equal(await store.markDelivered(), true);
   assert.equal(await store.markDelivered(), false, "delivered once");
 });
+
+test("observe mode samples telemetry while the run works; lean mode never does", async (t) => {
+  const { run } = await fakeEngine(t, { a: { latencyMs: 150 } }, { telemetryMs: 20 });
+  const observed = await run([spec("a")], { mode: "observe" });
+  const view = await observed.done;
+  const samples = (await readEvents(observed.dir)).filter((e) => e.t === "telemetry");
+  assert(samples.length >= 3, `samples: ${samples.length}`);
+  const last = samples.at(-1)!;
+  assert(last.t === "telemetry" && last.sample.rssMB > 0 && last.sample.elu >= 0);
+  assert.deepEqual(view.telemetry, last.sample, "the view keeps the latest sample");
+  const settled = (await readEvents(observed.dir)).findIndex((e) => e.t === "run_settled");
+  const after = (await readEvents(observed.dir)).slice(settled).filter((e) => e.t === "telemetry");
+  assert.equal(after.length, 0, "sampling stops when the run settles");
+  const lean = await run([spec("a")]);
+  await lean.done;
+  assert.equal((await readEvents(lean.dir)).filter((e) => e.t === "telemetry").length, 0);
+  assert.equal(lean.view().telemetry, undefined);
+});
+
+test("process memory sampling works on this OS and maps missing processes to null", async () => {
+  const { processRss } = await import("../../engine/core/telemetry.ts");
+  const missing = 2 ** 22 + 12345;
+  const rss = await processRss([process.pid, missing]);
+  assert(rss.get(process.pid)! > 1, `own RSS ${rss.get(process.pid)}`);
+  assert.equal(rss.get(missing), null);
+  assert.equal((await processRss([])).size, 0);
+});
