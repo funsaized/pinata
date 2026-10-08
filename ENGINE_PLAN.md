@@ -430,7 +430,7 @@ M3, M4–M8 can run in parallel, except that M6, M7 and M8 need E5.3 and E5.4.
   - Run engine scenarios in Node and inside the `pi` binary (Bun) through a bench
     extension, as in the prototype.
   - Done when one command produces comparable JSON for 0.7.0 and the engine.
-- [ ] **E0.4 0.7.0 baselines (S).**
+- [x] **E0.4 0.7.0 baselines (S).**
   - Path: drive 0.7.0 through `node lib/pinata.mjs` with jobs equivalent to the scenarios,
     using the loopback provider and Herdr.
   - Record the results in `bench/baselines/0.7.0-<os>.json` for Linux, and for macOS if
@@ -1077,11 +1077,19 @@ Verified against Pi 1.1.0 source. Re-check when upgrading.
 
 ## Results log
 
-| Date       | Item      | OS    | Measurement                              | Value               | Notes                                                 |
-| ---------- | --------- | ----- | ---------------------------------------- | ------------------- | ----------------------------------------------------- |
-| 2026-10-08 | prototype | Linux | in-process SDK session spawn / memory    | ~1–2 ms / ~1–1.5 MB | `bench/prototypes/inprocess-bench.ts`, faux, Pi 1.1.0 |
-| 2026-10-08 | prototype | Linux | `pi --mode rpc` worker flags ready / RSS | ~320 ms / ~114 MB   |                                                       |
-| 2026-10-08 | prototype | Linux | `git worktree add`                       | 35–40 ms            | this repository                                       |
+| Date       | Item      | OS    | Measurement                                                      | Value                              | Notes                                                    |
+| ---------- | --------- | ----- | ---------------------------------------------------------------- | ---------------------------------- | -------------------------------------------------------- |
+| 2026-10-08 | prototype | Linux | in-process SDK session spawn / memory                            | ~1–2 ms / ~1–1.5 MB                | `bench/prototypes/inprocess-bench.ts`, faux, Pi 1.1.0    |
+| 2026-10-08 | prototype | Linux | `pi --mode rpc` worker flags ready / RSS                         | ~320 ms / ~114 MB                  |                                                          |
+| 2026-10-08 | prototype | Linux | `git worktree add`                                               | 35–40 ms                           | this repository                                          |
+| 2026-10-08 | E0.4      | Linux | 0.7.0 fan-out 1: spawn / tool call → 1st request / RSS per agent | 1.41 s / 1.99 s / 219.5 MB         | loopback, 1 ms/token; `bench/baselines/0.7.0-linux.json` |
+| 2026-10-08 | E0.4      | Linux | 0.7.0 fan-out 8: spawn p50 (p95) / tool call p50 / peak RSS      | 2.39 s (3.31 s) / 2.99 s / 913 MB  | RSS per agent 218 MB                                     |
+| 2026-10-08 | E0.4      | Linux | 0.7.0 fan-out 32: spawn p50 (p95) / tool call p50 / wall         | 3.12 s (5.46 s) / 6.30 s / 12.6 s  | 0.7.0 concurrency max 16                                 |
+| 2026-10-08 | E0.4      | Linux | 0.7.0 fan-out 64: spawn p50 (p95) / tool call p50 / wall         | 2.72 s (4.85 s) / 11.96 s / 22.4 s | peak RSS 1.30 GB                                         |
+| 2026-10-08 | E0.4      | Linux | 0.7.0 chain: dependent launch p50 / p99 / wall                   | 848 ms / 1.47 s / 6.2 s            | scout → planner → builder → reviewer                     |
+| 2026-10-08 | E0.4      | Linux | 0.7.0 stress-64: dependent launch p50 / p99 / wall               | 4.58 s / 8.44 s / 24.2 s           | 16 chains + 32 fans                                      |
+| 2026-10-08 | E0.4      | Linux | 0.7.0 builder → reviewer: dependent launch / wall                | 1.56 s / 4.3 s                     |                                                          |
+| 2026-10-08 | E0.4      | Linux | 0.7.0 ux-8: coordinator lag p99 / RSS per agent                  | 4.8 ms / 242 MB                    | 6,000-char streamed briefs                               |
 
 ## Progress notes
 
@@ -1094,7 +1102,10 @@ Read this section and the plan before resuming after a context reset.
 
 ### In flight
 
-- E0.3 benchmark harness.
+- E0.3: harness, loopback provider, scenarios and the 0.7.0 target are in `bench/`. The
+  engine target (`bench/targets/engine.ts`) is a stub until the in-process backend exists
+  (E2.2); check E0.3 off then.
+- E0.5 (0.7.0 accuracy baseline, live Luna) runs after M1 lands.
 
 ### Decisions and deviations
 
@@ -1103,6 +1114,17 @@ Read this section and the plan before resuming after a context reset.
   exact version Pi 1.1.0 depends on.
 - Pi 1.1.0 source for API verification: a shallow clone of `v1.1.0` outside the worktree,
   plus the installed packages in `node_modules/@earendil-works/*`.
+
+- Bench metrics: `spawnMs` is agent launch (the scheduler starts it) → first provider
+  request, excluding queueing; `toolCallMs` is the tool call → each root agent's first
+  request, including queueing behind concurrency limits. Gate targets use `spawnMs`.
+  0.7.0's launch time is `attempt.readinessStartedAt`. 0.7.0 worker memory is sampled every
+  100 ms from `/proc` (`ps` on macOS) by command line, because 0.7.0's own 1 s sampler misses
+  short-lived peaks.
+- macOS 0.7.0 baseline: not recorded. No macOS host with Herdr is available (CI has no
+  Herdr). Windows has engine targets only, as planned.
+- Live scripts accept `PINATA_LIVE_SMOKE=1` (the plan's spelling) as well as 0.7.0's
+  `I_AUTHORIZE_PAID_MODEL_CALLS`.
 
 ### Open questions
 
