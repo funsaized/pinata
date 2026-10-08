@@ -417,10 +417,8 @@ test("/pinata open replays a finished run from disk in a session that never ran 
   assert(detail, second.notes.join("\n"));
   await detail.ready;
   // oxlint-disable-next-line no-control-regex
-  const text = detail
-    .render(100)
-    .join("\n")
-    .replace(/\x1b\[[0-9;]*m|\x1b\][^\x07]*\x07/g, "");
+  const ansi = /\x1b\[[0-9;]*m|\x1b\][^\x07]*\x07/g;
+  const text = detail.render(100).join("\n").replace(ansi, "");
   assert.match(text, /✓ scout look/);
   assert.match(text, /Task look \(scout\)/);
   assert.match(text, /README\.md/);
