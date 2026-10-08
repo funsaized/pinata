@@ -97,7 +97,10 @@ test("setup runs once per builder worktree before Pi, with PINATA_ROOT, and repa
   const first = await settled(f);
   assert.equal(first.tasks.find((x) => x.id === "review").status, "rejected");
   const tree = path.join(f.run, "worktrees", "build");
-  assert.equal(await fs.readFile(path.join(tree, "ignored/root.txt"), "utf8"), f.cwd);
+  assert.equal(
+    await fs.readFile(path.join(tree, "ignored/root.txt"), "utf8"),
+    await fs.realpath(f.cwd),
+  );
   assert.equal((await readJson(path.join(attempt(f, "build"), "outcome.json"))).setup.code, 0);
   assert(!(await exists(path.join(attempt(f, "look"), "setup.stdout.log"))), "scouts skip setup");
   assert.equal((await readJson(path.join(attempt(f, "review"), "task.json"))).setup, null);
