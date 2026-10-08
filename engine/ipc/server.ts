@@ -31,6 +31,10 @@ export interface IpcSource {
   subscribe(consumer: (event: AgentEvent) => void): () => void;
   steer(agent: string, text: string, as: "steer" | "followUp"): Promise<void>;
   abort(agent: string): Promise<void>;
+  messages(agent: string): Promise<{
+    messages: unknown[];
+    streaming?: { text: string; thinking: string };
+  }>;
 }
 
 export interface ServerOptions {
@@ -219,6 +223,12 @@ export class RunServer {
       else if (frame.type === "steer")
         await this.options.source.steer(frame.agent, frame.text, frame.as);
       else if (frame.type === "abort") await this.options.source.abort(frame.agent);
+      else if (frame.type === "messages")
+        client.send({
+          type: "messages",
+          agent: frame.agent,
+          ...(await this.options.source.messages(frame.agent)),
+        });
       else throw new ProtocolError(`Unexpected ${frame.type} frame from a viewer`);
     } catch (error) {
       client.send({ type: "error", message: (error as Error).message });

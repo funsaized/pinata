@@ -22,6 +22,7 @@ function serve(engine: Engine, handle: RunHandle, extra: { helloTimeoutMs?: numb
       subscribe: (consumer) => engine.subscribe(handle.id, consumer),
       steer: (agent, text, as) => engine.steer(handle.id, agent, text, as, "user"),
       abort: (agent) => engine.cancel(handle.id, agent, "aborted from a viewer"),
+      messages: async (agent) => (await engine.snapshot(handle.id, agent)) ?? { messages: [] },
     },
     ...extra,
   });
@@ -146,6 +147,7 @@ test("the server shuts down when the run has settled and the last client leaves"
       subscribe: (consumer) => engine.subscribe(handle.id, consumer),
       steer: async () => {},
       abort: async () => {},
+      messages: async () => ({ messages: [] }),
     },
     onClose: () => closed++,
   });

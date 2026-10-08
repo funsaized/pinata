@@ -31,6 +31,25 @@ export async function integrationStatus(dir: string): Promise<string | null> {
   }
 }
 
+// An agent's conversation: a live snapshot while it runs, its transcript once it settled (or
+// the snapshot again while the lean transcript is still being written).
+export async function agentMessages(
+  engine: Pick<Engine, "snapshot"> | undefined,
+  run: string,
+  dir: string,
+  view: RunView,
+  agent: string,
+): Promise<{ messages: unknown[]; streaming?: { text: string; thinking: string } }> {
+  if (!view.agents[agent]) throw new Error(`Run ${run.slice(0, 8)} has no task ${agent}`);
+  if (engine && view.agents[agent].status === "running") {
+    const snapshot = await engine.snapshot(run, agent);
+    if (snapshot) return snapshot;
+  }
+  const messages = await readJsonl(join(dir, "transcripts", `${agent}.jsonl`));
+  if (messages.length || !engine) return { messages };
+  return (await engine.snapshot(run, agent).catch(() => undefined)) ?? { messages };
+}
+
 export interface RunSource {
   // Runs to offer in /pinata live, newest first: this session's, else the repository's.
   runs(ctx: UIContext): Promise<string[]>;
@@ -223,22 +242,12 @@ export class PinataUI {
     const live = this.followed.get(run);
     const engine = this.engine;
     const current = () => (live ? live.handle.view() : view);
-    const transcript = (agent: string) => readJsonl(join(dir, "transcripts", `${agent}.jsonl`));
     return {
       run,
       cwd,
       agents: () => current().order,
       view: (agent) => current().agents[agent],
-      async load(agent) {
-        if (live && engine && current().agents[agent]?.status === "running") {
-          const snapshot = await engine.snapshot(run, agent);
-          if (snapshot) return snapshot;
-        }
-        const messages = await transcript(agent);
-        if (messages.length || !live || !engine) return { messages };
-        // Settled moments ago: the lean transcript is still being written.
-        return (await engine.snapshot(run, agent)) ?? { messages };
-      },
+      load: (agent) => agentMessages(live ? engine : undefined, run, dir, current(), agent),
       ...(live &&
         engine && {
           subscribe(agent, onEvent) {
