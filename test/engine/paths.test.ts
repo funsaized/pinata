@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdir, symlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import test from "node:test";
 import {
   PathError,
@@ -14,9 +14,9 @@ import {
 import { tempDir } from "./helpers.ts";
 
 test("tool paths resolve like Pi's file tools", () => {
-  assert.equal(toolPath("/repo", "@src/a.ts"), join("/repo", "src", "a.ts"));
+  assert.equal(toolPath("/repo", "@src/a.ts"), resolve("/repo", "src", "a.ts"));
   assert.equal(toolPath("/repo", "~/x"), join(homedir(), "x"));
-  assert.equal(toolPath("/repo", "a\u00A0b.ts"), join("/repo", "a b.ts"));
+  assert.equal(toolPath("/repo", "a\u00A0b.ts"), resolve("/repo", "a b.ts"));
 });
 
 test("repo-relative paths: table of accepted and refused inputs", async (t) => {
