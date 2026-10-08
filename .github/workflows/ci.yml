@@ -41,6 +41,10 @@ jobs:
         run: node test/engine/package-smoke.ts
       - name: Engine benchmarks against budgets
         run: npm run bench -- --ci --host pi
+      - name: Process backend benchmarks (Gate 2)
+        env:
+          BENCH_BACKEND: process
+        run: npm run bench -- --provider loopback --scenario fanout-1 --scenario fanout-8 --scenario chain --scenario builder
       - name: UX benchmark in interactive Pi (pseudo-terminal)
         # `script` provides the terminal; Windows has no equivalent without extra tools.
         if: runner.os != 'Windows'
