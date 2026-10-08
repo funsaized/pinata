@@ -1,6 +1,6 @@
 {
   "name": "pi-pinata",
-  "version": "0.6.2",
+  "version": "0.7.0",
   "description": "Pi subagents you can watch work: parallel agents in Herdr workspaces, reviewed changes, and automatic cleanup.",
   "keywords": [
     "herdr",
