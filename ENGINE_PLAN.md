@@ -610,7 +610,7 @@ exact, and the suite is green on three OSes.
   - `reviewBase` reviewers also read the live checkout, against a diff file.
   - Done when a test edits a file mid-run and sees the flag, and readers create no
     worktrees.
-- [ ] **E2.6 Pi adapter tools (M).**
+- [x] **E2.6 Pi adapter tools (M).**
   - Path: `pi/tools.ts` implements the [model-facing tools](#model-facing-tools-pi-adapter)
     with TypeBox schemas, `annotations` and `outputSchema`, as 0.7.0's `tools.mjs` does.
   - Compact results to the parent: status, summary, findings, blockers, and for readers the
@@ -619,7 +619,7 @@ exact, and the suite is green on three OSes.
     and the `/pinata-review` and `/pinata-fix` prompts follow.
   - Done when the packed-package test in the style of `test:pi` discovers the tools and
     skills, and a faux-provider job runs through the tools.
-- [ ] **E2.7 Delivery (S).** Path: `pi/delivery.ts`.
+- [x] **E2.7 Delivery (S).** Path: `pi/delivery.ts`.
   - **Foreground:** `execute` awaits the run, honoring the tool `signal`. It streams
     `onUpdate` with a compact progress line at most 4/s.
   - **Background:** return `{ run }` immediately. On `run_settled`, call
@@ -628,14 +628,14 @@ exact, and the suite is green on three OSes.
   - Duplicate delivery is prevented by a delivered marker in the run store.
   - Done when both paths work in the Pi smoke and a background completion resumes an idle
     parent exactly once.
-- [ ] **E2.8 Lifecycle (S).**
+- [x] **E2.8 Lifecycle (S).**
   - Foreground agents abort when the parent tool `signal` aborts (Esc).
   - `session_shutdown` (from `/reload` or exit) cancels in-process agents and records
     `reason: "parent reload"` or `"parent exit"`. It flushes the log and leaves the run
     resumable for out-of-process agents.
   - On `session_start`, load unsettled runs and report them in `/pinata`.
   - Done when tests cover Esc, reload and exit, and nothing is left running.
-- [ ] **E2.9 `/pinata` text and extension switch (S).**
+- [x] **E2.9 `/pinata` text and extension switch (S).**
   - Path: `pi/commands.ts` renders `RunView` as text, reusing 0.7.0's `progress.mjs`
     formatting helpers where useful.
   - Switch `package.json` `pi.extensions` to `./engine/pi/extension.ts`.
@@ -1091,6 +1091,9 @@ Verified against Pi 1.1.0 source. Re-check when upgrading.
 | 2026-10-08 | E0.4      | Linux | 0.7.0 builder → reviewer: dependent launch / wall                                  | 1.56 s / 4.3 s                     |                                                                                                  |
 | 2026-10-08 | E0.4      | Linux | 0.7.0 ux-8: coordinator lag p99 / RSS per agent                                    | 4.8 ms / 242 MB                    | 6,000-char streamed briefs                                                                       |
 | 2026-10-08 | E0.5      | Linux | 0.7.0 Luna quality eval, 3 trials: composite score / result-format failures / cost | 0.6944 / 2 / $0.0528               | builder oracle 58/87, review controls 11/12, factual 21/42; `bench/baselines/quality-0.7.0.json` |
+| 2026-10-08 | M2 exit   | Linux | Luna live smoke in pi: 3 scouts + dependent planner (all succeeded)                | 70 s, $0.0046                      | `test/engine/live-smoke.ts`, models pinned to `examples/configs/luna.json`                       |
+| 2026-10-08 | live cost | Linux | two earlier live smoke runs (planner on the user's global `gpt-6-astra`)           | $0.1071 + $0.1149                  | led to pinning each task's model in the smoke                                                    |
+| 2026-10-08 | live cost | Linux | total live spend so far                                                            | $0.2794                            | E0.5 eval $0.0528 + smokes $0.2266                                                               |
 | 2026-10-08 | E1.2      | Linux | fake backend, 64 agents (8 fans + 8 chains): dependent launch p50 / p99 / max      | 0.031 / 0.216 / 0.816 ms           | 480 samples over 10 runs; limiter opened to 64                                                   |
 | 2026-10-08 | E2.2      | Linux | pi binary (Bun), faux, fan-out 1 / 8 / 32 / 64: spawn p50                          | 1.4 / 6.2 / 18.8 / 36.2 ms         | target < 10 ms met at 1 and 8; see notes for 32 and 64                                           |
 | 2026-10-08 | E2.2      | Linux | pi binary, faux: per-agent setup p50 (gate → first request)                        | 1.3–2.2 ms                         | after skipping package discovery and starting agents in order                                    |
@@ -1116,11 +1119,8 @@ Read this section and the plan before resuming after a context reset.
 
 ### In flight (resume here)
 
-- M2: E2.6 (packed-package test: `npm pack`, `npm install --prefix`, `pi -e <pkg dir>`;
-  never `pi install`), E2.7, E2.8 and E2.9 remain to be checked off; the smoke
-  (`test/engine/pi-smoke.ts`) and `bench --ci` now run in CI with `PINATA_PI` set to the npm
-  CLI. `pi.extensions` points at `engine/pi/extension.ts`; `PINATA_LEGACY=1` loads 0.7.0's
-  extension instead for 0.7.0's smokes (E9.5 removes the shim).
+- M2 is done on Linux; its exit also needs green CI on macOS and Windows (smoke, packed
+  package and bench steps added to CI). Next: M3 (E3.1 snapshot and worktrees).
 - E0.7 upstream issue: not opened yet.
 - Then M3 (builders: worktrees, change capture, checks, reviews, integration) and Gate 1.
 

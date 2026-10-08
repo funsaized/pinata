@@ -36,6 +36,8 @@ jobs:
         run: echo "PINATA_PI=$(npm root -g)/@earendil-works/pi-coding-agent/dist/bundle/cli.js" >> "$GITHUB_ENV"
       - name: Engine inside Pi (faux provider)
         run: node test/engine/pi-smoke.ts
+      - name: Packed package inside Pi
+        run: node test/engine/package-smoke.ts
       - name: Engine benchmarks against budgets
         run: npm run bench -- --ci --host pi
       - name: Check 0.7.0 against loopback providers
