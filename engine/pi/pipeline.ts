@@ -101,12 +101,14 @@ export function piPipeline(stages: PipelineStages = {}): Pipeline {
     workspaceRef(run, task) {
       return stages.workspaceRef?.(run, task) ?? { kind: "live", path: run.cwd };
     },
-    async prepare(run, task, signal) {
+    async prepare(run, task, signal, options = {}) {
       const data = runData(run);
       const workspace =
         (await stages.prepareWorkspace?.(run, task, signal)) ?? new LiveWorkspace(run.cwd);
-      const writes = task.role === "builder";
-      const tools = ROLE_TOOLS[task.role];
+      // A result-only attempt inspects and reports; it cannot write.
+      const resultOnly = options.resultOnly === true;
+      const writes = task.role === "builder" && !resultOnly;
+      const tools = resultOnly ? ROLE_TOOLS.repair : ROLE_TOOLS[task.role];
       const reviewTarget = await stages.reviewTarget?.(run, task, { workspace }, signal);
       const remaining =
         run.limits.costUsd === undefined
@@ -128,6 +130,7 @@ export function piPipeline(stages: PipelineStages = {}): Pipeline {
             dependencies: dependencies(run, task),
             reviewTarget,
             feedback: data.feedback?.[task.id],
+            resultOnly,
           }),
           budgets: {
             deadline: Date.now() + run.limits.taskMs,
@@ -149,6 +152,7 @@ export function piPipeline(stages: PipelineStages = {}): Pipeline {
           },
           mode: run.mode,
           codemode: data.codemode,
+          ...(resultOnly && { resultOnly }),
           transcript: run.store.transcriptPath(task.id),
           root: run.cwd,
           ...(task.role === "research" && data.webExtension && { webExtension: data.webExtension }),

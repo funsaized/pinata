@@ -16,6 +16,10 @@ import { createEngine, type RunOptions } from "../../engine/core/engine.ts";
 import { Limiter } from "../../engine/core/limiter.ts";
 import { RuntimeCache } from "../../engine/pi/runtime.ts";
 import { piPipeline, type PipelineStages, type PiRunData } from "../../engine/pi/pipeline.ts";
+import { randomUUID } from "node:crypto";
+import { validateConfig } from "../../engine/pi/config.ts";
+import { validateGraph } from "../../engine/core/validate.ts";
+import { prepareRun, verificationStages } from "../../engine/verify/stages.ts";
 import type { ModelRef, TaskSpec } from "../../engine/core/types.ts";
 import { tempDir } from "./helpers.ts";
 
@@ -170,22 +174,35 @@ export async function fauxWorld(
   });
   const engine = createEngine({
     backends: { "in-process": backend },
-    pipeline: piPipeline(options.stages),
+    pipeline: piPipeline(options.stages ?? verificationStages()),
     limiter: new Limiter({ cap: 64, initial: 64 }),
   });
   let n = 0;
-  const run = (tasks: TaskSpec[], opts: RunOptions & { data?: Partial<PiRunData> } = {}) =>
-    engine.run(tasks, {
+  const run = async (
+    tasks: TaskSpec[],
+    opts: RunOptions & {
+      data?: Partial<PiRunData> & Record<string, unknown>;
+      config?: Record<string, unknown>;
+    } = {},
+  ) => {
+    const id = opts.id ?? randomUUID();
+    const config = validateConfig({ setup: false, ...opts.config }).config;
+    const prep = await prepareRun(repo, id, validateGraph(tasks, { allowWrites: true }), config);
+    return engine.run(tasks, {
       cwd: repo,
       dir: join(dir, "runs", `run-${++n}`),
       ...opts,
+      id,
       data: {
         models: Object.fromEntries(tasks.map((task) => [task.id, MODEL])),
         instructions: [],
         codemode: false,
         backend: "in-process",
+        config,
+        prep,
         ...opts.data,
       },
     });
+  };
   return { dir, agentDir, repo, fixture, faux, registry, cache, backend, engine, run, turns };
 }

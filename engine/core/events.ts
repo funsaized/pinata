@@ -23,6 +23,7 @@ const LEAN: ReadonlySet<EventType> = new Set<EventType>([
   "checkout_changed",
   "usage",
   "run_settled",
+  "run_resumed",
 ]);
 
 export function retained(event: AgentEvent, mode: Mode): boolean {
@@ -89,6 +90,7 @@ const BODY: Record<EventType, (e: any) => boolean> = {
     isUsage(e.usage) &&
     isCount(e.turns) &&
     isCount(e.toolCalls),
+  run_resumed: (e) => isString(e.reason, 64_000),
   run_settled: (e) => ["succeeded", "failed", "cancelled"].includes(e.status) && isUsage(e.usage),
 };
 

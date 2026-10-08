@@ -50,9 +50,12 @@ test("blocked builder writes return an error to the model and never touch disk",
   assert.match(seen[0], /b\.txt is outside this builder's ownership \(a\.txt\)/);
   assert.match(seen[1], /outside the workspace/);
   assert.match(seen[2], /not a safe repository path/);
-  assert(!existsSync(join(world.repo, "b.txt")));
-  assert(!existsSync(join(world.dir, "outside.txt")));
-  assert.equal(await readFile(join(world.repo, "a.txt"), "utf8"), "owned");
+  const tree = view.agents.build.workspace!.path;
+  assert.equal(view.agents.build.workspace!.kind, "worktree");
+  assert(!existsSync(join(tree, "b.txt")));
+  assert(!existsSync(join(tree, "..", "outside.txt")));
+  assert.equal(await readFile(join(tree, "a.txt"), "utf8"), "owned");
+  assert(!existsSync(join(world.repo, "a.txt")), "the live checkout is untouched");
 });
 
 test("codemode scripts cannot bypass the guard", async (t) => {
@@ -83,7 +86,7 @@ test("codemode scripts cannot bypass the guard", async (t) => {
   const joined = seen.join("\n");
   assert.match(joined, /blocked: .*b\.txt is outside this builder's ownership/);
   assert.match(joined, /blocked: .*bash is not available to the scout role|blocked: .*bash/);
-  assert(!existsSync(join(world.repo, "b.txt")));
+  assert(!existsSync(join(view.agents.build.workspace!.path, "b.txt")));
   assert(!existsSync(join(world.repo, "c.txt")));
 });
 
