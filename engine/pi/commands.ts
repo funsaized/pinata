@@ -9,6 +9,7 @@ export const USAGE = [
   "/pinata runs         runs in this repository",
   "/pinata mode lean|observe   footprint mode for this session",
   "/pinata live [run|demo]      the mascot overlay",
+  "/pinata open [run] <task>    an agent's conversation, live (Enter steers)",
 ].join("\n");
 
 // Runs for /pinata live: this session's newest first, else the repository's history.
@@ -55,6 +56,23 @@ export async function pinataCommand(
     if (!host.ui) return "The live view needs interactive Pi.";
     return (await host.ui.openLive(rest.join(" "), ctx, runSource(host))) ?? "";
   }
+  if (sub === "open") {
+    if (!host.ui) return "The detail view needs interactive Pi.";
+    const [first, second] = rest;
+    if (!first) return "Usage: /pinata open [run] <task>";
+    let found;
+    if (second) found = await host.find(first, ctx.cwd);
+    else {
+      const latest = [...host.handles.values()].at(-1);
+      if (latest) found = { id: latest.id, dir: latest.dir, view: latest.view() };
+      else {
+        const [view] = await host.history(ctx.cwd, 1);
+        if (!view) return "No pinata runs in this repository.";
+        found = await host.find(view.run, ctx.cwd);
+      }
+    }
+    return (await host.ui.openDetail(found, second ?? first, ctx)) ?? "";
+  }
   if (sub === "mode") {
     const mode = rest[0];
     if (mode !== "lean" && mode !== "observe")
@@ -69,7 +87,7 @@ export function registerCommands(pi: ExtensionAPI, host: PinataHost): void {
   pi.registerCommand("pinata", {
     description: "pinata status, runs and mode (no model turn)",
     getArgumentCompletions: (prefix) =>
-      ["status", "runs", "live", "live demo", "mode lean", "mode observe"]
+      ["status", "runs", "live", "live demo", "open", "mode lean", "mode observe"]
         .filter((c) => c.startsWith(prefix))
         .map((value) => ({ value, label: value })),
     handler: async (args, ctx) => {

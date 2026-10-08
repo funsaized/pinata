@@ -247,6 +247,26 @@ export async function writeJsonl(file: string, items: readonly unknown[]): Promi
   await rename(tmp, file);
 }
 
+// Reads a JSONL file; a missing file is empty and a partial last line (a crash) is dropped.
+export async function readJsonl(file: string): Promise<unknown[]> {
+  const raw = await readFile(file, "utf8").catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") return "";
+    throw error;
+  });
+  const items: unknown[] = [];
+  const lines = raw.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    if (!lines[i]) continue;
+    try {
+      items.push(JSON.parse(lines[i]));
+    } catch (error) {
+      if (i === lines.length - 1 || (i === lines.length - 2 && !lines[i + 1])) break;
+      throw new Error(`${file} line ${i + 1}: ${(error as Error).message}`);
+    }
+  }
+  return items;
+}
+
 export function appendJsonl(file: string, item: unknown): Promise<void> {
   return appendFile(file, JSON.stringify(item) + "\n", { mode: 0o600 });
 }

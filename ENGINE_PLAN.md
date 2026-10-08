@@ -750,7 +750,7 @@ Gate 1 passes.
     hard-coded keys.
   - Done when an agent opened mid-run shows its full history and streams live in the Pi
     smoke, with lag p99 < 20 ms in the UX benchmark.
-- [ ] **E4.4 Steering (S).**
+- [x] **E4.4 Steering (S).**
   - Path: the detail view's input calls `engine.steer` (steer or follow-up).
   - Every steer is a `steer` event and appears in the reviewer's brief as "this agent was
     steered: …" (0.7.0 backlog #9).
@@ -1135,7 +1135,9 @@ Read this section and the plan before resuming after a context reset.
   (Windows had a hanging pull-request test and three Windows-only failures, fixed in
   1808de0; check `gh run list --branch engine`), then record Gate 1 and check off E3.7.
 - M4: E4.1 and E4.2 are done (`engine/ui/{widget,live,mascot}.ts`, `engine/pi/ui.ts`, tests
-  in `test/engine/ui.test.ts` and `pi-adapter.test.ts`). Next: E4.3 detail view.
+  in `test/engine/ui.test.ts` and `pi-adapter.test.ts`). E4.4 is done (`test/engine/detail.test.ts`).
+  E4.3's view is in `engine/ui/detail.ts` (`/pinata open [run] <task>`); it is checked off once
+  E4.6 measures it in interactive Pi under a pseudo-terminal (RPC mode has no overlays).
 - E0.7 upstream issue: not opened yet (outward-facing; include the `ensureTool` finding).
 
 ### Decisions and deviations
@@ -1231,6 +1233,14 @@ Read this section and the plan before resuming after a context reset.
 - `reviewPr` reviewers read a worktree at the PR head (shared per PR); `reviewBase` reviewers
   read the live checkout.
 
+- **Target not met on Windows: change capture < 50 ms.** Data (GitHub Windows runner, 2,131
+  files / 144 MiB, 5 changed files per round): median 139–206 ms over four runs, with the
+  private capture index warm and git's untracked cache on; Linux 21.5 ms locally, and macOS
+  and Linux CI pass under 100 ms. Cause: a capture runs three git processes (`add -A`,
+  `write-tree`, `diff-tree`) and git for Windows starts each in tens of milliseconds, plus
+  NTFS stat costs for the index refresh. Proposed target: < 50 ms on Linux and macOS
+  (100 ms on CI runners), < 250 ms on Windows CI; the test encodes this. Git's fsmonitor
+  daemon could cut the refresh if Windows builder runs show capture matters.
 - UX (M4): the live scene lives in `engine/ui/live.ts` (the plan said `ui/mascot.ts`; the
   mascot geometry stays there). The host pushes RunViews to the widget, footer and scene
   from engine events coalesced to 250 ms; nothing polls. The widget's only timer (the
@@ -1238,6 +1248,11 @@ Read this section and the plan before resuming after a context reset.
   motion is on (the scene also while a bonk or cheer plays). The widget and footer clear
   when no run of this session is active (0.7.0 behavior). The scene uses Pi's keybindings
   (`tui.select.cancel/up/down`, `tui.editor.cursorLeft/Right`); Space, M and D stay letters.
+- Detail view: tool calls use `ToolExecutionComponent`'s generic renderers, because Pi 1.1.0
+  does not export its built-in tool renderers (`withBuiltInRenderers` is internal). New
+  messages come from a fresh snapshot at each `message_end`; text streams from deltas
+  coalesced to 50 ms. Steer keys: Enter opens the input, Enter steers, `app.message.followUp`
+  queues a follow-up.
 - Parent event-loop lag during a 32–64 agent burst is 70–250 ms (pi binary, loopback): all
   agents set up on the parent's thread at once. Streaming 8 agents (ux-8) stays at 1.5 ms.
   The UX target (E4.6) is measured on ux-8; bursts are covered by the spawn deviation above.
