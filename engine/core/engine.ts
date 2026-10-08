@@ -73,7 +73,10 @@ export interface Settled {
   data?: Record<string, unknown>;
 }
 
-export type Verdict = Omit<Settled, "usage" | "turns" | "toolCalls" | "model">;
+export type Verdict = Omit<Settled, "usage" | "turns" | "toolCalls" | "model"> & {
+  // Ask the engine for one result-only attempt (builders that produced no valid result).
+  retry?: "result-only";
+};
 
 export interface RunContext {
   readonly id: string;
@@ -104,7 +107,12 @@ export interface Pipeline {
   model(run: RunContext, task: Task): ModelRef;
   backend?(run: RunContext, task: Task): BackendKind | "fake";
   workspaceRef?(run: RunContext, task: Task): WorkspaceRef;
-  prepare(run: RunContext, task: Task, signal: AbortSignal): Promise<Prepared>;
+  prepare(
+    run: RunContext,
+    task: Task,
+    signal: AbortSignal,
+    options?: { resultOnly?: boolean },
+  ): Promise<Prepared>;
   verify(
     run: RunContext,
     task: Task,
@@ -152,6 +160,7 @@ interface AgentState {
   budget?: AgentBudget;
   provider?: string;
   usageAt: number;
+  repairs?: number;
 }
 
 interface RunState extends RunContext {
@@ -267,6 +276,8 @@ export interface Engine {
     by?: "user" | "parent",
   ): Promise<void>;
   cancel(run: string, agent?: string, reason?: string): Promise<void>;
+  // Re-runs a settled task with feedback, and requeues its reviewers. Returns the reopened ids.
+  repair(run: string, task: string, feedback: string): string[];
   subscribe(run: string, consumer: Consumer): () => void;
   // Called for every new run, so surfaces can follow runs they did not start.
   onRun(listener: (run: RunHandle) => void): () => void;
@@ -287,7 +298,10 @@ export function createEngine(options: EngineOptions): Engine {
   const handleOf = (run: RunState): RunHandle => ({
     id: run.id,
     dir: run.dir,
-    done: run.done,
+    // A repair reopens the run with a new done promise.
+    get done() {
+      return run.done;
+    },
     view: () => run.current,
     results: () => run.results,
   });
@@ -357,47 +371,54 @@ export function createEngine(options: EngineOptions): Engine {
     ]);
     let prepared: Prepared | undefined;
     let outcome: AgentOutcome | undefined;
-    let verdict: Verdict;
+    let verdict: Verdict | undefined;
     const model = pipeline.model(run, task);
+    const kind =
+      pipeline.backend?.(run, task) ?? task.backend ?? options.defaultBackend ?? "in-process";
     try {
       emit(run, id, {
         t: "agent_started",
-        backend:
-          pipeline.backend?.(run, task) ?? task.backend ?? options.defaultBackend ?? "in-process",
+        backend: kind,
         model,
         workspace: pipeline.workspaceRef?.(run, task) ?? { kind: "live", path: run.cwd },
       });
-      prepared = await pipeline.prepare(run, task, signal);
-      if (signal.aborted) throw signal.reason;
-      const kind =
-        pipeline.backend?.(run, task) ?? task.backend ?? options.defaultBackend ?? "in-process";
       const backend = options.backends[kind];
       if (!backend) throw new Error(`Backend ${kind} is not available`);
-      const budget = new AgentBudget(
-        {
-          maxTurns: prepared.launch.budgets.maxTurns,
-          maxToolCalls: prepared.launch.budgets.maxToolCalls,
-          maxCostUsd: prepared.launch.budgets.maxCostUsd,
-        },
-        (reason) => controller.abort(new StopSignal(reason, "failed")),
-      );
-      state.budget = budget;
-      state.handle = await backend.start(
-        prepared.launch,
-        (e) => onAgentEvent(run, id, state, e),
-        signal,
-      );
-      outcome = await state.handle.done;
-      if (signal.aborted) {
-        const why = stopReason(signal);
-        verdict = {
-          status: why.status,
-          summary: why.reason,
-          reason: why.reason,
-          failureStage: "process",
-          result: outcome.result,
-        };
-      } else verdict = await pipeline.verify(run, task, prepared, outcome, signal);
+      // A builder without a valid result gets one result-only attempt with write tools removed.
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const resultOnly = attempt > 0;
+        prepared = await pipeline.prepare(run, task, signal, { resultOnly });
+        if (signal.aborted) throw signal.reason;
+        state.budget ??= new AgentBudget(
+          {
+            maxTurns: prepared.launch.budgets.maxTurns,
+            maxToolCalls: prepared.launch.budgets.maxToolCalls,
+            maxCostUsd: prepared.launch.budgets.maxCostUsd,
+          },
+          (reason) => controller.abort(new StopSignal(reason, "failed")),
+        );
+        state.handle = await backend.start(
+          prepared.launch,
+          (e) => onAgentEvent(run, id, state, e),
+          signal,
+        );
+        outcome = await state.handle.done;
+        if (signal.aborted) {
+          const why = stopReason(signal);
+          verdict = {
+            status: why.status,
+            summary: why.reason,
+            reason: why.reason,
+            failureStage: "process",
+            result: outcome.result,
+          };
+          break;
+        }
+        verdict = await pipeline.verify(run, task, prepared, outcome, signal);
+        if (verdict.retry !== "result-only" || resultOnly) break;
+        await state.handle.dispose().catch(() => {});
+        state.handle = undefined;
+      }
     } catch (error) {
       const why = signal.aborted ? stopReason(signal) : null;
       const message = why?.reason ?? (error as Error)?.message ?? String(error);
@@ -411,8 +432,10 @@ export function createEngine(options: EngineOptions): Engine {
     } finally {
       await state.handle?.dispose().catch(() => {});
     }
+    if (!verdict) throw new Error("unreachable: no verdict");
+    const { retry: _retry, ...final } = verdict;
     const settled: Settled = {
-      ...verdict,
+      ...final,
       usage: state.budget?.usage ?? outcome?.usage ?? ZERO_USAGE,
       turns: state.budget?.turns ?? outcome?.turns ?? 0,
       toolCalls: state.budget?.toolCalls ?? outcome?.toolCalls ?? 0,
@@ -420,6 +443,16 @@ export function createEngine(options: EngineOptions): Engine {
     };
     settle(run, id, settled);
     if (pipeline.settled) await track(run, pipeline.settled(run, task, prepared, settled));
+  }
+
+  function ancestorsOf(run: RunState, task: Task, seen = new Set<string>()): Set<string> {
+    for (const name of task.after) {
+      if (seen.has(name)) continue;
+      seen.add(name);
+      const dep = run.agents.get(name);
+      if (dep) ancestorsOf(run, dep.task, seen);
+    }
+    return seen;
   }
 
   function track(run: RunState, work: Promise<unknown>): Promise<void> {
@@ -637,6 +670,59 @@ export function createEngine(options: EngineOptions): Engine {
         maybeFinish(run);
       } else if (state.status === "running")
         state.controller?.abort(new StopSignal(reason, "cancelled"));
+    },
+    repair(id, task, feedback) {
+      const run = runs.get(id);
+      if (!run) throw new Error(`Unknown run ${id}`);
+      const state = run.agents.get(task);
+      if (!state) throw new Error(`Unknown task ${task} in run ${id}`);
+      if (run.controller.signal.aborted) throw new Error("The run was stopped; start a new run");
+      if (!["failed", "blocked", "succeeded", "rejected"].includes(state.status))
+        throw new Error(
+          `Task ${task} is ${state.status}; wait for it or cancel it before repairing`,
+        );
+      if ((state.repairs ?? 0) >= run.limits.repairs)
+        throw new Error(
+          `Repair budget exhausted for ${task} (limits.repairs ${run.limits.repairs})`,
+        );
+      if (typeof feedback !== "string" || !feedback.trim())
+        throw new Error("Repair feedback is required");
+      const dependents = [...run.agents.values()].filter((a) => ancestorsOf(run, a.task).has(task));
+      for (const d of dependents) {
+        if (d.status === "running")
+          throw new Error(`Dependent ${d.task.id} is running; cancel it first`);
+        const started = d.status !== "queued" && d.status !== "blocked" && d.status !== "cancelled";
+        if (started && d.task.role !== "reviewer")
+          throw new Error(
+            `Completed downstream work (${d.task.id}) needs a new run; it is not replayed silently`,
+          );
+      }
+      const data = run.data as { feedback?: Record<string, string> };
+      data.feedback = { ...data.feedback, [task]: feedback };
+      for (const d of dependents)
+        if (d.task.role === "reviewer")
+          data.feedback[d.task.id] =
+            "Re-review the repaired target independently; any prior approval is invalid.";
+      const reopened = run.graph.reopen(task);
+      for (const d of dependents)
+        if (!reopened.includes(d.task.id)) reopened.push(...run.graph.reopen(d.task.id));
+      if (run.finished) {
+        run.finished = false;
+        run.done = new Promise<RunView>((resolve) => (run.resolve = resolve));
+        emit(run, undefined, { t: "run_resumed", reason: `repair of ${task}` });
+      }
+      state.repairs = (state.repairs ?? 0) + 1;
+      for (const name of reopened) {
+        const s = run.agents.get(name)!;
+        s.status = "queued";
+        s.handle = undefined;
+        s.budget = undefined;
+        run.settledResults.delete(name);
+        emit(run, name, { t: "agent_queued", task: s.task as TaskSpec });
+      }
+      run.scheduler.resume();
+      run.scheduler.pump();
+      return reopened;
     },
     subscribe(id, consumer) {
       const run = runs.get(id);

@@ -81,6 +81,11 @@ export class Scheduler {
     this.limiter.release(provider);
   }
 
+  // Starts work again after a run reopened.
+  resume(): void {
+    this.stopped = false;
+  }
+
   // Stops starting work. Returns tasks that never started.
   stop(): string[] {
     this.stopped = true;

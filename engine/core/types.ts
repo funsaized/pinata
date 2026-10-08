@@ -130,7 +130,8 @@ export type EventBody =
       turns: number;
       toolCalls: number;
     }
-  | { t: "run_settled"; status: RunStatus; usage: Usage };
+  | { t: "run_settled"; status: RunStatus; usage: Usage }
+  | { t: "run_resumed"; reason: string }; // a settled run reopened (a repair)
 
 export type AgentEvent = Envelope & EventBody;
 export type EventType = EventBody["t"];

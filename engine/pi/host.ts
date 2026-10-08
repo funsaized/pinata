@@ -1,6 +1,7 @@
 // One host per parent Pi session: the engine, the shared child model runtime, the session's
 // mode, and the run-level operations behind the model-facing tools and /pinata commands.
 import { realpathSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -16,6 +17,7 @@ import { git, line } from "../workspace/git.ts";
 import { agentDir, layeredConfig, modelCandidates, type PinataConfig } from "./config.ts";
 import { piPipeline, type PipelineStages, type PiRunData } from "./pipeline.ts";
 import { RuntimeCache, inherited, selectModel } from "./runtime.ts";
+import { prepareRun, verificationStages } from "../verify/stages.ts";
 
 export const RESEARCH_UNAVAILABLE =
   "Research tasks need pi-web-access, which is not loaded in this Pi. Install it with `pi install git:github.com/nicobailon/pi-web-access`, or set config.webExtension.";
@@ -118,7 +120,7 @@ export class PinataHost {
   // Runs whose background completion is delivered as a follow-up message.
   readonly background = new Set<string>();
 
-  constructor(pi: ExtensionAPI, stages: PipelineStages = {}) {
+  constructor(pi: ExtensionAPI, stages: PipelineStages = verificationStages()) {
     this.pi = pi;
     this.stages = stages;
   }
@@ -199,7 +201,11 @@ export class PinataHost {
         modelCandidates(config, task.role, task.model, session),
       ).model;
     const engine = this.engine(ctx);
+    const id = randomUUID();
+    // Snapshot, setup and review subjects; invalid subjects fail here, before any agent starts.
+    const prep = await prepareRun(root, id, tasks, config);
     const data: PiRunData & Record<string, unknown> = {
+      prep,
       models,
       instructions: params.instructions ?? [],
       codemode: config.codemode,
@@ -211,6 +217,7 @@ export class PinataHost {
       noIntegratedChecksReason: params.noIntegratedChecksReason ?? null,
     };
     const handle = await engine.run(tasks as TaskSpec[], {
+      id,
       cwd: root,
       mode: this.mode(config),
       limits: config.limits,

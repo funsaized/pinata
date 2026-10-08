@@ -293,6 +293,10 @@ function apply(view: RunView, e: AgentEvent): RunView {
     }
     case "run_settled":
       return { ...view, status: e.status, settledAt: e.at, usage: e.usage };
+    case "run_resumed": {
+      const { settledAt: _settled, ...rest } = view;
+      return { ...rest, status: "running" };
+    }
   }
 }
 
