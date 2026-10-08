@@ -20,7 +20,10 @@ const sleep = (ms: number, signal?: AbortSignal) =>
   });
 
 // Reads complete new lines of a growing file from `offset`. A partial last line waits.
-async function readNew(file: string, offset: number): Promise<{ lines: string[]; offset: number }> {
+export async function readNew(
+  file: string,
+  offset: number,
+): Promise<{ lines: string[]; offset: number }> {
   const size = (await stat(file).catch(() => null))?.size ?? 0;
   if (size <= offset) return { lines: [], offset };
   const handle = await open(file, "r");

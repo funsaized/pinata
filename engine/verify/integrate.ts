@@ -30,6 +30,15 @@ export interface RunRecord {
   noIntegratedChecksReason: string | null;
   passEnv: string[];
   taskMs: number;
+  // What a later Pi needs to resume the run (E6.3), and the Pi that owns it.
+  resume?: {
+    mode: "lean" | "observe";
+    limits: Record<string, unknown>;
+    data: Record<string, unknown>;
+    survive: boolean;
+    background: boolean;
+    owner: { pid: number; started: string } | null;
+  };
 }
 
 interface SavedResult {

@@ -1,6 +1,7 @@
 // Verification stages for the Pi pipeline: builders in worktrees (setup, change capture,
 // ownership, checks, fingerprint), reviewers of builders and of existing changes, and evidence
 // checks for any role.
+import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ReviewTargetBrief } from "../agent/brief.ts";
@@ -10,7 +11,7 @@ import type { PinataConfig } from "../pi/config.ts";
 import type { PipelineStages } from "../pi/pipeline.ts";
 import { digest, fingerprint } from "../workspace/changes.ts";
 import { provision, resolveSetup, SetupError, type Setup } from "../workspace/dependencies.ts";
-import { git } from "../workspace/git.ts";
+import { git, line } from "../workspace/git.ts";
 import { copyIncluded } from "../workspace/include.ts";
 import { LiveWorkspace, liveFingerprint } from "../workspace/live.ts";
 import { caseInsensitive, owns } from "../workspace/paths.ts";
@@ -183,9 +184,15 @@ export function verificationStages(): PipelineStages {
       return undefined;
     },
 
-    async prepareWorkspace(run, task, signal) {
+    async prepareWorkspace(run, task, signal, options = {}) {
       const d = data(run);
       if (task.role === "builder") {
+        const path = worktreePath(run, task.id);
+        // A builder an earlier Pi started keeps its worktree exactly as it is.
+        if (options.reattach && existsSync(path)) {
+          const head = line(await git(path, ["rev-parse", "HEAD"]));
+          return Worktree.create(run.cwd, path, head);
+        }
         const base = d.prep.base!;
         const predecessors = builderAncestors(run, task).map((b) => {
           const changes = builderData(run.results.get(b.id))?.changes;
@@ -193,7 +200,6 @@ export function verificationStages(): PipelineStages {
           return changes;
         });
         const composed = await composeBase(run.cwd, base.commit, predecessors);
-        const path = worktreePath(run, task.id);
         const tree = await Worktree.create(run.cwd, path, composed.commit);
         await copyIncluded(run.cwd, path);
         if (d.prep.setup?.command) {

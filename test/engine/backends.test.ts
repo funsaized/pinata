@@ -36,9 +36,20 @@ const reader: Script = (turn) =>
       }
     : submit(turn);
 
+// Detached agents (survive: true) run `pi --mode json` with files instead of pipes.
+const detachedWorld: typeof processWorld = async (t, script, options) => {
+  const world = await processWorld(t, script, options);
+  return {
+    ...world,
+    kind: "process",
+    run: (tasks, opts = {}) => world.run(tasks, { ...opts, data: { ...opts.data, survive: true } }),
+  };
+};
+
 const worlds = [
   ["in-process", inProcessWorld],
   ["process", processWorld],
+  ["detached", detachedWorld],
 ] as const;
 
 for (const [kind, make] of worlds) {
@@ -47,7 +58,7 @@ for (const [kind, make] of worlds) {
     const handle = await world.run([spec("scout"), spec("plan", "planner", { after: ["scout"] })]);
     const view = await handle.done;
     assert.equal(view.status, "succeeded", JSON.stringify(view.agents));
-    assert.equal(view.agents.scout.backend, kind);
+    assert.equal(view.agents.scout.backend, kind === "detached" ? "process" : kind);
     const first = (id: string) => world.turns.find((x) => x.agent === id)!;
     assert.deepEqual(first("scout").tools, ["find", "grep", "ls", "read", "submit_result"]);
     assert.equal(view.agents.scout.turns, 2);
@@ -210,7 +221,7 @@ for (const [kind, make] of worlds) {
     const handle = await world.run([spec("stuck")]);
     await until(() => waiting, "the first request");
     const pids = [...(world.backend?.children.values() ?? [])].map((c) => c.pid);
-    if (kind === "process") assert.equal(pids.length, 1);
+    if (kind !== "in-process") assert.equal(pids.length, 1);
     await world.engine.cancel(handle.id, undefined, "cancelled by the test");
     // The faux provider finishes its response before it sees the abort.
     paused.open();

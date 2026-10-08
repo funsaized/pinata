@@ -191,21 +191,38 @@ export async function fauxWorld(
     const id = opts.id ?? randomUUID();
     const config = validateConfig({ setup: false, ...opts.config }).config;
     const prep = await prepareRun(repo, id, validateGraph(tasks, { allowWrites: true }), config);
+    const data = {
+      models: Object.fromEntries(tasks.map((task) => [task.id, MODEL])),
+      instructions: [],
+      codemode: false,
+      backend: "in-process",
+      config,
+      prep,
+      ...opts.data,
+    };
+    dataOf.set(id, data);
     return engine.run(tasks, {
       cwd: repo,
       dir: join(dir, "runs", `run-${++n}`),
       ...opts,
       id,
-      data: {
-        models: Object.fromEntries(tasks.map((task) => [task.id, MODEL])),
-        instructions: [],
-        codemode: false,
-        backend: "in-process",
-        config,
-        prep,
-        ...opts.data,
-      },
+      data,
     });
   };
-  return { dir, agentDir, repo, fixture, faux, registry, cache, backend, engine, run, turns };
+  // The data each run started with, so tests can resume it.
+  const dataOf = new Map<string, Record<string, unknown>>();
+  return {
+    dir,
+    agentDir,
+    repo,
+    fixture,
+    faux,
+    registry,
+    cache,
+    backend,
+    engine,
+    run,
+    turns,
+    dataOf,
+  };
 }

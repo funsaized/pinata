@@ -261,6 +261,8 @@ export interface AgentLaunch {
   // The repository root (the run's cwd), and pi-web-access for research agents.
   root?: string;
   webExtension?: string;
+  // The agent must outlive this Pi (`survive`): a detached process that the next Pi reattaches.
+  detached?: boolean;
 }
 
 export interface AgentHandle {
@@ -270,6 +272,8 @@ export interface AgentHandle {
   snapshot(): Promise<AgentSnapshot>;
   readonly done: Promise<AgentOutcome>;
   dispose(): Promise<void>;
+  // Detached agents: stop following without stopping the agent (Pi is exiting).
+  detach?(): Promise<void>;
 }
 
 export interface AgentBackend {
@@ -279,6 +283,13 @@ export interface AgentBackend {
     sink: (e: AgentEventInput) => void,
     signal: AbortSignal,
   ): Promise<AgentHandle>;
+  // Follows an agent an earlier Pi started detached (still running, or finished while Pi was
+  // away). Null when there is nothing to reattach to.
+  reattach?(
+    launch: AgentLaunch,
+    sink: (e: AgentEventInput) => void,
+    signal: AbortSignal,
+  ): Promise<AgentHandle | null>;
 }
 
 export interface ChangeSet {

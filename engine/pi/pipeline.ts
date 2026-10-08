@@ -54,6 +54,7 @@ export interface PipelineStages {
     run: RunContext,
     task: Task,
     signal: AbortSignal,
+    options?: { reattach?: boolean },
   ): Promise<Prepared["workspace"] | undefined>;
   reviewTarget?(
     run: RunContext,
@@ -116,7 +117,9 @@ export function piPipeline(stages: PipelineStages = {}): Pipeline {
     async prepare(run, task, signal, options = {}) {
       const data = runData(run);
       const workspace =
-        (await stages.prepareWorkspace?.(run, task, signal)) ?? new LiveWorkspace(run.cwd);
+        (await stages.prepareWorkspace?.(run, task, signal, {
+          reattach: options.reattach === true,
+        })) ?? new LiveWorkspace(run.cwd);
       // A result-only attempt inspects and reports; it cannot write.
       const resultOnly = options.resultOnly === true;
       const writes = task.role === "builder" && !resultOnly;
@@ -167,6 +170,9 @@ export function piPipeline(stages: PipelineStages = {}): Pipeline {
           ...(resultOnly && { resultOnly }),
           transcript: run.store.transcriptPath(task.id),
           root: run.cwd,
+          // A run that must survive this Pi uses detached processes.
+          ...(data.survive &&
+            selectBackend(task.backend, data) === "process" && { detached: true }),
           ...(task.role === "research" && data.webExtension && { webExtension: data.webExtension }),
         },
       };

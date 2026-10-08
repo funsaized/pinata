@@ -839,7 +839,7 @@ Gate 1 passes.
 
   Done when the process backend passes the same backend conformance tests as in-process.
 
-- [ ] **E6.2 Attached and detached (M).**
+- [x] **E6.2 Attached and detached (M).**
   - **Attached:** stdio, the child of Pi, killed with the parent.
   - **Detached:** `detached: true` with `windowsHide: true`, stdio ignored. The agent
     extension's reporter connects to the engine socket (`PINATA_LINK` = path + token) and
@@ -847,7 +847,7 @@ Gate 1 passes.
   - Selection: `background: true` runs with `survive: true` use detached processes.
   - Done when a detached agent finishes while Pi is closed, and its result is verified on
     the next start.
-- [ ] **E6.3 Reattach and resume (M).**
+- [x] **E6.3 Reattach and resume (M).**
   - Path: on `session_start`, `store.replay` each unsettled run. Then:
     - reconnect detached agents through the socket;
     - ingest the outboxes of agents that finished while Pi was away;
@@ -855,7 +855,7 @@ Gate 1 passes.
   - In-process agents from before a reload are reported as cancelled and can be re-run
     with one command.
   - Done when the reload and restart tests pass.
-- [ ] **E6.4 Process supervision (S).**
+- [x] **E6.4 Process supervision (S).**
   - Track PID and start time for each child.
   - On cancel: POSIX sends SIGTERM to the process group and then SIGKILL; Windows uses
     `taskkill /T /F`.
@@ -1154,7 +1154,10 @@ Read this section and the plan before resuming after a context reset.
 - M6: E6.1 is done (`engine/backends/process.ts`, `engine/sources/jsonl.ts`; conformance suite
   `test/engine/backends.test.ts` runs every case on both backends through
   `test/engine/worlds.ts`). E6.5 is done (`selectBackend` in `engine/pi/pipeline.ts`; `survive` on `pinata_run`, which
-  needs `background`). Next: E6.2–E6.4, E6.6.
+  needs `background`). E6.2–E6.4 are done (`engine/agent/detached.ts`,
+  `engine/backends/{process,supervise}.ts`, `engine.resume`/`rerun`/detaching `shutdown`,
+  `PinataHost.resumeOrphans`; tests in `test/engine/{survive,backends,pi-adapter}.test.ts`).
+  Next: E6.6 slim runner experiment.
 - E0.7 upstream issue: not opened yet (outward-facing; include the `ensureTool` finding).
 
 ### Decisions and deviations
@@ -1290,6 +1293,24 @@ Read this section and the plan before resuming after a context reset.
   handle aborts again at the next `agent_start`/`turn_start`, and stops the child if it has
   not settled 5 s after an abort. Tests run children with the Pi devDependency's Node CLI
   (no global Pi needed) against the loopback provider.
+- Detached agents (E6.2) deviate from the plan's socket reporter: a detached agent runs
+  `pi --mode json` with stdin from its brief file and stdout appended to
+  `<run>/agents/<task>/events.jsonl`, which is the durable outbox whether or not a Pi is
+  running; the host steers and aborts through `control.jsonl`, which the agent extension
+  follows and acknowledges (`control.jsonl.ack`, so a steer returns once queued). Reason: one
+  mechanism on every OS, nothing to buffer or replay, no socket needed while Pi is closed.
+  The agent extension also gives the one in-session reminder and enforces the agent's own
+  budgets while no engine watches. Pipes are kept for attached agents (lower latency).
+- Resume (E6.3): `engine.resume(dir)` rebuilds a run from `events.jsonl` and
+  `results/*.json`; `run.json` now also stores the run's mode, limits, pipeline data and
+  owner (pid + start time). On `session_start` the host resumes unsettled runs whose owner
+  Pi is gone. Agents that cannot be reattached settle `cancelled` with "Pi exited before this
+  agent settled", and `/pinata rerun <run>` (`engine.rerun`) starts them and their
+  dependents again. Records already reported before a detach are skipped (`consumed.json`).
+  A reattached agent's budgets are its own (it enforced them while detached).
+- Supervision (E6.4): identity is pid + the OS's start time (`/proc/<pid>/stat` starttime,
+  `ps -o lstart`, `Get-Process` StartTime); zombies count as gone. Cancel sends SIGTERM to
+  the process group and SIGKILL after 2 s (POSIX), or `taskkill /T /F` (Windows).
 - Engine fix found by E6.1: the per-agent wall clock was an `AbortSignal.timeout()` held only
   by `AbortSignal.any()`, which references its sources weakly, so it could be garbage
   collected and never fire. It is now an explicit timer.

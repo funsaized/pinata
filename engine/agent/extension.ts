@@ -15,12 +15,15 @@ import type {
 import { ResultError, resultSchema, validateResult } from "../core/results.ts";
 import type { AgentOptions, AgentResult } from "../core/types.ts";
 import { PathError, checkWrite } from "../workspace/paths.ts";
+import { detachedControl, type DetachedOptions } from "./detached.ts";
 
 export const SUBMIT = "submit_result";
 const WRITE_TOOLS = new Set(["edit", "write", "bash", "powershell"]);
 
 export interface AgentExtensionOptions extends AgentOptions {
   codemode?: boolean;
+  // Out of process and detached: the control file, reminder and budgets (agent/detached.ts).
+  detached?: DetachedOptions;
 }
 
 // What the agent extension reports to its host.
@@ -138,5 +141,8 @@ export function readOptions(env: NodeJS.ProcessEnv = process.env): AgentExtensio
 // Out-of-process entry point (`pi --extension engine/agent/extension.ts`).
 export default function (pi: ExtensionAPI) {
   const opts = readOptions();
-  if (opts) agentExtension(opts)(pi);
+  if (!opts) return;
+  let submitted = false;
+  agentExtension(opts, { result: () => (submitted = true) })(pi);
+  if (opts.detached) detachedControl(pi, opts.detached, () => submitted);
 }

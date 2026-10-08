@@ -11,6 +11,7 @@ export const USAGE = [
   "/pinata live [run|demo]      the mascot overlay",
   "/pinata open [run] <task>    an agent's conversation, live (Enter steers)",
   "/pinata watch [run] [task]   start the run's socket for an external viewer",
+  "/pinata rerun <run>          start again the tasks lost when Pi exited",
 ].join("\n");
 
 // Runs for /pinata live: this session's newest first, else the repository's history.
@@ -88,6 +89,14 @@ export async function pinataCommand(
     const task = second ?? byTask;
     return `Watching ${short(handle.id)}: run \`pinata view ${short(handle.id)}${task ? ` ${task}` : ""}\` in another terminal (socket and token in ${handle.dir}/link.json).`;
   }
+  if (sub === "rerun") {
+    if (!rest[0]) return "Usage: /pinata rerun <run>";
+    const found = await host.find(rest[0], ctx.cwd);
+    if (!found.handle)
+      return `Run ${short(found.id)} is not loaded in this Pi; restart Pi to resume it.`;
+    const reopened = host.rerun(found.id);
+    return `pinata ${short(found.id)}: started again ${reopened.join(", ")}`;
+  }
   if (sub === "mode") {
     const mode = rest[0];
     if (mode !== "lean" && mode !== "observe")
@@ -102,7 +111,7 @@ export function registerCommands(pi: ExtensionAPI, host: PinataHost): void {
   pi.registerCommand("pinata", {
     description: "pinata status, runs and mode (no model turn)",
     getArgumentCompletions: (prefix) =>
-      ["status", "runs", "live", "live demo", "open", "watch", "mode lean", "mode observe"]
+      ["status", "runs", "live", "live demo", "open", "watch", "rerun", "mode lean", "mode observe"]
         .filter((c) => c.startsWith(prefix))
         .map((value) => ({ value, label: value })),
     handler: async (args, ctx) => {
