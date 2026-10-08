@@ -5,7 +5,15 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
 import { spec } from "./helpers.ts";
-import { inProcessWorld, processWorld, type Reply, type Script, type Turn } from "./worlds.ts";
+import {
+  herdrAvailable,
+  herdrWorld,
+  inProcessWorld,
+  processWorld,
+  type Reply,
+  type Script,
+  type Turn,
+} from "./worlds.ts";
 
 const submit = (turn: Turn, extra: Record<string, unknown> = {}): Reply => ({
   toolCalls: [
@@ -50,6 +58,8 @@ const worlds = [
   ["in-process", inProcessWorld],
   ["process", processWorld],
   ["detached", detachedWorld],
+  // Only inside Herdr (never on CI): agents in Herdr panes that the tests create and close.
+  ...(herdrAvailable() ? ([["herdr-pi", herdrWorld]] as const) : []),
 ] as const;
 
 for (const [kind, make] of worlds) {
@@ -220,7 +230,10 @@ for (const [kind, make] of worlds) {
     });
     const handle = await world.run([spec("stuck")]);
     await until(() => waiting, "the first request");
-    const pids = [...(world.backend?.children.values() ?? [])].map((c) => c.pid);
+    const pids =
+      kind === "herdr-pi"
+        ? [JSON.parse(await readFile(join(handle.dir, "agents", "stuck", "pid.json"), "utf8")).pid]
+        : [...(world.backend?.children.values() ?? [])].map((c) => c.pid);
     if (kind !== "in-process") assert.equal(pids.length, 1);
     await world.engine.cancel(handle.id, undefined, "cancelled by the test");
     // The faux provider finishes its response before it sees the abort.

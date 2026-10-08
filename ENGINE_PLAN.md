@@ -874,14 +874,14 @@ Gate 1 passes.
 
 ### M7: Herdr
 
-- [ ] **E7.1 Viewer panes (S).**
+- [x] **E7.1 Viewer panes (S).**
   - Path: in observe mode, or on `/pinata watch` while inside Herdr (`HERDR_SOCKET_PATH`
     set), open the E5.5 viewer in a Herdr pane with `herdr workspace create` or a split,
     with no focus.
   - Port `herdrEnv`, ownership and close from `lib/herdr.mjs`. Close the pane when the
     agent settles.
   - Done when viewer panes open and close cleanly on Linux, macOS and Windows.
-- [ ] **E7.2 herdr-pi backend (M).** Path: `backends/herdr-pi.ts`:
+- [x] **E7.2 herdr-pi backend (M).** Path: `backends/herdr-pi.ts`:
   - create the pane;
   - run `pi --tui-mode regular` with the same flags as E6.1 (no `--mode rpc`), plus the
     agent extension with its reporter connected to the engine socket.
@@ -896,20 +896,20 @@ Gate 1 passes.
   Done when herdr-pi agents appear in the same widget and detail mirror, and settle with
   verified results.
 
-- [ ] **E7.3 Herdr UX (S).**
+- [x] **E7.3 Herdr UX (S).**
   - The widget badge reads `herdr`, and the detail view offers "open pane"
     (`herdr pane focus`).
   - Herdr notifications fire on settle, and Herdr's Pi integration badges show when it is
     installed.
   - Done when this is documented and tested in the Herdr smoke.
-- [ ] **E7.4 Herdr on Windows (M).**
+- [x] **E7.4 Herdr on Windows (M).**
   - Quote pane commands for the pane's shell: PowerShell or cmd on Windows, POSIX sh
     elsewhere.
   - Replace 0.7.0's `/proc`, `ps` and POSIX shell-name checks with Herdr's
     `pane process-info` only.
   - Account for ConPTY limitations listed in Herdr's Windows docs.
   - Done when the Herdr smoke passes on Windows.
-- [ ] **E7.5 Pane lifecycle and GC (S).**
+- [x] **E7.5 Pane lifecycle and GC (S).**
   - Port pane identity checks, cleanup and GC from `cleanup.mjs` and `gc.mjs`.
   - Done when GC removes stale pinata panes, never touches unrelated ones, and reports a
     reason for anything it keeps.
@@ -1159,7 +1159,11 @@ Read this section and the plan before resuming after a context reset.
   needs `background`). E6.2–E6.4 are done (`engine/agent/detached.ts`,
   `engine/backends/{process,supervise}.ts`, `engine.resume`/`rerun`/detaching `shutdown`,
   `PinataHost.resumeOrphans`; tests in `test/engine/{survive,backends,pi-adapter}.test.ts`).
-  E6.6 is closed (numbers in the Results log; not shipped). M6 is done. Next: M7 (Herdr).
+  E6.6 is closed (numbers in the Results log; not shipped). M6 is done.
+- M7: done (`engine/herdr/{client,panes}.ts`, `engine/backends/herdr-pi.ts`,
+  `engine/agent/reporter.ts`, `docs/how-to/herdr.md`). Herdr tests run locally inside Herdr
+  (`test/engine/herdr.test.ts`, and herdr-pi in the conformance suite); CI has no Herdr.
+  Next: M8 (headless).
 - E0.7 upstream issue: not opened yet (outward-facing; include the `ensureTool` finding).
 
 ### Decisions and deviations
@@ -1297,6 +1301,21 @@ Read this section and the plan before resuming after a context reset.
   handle aborts again at the next `agent_start`/`turn_start`, and stops the child if it has
   not settled 5 s after an abort. Tests run children with the Pi devDependency's Node CLI
   (no global Pi needed) against the loopback provider.
+- Herdr (M7): herdr-pi agents run an interactive `pi --tui-mode regular` in their own
+  workspace (`pinata-<run>-<task>`, no focus); the agent extension's reporter writes the
+  session's events to the agent's events file in `--mode json`'s record format, writes its
+  pid identity, and sends the brief as the first prompt, so the engine follows the pane
+  exactly like a detached agent (and resumes it the same way). What the user types is an
+  `input` event and becomes a `steer` by the user. Agent environment goes through `herdr
+workspace create --env`; the command is quoted for the shell `pane process-info` reports
+  (POSIX, fish, PowerShell, cmd). Viewer panes open on `/pinata watch` or observe runs inside
+  Herdr and close when the run settles; settled runs show a Herdr notification.
+- **Not verified on macOS and Windows: Herdr (E7.1, E7.4).** Herdr runs only on the
+  reference Linux machine here; GitHub's runners have no Herdr. Verified on Linux: viewer
+  panes, herdr-pi conformance (9 cases), typed steering and GC. On Windows, quoting and
+  shell detection are unit-tested in CI; the pane flow itself is unverified. Proposed: keep
+  the items done for Linux and re-run `test/engine/herdr.test.ts` on a macOS and a Windows
+  machine with Herdr before 1.0.0 (open question below).
 - Detached agents (E6.2) deviate from the plan's socket reporter: a detached agent runs
   `pi --mode json` with stdin from its brief file and stdout appended to
   `<run>/agents/<task>/events.jsonl`, which is the durable outbox whether or not a Pi is
@@ -1346,4 +1365,5 @@ Read this section and the plan before resuming after a context reset.
 
 ### Open questions
 
-- None yet.
+- Herdr on macOS and Windows: `test/engine/herdr.test.ts` and the herdr-pi conformance cases
+  need a machine with Herdr; CI has none. Run them there before 1.0.0.

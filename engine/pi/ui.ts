@@ -6,6 +6,7 @@ import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { Engine, RunHandle } from "../core/engine.ts";
 import { readJsonl } from "../core/store.ts";
+import { focusWorkspace, type PaneResource } from "../herdr/client.ts";
 import { coalesce, type RunView } from "../core/view.ts";
 import { AgentDetail, type DetailSource } from "../ui/detail.ts";
 import { LiveScene, type SceneRun } from "../ui/live.ts";
@@ -262,6 +263,12 @@ export class PinataUI {
           },
           steer: (agent, text, as) => engine.steer(run, agent, text, as, "user"),
         }),
+      async openPane(agent) {
+        const pane = JSON.parse(
+          await readFile(join(dir, "agents", agent, "pane.json"), "utf8"),
+        ) as PaneResource;
+        await focusWorkspace(pane);
+      },
     };
   }
 

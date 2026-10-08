@@ -15,6 +15,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { REMINDER } from "../agent/brief.ts";
 import { SUBMIT } from "../agent/extension.ts";
+import { USER_INPUT } from "../agent/reporter.ts";
 import { appendJsonl, writeJsonl } from "../core/store.ts";
 import { ZERO_USAGE, addUsage } from "../core/types.ts";
 import type { AgentEventInput, ToolRecord } from "../core/types.ts";
@@ -64,12 +65,12 @@ export function piArgs(
   launch: AgentLaunch,
   files: { persona: string },
   sessionDir?: string,
-  mode: "rpc" | "json" = "rpc",
+  mode: "rpc" | "json" | "tui" = "rpc",
 ): string[] {
   const web = launch.task.role === "research" ? launch.webExtension : undefined;
   return [
-    "--mode",
-    mode,
+    // tui: an interactive Pi in a terminal pane (herdr-pi), in the regular (scrolling) mode.
+    ...(mode === "tui" ? ["--tui-mode", "regular"] : ["--mode", mode]),
     "--offline",
     "--no-extensions",
     "--no-skills",
@@ -106,7 +107,7 @@ function partialText(message: any): { text: string; thinking: string } | undefin
 }
 
 // An agent's files: <run>/agents/<task>/ (a temporary directory outside a run).
-async function agentFiles(launch: AgentLaunch) {
+export async function agentFiles(launch: AgentLaunch) {
   const runDir = launch.transcript ? dirname(dirname(launch.transcript)) : undefined;
   const dir = runDir
     ? join(runDir, "agents", launch.task.id)
@@ -124,7 +125,7 @@ async function agentFiles(launch: AgentLaunch) {
     consumed: join(dir, "consumed.json"),
   };
 }
-type AgentFiles = Awaited<ReturnType<typeof agentFiles>>;
+export type AgentFiles = Awaited<ReturnType<typeof agentFiles>>;
 
 // What an agent's event records add up to: events for the sink, usage, the submitted
 // result, the streaming partial, tools in flight and (for detached agents) its messages.
@@ -168,6 +169,14 @@ class Records {
       if (e.t === "message_end" && e.usage) this.usage = addUsage(this.usage, e.usage);
       if (emit) this.sink(e);
     }
+    // What a user typed into an agent's own Pi (herdr-pi panes) is a steer.
+    if (record.type === USER_INPUT && emit && typeof record.text === "string")
+      this.sink({
+        t: "steer",
+        by: "user",
+        text: record.text,
+        as: record.as === "followUp" ? "followUp" : "steer",
+      });
     if (record.type === "agent_settled") this.settled++;
   }
 
@@ -355,7 +364,7 @@ export class ProcessBackend implements AgentBackend {
 
 // Follows a detached agent through its files. `skip` records were already reported by the
 // Pi that started it.
-function followDetached(
+export function followDetached(
   files: AgentFiles,
   identity: ProcessIdentity,
   launch: AgentLaunch,

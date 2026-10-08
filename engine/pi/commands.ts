@@ -3,6 +3,10 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-c
 import { duration, money, progressLine, short, statusText } from "../ui/text.ts";
 import type { PinataHost } from "./host.ts";
 import { integrationStatus, type RunSource } from "./ui.ts";
+import { insideHerdr } from "../herdr/client.ts";
+import { gcPanes } from "../herdr/panes.ts";
+import { runsRoot } from "../core/store.ts";
+import { repositoryRoot } from "./host.ts";
 
 export const USAGE = [
   "/pinata              status of the latest run",
@@ -12,6 +16,7 @@ export const USAGE = [
   "/pinata open [run] <task>    an agent's conversation, live (Enter steers)",
   "/pinata watch [run] [task]   start the run's socket for an external viewer",
   "/pinata rerun <run>          start again the tasks lost when Pi exited",
+  "/pinata gc                   close pinata's Herdr workspaces whose work settled",
 ].join("\n");
 
 // Runs for /pinata live: this session's newest first, else the repository's history.
@@ -85,8 +90,8 @@ export async function pinataCommand(
       return "No run of this session to watch; viewers of finished runs read them from disk.";
     if (handle.view().status !== "running" && !host.servers.has(handle.id))
       return `Run ${short(handle.id)} has settled. Replay it with /pinata open ${short(handle.id)} <task>.`;
-    await host.serve(handle);
     const task = second ?? byTask;
+    await host.serve(handle, task);
     return `Watching ${short(handle.id)}: run \`pinata view ${short(handle.id)}${task ? ` ${task}` : ""}\` in another terminal (socket and token in ${handle.dir}/link.json).`;
   }
   if (sub === "rerun") {
@@ -96,6 +101,12 @@ export async function pinataCommand(
       return `Run ${short(found.id)} is not loaded in this Pi; restart Pi to resume it.`;
     const reopened = host.rerun(found.id);
     return `pinata ${short(found.id)}: started again ${reopened.join(", ")}`;
+  }
+  if (sub === "gc") {
+    if (!insideHerdr()) return "pinata gc closes Herdr workspaces; run Pi inside Herdr.";
+    const entries = await gcPanes(await runsRoot(await repositoryRoot(ctx.cwd)));
+    if (!entries.length) return "No pinata workspaces in this Herdr session.";
+    return entries.map((e) => `${e.action.padEnd(6)} ${e.label}: ${e.reason}`).join("\n");
   }
   if (sub === "mode") {
     const mode = rest[0];
@@ -111,7 +122,18 @@ export function registerCommands(pi: ExtensionAPI, host: PinataHost): void {
   pi.registerCommand("pinata", {
     description: "pinata status, runs and mode (no model turn)",
     getArgumentCompletions: (prefix) =>
-      ["status", "runs", "live", "live demo", "open", "watch", "rerun", "mode lean", "mode observe"]
+      [
+        "status",
+        "runs",
+        "live",
+        "live demo",
+        "open",
+        "watch",
+        "rerun",
+        "gc",
+        "mode lean",
+        "mode observe",
+      ]
         .filter((c) => c.startsWith(prefix))
         .map((value) => ({ value, label: value })),
     handler: async (args, ctx) => {

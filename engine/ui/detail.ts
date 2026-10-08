@@ -36,6 +36,8 @@ export interface DetailSource {
   } | null>;
   subscribe?(agent: string, onEvent: (event: AgentEvent) => void): () => void;
   steer?(agent: string, text: string, as: "steer" | "followUp"): Promise<void>;
+  // herdr-pi agents: bring the agent's own Herdr pane to the front.
+  openPane?(agent: string): Promise<void>;
 }
 
 export interface DetailOptions {
@@ -289,7 +291,20 @@ export class AgentDetail implements Component {
       this.expanded = !this.expanded;
       for (const tool of this.tools) tool.setExpanded(this.expanded);
     } else if (key("tui.input.submit")) this.openInput();
+    else if (data === "o" && this.hasPane()) {
+      this.notice = "Opening the agent's Herdr pane…";
+      void this.options.source.openPane!(this.agent).then(
+        () => (this.notice = null),
+        (error: Error) => (this.notice = clean(error.message)),
+      );
+    }
     this.options.tui.requestRender();
+  }
+
+  private hasPane(): boolean {
+    return (
+      !!this.options.source.openPane && this.options.source.view(this.agent)?.backend === "herdr-pi"
+    );
   }
 
   private openInput(): void {
@@ -377,6 +392,7 @@ export class AgentDetail implements Component {
               keyHint("tui.editor.cursorRight", "agent"),
               keyHint("tui.input.submit", "steer"),
               keyHint("app.tools.expand", "tools"),
+              ...(this.hasPane() ? [theme.fg("dim", "o") + theme.fg("muted", " open pane")] : []),
               keyHint("tui.select.cancel", "close"),
             ].join("  ") + theme.fg("muted", scrolled),
             width,
