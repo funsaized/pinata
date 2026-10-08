@@ -12,6 +12,8 @@
     "verbatimModuleSyntax": true,
     "isolatedModules": true,
     "skipLibCheck": true,
+    "allowJs": true,
+    "checkJs": false,
     "forceConsistentCasingInFileNames": true
   },
   "include": ["engine", "bench", "test/engine"]
