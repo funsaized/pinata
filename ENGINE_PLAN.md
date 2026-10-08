@@ -1261,7 +1261,9 @@ Read this section and the plan before resuming after a context reset.
   NTFS stat costs for the index refresh. macOS CI runners vary by machine: 44–47 ms on some,
   108–134 ms on others (three attempts each, same commit). Proposed target: < 50 ms on Linux
   and macOS machines like the reference one, < 100 ms on Linux CI, < 150 ms on macOS CI,
-  < 250 ms on Windows CI; the test encodes this. Git's fsmonitor
+  < 250 ms on Windows CI; the test encodes this. Some Windows runners are far slower still
+  (400–1,221 ms medians, three attempts, same commit that measured 140 ms elsewhere), so on CI
+  the bound is also at least 4x that runner's own `git status --porcelain` in the worktree. Git's fsmonitor
   daemon could cut the refresh if Windows builder runs show capture matters.
 - UX (M4): the live scene lives in `engine/ui/live.ts` (the plan said `ui/mascot.ts`; the
   mascot geometry stays there). The host pushes RunViews to the widget, footer and scene
@@ -1308,6 +1310,9 @@ Read this section and the plan before resuming after a context reset.
   agent settled", and `/pinata rerun <run>` (`engine.rerun`) starts them and their
   dependents again. Records already reported before a detach are skipped (`consumed.json`).
   A reattached agent's budgets are its own (it enforced them while detached).
+- Builders' write guard compares the write root and cwd by real path: a process agent on
+  macOS sees its worktree as `/private/var/...` while its root was given as `/var/...` (found
+  by macOS CI). Links below the root are still refused.
 - Supervision (E6.4): identity is pid + the OS's start time (`/proc/<pid>/stat` starttime,
   `ps -o lstart`, `Get-Process` StartTime); zombies count as gone. Cancel sends SIGTERM to
   the process group and SIGKILL after 2 s (POSIX), or `taskkill /T /F` (Windows).

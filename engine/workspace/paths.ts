@@ -1,7 +1,7 @@
 // Path rules shared by the agent extension's write guard and post-hoc verification: paths are
 // repo-relative with `/` separators; `..`, absolute paths, `.git`, symlinks and Windows
 // junctions are refused; comparisons are case-insensitive on case-insensitive volumes.
-import { lstatSync, statSync } from "node:fs";
+import { lstatSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import {
   isAbsolute,
@@ -89,6 +89,21 @@ export function caseInsensitive(root: string): boolean {
 }
 
 // The write rule for builders: inside the workspace, not .git, no links, and owned.
+// A directory's real path (macOS reports /var as /private/var), or the path as given.
+function real(path: string): string {
+  try {
+    return realpathSync.native(path);
+  } catch {
+    return resolve(path);
+  }
+}
+
+// Rewrites an absolute path under `from` to the same place under `to`.
+function rebase(path: string, from: string, to: string): string {
+  const rel = relativePath(from, path);
+  return rel && !rel.startsWith("..") && !isAbsolute(rel) ? join(to, rel) : path;
+}
+
 export function checkWrite(
   root: string,
   cwd: string,
@@ -96,7 +111,17 @@ export function checkWrite(
   ownership: readonly string[],
   ci = caseInsensitive(root),
 ): string {
-  const rel = repoRelative(root, cwd, input);
+  // An agent process may see its cwd through a different symlink path than the one its
+  // write root was given as: compare the root and cwd by real path. Links below them are
+  // still refused (assertNoLinks).
+  const realRoot = real(root);
+  const realCwd = real(cwd);
+  const absolute = rebase(
+    rebase(toolPath(cwd, input), resolve(root), realRoot),
+    resolve(cwd),
+    realCwd,
+  );
+  const rel = repoRelative(realRoot, realCwd, absolute);
   assertNoLinks(root, rel);
   if (!owns(ownership, rel, ci))
     throw new PathError(

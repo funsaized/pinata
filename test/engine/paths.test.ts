@@ -83,3 +83,18 @@ test("case sensitivity is probed per volume", async (t) => {
         : caseInsensitive(root);
   assert.equal(caseInsensitive(root), expected);
 });
+
+test("a write root given through a symlinked directory matches the real cwd an agent sees", async (t) => {
+  if (process.platform === "win32") return t.skip("symlinks need privileges on Windows");
+  const { mkdir, symlink, realpath } = await import("node:fs/promises");
+  const base = await tempDir(t);
+  await mkdir(join(base, "real"));
+  await symlink(join(base, "real"), join(base, "link"));
+  const real = await realpath(join(base, "real"));
+  assert.equal(checkWrite(join(base, "link"), real, "a.txt", ["a.txt"]), "a.txt");
+  assert.equal(
+    checkWrite(join(base, "link"), real, join(base, "link", "a.txt"), ["a.txt"]),
+    "a.txt",
+  );
+  assert.throws(() => checkWrite(join(base, "link"), real, "b.txt", ["a.txt"]), /ownership/);
+});
