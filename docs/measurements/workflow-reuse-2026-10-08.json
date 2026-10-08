@@ -1,0 +1,202 @@
+{
+  "date": "2026-10-08",
+  "environment": {
+    "platform": "Linux",
+    "filesystem": "Btrfs",
+    "node": "26.7.0",
+    "pi": "1.1.0",
+    "herdr": "0.9.1",
+    "git": "2.55.0"
+  },
+  "readiness": [
+    {
+      "phase": "cold",
+      "elapsedMs": 649.433265,
+      "cached": false
+    },
+    {
+      "phase": "warm",
+      "elapsedMs": 0.26262999999994463,
+      "cached": true
+    },
+    {
+      "phase": "fresh-process-warm",
+      "elapsedMs": 2.4826239999999977,
+      "cached": true
+    }
+  ],
+  "workspace": {
+    "platform": "linux",
+    "node": "v26.7.0",
+    "checkouts": [
+      {
+        "trial": 1,
+        "reuse": false,
+        "method": "checkout",
+        "elapsedMs": 443
+      },
+      {
+        "trial": 1,
+        "reuse": true,
+        "method": "reflink",
+        "elapsedMs": 1354
+      },
+      {
+        "trial": 2,
+        "reuse": true,
+        "method": "reflink",
+        "elapsedMs": 1065
+      },
+      {
+        "trial": 2,
+        "reuse": false,
+        "method": "checkout",
+        "elapsedMs": 116
+      },
+      {
+        "trial": 3,
+        "reuse": false,
+        "method": "checkout",
+        "elapsedMs": 120
+      },
+      {
+        "trial": 3,
+        "reuse": true,
+        "method": "reflink",
+        "elapsedMs": 708
+      }
+    ],
+    "dependencies": [
+      {
+        "phase": "cold-install",
+        "elapsedMs": 2713,
+        "cache": "miss"
+      },
+      {
+        "phase": "warm-download-install",
+        "elapsedMs": 1539,
+        "cache": "disabled"
+      },
+      {
+        "phase": "prepared-restore",
+        "elapsedMs": 1211,
+        "cache": "hit"
+      }
+    ],
+    "trackedBytes": 150601728,
+    "trackedFiles": 2131,
+    "sourceMutationFallback": true,
+    "packages": 91,
+    "passed": true
+  },
+  "liveWorkflow": {
+    "models": {
+      "provider": "openai",
+      "id": "gpt-6-luna",
+      "scoutThinking": "low",
+      "builderThinking": "medium",
+      "reviewerThinking": "high"
+    },
+    "trialsPerWorkflow": 1,
+    "samePatchAndChecks": true,
+    "buildReview": {
+      "elapsedMs": 60256,
+      "toolCalls": 27,
+      "tokens": 63623,
+      "costUsd": 0.004243
+    },
+    "scoutBuildReview": {
+      "elapsedMs": 75298,
+      "toolCalls": 40,
+      "tokens": 69339,
+      "costUsd": 0.004773
+    }
+  },
+  "qualityOriginal": {
+    "completedCases": 5,
+    "infrastructureErrors": 0,
+    "builderOracle": [
+      {
+        "case": "trial-1-pipeline",
+        "passed": 28,
+        "total": 28
+      }
+    ],
+    "reviewControls": {
+      "total": 4,
+      "evaluated": 4,
+      "falseApprovals": 1,
+      "falseRejections": 0,
+      "missingVerdicts": 0
+    },
+    "factualClaims": {
+      "total": 14,
+      "correct": 13,
+      "incorrect": 1,
+      "missing": 0,
+      "supported": 13,
+      "noncanonical": 14
+    },
+    "liveTasks": 8,
+    "failedLiveTasks": 0,
+    "missingUsage": 0,
+    "latencyMs": {
+      "min": 23806,
+      "median": 46236,
+      "max": 56233
+    },
+    "usage": {
+      "input": 95304,
+      "output": 14188,
+      "cacheRead": 138240,
+      "cacheWrite": 0,
+      "totalTokens": 247732,
+      "cost": 0.0180068
+    },
+    "limitation": "Small controlled fixture, not a global model benchmark. Seeded builders are deterministic; their reviewers are live. Missing verdicts and usage are reported separately. All trials are retained, including failures below the quality thresholds.",
+    "quality": {
+      "passed": false,
+      "thresholds": {
+        "builderPassRate": 1,
+        "factualAccuracy": 1,
+        "supportedClaims": 1,
+        "falseApprovals": 0,
+        "falseRejections": 0,
+        "missingVerdicts": 0
+      },
+      "failures": [
+        "Review controls have incorrect or missing verdicts",
+        "Factual accuracy is below 100%",
+        "Some factual answers lack matching source evidence"
+      ]
+    }
+  },
+  "qualityOracleReplay": {
+    "passed": 28,
+    "total": 29,
+    "failed": [
+      {
+        "name": "date-overflow",
+        "passed": false,
+        "actual": 9260570019540992,
+        "expected": null
+      }
+    ]
+  },
+  "limitations": [
+    "Local synthetic mixed repository, not a production monorepo or a cross-platform result.",
+    "Workflow timings are one stochastic paired sample.",
+    "CoW checkout was slower; normal checkout remains the default.",
+    "Original quality trial is preserved and failed. The replay adds the verified date-overflow case without making new model calls.",
+    "Task memory peaks are sampled, exclude shared Herdr/coordinator, and do not describe a simultaneous run peak."
+  ],
+  "localChecks": {
+    "deterministicTests": 152,
+    "failures": 0,
+    "installedPi": "passed",
+    "liveSmoke": "passed",
+    "liveQualityGate": "failed",
+    "realWeb": "not run",
+    "macOS": "not run"
+  }
+}

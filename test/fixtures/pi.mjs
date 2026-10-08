@@ -4,9 +4,16 @@ import path from "node:path";
 import { spawn, execFileSync } from "node:child_process";
 import { writeSync } from "node:fs";
 const args = process.argv.slice(2);
+if (
+  process.env.TEST_EXPECT_AGENT_DIR &&
+  process.env.PI_CODING_AGENT_DIR !== process.env.TEST_EXPECT_AGENT_DIR
+)
+  throw new Error("Caller Pi agent directory was replaced");
 if (process.env.TEST_PI_METADATA_LOG && !args.includes("--append-system-prompt"))
   await fs.appendFile(process.env.TEST_PI_METADATA_LOG, JSON.stringify(args) + "\n");
 const arg = (key) => args[args.indexOf(key) + 1];
+if (process.env.TEST_PI_METADATA_DELAY_MS && (arg("--mode") === "rpc" || args[0] === "auth"))
+  await new Promise((r) => setTimeout(r, Number(process.env.TEST_PI_METADATA_DELAY_MS)));
 const committed = (file) => {
   try {
     return execFileSync("git", ["show", `HEAD:${file}`], { encoding: "utf8", stdio: "pipe" });
@@ -20,8 +27,12 @@ const send = (value) =>
 if (args.includes("--version")) console.log("1.0.2");
 else if (args[0] === "list") console.log(process.env.TEST_PI_LIST ?? "No packages installed.");
 else if (args[0] === "auth") {
-  send({ status: process.env.TEST_AUTH_MISSING ? "not_ready" : "ready" });
-  process.exitCode = process.env.TEST_AUTH_MISSING ? 1 : 0;
+  const missing =
+    process.env.TEST_AUTH_MISSING ||
+    (process.env.TEST_AUTH_FLAG_FILE &&
+      (await fs.stat(process.env.TEST_AUTH_FLAG_FILE).catch(() => null)));
+  send({ status: missing ? "not_ready" : "ready" });
+  process.exitCode = missing ? 1 : 0;
 } else if (arg("--mode") === "rpc") {
   let buffer = "";
   process.stdin.setEncoding("utf8");
@@ -44,7 +55,8 @@ else if (args[0] === "auth") {
 } else {
   const dir = path.dirname(arg("--append-system-prompt"));
   const spec = JSON.parse(await fs.readFile(path.join(dir, "task.json"), "utf8"));
-  const scenario = JSON.parse(spec.task.task);
+  const liveSmoke = spec.task.task.startsWith("Read a.txt in this disposable repository.");
+  const scenario = liveSmoke ? {} : JSON.parse(spec.task.task);
   await fs.appendFile(path.join(dir, "calls.txt"), "call\n");
   await fs.writeFile(path.join(dir, "args.json"), JSON.stringify(args));
   if (interactive) {
@@ -143,7 +155,9 @@ else if (args[0] === "auth") {
     blockers: scenario.blocked ? ["Fixture blocker"] : [],
   };
   if (["scout", "planner", "research"].includes(spec.task.role))
-    result.brief = "Relevant files and evidence; not a live-model evaluation.";
+    result.brief = liveSmoke
+      ? `a.txt: ${await fs.readFile("a.txt", "utf8")}`
+      : "Relevant files and evidence; not a live-model evaluation.";
   if (spec.task.role === "research" && !scenario.noSources)
     result.sources = [
       {

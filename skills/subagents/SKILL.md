@@ -101,6 +101,15 @@ After completion, read every required outcome, pass the barrier, synthesize, and
 spot-check material claims or disagreements in the source. Reopen the broad
 investigation only when missing or contradictory evidence requires it.
 
+A successful report is not automatic verification of its factual claims. For a
+consequential number or disputed behavior, compare the reported value with a
+small executable reproduction. Supply optional `evidenceChecks` on the relevant
+task when the reproduction is known: each takes `id`, `argv`, and optionally
+`timeoutMs`, like builder checks. They run under the supervisor after the report;
+read their `check-<id>.stdout.log` and compare it with the claim before using it.
+These checks must leave project files unchanged for inspection roles. Use them
+where they resolve uncertainty, not as a mandatory stage for every brief.
+
 Supply its role, task, cwd (the helper creates the isolated worktree), relevant
 instructions/context, model, permitted actions, acceptance criteria, and
 dependencies. Only builders take `ownership` and `checks`; omit both for scout,
@@ -117,6 +126,10 @@ Personas are prompt templates, not skills:
 - `reviewer`: independent adversarial inspection of an actual plan or change.
 
 Use only roles the job needs. Limit concurrent workers to three by default.
+For a well-specified fix with known files, acceptance criteria, and checks, start
+with a builder followed by an independent reviewer. `/pinata-fix` prepares this
+workflow. Add a scout only for an unanswered local question, research for an
+external question, and a planner when the dependencies or approach need it.
 Independent builders get separate worktrees and non-overlapping ownership.
 Dependent builders receive the verified changes of their predecessors. Reviewers
 inspect their target's real worktree, diff, outcome, and check logs.

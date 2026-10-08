@@ -7,19 +7,25 @@ is. Sizes are rough: S is a few days, M about a week, L several weeks.
 Every item follows the same rule as the rest of pinata: it should work with no
 configuration, and offer at most one simple override.
 
-## Where pinata stands
+## Current implementation
 
-The direct competitors are other Pi packages. pi-subagents ships scout,
-researcher, worker, and reviewer agents with parallel runs, chains, worktrees, a
-fleet view, and review loops, and it has about 100 times our installs.
-pi-herdsman and pi-herdr also run agents in Herdr panes. Outside Pi, Claude Code,
-Codex, and Cursor all have subagents, worktrees, and some form of best-of-N.
-Conductor, Claude Squad, and Sculptor manage parallel agents in worktrees.
+The workflow and reuse work keeps supervisor-run checks, independent review of
+exact evidence, and journaled integration. The feature branch implements:
 
-We will not win on breadth. What none of them do is verify a change the way
-pinata does: the supervisor runs the checks itself, the review approves one
-exact fingerprint, and integration is journaled and can be rolled back. The
-backlog keeps that and removes the friction around it.
+| Priority | Change                                                                                                              | Validation                                                                                                         |
+| -------- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| P0       | Preserve live Pi authentication/configuration, honor caller limits, and run installed-Pi compatibility checks in CI | Unmodified live smoke; fixture isolation tests; Node 22.19/24 Linux CI                                             |
+| P1-1     | Default well-specified fixes to builder → independent review; `/pinata-fix`                                         | Same live patch and checks with and without an optional scout; elapsed time and tool calls retained                |
+| P1-2     | Separate completed reports from factual evidence; optional `evidenceChecks`; strict quality-evaluation gates        | Tampering, failed reproduction, read-only invariants, scorer controls, and raw live trials                         |
+| P1-3     | Memory telemetry only: RSS/PSS, current readings, sampled peaks, status and widget                                  | Real process sampling, stale/PID-reuse handling, worker metrics; no new limits or admission controls               |
+| P1-4     | Five-minute readiness metadata cache across processes; overlapping probes/preparation                               | Invalidation, failed-probe retry, concurrent preparations, real startup measurements                               |
+| P1-5     | Shared eligible inspection trees, private prepared npm dependencies, optional verified CoW source trees             | Isolation, invalidation, lifecycle/link exclusions, corruption/cleanup tests, cold/warm mixed-repository benchmark |
+
+Ordinary Git checkout remains the default: verified CoW copies were slower in
+the measured fixture. `workspaceReuse: "copy-on-write"` enables them where sharing
+data extents is preferable. Prepared dependencies and eligible inspection sharing
+are on by default. See [validation](docs/validation.md#workflow-and-reuse-validation)
+and [testing](docs/testing.md) for evidence and reproducible commands.
 
 ## P0: shipped in 0.6.0
 
@@ -48,7 +54,7 @@ that edit. Ignored files stay out. The user's index is untouched.
 **Problem.** The adversarial reviewer is pinata's best feature, but it could
 only review a builder task from the same run. Reviewing your own work, a
 branch, or a pull request is the most common reason people reach for a
-subagent (pi-subagents `/parallel-review`, Bugbot, Claude Code `/code-review`).
+subagent.
 
 **Change.** A reviewer can target existing changes instead of a task:
 
@@ -71,7 +77,7 @@ fetching is refused.
 ### 3. Run status without a model turn
 
 **Problem.** The only way to check on a run was to ask Pi, which spends tokens
-and interrupts it. All three direct competitors show running agents in Pi.
+and interrupts it. A visible run view makes delegated work easier to follow.
 
 **Change.** A widget above the editor lists each running task with its state,
 elapsed time, tokens, and cost, and disappears when the run finishes. A footer
@@ -99,14 +105,13 @@ cap, and the completion message says why.
 
 **Size.** S.
 
-## P1: next
+## Remaining product work
 
-### 5. Recipe shortcuts
+### 5. Investigation shortcut
 
-`/pinata-fix` (scout, build, review, integrate) and `/pinata-investigate`
-(parallel scouts, then research). Easier to find than the skills, cheaper for the
-coordinator, and fewer rejected jobs like a scout that was given `ownership`.
-**Size.** S.
+`/pinata-fix` now uses builder → review for a well-specified fix. A complementary
+`/pinata-investigate` could coordinate distinct local questions and add research
+when external facts are needed. **Size.** S.
 
 ### 6. Deliver as a branch or pull request
 
@@ -120,8 +125,7 @@ already work. **Size.** M.
 
 Markdown personas in `~/.pi/agent/pinata/roles/` or `.pi/pinata/roles/` with a
 `base:` role. A custom role inherits the base role's tools and result schema, so
-the safety model stays the same. Every competitor lets people define agents;
-today `ROLES` is fixed in `lib/core.mjs`. **Size.** M.
+the safety model stays the same. Today `ROLES` is fixed in `lib/core.mjs`. **Size.** M.
 
 ### 8. `.worktreeinclude` (shipped in 0.6.0)
 
@@ -134,8 +138,7 @@ convention, so there is nothing new to learn. **Size.** S.
 
 Make typing into a worker pane a supported way to steer it, and record the
 intervention in the evidence so the reviewer knows the worker was steered.
-pi-herdr and @tintinweb/pi-subagents both support this. First find out what
-supervision does today when someone types into a pane. **Size.** M.
+First establish what supervision does when someone types into a pane. **Size.** M.
 
 ### 10. Validate macOS
 
@@ -148,8 +151,7 @@ runner. **Size.** S to M.
 
 Several models attempt the same task; supervisor checks and the reviewer pick
 the winner. The pieces exist; it needs a variant exception to the
-ownership-overlap rule. Cursor and Codex both have this, without an objective
-judge. **Size.** M to L.
+ownership-overlap rule while retaining independent verification. **Size.** M to L.
 
 ### 12. OS sandbox for builders
 
@@ -168,9 +170,21 @@ Headless workers plus the status widget. Reaches more people, but weakens the
 "watch them work" idea. A product decision before it is an engineering one.
 **Size.** L.
 
+### 15. Batch Git verification
+
+Large changes repeatedly inspect individual blobs. Batch tree/blob reads while
+retaining fresh worktree checks, review fingerprints, and rollback evidence.
+**Size.** M.
+
+### 16. Retained artifacts and history
+
+Define retention for old evidence, unintegrated worktrees, and prepared dependency
+caches. Index recent-run summaries without weakening recovery or silently deleting
+active resources. **Size.** M.
+
 ## Not planned
 
-- **Other agent harnesses as workers** (Claude Code, Codex). It breaks the
-  evidence contract, and pi-herdr already does it.
+- **Other agent harnesses as workers** (Claude Code, Codex). It changes the
+  evidence contract.
 - **Agents messaging each other.** The task graph and barriers are the point.
 - **Nested delegation.** The recursion guard is part of the trust story.

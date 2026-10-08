@@ -139,13 +139,50 @@ A failed setup stops the attempt before Pi starts. The outcome has
 - **Wrong command**: setup is fixed for the life of a run. Start a new run with
   a corrected `config.setup`.
 
+## Prepared dependencies
+
+With the default `workspaceReuse: true`, detected npm installs can reuse a
+prepared `node_modules` from an earlier builder or run in the same repository.
+The cache accepts registry-only lockfile v2/v3 installs without lifecycle hooks,
+workspaces, or local links. It is populated only after successful supervisor
+setup, before Pi starts. It never trusts an existing `node_modules` in your
+checkout as a prepared environment.
+
+The key includes package and lockfile contents, npm executable/version/settings,
+Node version, OS/architecture, and relevant environment. Concurrent builders can
+wait for the same preparation. Each receives a private copy, using native CoW
+where available. Internal relative `.bin` links remain relative; external or
+absolute symlinks prevent caching. A content digest verifies restored files.
+A failed install never publishes an entry; damaged entries are bypassed.
+
+Outcome `setup.cache` reports `hit` or `miss` when this path applies. A hit
+skips `npm ci`, while retaining the same check that dependency preparation left
+managed project files untouched. The per-worktree setup marker also supports
+repairs without copying or installing again when its inputs are unchanged.
+
+Custom setup, install hooks/native builds, pnpm/yarn/bun, Python environments,
+and local/workspace packages retain their normal setup commands and package
+manager caches. These can depend on absolute paths or arbitrary setup effects;
+pinata does not relocate them automatically. `workspaceReuse: false` disables
+prepared dependencies and inspection sharing for a job. The cache lives at
+`<git-common-dir>/pinata/cache/dependencies/` and is retained across normal run
+cleanup; it can be removed when no runs are using it.
+
+This keeps the separate dependency environments described by
+[Codex worktrees](https://learn.chatgpt.com/docs/environments/git-worktrees) and
+[Cursor worktrees](https://cursor.com/docs/configuration/worktrees). Cursor also
+advises against symlinking mutable dependencies into the main checkout. See
+[performance measurements](validation.md#workflow-and-reuse-validation) for the
+measured cold/warm behavior and its limits.
+
 ## What setup does not do
 
 - It runs only for builders. Scouts, planners, and researchers read files;
-  reviewers share their target builder's worktree, or get their own worktree
-  when they review existing changes.
+  reviewers use their target task's worktree. Eligible inspections of the same
+  revision share a checkout; executable checks and builder ancestors require
+  separate trees.
 - It runs once per worktree. A repair attempt reuses the installed worktree and
-  skips setup unless a lockfile changed.
+  skips setup unless a dependency manifest or lockfile changed.
 - Workers still cannot install packages. If a builder needs a new dependency,
   it reports a blocker. Add the dependency in your checkout and start a new run;
   the new lockfile reaches the worktree even before you commit it.

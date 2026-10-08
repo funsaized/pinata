@@ -1,5 +1,9 @@
 # Agent examples
 
+For a well-specified fix, use [fast-fix-job.json](jobs/fast-fix-job.json):
+builder → independent reviewer. Add a scout when a concrete uncertainty needs
+answering first. The `/pinata-fix` prompt prepares that workflow interactively.
+
 Copy an assignment into Pi and replace paths and acceptance criteria with your own.
 Ask Pi to delegate explicitly: `/scout` or another persona command alone applies
 the prompt to your current conversation and does not launch a worker.

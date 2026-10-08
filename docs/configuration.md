@@ -56,19 +56,20 @@ command that runs in builder worktrees, so read it before approving a run.
 
 ## Config
 
-| Field                | Default                    | Meaning                                                    |
-| -------------------- | -------------------------- | ---------------------------------------------------------- |
-| `pi`                 | `pi` on `PATH`             | Pi executable path or name                                 |
-| `herdr`              | `herdr` on `PATH`          | Herdr executable path or name                              |
-| `session`            | Captured Herdr environment | Existing named session; required outside Herdr             |
-| `models`             | `{}`                       | Model entries keyed by `default` or role                   |
-| `fallbacks`          | `{}`                       | Up to five approved model entries per role, in order       |
-| `passEnv`            | `[]`                       | Additional environment variable names allowed into workers |
-| `webExtension`       | Detected from Pi packages  | pi-web-access entry file; required for research            |
-| `setup`              | Detected from lockfiles    | Builder worktree setup command, or `false`; see below      |
-| `codemode`           | `true`                     | Give every worker Pi's `codemode` tool                     |
-| `includeUncommitted` | `true`                     | Start workers from your uncommitted changes; see below     |
-| `limits`             | Table below                | Worker, time, repair, turn, tool-call, and cost limits     |
+| Field                | Default                    | Meaning                                                                                                                                 |
+| -------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `pi`                 | `pi` on `PATH`             | Pi executable path or name                                                                                                              |
+| `herdr`              | `herdr` on `PATH`          | Herdr executable path or name                                                                                                           |
+| `session`            | Captured Herdr environment | Existing named session; required outside Herdr                                                                                          |
+| `models`             | `{}`                       | Model entries keyed by `default` or role                                                                                                |
+| `fallbacks`          | `{}`                       | Up to five approved model entries per role, in order                                                                                    |
+| `passEnv`            | `[]`                       | Additional environment variable names allowed into workers                                                                              |
+| `webExtension`       | Detected from Pi packages  | pi-web-access entry file; required for research                                                                                         |
+| `setup`              | Detected from lockfiles    | Builder worktree setup command, or `false`; see below                                                                                   |
+| `codemode`           | `true`                     | Give every worker Pi's `codemode` tool                                                                                                  |
+| `workspaceReuse`     | `true`                     | Share eligible inspections and reuse safe npm dependencies; `"copy-on-write"` also enables native CoW checkouts; `false` disables reuse |
+| `includeUncommitted` | `true`                     | Start workers from your uncommitted changes; see below                                                                                  |
+| `limits`             | Table below                | Worker, time, repair, turn, tool-call, and cost limits                                                                                  |
 
 Roles are `scout`, `research`, `planner`, `builder`, and `reviewer`. `session`
 accepts letters, digits, underscores, and hyphens. Inside Herdr, the helper
@@ -101,7 +102,11 @@ Allowed values are `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`
 Before launching a worker, pinata checks authentication and exact model/thinking
 selection with an ephemeral offline RPC metadata probe. It blocks a selection
 that Pi clamps or changes. Readiness does not guarantee the next remote request
-will succeed.
+will succeed. Successful catalog/auth/selection metadata is cached privately per run
+for up to five minutes, including across CLI processes. Changes to the Pi executable,
+auth/model/settings files, project settings, or inherited environment invalidate it.
+Failures are retried; credentials and authentication output are never cached.
+Independent readiness probes and task preparation overlap; Herdr mutations stay ordered.
 
 This list selects one preferred model; it is not a retry order. An unavailable or
 unauthenticated explicit override does not fall through to the default or current model.
@@ -162,11 +167,31 @@ Detection reports `source: "none"` with a `reason`, and runs nothing, when there
 is no lockfile, when one ecosystem has conflicting lockfiles, or when the
 package manager is not on `PATH`.
 
-Setup runs once per builder worktree, keyed by the command and the lockfile
+Setup runs once per builder worktree, keyed by the command, dependency manifests, and lockfile
 contents. It gets the worker environment plus `PINATA_ROOT`, the target
 repository path, and counts against the attempt deadline. It fails the attempt
 with `failureStage: "setup"` when it exits nonzero, times out, or changes any
 tracked or unignored file. See [Give builders their dependencies](dependencies.md).
+
+### Workspace reuse
+
+The default `workspaceReuse: true` shares a checkout between tool-restricted
+inspections of the same revision when they have no executable checks and no
+builder ancestors. Builders and check-bearing inspections keep private writable
+trees. A reviewer of a task continues to use its target’s tree.
+
+Detected npm installs with registry dependencies, no lifecycle hooks, no
+workspaces, and no local links can reuse a prepared dependency tree. Copies
+have distinct file inodes; no builder shares a writable `node_modules` with
+your checkout or another builder. Other setup commands run normally. See
+[dependency reuse](dependencies.md#prepared-dependencies).
+
+Set `workspaceReuse: "copy-on-write"` to additionally attempt native CoW copies
+for regular-file source trees of at least 16 MiB. Git verifies their contents
+against the requested commit; unsupported filesystems or changed source contents
+fall back to ordinary checkout. Ordinary Git checkout remains the default because
+it was faster in the recorded local benchmark. Set `workspaceReuse: false` to
+disable inspection sharing, prepared dependency caching, and CoW materialization.
 
 ### Uncommitted changes
 
@@ -223,26 +248,27 @@ over. Usage that Pi cannot price is not counted.
 
 ## Task
 
-| Field            | Required / default          | Meaning                                                    |
-| ---------------- | --------------------------- | ---------------------------------------------------------- |
-| `id`             | Required                    | Matches `^[a-z][a-z0-9-]{0,31}$`                           |
-| `role`           | Required                    | One of the five roles                                      |
-| `task`           | Required                    | Nonempty assignment text                                   |
-| `acceptance`     | Required                    | Nonempty array of acceptance strings                       |
-| `instructions`   | `[]`                        | Additional instructions for this task                      |
-| `context`        | `[]`                        | Relevant context strings                                   |
-| `after`          | `[]`                        | Required predecessor task IDs                              |
-| `model`          | Model selection above       | Explicit provider, ID, and thinking override               |
-| `ownership`      | `[]`; required for builders | Repository-relative files or directory prefixes, not globs |
-| `checks`         | `[]`                        | Approved checks for a builder                              |
-| `noChecksReason` | Conditional                 | Required for a builder without checks                      |
-| `reviewOf`       | Reviewers: one of three     | Target task ID; must also appear directly in `after`       |
-| `reviewBase`     | Reviewers: one of three     | Review your checkout against this Git revision; see below  |
-| `reviewPr`       | Reviewers: one of three     | Review this GitHub pull request; see below                 |
+| Field            | Required / default          | Meaning                                                                 |
+| ---------------- | --------------------------- | ----------------------------------------------------------------------- |
+| `id`             | Required                    | Matches `^[a-z][a-z0-9-]{0,31}$`                                        |
+| `role`           | Required                    | One of the five roles                                                   |
+| `task`           | Required                    | Nonempty assignment text                                                |
+| `acceptance`     | Required                    | Nonempty array of acceptance strings                                    |
+| `instructions`   | `[]`                        | Additional instructions for this task                                   |
+| `context`        | `[]`                        | Relevant context strings                                                |
+| `after`          | `[]`                        | Required predecessor task IDs                                           |
+| `model`          | Model selection above       | Explicit provider, ID, and thinking override                            |
+| `ownership`      | `[]`; required for builders | Repository-relative files or directory prefixes, not globs              |
+| `checks`         | `[]`                        | Approved checks for a builder                                           |
+| `evidenceChecks` | `[]`                        | Optional supervisor commands for targeted factual evidence, on any role |
+| `noChecksReason` | Conditional                 | Required for a builder without checks                                   |
+| `reviewOf`       | Reviewers: one of three     | Target task ID; must also appear directly in `after`                    |
+| `reviewBase`     | Reviewers: one of three     | Review your checkout against this Git revision; see below               |
+| `reviewPr`       | Reviewers: one of three     | Review this GitHub pull request; see below                              |
 
 Ownership rejects absolute paths, traversal, and `.git`. Independent builders
 cannot overlap ownership; builders ordered by dependencies can. Only builders
-can have nonempty ownership or checks. Builder tasks require `allowWrites: true`.
+can have nonempty ownership or `checks`; all roles can have `evidenceChecks`. Builder tasks require `allowWrites: true`.
 A reviewer can target any non-reviewer task.
 
 ### Reviewing existing changes
@@ -292,7 +318,7 @@ tools require `web_enable` first. See [Use codemode in workers](codemode.md). Se
 }
 ```
 
-`id` uses the task-ID syntax and must be unique within the check list. `argv`
+`id` uses the task-ID syntax and must be unique across both `checks` and `evidenceChecks`. `argv`
 is a nonempty array of strings. `timeoutMs` defaults to `120000` (two minutes);
 when supplied it must be between 1 and 1200000. Checks also remain subject to
 the enclosing attempt or job deadline.
@@ -300,6 +326,21 @@ the enclosing attempt or job deadline.
 There is no shell parsing. An explicitly approved `['sh', '-c', '...']` command
 is needed for shell syntax. Never interpolate untrusted task text. Builder checks
 run in the worker worktree; integrated checks run in the target repository.
+
+### Factual evidence
+
+A successful report means its process, envelope, and file behavior were checked.
+It does not establish that every factual claim is true. Use `evidenceChecks` for
+consequential claims that can be reproduced with a specific command; these use
+the same `{id, argv, timeoutMs?}` format as builder checks and run after the
+worker answers. Their exit status and output logs are included in the outcome
+fingerprint. A failing check prevents task success. An inspection check that
+changes managed files also fails the task.
+
+Status separates `verification.report`, `verification.acceptanceChecks`, and
+`verification.factualEvidence`, and labels report claims
+`not-automatically-verified`. Match a claim to the actual check and its output;
+a passing command does not certify unrelated prose.
 
 ## Results
 
@@ -340,31 +381,34 @@ Runs live under `<git-common-dir>/pinata/<run-id>/`, outside checked-out content
 Directories are private (`0700`); state files are `0600`. Keep the `run` path
 returned by `init`.
 
-| Artifact                                                                    | Purpose                                                     |
-| --------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| `manifest.json`                                                             | Saved run, tasks, attempts, notes, and integration state    |
-| `coordinator.lock`                                                          | Per-run coordinator ownership                               |
-| `background.log`                                                            | Background coordinator errors                               |
-| `tasks/<id>/<n>/task.json`                                                  | Task specification and correlation digest                   |
-| `tasks/<id>/<n>/environment.json`                                           | Single-use environment capsule; deleted before Pi starts    |
-| `tasks/<id>/<n>/claim.json`                                                 | Exclusive worker claim                                      |
-| `tasks/<id>/<n>/context.md`                                                 | Worker briefing                                             |
-| `tasks/<id>/<n>/result.json`                                                | Validated worker claim                                      |
-| `tasks/<id>/<n>/outcome.json`                                               | Process, result, checks, snapshot, and fingerprint evidence |
-| `tasks/<id>/<n>/process.json`                                               | Observed process identities for reconciliation              |
-| `tasks/<id>/<n>/cancel.json`                                                | Persisted cancellation request                              |
-| `tasks/<id>/<n>/pi.stdout.log`, `pi.stderr.log`                             | Private Pi events; headless JSON output and stderr          |
-| `tasks/<id>/<n>/usage.json`                                                 | Live token usage and cost, updated after each model turn    |
-| `tasks/<id>/<n>/setup.stdout.log`, `setup.stderr.log`                       | Builder setup output                                        |
-| `tasks/<id>/<n>/tmp/`                                                       | Pi's `TMPDIR`, including codemode overflow files            |
-| `setup/<id>.json`                                                           | Setup marker for a builder worktree                         |
-| `tasks/<id>/<n>/check-<check-id>.stdout.log`, `check-<check-id>.stderr.log` | Supervisor-run check output                                 |
-| `tasks/<id>/<n>/review.diff`                                                | Diff supplied to a reviewer                                 |
-| `tasks/<id>/<n>/files/`                                                     | Content-addressed file evidence                             |
-| `tasks/<id>/<n>/sessions/`                                                  | Private Pi session files                                    |
-| `worktrees/<id>/`                                                           | Task worktree; a reviewer uses its target's tree            |
-| `integration/journal.json`                                                  | Local integration progress and rollback evidence            |
-| `integration/before/`                                                       | File contents retained for rollback                         |
+| Artifact                                                                    | Purpose                                                         |
+| --------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| `manifest.json`                                                             | Saved run, tasks, attempts, notes, and integration state        |
+| `readiness.json`                                                            | Expiring model/auth readiness metadata; contains no credentials |
+| `coordinator.lock`                                                          | Per-run coordinator ownership                                   |
+| `background.log`                                                            | Background coordinator errors                                   |
+| `tasks/<id>/<n>/task.json`                                                  | Task specification and correlation digest                       |
+| `tasks/<id>/<n>/environment.json`                                           | Single-use environment capsule; deleted before Pi starts        |
+| `tasks/<id>/<n>/claim.json`                                                 | Exclusive worker claim                                          |
+| `tasks/<id>/<n>/context.md`                                                 | Worker briefing                                                 |
+| `tasks/<id>/<n>/result.json`                                                | Validated worker claim                                          |
+| `tasks/<id>/<n>/outcome.json`                                               | Process, result, checks, snapshot, and fingerprint evidence     |
+| `tasks/<id>/<n>/process.json`                                               | Observed process identities for reconciliation                  |
+| `tasks/<id>/<n>/cancel.json`                                                | Persisted cancellation request                                  |
+| `tasks/<id>/<n>/pi.stdout.log`, `pi.stderr.log`                             | Private Pi events; headless JSON output and stderr              |
+| `tasks/<id>/<n>/memory.json`                                                | Sampled supervisor/descendant memory and peaks                  |
+| `tasks/<id>/<n>/usage.json`                                                 | Live token usage and cost, updated after each model turn        |
+| `tasks/<id>/<n>/setup.stdout.log`, `setup.stderr.log`                       | Builder setup output                                            |
+| `tasks/<id>/<n>/tmp/`                                                       | Pi's `TMPDIR`, including codemode overflow files                |
+| `setup/<id>.json`                                                           | Setup marker for a builder worktree                             |
+| `tasks/<id>/<n>/check-<check-id>.stdout.log`, `check-<check-id>.stderr.log` | Supervisor-run check output                                     |
+| `tasks/<id>/<n>/review.diff`                                                | Diff supplied to a reviewer                                     |
+| `tasks/<id>/<n>/files/`                                                     | Content-addressed file evidence                                 |
+| `tasks/<id>/<n>/sessions/`                                                  | Private Pi session files                                        |
+| `worktrees/inspection-<revision-digest>/`                                   | Shared checkout for eligible inspections                        |
+| `worktrees/<id>/`                                                           | Task worktree; a reviewer uses its target's tree                |
+| `integration/journal.json`                                                  | Local integration progress and rollback evidence                |
+| `integration/before/`                                                       | File contents retained for rollback                             |
 
 Two kinds of Git ref live under `refs/pinata/<run-id>/`: `base` for the
 uncommitted snapshot, and `pr-<number>` and `pr-<number>-base` for fetched pull
@@ -389,10 +433,20 @@ successfully.
 An outcome includes process exit, settlement, final stop reason, actual check
 arguments/cwd/exit/log references, and file evidence. It also records `setup`
 (the setup command's process evidence, or `{skipped: true}` when the worktree was
-already set up) and `toolCalls`. A failed outcome names its `failureStage`:
+already set up; `cache: "hit"` or `"miss"` when prepared dependencies apply) and `toolCalls`. A failed outcome names its `failureStage`:
 `setup`, `process`, `result`, or `verification`. `result.json` alone is not
 proof of success. Malformed, stale, oversized, symlinked, path-escaping, or
 uncorrelated evidence is rejected. JSON input files are limited to 1 MiB;
 managed regular files are limited to 16 MiB.
+
+Memory is telemetry only. `status`, `/pinata`, and the widget report worker
+supervisors plus their observed descendants: RSS and Linux PSS, sampled about
+once a second. The shared Herdr server and coordinator are excluded. Missing or
+stale readings are unknown; sampling failures never stop work. Task metrics keep
+sampled peaks. Run `peakRssUpperBoundBytes` / `peakPssUpperBoundBytes` sum the
+individual sampled peaks, which need not occur together. No memory caps or
+additional admission controls are applied. Prepared dependencies live separately
+under `<git-common-dir>/pinata/cache/dependencies/`; normal run cleanup retains
+that cache for later jobs.
 
 [Command reference](commands.md) · [Recovery](recovery.md) · [Documentation index](README.md)

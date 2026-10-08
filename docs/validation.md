@@ -5,6 +5,65 @@ unproven. For the commands that reproduce these runs, see [testing](testing.md).
 For the trust boundaries the results apply to, see
 [architecture](architecture.md#trust-and-safety).
 
+## Workflow and reuse validation
+
+On 2026-10-08, the feature branch passed **152 deterministic tests, 0 failures**
+in 41 seconds, formatting/lint, and the packed Pi 1.1.0 compatibility, native
+completion, cancellation, and codemode checks. The repaired, unmodified live
+smoke passed with real Pi and Herdr. Real web-provider and macOS checks were
+not run in this pass. The new CI matrix is configured for Node 22.19 and 24;
+these local measurements used Node 26.7.0, Git 2.55.0, and Herdr 0.9.1 on Linux.
+
+[Recorded measurements](measurements/workflow-reuse-2026-10-08.json) retain the
+numbers below. Commands and fixtures are in [testing](testing.md).
+
+| Measurement                                                | Result                                                                       |
+| ---------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| Real Pi readiness                                          | 649 ms cold; 0.26 ms warm; 2.48 ms from a fresh process using saved metadata |
+| Builder → independent review                               | 60.3 s, 27 tool calls, 63,623 tokens, $0.004243                              |
+| Scout → builder → independent review                       | 75.3 s, 40 tool calls, 69,339 tokens, $0.004773                              |
+| Mixed repository on Btrfs                                  | 2,131 tracked files, about 144 MiB of source/asset data                      |
+| Ordinary Git checkout, three trials                        | 443 / 116 / 120 ms                                                           |
+| Verified CoW checkout, three trials                        | 1,354 / 1,065 / 708 ms                                                       |
+| 91-package npm fixture, cold install and cache preparation | 2,713 ms                                                                     |
+| Same npm fixture, warm download cache with normal `npm ci` | 1,539 ms                                                                     |
+| Same npm fixture, verified prepared restore                | 1,211 ms                                                                     |
+
+The two live workflows used Luna, with low scout thinking, medium builder
+thinking, and high reviewer thinking. They produced the same minimal patch,
+passed the same supervisor and integration checks, and received independent
+approval. This is one stochastic paired sample, not a general latency guarantee.
+
+The repository benchmark verifies real Git state, distinct file inodes, writes
+that leave the source unchanged, and fallback to the requested commit after a
+source edit. It runs installed TypeScript, ESLint, and Prettier binaries after
+each dependency setup. This synthetic fixture does not establish results for
+all monorepos, filesystems, or package managers. Physical extent savings were
+not measured. Ordinary checkout stays the default because verified CoW was
+slower here; CoW remains available with `workspaceReuse: "copy-on-write"`.
+
+The strict live quality evaluation **failed**, and its failed trial is retained.
+All eight live workers completed without infrastructure errors. Scouts answered
+13/14 factual questions correctly: one reported three POST fetch calls where
+the current implementation makes two. Control reviewers made one false approval,
+missing the leading-zero defect; the other three control verdicts were correct.
+The gate returned a nonzero exit status for those failures.
+
+The live builder passed the original 28 oracle cases, but its independent
+reviewer correctly rejected a date-overflow case outside that oracle. The saved
+candidate returned `9260570019540992` instead of `null` for
+`parseRetryAfter("Fri, 01 Jan 9999 00:00:00 GMT", -9007199254740991)`.
+That reproduction is now the 29th oracle case; replaying the unchanged candidate
+passes 28/29. The original trial scores remain unchanged in the measurement
+record, alongside the replay. No rerun was substituted to hide the failure.
+
+Memory artifacts were populated for every live worker in the quality trial.
+They include supervisor and observed descendants, with sampled PSS peaks ranging
+from about 173 to 268 MiB per worker. Those are individual sampled peaks, not a
+simultaneous run peak; shared Herdr and coordinator memory are excluded.
+The implementation adds telemetry only, with no new memory caps or admission
+controls.
+
 ## 0.6.1 release checks
 
 On 2026-10-06, the patch passed **132 tests, 0 failures** in 43 seconds,
@@ -326,8 +385,7 @@ APIs. This is a portability design, not substitute evidence for macOS execution.
 
 Read [architecture](architecture.md#trust-and-safety) before using pinata on
 hostile repositories or jobs with destructive side effects. In particular, it is
-not an OS sandbox, process containment is observational, worktrees start from
-committed HEAD, ignored files are not integrated, ordinary files are limited to
+not an OS sandbox, process containment is observational, worktrees start from the captured checkout, ignored files are not integrated, ordinary files are limited to
 16 MiB, and releases remain explicitly authorized coordinator actions. Do not
 upload private run directories as generic bug-report attachments.
 

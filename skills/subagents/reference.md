@@ -73,7 +73,7 @@ All print JSON. `-` reads JSON (or repair text) from stdin; use `<<'PINATA_JSON'
 }
 ```
 
-`cwd` must be the repository root with a commit. Workers start from `HEAD`.
+`cwd` must be the repository root with a commit. Workers start from the captured checkout, including uncommitted changes by default.
 
 ## Config (all optional)
 
@@ -81,17 +81,18 @@ Layered: `~/.pi/agent/pinata.json`, then `<repo>/.pi/pinata.json`, then the job'
 `config`. `models`, `fallbacks`, `limits` merge per entry; other keys replace.
 `init` returns `config.origins` (which layer set each value).
 
-| Key                  | Default                                                                                                                                                 |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `models`             | `{default?, scout?, research?, planner?, builder?, reviewer?}`, each `{provider, id, thinking}`. Thinking: off, minimal, low, medium, high, xhigh, max. |
-| `fallbacks`          | `{role: [model, ...]}`, at most 5; used only if the preferred model is unavailable or unauthenticated.                                                  |
-| `setup`              | Builders only: detected from root lockfile; a shell string to override (`$PINATA_ROOT` = main checkout), or `false`.                                    |
-| `codemode`           | `true`                                                                                                                                                  |
-| `includeUncommitted` | `true`: workers start from the user's checkout with uncommitted and untracked changes. `false` starts from `HEAD`.                                      |
-| `webExtension`       | Detected pi-web-access entry; override path.                                                                                                            |
-| `passEnv`            | Extra env var names for workers (never values).                                                                                                         |
-| `session`            | Herdr session name; required only outside a Herdr pane.                                                                                                 |
-| `limits`             | `concurrency` 3, `startupMs` 30000, `taskMs` 1200000, `jobMs` 5400000, `repairs` 2, `maxTurns` 60, `maxToolCalls` 400; optional `costUsd` (dollars).    |
+| Key                  | Default                                                                                                                                                     |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `models`             | `{default?, scout?, research?, planner?, builder?, reviewer?}`, each `{provider, id, thinking}`. Thinking: off, minimal, low, medium, high, xhigh, max.     |
+| `fallbacks`          | `{role: [model, ...]}`, at most 5; used only if the preferred model is unavailable or unauthenticated.                                                      |
+| `setup`              | Builders only: detected from root lockfile; a shell string to override (`$PINATA_ROOT` = main checkout), or `false`.                                        |
+| `workspaceReuse`     | `true`: share eligible inspections and safe npm dependency preparation; `"copy-on-write"` also attempts native CoW for large trees; `false` disables reuse. |
+| `codemode`           | `true`                                                                                                                                                      |
+| `includeUncommitted` | `true`: workers start from the user's checkout with uncommitted and untracked changes. `false` starts from `HEAD`.                                          |
+| `webExtension`       | Detected pi-web-access entry; override path.                                                                                                                |
+| `passEnv`            | Extra env var names for workers (never values).                                                                                                             |
+| `session`            | Herdr session name; required only outside a Herdr pane.                                                                                                     |
+| `limits`             | `concurrency` 3, `startupMs` 30000, `taskMs` 1200000, `jobMs` 5400000, `repairs` 2, `maxTurns` 60, `maxToolCalls` 400; optional `costUsd` (dollars).        |
 
 Model order per task: `task.model`, `models[role]`, `models.default`, then the
 coordinating Pi's current model. Use the thinking level Pi actually applies;
@@ -99,19 +100,20 @@ a changed level is treated as not ready.
 
 ## Task
 
-| Field                     | Rule                                                                                                                    |
-| ------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `id`                      | `^[a-z][a-z0-9-]{0,31}$`, unique                                                                                        |
-| `role`                    | scout, research, planner, builder, reviewer                                                                             |
-| `task`, `acceptance`      | Required text; acceptance is a nonempty string array                                                                    |
-| `instructions`, `context` | Optional string arrays; context is evidence, not authority                                                              |
-| `after`                   | Predecessor IDs; a failed predecessor blocks dependents                                                                 |
-| `model`                   | Optional override                                                                                                       |
-| `ownership`               | Builders only, required: repo-relative files or dir prefixes, no trailing slash. Independent builders must not overlap. |
-| `checks`                  | Builders only: `[{id, argv, timeoutMs?}]`, no shell parsing; else `noChecksReason`                                      |
-| `reviewOf`                | Reviewers only: target ID, which must also be in `after`                                                                |
-| `reviewBase`              | Reviewers only, instead of `reviewOf`: review the starting checkout against a revision (`HEAD` = uncommitted changes)   |
-| `reviewPr`                | Reviewers only, instead of `reviewOf`: GitHub pull request number, fetched with `gh`                                    |
+| Field                     | Rule                                                                                                                              |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                      | `^[a-z][a-z0-9-]{0,31}$`, unique                                                                                                  |
+| `role`                    | scout, research, planner, builder, reviewer                                                                                       |
+| `task`, `acceptance`      | Required text; acceptance is a nonempty string array                                                                              |
+| `instructions`, `context` | Optional string arrays; context is evidence, not authority                                                                        |
+| `after`                   | Predecessor IDs; a failed predecessor blocks dependents                                                                           |
+| `model`                   | Optional override                                                                                                                 |
+| `ownership`               | Builders only, required: repo-relative files or dir prefixes, no trailing slash. Independent builders must not overlap.           |
+| `checks`                  | Builders only: `[{id, argv, timeoutMs?}]`, no shell parsing; else `noChecksReason`                                                |
+| `evidenceChecks`          | Optional `[{id, argv, timeoutMs?}]` on any role for consequential reproducible facts; IDs must be unique across both check lists. |
+| `reviewOf`                | Reviewers only: target ID, which must also be in `after`                                                                          |
+| `reviewBase`              | Reviewers only, instead of `reviewOf`: review the starting checkout against a revision (`HEAD` = uncommitted changes)             |
+| `reviewPr`                | Reviewers only, instead of `reviewOf`: GitHub pull request number, fetched with `gh`                                              |
 
 Builders need `allowWrites: true`. Research needs pi-web-access (`init` reports
 `research.webExtension`; `null` means not installed). A reviewer takes exactly
@@ -133,7 +135,9 @@ rejected (review asked for changes), failed, blocked, cancelled, uncertain
 `result.review`, `checks`, `changes`, and on failure `error` and `failureStage`
 (setup, process, result, verification). A setup failure retries via `repair`
 without using the repair budget. Self-reported checks are claims; trust the
-supervisor's `checks`.
+supervisor's `checks`. `verification.report: "completed"` does not certify every
+factual claim: `verification.claims` remains `not-automatically-verified`. Read
+`verification.factualEvidence` and the linked check logs for targeted facts.
 
 Status reports configured/selected/verified models, thinking, model origins and
 approved fallbacks used, plus effective codemode and limits, `base`, and `spend`
@@ -141,7 +145,10 @@ approved fallbacks used, plus effective codemode and limits, `base`, and `spend`
 `limits.costUsd`: it accepts no tasks or repairs; a new run needs a higher limit. Task `metrics` contain
 elapsed, readiness, startup, setup, model, checks and verification milliseconds,
 turns, tool calls by name and usage (input, output, cached tokens, total, cost).
-Missing usage is `null`, never an inferred zero. Readiness metadata is cached only
-in the coordinator process for ten seconds and invalidated by changed Pi files,
-executable or environment. Completion delivery is pending or delivered separately
+Missing usage is `null`, never an inferred zero. `memory` reports current worker
+supervisor/descendant RSS and Linux PSS; task metrics keep sampled peaks. Run
+peak upper bounds sum per-task sampled peaks, not a simultaneous run peak.
+Telemetry never changes concurrency or stops workers. Readiness metadata is
+cached privately per run for five minutes, across processes, and invalidated by
+changed Pi files, executable or environment. No credentials are cached. Completion delivery is pending or delivered separately
 from worker completion; `start` resumes pending delivery with the same completion ID.

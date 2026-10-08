@@ -44,6 +44,10 @@ touches my checkout.
 ```
 
 ```text
+/pinata-fix Correct the seconds-to-milliseconds conversion in src/duration.mjs.
+```
+
+```text
 /pinata-review Focus on the error handling.
 ```
 
@@ -84,8 +88,8 @@ always review before you merge.
 - **Review your own work, too.** `/pinata-review` points several reviewers at
   your uncommitted changes, a branch, or a GitHub pull request and gives you one
   combined list of findings.
-- **Cost is visible.** Above the editor, Pi lists each running agent with its
-  time, tokens, and cost. Set `limits.costUsd` to stop a run at a dollar amount.
+- **Cost and memory are visible.** Above the editor, Pi lists each running agent
+  with time, tokens, cost, and sampled memory usage. Set `limits.costUsd` to stop a run at a dollar amount.
 - **Cleanup is automatic.** Finished workspaces close, and worktrees are removed
   once their work is done or merged. Results are kept, so you can go back and
   read what each agent found.
