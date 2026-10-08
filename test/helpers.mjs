@@ -49,7 +49,8 @@ export async function fixture(t, tasks, options = {}) {
         if (value === undefined) delete process.env[key];
         else process.env[key] = value;
       }
-      await fs.rm(repo.dir, { recursive: true, force: true });
+      // A cancelled worker can still be writing its last files for a moment.
+      await fs.rm(repo.dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
     }
   });
   return {
