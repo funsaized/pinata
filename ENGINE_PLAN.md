@@ -795,13 +795,13 @@ Gate 1 passes.
     that falls behind.
   - Commands: `steer` and `abort`.
   - Done when a protocol test with a deliberately slow client recovers through a snapshot.
-- [ ] **E5.5 External viewer (M).**
+- [x] **E5.5 External viewer (M).**
   - Path: `viewer/main.ts` connects through `ipc/client.ts` and renders the same
     components as E4.3. It adds a run and agent picker, steer input, and follows new
     agents.
   - The theme comes from `welcome.theme`, so it matches the parent Pi.
   - Done when `pinata view` can attach, detach and re-attach mid-run on three OSes.
-- [ ] **E5.6 Viewer and headless runtime (S).** Measure three options on all three OSes:
+- [x] **E5.6 Viewer and headless runtime (S).** Measure three options on all three OSes:
   - **(a)** the `pi` binary hosting the viewer as an extension command in interactive
     mode, through `ctx.ui.custom` full-screen;
   - **(b)** Node + `pi-coding-agent` components;
@@ -1115,6 +1115,8 @@ Verified against Pi 1.1.0 source. Re-check when upgrading.
 | 2026-10-08 | E3.7      | Linux | pi binary, loopback A/B: parent event-loop lag p99, fan-out 32 / 64 / stress-64                | 85 / 248 / 71 ms                                           | 0.7.0 coordinator ~5 ms; in-process agents set up on the parent's thread (see notes)                                            |
 | 2026-10-08 | E4.6      | Linux | interactive pi (pty, 120x40), loopback, ux-8 with widget, footer and detail view open: lag p99 | 10.0 ms (9.9–10.3 over 4 runs)                             | target < 20 ms; wall 1.9 s; `bench/results/linux-2026-10-08-ux-tui.json`                                                        |
 | 2026-10-08 | E5.2      | Linux | pi binary, faux, lean vs observe (2 runs each): CPU ms fanout-8 / stress-64 / ux-8             | 221–224 / 816–836 / 475–499 vs 229–240 / 826–867 / 480–517 | wall within 2%, memory per agent and lag unchanged; observe adds the live log, live transcripts and a 2 s telemetry sample      |
+| 2026-10-08 | E5.6      | Linux | viewer startup to first snapshot on screen / RSS, median of 5: (a) pi binary + extension       | 549 ms / 147 MB                                            | limits < 1 s, < 150 MB: met, so (a) is the default (viewer and headless host); `bench/viewer.ts`                                |
+| 2026-10-08 | E5.6      | Linux | same, (b) Node + pi-coding-agent components / (c) Node + pi-tui only                           | 467 ms / 166 MB; 121 ms / 99 MB                            | (c) has no Pi components (plain status lines); macOS numbers come from CI's "Viewer runtimes" step                              |
 
 ## Progress notes
 
@@ -1144,7 +1146,8 @@ Read this section and the plan before resuming after a context reset.
 - M5: E5.1, E5.3 and E5.4 are done (`engine/ipc/*`, `test/engine/ipc.test.ts`, the modes test
   in `pi-adapter.test.ts`; CI covers the three OSes). Next: E5.2 telemetry, E5.5 viewer
   (`pinata view` through a small `bin/pinata.mjs` that starts `pi` with the viewer extension),
-  E5.6, E5.7. E5.2 is done (`engine/core/telemetry.ts`; `processRss` is ready for M6 to
+  E5.7. E5.5 (`engine/viewer/*`, `bin/pinata.mjs`, `test/engine/viewer.test.ts`) and E5.6
+  (decision (a), `bench/viewer.ts`) are done. E5.2 is done (`engine/core/telemetry.ts`; `processRss` is ready for M6 to
   report agent processes through `Telemetry.processes`).
 - E0.7 upstream issue: not opened yet (outward-facing; include the `ensureTool` finding).
 
@@ -1264,6 +1267,14 @@ Read this section and the plan before resuming after a context reset.
   identical commits passed and failed the same bounds on macOS and Windows runners
   (e.g. Windows dependent p99 2.2–3.6 ms, then 6.1 ms; macOS capture < 100 ms, then 134 ms;
   macOS fan-out-8 spawn p50 < 20 ms, then 22 ms). The targets themselves are unchanged.
+- Viewer (E5.5/E5.6): `pinata view [run] [task]` (package `bin`) starts the `pi` binary with
+  only `engine/viewer/main.ts`, which opens a full-screen overlay: header, agent picker and
+  the E4.3 detail view over the socket (a `messages` request/response frame pair is a
+  protocol addition). It follows newly started agents until the user picks one; Tab cycles
+  live runs. The parent's theme is applied as a Theme instance, which Pi does not save to
+  settings (`setTheme(name)` would). Windows has no pseudo-terminal for E5.6's measurement
+  (and E4.6), so Windows numbers are not recorded; the viewer's code is shared and its
+  attach/steer/re-attach test runs on Windows.
 - Telemetry (E5.2): a run-level `telemetry` event (schema addition) every 2 s in observe mode
   with RSS, heap, event-loop utilization and `lateMs` (how late the sampling timer fired).
   It does not use `monitorEventLoopDelay`: under Bun a second histogram reset the host's own

@@ -1,5 +1,6 @@
 // `pinata view`: a Pi extension that opens the viewer full-screen in interactive Pi, attached
 // to a run's socket. bin/pinata.mjs starts Pi with only this extension and PINATA_VIEW set.
+import { writeFileSync } from "node:fs";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { IpcClient } from "../ipc/client.ts";
 import { ViewerScreen } from "./screen.ts";
@@ -10,11 +11,31 @@ export interface ViewSpec {
   cwd: string;
 }
 
+// The viewer benchmark (E5.6) sets PINATA_VIEW_READY: when the first snapshot is on screen,
+// the viewer writes the time and its memory there.
+export function markReady(screen: ViewerScreen, tui: { requestRender(): void }): void {
+  const file = process.env.PINATA_VIEW_READY;
+  if (!file) return;
+  void screen.ready.then(() => {
+    tui.requestRender();
+    setTimeout(() => {
+      writeFileSync(
+        file,
+        JSON.stringify({
+          at: performance.timeOrigin + performance.now(),
+          rssMB: process.memoryUsage().rss / 1048576,
+          status: screen.status,
+        }),
+      );
+    }, 0);
+  });
+}
+
 export async function openViewer(ctx: ExtensionContext, spec: ViewSpec): Promise<void> {
   let themed = false;
   await ctx.ui.custom<void>(
-    (tui, theme, keys, done) =>
-      new ViewerScreen({
+    (tui, theme, keys, done) => {
+      const screen = new ViewerScreen({
         tui,
         theme,
         keys,
@@ -32,7 +53,10 @@ export async function openViewer(ctx: ExtensionContext, spec: ViewSpec): Promise
           }
           return client;
         },
-      }),
+      });
+      markReady(screen, tui);
+      return screen;
+    },
     { overlay: true, overlayOptions: { width: "100%", maxHeight: "100%", anchor: "center" } },
   );
 }

@@ -45,6 +45,9 @@ jobs:
         # `script` provides the terminal; Windows has no equivalent without extra tools.
         if: runner.os != 'Windows'
         run: npm run bench -- --ci --host tui --scenario ux-8
+      - name: Viewer runtimes (E5.6)
+        if: runner.os != 'Windows'
+        run: node bench/viewer.ts --runs 3
       - name: Check 0.7.0 against loopback providers
         # 0.7.0's packed smokes only ever ran on Linux; they stay there until E9.5 removes them.
         if: runner.os == 'Linux'
