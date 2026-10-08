@@ -73,7 +73,11 @@ test("dependents launch within 1 ms (p99) of their predecessor settling, at 64 a
     if (round > 0) gaps.push(...measured);
   }
   gaps.sort((a, b) => a - b);
-  const p99 = gaps[Math.ceil(gaps.length * 0.99) - 1];
+  const at = (q: number) => gaps[Math.ceil(gaps.length * q) - 1];
+  const p99 = at(0.99);
+  t.diagnostic(
+    `dependent launch ms: p50 ${at(0.5).toFixed(3)} p95 ${at(0.95).toFixed(3)} p99 ${p99.toFixed(3)} max ${gaps.at(-1)!.toFixed(3)} (${process.platform})`,
+  );
   assert(p99 < TOLERANCE, `dependent launch p99 ${p99.toFixed(3)} ms over ${gaps.length} launches`);
 });
 
