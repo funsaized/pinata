@@ -171,6 +171,8 @@ export interface AgentResult {
   brief?: string;
   sources?: Source[];
   review?: Review;
+  // Set by the engine: a live-checkout reader saw the checkout change mid-run.
+  checkoutChanged?: boolean;
 }
 
 // How a backend's agent loop ended.
