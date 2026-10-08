@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import { readJson } from "../lib/core.mjs";
 import { init, wait, cancel, cleanup } from "../lib/pinata.mjs";
-import { repository } from "./helpers.mjs";
+import { repository } from "./repository.mjs";
 
 assert.equal(
   process.env.PINATA_LIVE_SMOKE,
@@ -31,6 +31,7 @@ try {
           jobMs: 120_000,
           maxTurns: 4,
           repairs: 1,
+          ...cfg.limits,
         },
       },
       tasks: [
@@ -43,7 +44,9 @@ try {
       ],
     })
   ).run;
-  const status = await wait(run, 90_000);
+  let status;
+  do status = await wait(run, 90_000);
+  while (status.waiting);
   assert.equal(status.tasks[0].status, "succeeded", JSON.stringify(status));
   const evidence = await readJson(path.join(run, "tasks/inspect/1/outcome.json"));
   assert.match(evidence.result.brief, /a\.txt/);
@@ -53,7 +56,7 @@ try {
       {
         passed: true,
         run,
-        model: cfg.models.default,
+        model: status.tasks[0].model,
         limitation: "Read-only single-model smoke, not a persona-quality or cost benchmark",
       },
       null,

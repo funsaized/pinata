@@ -29,7 +29,8 @@ Personas are prompt templates for five roles:
 | Reviewer | Does the actual plan or change satisfy its acceptance criteria? |
 
 You do not need every role for every job. A scout can answer a local code question
-alone. A small fix may need only a builder and reviewer.
+alone. For a well-specified fix, `/pinata-fix` starts with a builder and independent
+reviewer. Add a scout only when a concrete uncertainty remains.
 
 Typing `/builder` in Pi uses that prompt in the current conversation. It does not
 create a worker. A delegated worker is a new Pi process launched by the helper,
@@ -59,7 +60,12 @@ needs a version discovered by the scout must wait for the scout.
 collects results and launches downstream work without repeated agent tool calls.
 `tick`, `resume`, and `wait` also support explicit synchronous coordination.
 Workers run under their own supervisors. `status` reads saved task state and
-reports if a recorded background coordinator has stopped.
+reports if a recorded background coordinator has stopped. Independent readiness
+probes and task preparation overlap within the configured concurrency. Herdr
+mutations remain ordered, and manifest writes are serialized. Successful
+readiness metadata is cached privately across processes for up to five minutes
+and invalidated by relevant executable, settings, authentication or environment
+changes. Cache files contain model IDs and successful-probe markers, never credentials.
 
 ## Worktrees and ownership
 
@@ -71,6 +77,15 @@ worktrees begin at the snapshot, so agents see the files as you left them. Set
 `config.includeUncommitted` to `false` to start from `HEAD` instead. A dependent
 builder receives verified changes from predecessor builders.
 
+Tool-restricted inspections of the same revision can share one checkout when
+they have no executable checks or builder ancestors. Builders retain separate
+writable trees. A shared checkout is retired only after every reader has finished
+and its evidence validates. `workspaceReuse: "copy-on-write"` additionally attempts
+CoW source copies for large regular-file trees, verifies them against Git, and
+falls back to checkout if needed. Ordinary Git checkout is the default; the
+[workspace benchmark](validation.md#workspace-performance) measured it faster
+than verified CoW copying on the tested repository.
+
 Ignored files are not part of the snapshot, so a fresh worktree has no installed
 dependencies and no local secrets. Files you list in `.worktreeinclude` are the
 exception: pinata copies those ignored files into each new worktree. They stay
@@ -78,11 +93,13 @@ ignored there, so they never show up in a change or an integration.
 
 Before a builder starts, its worker runs one setup command in its worktree,
 detected from the root lockfiles or set with `config.setup`. The supervisor runs
-it, not the model, and it must leave tracked and unignored files unchanged, so
-setup output can never become part of a deliverable. Workers themselves still
-may not install packages. This is the same split Codex cloud uses: a setup phase
-prepares the environment, then the agent works in it. See
-[Give builders their dependencies](dependencies.md).
+it, or restores eligible prepared npm dependencies. Both paths must leave tracked
+and unignored files unchanged, so setup output cannot become part of a deliverable.
+Each builder receives a private dependency copy; changes in one worktree cannot
+alter the cache, another builder, or the main checkout. Custom setup and
+nonportable environments run their normal install commands because their output
+can depend on the checkout path or other setup effects. Workers themselves may
+not install packages. See [builder setup](dependencies.md).
 
 Each builder declares the files or directory prefixes it may change. Independent
 builders cannot own overlapping paths. Dependent builders can, because their
@@ -134,7 +151,10 @@ be called alone outside codemode; they do not stop the detached workers.
 The worker supervisor checks the private JSON event stream, process exit, final stop
 reason, model identity, and result envelope. It then runs the approved checks
 itself and compares reported file changes with the real worktree. A failed check
-overrides the worker's claim of success.
+overrides the worker's claim of success. Optional `evidenceChecks` use the same
+mechanism to reproduce consequential factual claims. Status distinguishes report
+completion from targeted evidence; successful orchestration never certifies every
+claim in a scout or research brief.
 
 The resulting `outcome.json` contains the process and check evidence, file
 snapshot, and validated worker result. Its fingerprint covers the snapshot,
@@ -255,6 +275,13 @@ run can end slightly over the limit. It only counts what Pi reports: a provider
 whose usage Pi cannot price is not limited. Keep a hard limit with your provider
 as well.
 
+Memory telemetry samples worker supervisors and observed descendants about once
+a second. Linux reports PSS as well as RSS; other platforms can report RSS. The
+widget and status show current usage; metrics retain sampled peaks. Shared Herdr
+and coordinator memory are excluded. Summed per-task peaks are labeled an upper
+bound of sampled values, not a simultaneous measured peak. Missing or stale
+readings remain unknown. Telemetry adds no memory caps or admission controls.
+
 pinata coordinates local, single-host work. It does not schedule remote workers
 or implement remote deployment transactions.
 
@@ -262,27 +289,30 @@ or implement remote deployment transactions.
 
 `lib/pinata.mjs` is the public API and CLI entry point. Behind it:
 
-| Module           | Responsibility                                                   |
-| ---------------- | ---------------------------------------------------------------- |
-| `cli.mjs`        | Argument handling and help text                                  |
-| `config.mjs`     | Configuration validation and model selection                     |
-| `preflight.mjs`  | `doctor` and `resources`                                         |
-| `run.mjs`        | Run creation, manifest state, the task graph, locking, and spend |
-| `workspace.mjs`  | Uncommitted snapshots, worktrees, `.worktreeinclude`, and setup  |
-| `subject.mjs`    | Resolving reviews of existing changes and pull requests          |
-| `launch.mjs`     | Building a task payload and submitting it to a Herdr pane        |
-| `herdr.mjs`      | Herdr transport, pane ownership checks, and workspace creation   |
-| `schedule.mjs`   | `tick`, `wait`, `barrier`, `repair`, `retry-launch`, `cancel`    |
-| `background.mjs` | `start`, background coordination, and Herdr completion messages  |
-| `completion.mjs` | Native Pi completion, session recovery, deduplication, and yield |
-| `observe.mjs`    | Outcome notifications and bounded crash/deadline wakeups         |
-| `evidence.mjs`   | Revalidating a task's outcome before anything depends on it      |
-| `integrate.mjs`  | `integrate` and `rollback`                                       |
-| `cleanup.mjs`    | Automatic pane/worktree retirement, `cleanup`, and `unlock`      |
-| `progress.mjs`   | Read-only run views: `runs`, the widget, and `/pinata` text      |
-| `monitor.mjs`    | Pi widget, footer status, and the `/pinata` command              |
-| `worker.mjs`     | The per-attempt supervisor: setup, Pi, checks, and evidence      |
-| `core.mjs`       | Validation, Git and file snapshots, processes, role tool tables  |
+| Module             | Responsibility                                                                           |
+| ------------------ | ---------------------------------------------------------------------------------------- |
+| `cli.mjs`          | Argument handling and help text                                                          |
+| `config.mjs`       | Configuration validation and model selection                                             |
+| `preflight.mjs`    | `doctor` and `resources`                                                                 |
+| `run.mjs`          | Run creation, manifest state, the task graph, locking, and spend                         |
+| `workspace.mjs`    | Uncommitted snapshots, worktrees, `.worktreeinclude`, and setup                          |
+| `dependencies.mjs` | Eligibility, invalidation, verification, and private copies of prepared npm dependencies |
+| `copy.mjs`         | Native directory copies with portable fallback                                           |
+| `memory.mjs`       | Best-effort process memory samples and status aggregation                                |
+| `subject.mjs`      | Resolving reviews of existing changes and pull requests                                  |
+| `launch.mjs`       | Building a task payload and submitting it to a Herdr pane                                |
+| `herdr.mjs`        | Herdr transport, pane ownership checks, and workspace creation                           |
+| `schedule.mjs`     | `tick`, `wait`, `barrier`, `repair`, `retry-launch`, `cancel`                            |
+| `background.mjs`   | `start`, background coordination, and Herdr completion messages                          |
+| `completion.mjs`   | Native Pi completion, session recovery, deduplication, and yield                         |
+| `observe.mjs`      | Outcome notifications and bounded crash/deadline wakeups                                 |
+| `evidence.mjs`     | Revalidating a task's outcome before anything depends on it                              |
+| `integrate.mjs`    | `integrate` and `rollback`                                                               |
+| `cleanup.mjs`      | Automatic pane/worktree retirement, `cleanup`, and `unlock`                              |
+| `progress.mjs`     | Read-only run views: `runs`, the widget, and `/pinata` text                              |
+| `monitor.mjs`      | Pi widget, footer status, and the `/pinata` command                                      |
+| `worker.mjs`       | The per-attempt supervisor: setup, Pi, checks, and evidence                              |
+| `core.mjs`         | Validation, Git and file snapshots, processes, role tool tables                          |
 
 Coordinating agents read `skills/subagents/reference.md`, a compact version of
 the configuration reference, instead of these pages. Keep the two in sync when

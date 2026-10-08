@@ -2,9 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs/promises";
 import path from "node:path";
-import { readJson } from "../lib/core.mjs";
+import { readJson, command } from "../lib/core.mjs";
 import { modelCache, selectModel } from "../lib/config.mjs";
 import { summary } from "../lib/run.mjs";
+import { tick } from "../lib/pinata.mjs";
 import { fixture, task, settled } from "./helpers.mjs";
 
 test("status reports actual fallback selection, origins, elapsed phases and budgets", async (t) => {
@@ -60,6 +61,31 @@ test("readiness reuses unique probes within a run and invalidates changed auth a
   const different = { ...a.model, thinking: "medium" };
   assert.equal((await selectModel(run.config, "scout", run.cwd, different, cache)).cached, false);
   assert.equal((await lines()).length, 4); // auth is independent of thinking
+  const script = `
+    import { modelCache, selectModel } from ${JSON.stringify(new URL("../lib/config.mjs", import.meta.url).href)};
+    const run = JSON.parse(process.argv[1]);
+    console.log(JSON.stringify(await selectModel(run.config, "scout", run.cwd, undefined, await modelCache(run))));
+  `;
+  const fresh = await command(
+    [process.execPath, "--input-type=module", "-e", script, JSON.stringify(run)],
+    { env: process.env },
+  );
+  assert.equal(fresh.code, 0, fresh.stderr);
+  assert.equal(
+    JSON.parse(fresh.stdout).cached,
+    true,
+    "a fresh process reuses positive readiness metadata",
+  );
+  assert.equal((await lines()).length, 4);
+  const persisted = await fs.readFile(path.join(run.dir, "readiness.json"), "utf8");
+  assert(!persisted.includes(process.env.HOME), "cache stores no environment values");
+  assert.deepEqual(Object.keys(JSON.parse(persisted)).sort(), [
+    "auth",
+    "catalog",
+    "expiresAt",
+    "key",
+    "selections",
+  ]);
   const auth = path.join(process.env.PI_CODING_AGENT_DIR, "auth.json");
   t.after(() => fs.rm(auth, { force: true }));
   await fs.writeFile(auth, "{}");
@@ -90,4 +116,66 @@ test("old outcome files remain readable when metrics are absent", async (t) => {
   assert.deepEqual(result.actualModel, { provider: "fixture", id: "fixture-model" });
   const outcome = await readJson(result.result);
   assert.equal(outcome.status, "succeeded");
+});
+
+test("failed auth probes are retried and independent task preparations overlap", async (t) => {
+  const f = await fixture(
+    t,
+    [task("one", "scout", { delay: 600 }), task("two", "planner", { delay: 600 })],
+    {
+      env: { TEST_PI_METADATA_DELAY_MS: "150" },
+    },
+  );
+  const run = await f.manifest();
+  const flag = path.join(f.dir, "auth-not-ready");
+  process.env.TEST_AUTH_FLAG_FILE = flag;
+  t.after(() => {
+    delete process.env.TEST_AUTH_FLAG_FILE;
+  });
+  run.config.passEnv.push("TEST_AUTH_FLAG_FILE");
+  const cache = await modelCache(run);
+  await fs.writeFile(flag, "not ready");
+  await assert.rejects(
+    selectModel(run.config, "scout", run.cwd, undefined, cache),
+    /authentication not ready/,
+  );
+  await fs.unlink(flag);
+  await selectModel(run.config, "scout", run.cwd, undefined, cache);
+  await tick(f.run);
+  const prepared = await f.manifest();
+  const attempts = prepared.tasks.map((task) => task.attempts[0]);
+  assert.equal(attempts.length, 2);
+  assert(
+    Math.max(...attempts.map((a) => a.readinessStartedAt)) <
+      Math.min(...attempts.map((a) => a.startedAt)),
+    "both preparations begin before either readiness probe finishes",
+  );
+  for (const attempt of attempts) assert(attempt.workspaceReadyAt <= attempt.submittedAt);
+  assert((await settled(f)).tasks.every((task) => task.status === "succeeded"));
+});
+
+test("malformed persisted readiness metadata is bypassed", async (t) => {
+  const f = await fixture(t, []),
+    run = await f.manifest();
+  const cache = await modelCache(run);
+  await fs.writeFile(
+    path.join(run.dir, "readiness.json"),
+    JSON.stringify({
+      key: cache.key,
+      expiresAt: "never",
+      catalog: [null],
+      auth: [],
+      selections: [],
+    }),
+  );
+  cache.expiresAt = 0;
+  const selected = await selectModel(
+    run.config,
+    "scout",
+    run.cwd,
+    undefined,
+    await modelCache(run),
+  );
+  assert.equal(selected.cached, false);
+  assert.equal(selected.model.id, "fixture-model");
 });

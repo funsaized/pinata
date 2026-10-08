@@ -18,6 +18,7 @@ import {
   scoreClaims,
 } from "./fixtures.mjs";
 import { evaluate } from "./oracle.mjs";
+import { summarize, qualityGate } from "./report.mjs";
 
 // This suite is deliberately excluded from npm test and the published package.
 assert.equal(
@@ -133,7 +134,6 @@ async function runCase(name, tasks, seeded = false) {
           setup: false,
           fallbacks: Object.fromEntries(ROLES.map((r) => [r, []])),
           limits: {
-            ...cfg.limits,
             concurrency: 3,
             startupMs: 30_000,
             taskMs: 180_000,
@@ -141,6 +141,7 @@ async function runCase(name, tasks, seeded = false) {
             maxTurns: 20,
             maxToolCalls: 100,
             repairs: 1,
+            ...cfg.limits,
           },
         },
         tasks,
@@ -211,60 +212,6 @@ async function runCase(name, tasks, seeded = false) {
   );
 }
 
-function summarize(rows) {
-  const controls = rows.filter((r) => r.seededBuilder);
-  const reviews = controls.map((r) => ({
-    expected: r.name.includes("-reference") ? "approve" : "changes_requested",
-    actual: r.tasks.find((t) => t.role === "reviewer")?.result?.review?.verdict,
-  }));
-  const scouts = rows.flatMap((r) => r.tasks.filter((t) => t.role === "scout"));
-  const live = rows.flatMap((r) => r.tasks.filter((t) => t.live));
-  const numeric = live
-    .map((t) => t.metrics?.elapsedMs)
-    .filter(Number.isFinite)
-    .sort((a, b) => a - b);
-  return {
-    completedCases: rows.length,
-    infrastructureErrors: rows.filter((r) => r.error).length,
-    builderOracle: rows
-      .filter((r) => !r.seededBuilder)
-      .map((r) => ({ case: r.name, passed: r.oracle?.passed, total: r.oracle?.total })),
-    reviewControls: {
-      total: reviews.length,
-      evaluated: reviews.filter((r) => r.actual).length,
-      falseApprovals: reviews.filter(
-        (r) => r.expected === "changes_requested" && r.actual === "approve",
-      ).length,
-      falseRejections: reviews.filter(
-        (r) => r.expected === "approve" && r.actual === "changes_requested",
-      ).length,
-      missingVerdicts: reviews.filter((r) => !r.actual).length,
-    },
-    factualClaims: {
-      total: scouts.reduce((n, t) => n + t.claims.total, 0),
-      correct: scouts.reduce((n, t) => n + t.claims.correct, 0),
-      incorrect: scouts.reduce((n, t) => n + t.claims.incorrect, 0),
-      missing: scouts.reduce((n, t) => n + t.claims.missing, 0),
-      supported: scouts.reduce((n, t) => n + t.claims.supported, 0),
-      noncanonical: scouts.reduce((n, t) => n + t.claims.noncanonical, 0),
-    },
-    liveTasks: live.length,
-    missingUsage: live.filter((t) => !t.metrics?.usage).length,
-    latencyMs: numeric.length
-      ? { min: numeric[0], median: numeric[Math.floor(numeric.length / 2)], max: numeric.at(-1) }
-      : null,
-    usage: live.reduce(
-      (sum, t) => {
-        for (const key of Object.keys(sum)) sum[key] += t.metrics?.usage?.[key] ?? 0;
-        return sum;
-      },
-      { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: 0 },
-    ),
-    limitation:
-      "Small controlled fixture, not a global model benchmark. Seeded builders are deterministic; their reviewers are live. Missing verdicts and usage are reported separately. No quality threshold is used to hide failed trials.",
-  };
-}
-
 // Fail before spending if a control/oracle changed and is no longer meaningful.
 for (const [name, source] of Object.entries(candidates)) {
   const { parseRetryAfter } = await import(
@@ -331,11 +278,7 @@ for (let trial = 1; trial <= trials; trial++) {
     );
 }
 const final = summarize(reports);
+final.quality = qualityGate(final);
 await saveReports(final);
 console.log(JSON.stringify({ complete: true, evidence: base, summary: final }, null, 2));
-if (
-  reports.some(
-    (r) => r.error || r.tasks.some((t) => t.live && !["succeeded", "rejected"].includes(t.status)),
-  )
-)
-  process.exitCode = 1;
+if (!final.quality.passed) process.exitCode = 1;

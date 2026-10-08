@@ -75,10 +75,11 @@ installing:
 }
 ```
 
-On btrfs, XFS, and APFS (use `cp -c -R` on macOS) the copy shares disk blocks and
-finishes almost instantly. Run directories live under `.git/pinata`, on the same
-filesystem as the repository, so the clone works there. Check that your checkout's
-dependencies match the lockfile first; a copy does not verify that.
+On filesystems that support reflinks, this can share data blocks while keeping
+each copy independently writable. On macOS, use `cp -c -R` where supported.
+Copy performance depends on the filesystem and dependency tree. Check that your
+checkout's dependencies match the lockfile first; this custom command does not
+verify that.
 
 ## Copy local files with .worktreeinclude
 
@@ -139,13 +140,43 @@ A failed setup stops the attempt before Pi starts. The outcome has
 - **Wrong command**: setup is fixed for the life of a run. Start a new run with
   a corrected `config.setup`.
 
+## Reuse prepared dependencies
+
+Detected npm installs reuse prepared dependencies automatically when the project
+has a registry-only lockfile v2/v3 and no install hooks, workspaces, or local
+links. Each builder gets its own writable copy. Custom setup commands and other
+package managers continue to run normally.
+
+To check whether reuse applied, read `setup.cache` in the task outcome:
+
+- `hit`: the worker restored and verified a prepared dependency tree.
+- `miss`: the worker ran the detected install to prepare dependencies.
+- Absent: a repair reused its existing setup, or setup was not eligible for this cache.
+
+Changes to the dependency manifests, runtime, npm configuration, or relevant
+environment invalidate the cache. Failed installs never publish an entry;
+damaged entries fall back to normal setup. See the [reuse reference](configuration.md#workspace-reuse)
+for the exact eligibility and invalidation rules.
+
+To turn reuse off for a job or project:
+
+```json
+"config": { "workspaceReuse": false }
+```
+
+In `.pi/pinata.json`, put `workspaceReuse` at the top level. This also disables
+shared inspection checkouts. Normal run cleanup keeps the prepared cache for
+later jobs. To reclaim its disk space, wait until all runs in the repository have
+finished, then remove `<git-common-dir>/pinata/cache/dependencies/`.
+
 ## What setup does not do
 
 - It runs only for builders. Scouts, planners, and researchers read files;
-  reviewers share their target builder's worktree, or get their own worktree
-  when they review existing changes.
+  reviewers use their target task's worktree. Eligible inspections of the same
+  revision share a checkout; executable checks and builder ancestors require
+  separate trees.
 - It runs once per worktree. A repair attempt reuses the installed worktree and
-  skips setup unless a lockfile changed.
+  skips setup unless a dependency manifest or lockfile changed.
 - Workers still cannot install packages. If a builder needs a new dependency,
   it reports a blocker. Add the dependency in your checkout and start a new run;
   the new lockfile reaches the worktree even before you commit it.

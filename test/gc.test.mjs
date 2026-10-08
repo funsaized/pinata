@@ -9,8 +9,11 @@ import { fixture, task, started, untilFile, settled } from "./helpers.mjs";
 
 // Leave finished checkouts in place, as historical versions did. Workers and
 // repository fixtures are real; only Herdr/provider transport is substituted.
-async function historical(t, tasks = [task("one")]) {
-  const f = await fixture(t, tasks, { env: { TEST_BUSY: "", TEST_AMBIGUOUS_CLOSE: "" } });
+async function historical(t, tasks = [task("one")], workspaceReuse = false) {
+  const f = await fixture(t, tasks, {
+    env: { TEST_BUSY: "", TEST_AMBIGUOUS_CLOSE: "" },
+    config: { workspaceReuse },
+  });
   await started(f, tasks[0].id);
   for (const task of tasks)
     await untilFile(path.join(f.run, "tasks", task.id, "1", "outcome.json"));
@@ -84,6 +87,23 @@ test("GC keeps changed and missing evidence trees while cleaning an eligible sib
     "Preserve me",
   );
   assert.equal((await barrier(f.run, ["eligible"])).ready, true);
+});
+
+test("GC retains a changed shared inspection checkout for every reader", async (t) => {
+  const f = await historical(t, [task("one"), task("two")], true);
+  const run = await f.manifest();
+  assert.equal(run.tasks[0].worktree, run.tasks[1].worktree);
+  await fs.writeFile(path.join(run.tasks[0].worktree, "user-work.txt"), "Keep this");
+  const report = await gc(f.cwd, true);
+  assert(
+    report.runs[0].report.some(
+      (item) => item.worktree === run.tasks[0].worktree && /changed/.test(item.reason),
+    ),
+  );
+  assert.equal(
+    await fs.readFile(path.join(run.tasks[1].worktree, "user-work.txt"), "utf8"),
+    "Keep this",
+  );
 });
 
 for (const scenario of ["busy", "repurposed", "live-process"]) {

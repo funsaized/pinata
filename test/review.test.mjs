@@ -36,7 +36,8 @@ test("a reviewer reviews uncommitted changes and binds its verdict to both commi
   assert.match(await fs.readFile(reviewTarget.diff, "utf8"), /\+work in progress/);
   assert.equal(s.tasks[0].reviewSubject.kind, "uncommitted");
   const run = await f.manifest();
-  assert.equal(run.tasks[0].worktree, path.join(f.run, "worktrees", "look"));
+  assert.equal(path.dirname(run.tasks[0].worktree), path.join(f.run, "worktrees"));
+  assert.equal(run.tasks[0].worktree, run.tasks[1].worktree);
 });
 
 test("a branch review covers commits since the base and uncommitted changes", async (t) => {
