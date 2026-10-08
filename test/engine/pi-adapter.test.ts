@@ -69,6 +69,9 @@ test("the extension registers the tools and the command", async (t) => {
   const a = await adapter(t, reader);
   assert.deepEqual([...a.tools.keys()].sort(), [
     "pinata_cancel",
+    "pinata_integrate",
+    "pinata_repair",
+    "pinata_rollback",
     "pinata_run",
     "pinata_status",
     "pinata_steer",

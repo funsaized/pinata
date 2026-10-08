@@ -12,6 +12,7 @@ import { BACKENDS, COST_MAX, LIMIT_MAX, ROLES, THINKING_LEVELS } from "../core/t
 import { statusText } from "../ui/text.ts";
 import { compactRun, compactTask, type PinataHost, type RunParams } from "./host.ts";
 import { deliverWhenDone } from "./delivery.ts";
+import { integrate, rollback } from "../verify/integrate.ts";
 
 const object = (fields: Record<string, TSchema>, options: Record<string, unknown> = {}) =>
   Type.Object(fields, { additionalProperties: false, ...options });
@@ -146,6 +147,13 @@ export function schemas() {
       as: optional(choices(["steer", "followUp"])),
     }),
     cancel: object({ run, task: optional(taskId()) }),
+    repair: object({
+      run,
+      task: taskId(),
+      feedback: string("What to fix, from the review or failure."),
+    }),
+    integrate: object({ run }),
+    rollback: object({ run, confirm: Type.Literal(true) }),
   };
 }
 
@@ -157,6 +165,12 @@ export const DESCRIPTIONS = {
     "Send a message to a running agent: steer (after its current turn) or followUp (after it finishes its current work). Recorded and shown to reviewers.",
   cancel:
     "Cancel a run or one of its agents. Cancelled agents settle as cancelled; nothing else is undone.",
+  repair:
+    "Re-run a builder in its worktree with feedback (from a rejected review or a failure), within limits.repairs. Its reviewers run again on the new change. Waits for the result.",
+  integrate:
+    "Apply every approved builder change to the checkout and run the integrated checks. Needs every task succeeded and a current approving review per builder. Never stages or commits.",
+  rollback:
+    "Restore the checkout from the run's integration journal, where files still match what integration wrote. Needs confirm:true.",
 };
 
 type ToolResult = AgentToolResult<Record<string, unknown>>;
@@ -330,6 +344,66 @@ export function registerTools(pi: ExtensionAPI, host: PinataHost): void {
           .engine(ctx)
           .steer(id, params.task, params.message, params.as ?? "steer", "parent");
         return ok({ run: id, task: params.task, steered: params.as ?? "steer" });
+      } catch (error) {
+        return fail(error);
+      }
+    },
+  });
+  pi.registerTool({
+    name: "pinata_repair",
+    label: "Pinata repair",
+    description: DESCRIPTIONS.repair,
+    parameters: s.repair,
+    outputSchema: Type.Object({ result: Type.Unknown() }),
+    annotations: { readOnlyHint: false },
+    async execute(_id, input, signal, onUpdate, ctx) {
+      const params = input as { run: string; task: string; feedback: string };
+      try {
+        const { id, handle } = await host.find(params.run, ctx.cwd);
+        if (!handle) throw new Error(`Run ${id} is not in this session; start a new run`);
+        host.engine(ctx).repair(id, params.task, params.feedback);
+        const view = await host.foreground(handle, signal, (text, v) =>
+          onUpdate?.({
+            content: [{ type: "text", text }],
+            details: { run: v.run, status: v.status },
+          }),
+        );
+        return ok(compactRun(view, handle.dir, handle.results()));
+      } catch (error) {
+        return fail(error);
+      }
+    },
+  });
+  pi.registerTool({
+    name: "pinata_integrate",
+    label: "Pinata integrate",
+    description: DESCRIPTIONS.integrate,
+    parameters: s.integrate,
+    outputSchema: Type.Object({ result: Type.Unknown() }),
+    annotations: { readOnlyHint: false, destructiveHint: false },
+    async execute(_id, input, signal, _onUpdate, ctx) {
+      const params = input as { run: string };
+      try {
+        const { id, dir } = await host.find(params.run, ctx.cwd);
+        return ok({ run: id, ...(await integrate(dir, signal)) });
+      } catch (error) {
+        return fail(error);
+      }
+    },
+  });
+  pi.registerTool({
+    name: "pinata_rollback",
+    label: "Pinata rollback",
+    description: DESCRIPTIONS.rollback,
+    parameters: s.rollback,
+    outputSchema: Type.Object({ result: Type.Unknown() }),
+    annotations: { readOnlyHint: false, destructiveHint: true },
+    async execute(_id, input, _signal, _onUpdate, ctx) {
+      const params = input as { run: string; confirm: boolean };
+      try {
+        if (params.confirm !== true) throw new Error("Rollback needs confirm:true");
+        const { id, dir } = await host.find(params.run, ctx.cwd);
+        return ok({ run: id, ...(await rollback(dir)) });
       } catch (error) {
         return fail(error);
       }

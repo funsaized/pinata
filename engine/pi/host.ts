@@ -18,6 +18,8 @@ import { agentDir, layeredConfig, modelCandidates, type PinataConfig } from "./c
 import { piPipeline, type PipelineStages, type PiRunData } from "./pipeline.ts";
 import { RuntimeCache, inherited, selectModel } from "./runtime.ts";
 import { prepareRun, verificationStages } from "../verify/stages.ts";
+import { writeRunRecord } from "../verify/integrate.ts";
+import { headCommit } from "../workspace/snapshot.ts";
 
 export const RESEARCH_UNAVAILABLE =
   "Research tasks need pi-web-access, which is not loaded in this Pi. Install it with `pi install git:github.com/nicobailon/pi-web-access`, or set config.webExtension.";
@@ -225,6 +227,18 @@ export class PinataHost {
       data,
     });
     this.handles.set(handle.id, handle);
+    // What integration needs after a reload: the run's tasks, base HEAD and checks.
+    await writeRunRecord(handle.dir, {
+      id: handle.id,
+      root,
+      head: prep.base?.head ?? (await headCommit(root)),
+      tasks,
+      allowWrites: writes,
+      integratedChecks: params.integratedChecks ?? [],
+      noIntegratedChecksReason: params.noIntegratedChecksReason ?? null,
+      passEnv: config.passEnv,
+      taskMs: config.limits.taskMs,
+    });
     return { handle, notices: layered.notices };
   }
 

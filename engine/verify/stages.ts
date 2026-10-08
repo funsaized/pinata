@@ -14,7 +14,7 @@ import { git } from "../workspace/git.ts";
 import { copyIncluded } from "../workspace/include.ts";
 import { LiveWorkspace, liveFingerprint } from "../workspace/live.ts";
 import { caseInsensitive, owns } from "../workspace/paths.ts";
-import { snapshotBase, type Base } from "../workspace/snapshot.ts";
+import { dropRefs, snapshotBase, type Base } from "../workspace/snapshot.ts";
 import { Worktree, composeBase } from "../workspace/worktree.ts";
 import { environment, runChecks, type CheckEvidence } from "./checks.ts";
 import {
@@ -51,6 +51,21 @@ export function worktreePath(run: Pick<RunContext, "dir">, name: string): string
 // Snapshot, setup and review subjects: resolved once, before any agent starts, so invalid
 // subjects fail the tool call instead of an agent.
 export async function prepareRun(
+  root: string,
+  runId: string,
+  tasks: readonly Task[],
+  config: PinataConfig,
+): Promise<RunPrep> {
+  try {
+    return await resolveRun(root, runId, tasks, config);
+  } catch (error) {
+    // Nothing is left behind by a run that never started.
+    await dropRefs(root, runId).catch(() => {});
+    throw error;
+  }
+}
+
+async function resolveRun(
   root: string,
   runId: string,
   tasks: readonly Task[],

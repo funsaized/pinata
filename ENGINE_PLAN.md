@@ -648,7 +648,7 @@ under 10 ms, and memory under 5 MB per agent.
 
 ### M3: Builders, verification, integration
 
-- [ ] **E3.1 Snapshot and worktrees (M).**
+- [x] **E3.1 Snapshot and worktrees (M).**
   - **Snapshot:** port `lib/workspace.mjs` to `workspace/snapshot.ts`. It captures tracked
     and untracked (not ignored) changes as a commit on top of `HEAD`, using a temporary
     `GIT_INDEX_FILE`. The private ref is `refs/pinata/<run>/base`.
@@ -661,7 +661,7 @@ under 10 ms, and memory under 5 MB per agent.
       `-c core.autocrlf=false` for change capture.
   - Done when the 0.7.0 workspace, uncommitted, include, dependency and reuse tests have
     engine equivalents that pass on three OSes.
-- [ ] **E3.2 Path rules (S).**
+- [x] **E3.2 Path rules (S).**
   - Path: `workspace/paths.ts` normalizes to repo-relative `/` paths.
     - Reject `..`, absolute paths, symlinks and Windows junctions (`fs.lstat`), and the
       `.git` path.
@@ -669,7 +669,7 @@ under 10 ms, and memory under 5 MB per agent.
       repository by statting a case-swapped path.
   - The agent extension and post-hoc checks use the same functions.
   - Done when the table-driven tests pass on all three OSes.
-- [ ] **E3.3 Change capture (M).**
+- [x] **E3.3 Change capture (M).**
   - Path: `workspace/changes.ts`:
     1. In the worktree, set `GIT_INDEX_FILE` to a temporary index and run `git add -A`.
     2. `git write-tree` gives the result tree.
@@ -681,7 +681,7 @@ under 10 ms, and memory under 5 MB per agent.
   - Reported `changedFiles` must equal the actual changes (0.7.0 rule).
   - Done when tests cover add, modify, delete, mode change, binary, ignored files and
     unowned paths. Capture must take under 50 ms on the 0.7.0 benchmark repo shape.
-- [ ] **E3.4 Checks runner (S).**
+- [x] **E3.4 Checks runner (S).**
   - Path: `verify/checks.ts`.
     - Spawn argv with the worktree as `cwd` and the approved environment (port
       `environment()` and `passEnv`).
@@ -696,7 +696,7 @@ under 10 ms, and memory under 5 MB per agent.
     checkout and must not change the fingerprint.
   - Done when the tests cover timeouts, tree kill, Windows launchers and claim override on
     three OSes.
-- [ ] **E3.5 Reviews (M).**
+- [x] **E3.5 Reviews (M).**
   - Path: `verify/review.ts`. A reviewer of a builder runs in that builder's worktree with
     the reader loadout, plus a `review.diff` file and the builder's result.
   - The verdict must name the builder's current fingerprint. A repair changes the
@@ -708,7 +708,7 @@ under 10 ms, and memory under 5 MB per agent.
   - Port the result-only repair: if the result stage fails, run a single report-only
     attempt with write tools removed.
   - Done when the 0.7.0 review, recovery and repair tests have engine equivalents.
-- [ ] **E3.6 Integration and rollback (M).**
+- [x] **E3.6 Integration and rollback (M).**
   - Path: `verify/integrate.ts`, ported from `lib/integrate.mjs`, with the same rules:
     - every builder has a current approving review;
     - the user's `HEAD` is unchanged;
@@ -1094,6 +1094,7 @@ Verified against Pi 1.1.0 source. Re-check when upgrading.
 | 2026-10-08 | M2 exit   | Linux | Luna live smoke in pi: 3 scouts + dependent planner (all succeeded)                | 70 s, $0.0046                      | `test/engine/live-smoke.ts`, models pinned to `examples/configs/luna.json`                       |
 | 2026-10-08 | live cost | Linux | two earlier live smoke runs (planner on the user's global `gpt-6-astra`)           | $0.1071 + $0.1149                  | led to pinning each task's model in the smoke                                                    |
 | 2026-10-08 | live cost | Linux | total live spend so far                                                            | $0.2794                            | E0.5 eval $0.0528 + smokes $0.2266                                                               |
+| 2026-10-08 | E3.3      | Linux | change capture on 0.7.0's benchmark shape (2,131 files, 144 MiB), 5 changed files  | 21.5 ms median                     | target < 50 ms; private capture index warmed during the builder's run                            |
 | 2026-10-08 | E1.2      | Linux | fake backend, 64 agents (8 fans + 8 chains): dependent launch p50 / p99 / max      | 0.031 / 0.216 / 0.816 ms           | 480 samples over 10 runs; limiter opened to 64                                                   |
 | 2026-10-08 | E2.2      | Linux | pi binary (Bun), faux, fan-out 1 / 8 / 32 / 64: spawn p50                          | 1.4 / 6.2 / 18.8 / 36.2 ms         | target < 10 ms met at 1 and 8; see notes for 32 and 64                                           |
 | 2026-10-08 | E2.2      | Linux | pi binary, faux: per-agent setup p50 (gate → first request)                        | 1.3–2.2 ms                         | after skipping package discovery and starting agents in order                                    |
@@ -1119,8 +1120,8 @@ Read this section and the plan before resuming after a context reset.
 
 ### In flight (resume here)
 
-- M2 is done on Linux; its exit also needs green CI on macOS and Windows (smoke, packed
-  package and bench steps added to CI). Next: M3 (E3.1 snapshot and worktrees).
+- M3: E3.1–E3.6 are done (tests in `test/engine/{workspace,paths,checks,builders,integrate}.test.ts`).
+  Next: E3.7 Gate 1 (engine quality eval driver, builder bench scenarios, loopback A/B, 3-OS CI).
 - E0.7 upstream issue: not opened yet.
 - Then M3 (builders: worktrees, change capture, checks, reviews, integration) and Gate 1.
 
@@ -1196,6 +1197,26 @@ Read this section and the plan before resuming after a context reset.
   in-process agents. Reported upstream with E0.7.
 - Live fingerprints: at most one `git status` per repository runs at a time; requests that
   arrive meanwhile share the next one.
+
+- Builders: a dependent builder's worktree starts from a commit composed with plumbing
+  (temporary index, `update-index`, `write-tree`, `commit-tree`) holding its predecessors'
+  verified changes; a conflicting change is refused. Builder setup runs before the agent, in
+  the worktree, with the npm dependency cache under `<git common dir>/pinata/cache`.
+- Capture keeps a private index per worktree (`<worktree git dir>/pinata-capture-index`) and
+  copies indexes with their original timestamps: a fresh mtime makes git trust stat data of
+  files edited in the same second (a real bug found while testing).
+- A builder with no valid result after its in-session reminder gets one more session with
+  the read-only "repair" loadout and a report-only brief (the result-only repair).
+- Repairs (`engine.repair`, `pinata_repair`) reopen a settled run (`run_resumed` event, a
+  schema addition), rerun the builder in its worktree with feedback, and requeue its
+  reviewers; completed downstream builders are refused (0.7.0 rule).
+- Integration works from the run directory alone (`run.json` written at start plus
+  `results/*.json`), so it works after a reload. Before-states come from blobs in the
+  snapshot commit; the journal records blob ids, not copies.
+- Evidence checks in a shared checkout run one at a time per repository, so a mutation is
+  blamed on the check that made it.
+- `reviewPr` reviewers read a worktree at the PR head (shared per PR); `reviewBase` reviewers
+  read the live checkout.
 
 ### Open questions
 
