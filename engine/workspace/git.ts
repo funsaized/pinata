@@ -1,6 +1,7 @@
 // git through argv, never a shell, with bounded output. Works the same on Linux, macOS and
 // Windows. Callers pass `-z` forms when they parse paths.
 import { spawn } from "node:child_process";
+import { copyFile, stat, utimes } from "node:fs/promises";
 
 export const MAX_OUTPUT = 64 * 1024 * 1024;
 
@@ -89,4 +90,15 @@ export function zsplit(s: string): string[] {
   const parts = s.split("\0");
   if (parts.at(-1) === "") parts.pop();
   return parts;
+}
+
+// Copies an index for use as GIT_INDEX_FILE. The copy keeps the original's timestamps: git
+// trusts an entry's stat data only when the entry is older than the index file, so a fresh
+// mtime would make files edited in the same second as the checkout look unchanged.
+export async function copyIndex(from: string, to: string): Promise<boolean> {
+  const st = await stat(from).catch(() => null);
+  if (!st) return false;
+  await copyFile(from, to);
+  await utimes(to, st.atime, st.mtime);
+  return true;
 }
