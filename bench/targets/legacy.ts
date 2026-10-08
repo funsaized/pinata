@@ -9,6 +9,7 @@ import {
   benchRepository,
   benchText,
   mb,
+  now,
   roundCalls,
   stat,
   type BenchTask,
@@ -97,7 +98,7 @@ export async function runLegacy(
     peakCoordinator = Math.max(peakCoordinator, process.memoryUsage().rss);
   }, 250);
   const epoch0 = Date.now();
-  const t0 = performance.now();
+  const t0 = now();
   try {
     lag.enable();
     run = (
@@ -117,7 +118,7 @@ export async function runLegacy(
     let state: any;
     do state = await wait(run, 60_000);
     while (state.waiting || !state.tasks.every((t: any) => TERMINAL.includes(t.status)));
-    const wallMs = performance.now() - t0;
+    const wallMs = now() - t0;
     lag.disable();
     clearInterval(sampler);
     workers.stop();

@@ -10,7 +10,14 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
-const PI = process.env.PINATA_PI ?? "pi";
+// The pi command. PINATA_PI may name the binary, or Pi's JavaScript CLI (run with this Node),
+// which is how CI runs the npm-installed Pi on every OS (Windows cannot spawn pi.cmd without
+// a shell).
+export function piCommand(): string[] {
+  const pi = process.env.PINATA_PI ?? "pi";
+  return /\.(c|m)?js$/.test(pi) ? [process.execPath, pi] : [pi];
+}
+const PI = piCommand();
 
 export interface RpcRecord {
   type: string;
@@ -120,7 +127,7 @@ async function main() {
   delete env.PINATA_AGENT;
   const pi = rpc(
     [
-      PI,
+      ...PI,
       "--mode",
       "rpc",
       "--no-session",

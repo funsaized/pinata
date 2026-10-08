@@ -31,6 +31,13 @@ jobs:
       - run: npm test
       - name: Install supported Pi
         run: npm install --global @earendil-works/pi-coding-agent@1.1.0
+      - name: Locate Pi's CLI
+        shell: bash
+        run: echo "PINATA_PI=$(npm root -g)/@earendil-works/pi-coding-agent/dist/bundle/cli.js" >> "$GITHUB_ENV"
+      - name: Engine inside Pi (faux provider)
+        run: node test/engine/pi-smoke.ts
+      - name: Engine benchmarks against budgets
+        run: npm run bench -- --ci --host pi
       - name: Check 0.7.0 against loopback providers
         # 0.7.0 needs POSIX process control and Herdr; it does not support Windows.
         if: runner.os != 'Windows'

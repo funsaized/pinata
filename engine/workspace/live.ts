@@ -24,24 +24,56 @@ export async function liveFingerprint(root: string): Promise<string> {
   return `${line(head) || "unborn"}:${hash}`;
 }
 
-// Reuses a measurement that started at or after `notBefore` (performance.now() time).
+// Shares measurements: a request reuses one that started at or after `notBefore`. At most one
+// measurement per repository runs at a time; requests that arrive while it runs share the
+// next one, which starts when it finishes. A burst of N settling readers costs two `git
+// status` runs, not N.
 export class FingerprintCache {
-  private readonly latest = new Map<string, { at: number; value: Promise<string> }>();
+  private readonly states = new Map<
+    string,
+    {
+      latest?: { at: number; value: Promise<string> };
+      running?: Promise<unknown>;
+      next?: Promise<string>;
+    }
+  >();
   private readonly measure: (root: string) => Promise<string>;
+  measurements = 0;
 
   constructor(measure: (root: string) => Promise<string> = liveFingerprint) {
     this.measure = measure;
   }
 
-  get(root: string, notBefore: number): Promise<string> {
-    const hit = this.latest.get(root);
-    if (hit && hit.at >= notBefore) return hit.value;
+  private start(root: string): Promise<string> {
+    const state = this.states.get(root)!;
+    this.measurements++;
     const entry = { at: performance.now(), value: this.measure(root) };
+    state.latest = entry;
+    const running = entry.value
+      .catch(() => {})
+      .then(() => {
+        if (state.running === running) state.running = undefined;
+      });
+    state.running = running;
     entry.value.catch(() => {
-      if (this.latest.get(root) === entry) this.latest.delete(root);
+      if (state.latest === entry) state.latest = undefined;
     });
-    this.latest.set(root, entry);
     return entry.value;
+  }
+
+  get(root: string, notBefore: number): Promise<string> {
+    let state = this.states.get(root);
+    if (!state) this.states.set(root, (state = {}));
+    if (state.latest && state.latest.at >= notBefore) return state.latest.value;
+    if (!state.running) return this.start(root);
+    if (!state.next) {
+      const after = state.running;
+      state.next = after.then(() => {
+        state!.next = undefined;
+        return this.start(root);
+      });
+    }
+    return state.next;
   }
 }
 
