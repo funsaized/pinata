@@ -79,6 +79,13 @@ export class Graph {
     return { ready, blocked };
   }
 
+  // Records a task that settled in an earlier session (resume). Call in dependency order.
+  restore(id: string, succeeded: boolean): void {
+    const at = this.ready.indexOf(id);
+    if (at !== -1) this.ready.splice(at, 1);
+    this.settle(id, succeeded);
+  }
+
   // Reopens a settled task (a repair) and its settled dependents. Returns the reopened ids.
   reopen(id: string): string[] {
     const reopened: string[] = [];

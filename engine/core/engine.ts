@@ -8,8 +8,8 @@ import { Telemetry } from "./telemetry.ts";
 import { Graph } from "./graph.ts";
 import { Limiter, isRateLimit } from "./limiter.ts";
 import { Scheduler } from "./scheduler.ts";
-import { RunStore, runsRoot } from "./store.ts";
-import { reduce, emptyView, type RunView } from "./view.ts";
+import { RunStore, readEvents, runsRoot } from "./store.ts";
+import { reduce, emptyView, replayView, type RunView } from "./view.ts";
 import { validateGraph, validateLimits } from "./validate.ts";
 import {
   ROLE_TOOLS,
@@ -112,7 +112,8 @@ export interface Pipeline {
     run: RunContext,
     task: Task,
     signal: AbortSignal,
-    options?: { resultOnly?: boolean },
+    // reattach: the agent is already running (resume); reuse its workspace as it is.
+    options?: { resultOnly?: boolean; reattach?: boolean },
   ): Promise<Prepared>;
   verify(
     run: RunContext,
@@ -142,6 +143,33 @@ export interface RunOptions {
   data?: Record<string, unknown>;
 }
 
+export interface ResumeOptions {
+  cwd?: string; // the repository the run works in
+  limits?: Partial<Limits>;
+  policy?: "allSettled" | "failFast";
+  allowWrites?: boolean;
+  data?: Record<string, unknown>;
+  reason?: string;
+}
+
+// Tasks in dependency order.
+function topological(tasks: readonly Task[]): Task[] {
+  const byId = new Map(tasks.map((t) => [t.id, t]));
+  const out: Task[] = [];
+  const seen = new Set<string>();
+  const visit = (t: Task) => {
+    if (seen.has(t.id)) return;
+    seen.add(t.id);
+    for (const d of t.after) if (byId.has(d)) visit(byId.get(d)!);
+    out.push(t);
+  };
+  tasks.forEach(visit);
+  return out;
+}
+
+// The reason an agent that Pi lost (and could not reattach) settles with.
+export const LOST = "Pi exited before this agent settled";
+
 export type Consumer = (event: AgentEvent) => void;
 
 export interface RunHandle {
@@ -162,6 +190,8 @@ interface AgentState {
   provider?: string;
   usageAt: number;
   repairs?: number;
+  // Resume: follow the agent an earlier Pi started instead of starting it.
+  reattach?: boolean;
 }
 
 interface RunState extends RunContext {
@@ -180,6 +210,8 @@ interface RunState extends RunContext {
   resolve: (view: RunView) => void;
   done: Promise<RunView>;
   usage: Usage;
+  // Pi exited and left the run's detached agents running (survive).
+  detached?: boolean;
 }
 
 // Default pipeline: live checkout, the task text as the brief, the result's own status.
@@ -290,8 +322,16 @@ export interface Engine {
   onRun(listener: (run: RunHandle) => void): () => void;
   snapshot(run: string): RunView | undefined;
   snapshot(run: string, agent: string): Promise<AgentSnapshot | undefined>;
-  // Cancels everything (parent reload or exit) and flushes logs.
-  shutdown(reason: string): Promise<void>;
+  // Rebuilds an unsettled run from its directory after Pi restarted: settled agents keep
+  // their results, detached agents are followed again, agents that cannot be reattached are
+  // cancelled, and the graph continues.
+  resume(dir: string, options?: ResumeOptions): Promise<RunHandle>;
+  // Starts again the tasks a run lost when Pi exited (cancelled, not reattachable), with
+  // their dependents. Returns the reopened ids.
+  rerun(run: string): string[];
+  // Cancels everything (parent reload or exit) and flushes logs. Runs that `detach` selects
+  // are left running instead: their detached agents keep going without this Pi.
+  shutdown(reason: string, options?: { detach?: (run: RunHandle) => boolean }): Promise<void>;
   readonly limiter: Limiter;
 }
 
@@ -385,33 +425,64 @@ export function createEngine(options: EngineOptions): Engine {
     const model = pipeline.model(run, task);
     const kind =
       pipeline.backend?.(run, task) ?? task.backend ?? options.defaultBackend ?? "in-process";
+    // Resume: the agent is already running (or finished) in a process an earlier Pi started.
+    const reattach = state.reattach === true;
+    state.reattach = false;
+    let detaching = false;
     try {
-      emit(run, id, {
-        t: "agent_started",
-        backend: kind,
-        model,
-        workspace: pipeline.workspaceRef?.(run, task) ?? { kind: "live", path: run.cwd },
-      });
+      if (!reattach)
+        emit(run, id, {
+          t: "agent_started",
+          backend: kind,
+          model,
+          workspace: pipeline.workspaceRef?.(run, task) ?? { kind: "live", path: run.cwd },
+        });
       const backend = options.backends[kind];
       if (!backend) throw new Error(`Backend ${kind} is not available`);
       // A builder without a valid result gets one result-only attempt with write tools removed.
       for (let attempt = 0; attempt < 2; attempt++) {
         const resultOnly = attempt > 0;
-        prepared = await pipeline.prepare(run, task, signal, { resultOnly });
-        if (signal.aborted) throw signal.reason;
-        state.budget ??= new AgentBudget(
-          {
-            maxTurns: prepared.launch.budgets.maxTurns,
-            maxToolCalls: prepared.launch.budgets.maxToolCalls,
-            maxCostUsd: prepared.launch.budgets.maxCostUsd,
-          },
-          (reason) => controller.abort(new StopSignal(reason, "failed")),
-        );
-        state.handle = await backend.start(
-          prepared.launch,
-          (e) => onAgentEvent(run, id, state, e),
-          signal,
-        );
+        const following = reattach && attempt === 0;
+        prepared = await pipeline.prepare(run, task, signal, {
+          resultOnly,
+          ...(following && { reattach: true }),
+        });
+        // An agent being reattached is followed even when cancelled meanwhile, so its
+        // process is stopped through the handle.
+        if (signal.aborted && !following) throw signal.reason;
+        // A reattached agent enforced its own budgets while no Pi was watching.
+        if (!following)
+          state.budget ??= new AgentBudget(
+            {
+              maxTurns: prepared.launch.budgets.maxTurns,
+              maxToolCalls: prepared.launch.budgets.maxToolCalls,
+              maxCostUsd: prepared.launch.budgets.maxCostUsd,
+            },
+            (reason) => controller.abort(new StopSignal(reason, "failed")),
+          );
+        const sink = (e: AgentEventInput) => onAgentEvent(run, id, state, e);
+        if (following) {
+          const handle = backend.reattach
+            ? await backend.reattach(prepared.launch, sink, signal)
+            : null;
+          if (!handle) {
+            verdict = {
+              status: "cancelled",
+              summary: `${LOST}; /pinata rerun starts it again`,
+              reason: LOST,
+              failureStage: "process",
+              result: null,
+            };
+            break;
+          }
+          state.handle = handle;
+        } else state.handle = await backend.start(prepared.launch, sink, signal);
+        // Pi is exiting and the run survives it: leave the agent running.
+        if (run.detached && state.handle.detach) {
+          detaching = true;
+          await state.handle.detach();
+          return;
+        }
         outcome = await state.handle.done;
         if (signal.aborted) {
           const why = stopReason(signal);
@@ -441,7 +512,7 @@ export function createEngine(options: EngineOptions): Engine {
       };
     } finally {
       clearTimeout(deadline);
-      await state.handle?.dispose().catch(() => {});
+      if (!detaching) await state.handle?.dispose().catch(() => {});
     }
     if (!verdict) throw new Error("unreachable: no verdict");
     const { retry: _retry, ...final } = verdict;
@@ -587,6 +658,95 @@ export function createEngine(options: EngineOptions): Engine {
     })();
   }
 
+  // A run's in-memory state (new runs and resumed ones).
+  function createRun(p: {
+    id: string;
+    dir: string;
+    cwd: string;
+    mode: Mode;
+    limits: Limits;
+    tasks: Task[];
+    store: RunStore;
+    opts: { policy?: "allSettled" | "failFast"; data?: Record<string, unknown> };
+  }): RunState {
+    const controller = new AbortController();
+    const graph = new Graph(p.tasks);
+    let resolve!: (view: RunView) => void;
+    const done = new Promise<RunView>((r) => (resolve = r));
+    const run = {
+      id: p.id,
+      dir: p.dir,
+      cwd: p.cwd,
+      mode: p.mode,
+      limits: p.limits,
+      signal: controller.signal,
+      tasks: graph.tasks,
+      results: new Map<string, Settled>(),
+      store: p.store,
+      data: p.opts.data ?? {},
+      controller,
+      agents: new Map(
+        p.tasks.map((t) => [t.id, { task: t, status: "queued" as const, usageAt: 0 }]),
+      ),
+      graph,
+      seq: -1,
+      current: emptyView(p.id),
+      consumers: new Set<Consumer>(),
+      policy: p.opts.policy ?? "allSettled",
+      finished: false,
+      pending: new Set(),
+      resolve,
+      done,
+      usage: ZERO_USAGE,
+    } as unknown as RunState;
+    (run as { settledResults: Map<string, Settled> }).settledResults = run.results as Map<
+      string,
+      Settled
+    >;
+    (run as { view: () => RunView }).view = () => run.current;
+    (run as { emit: RunContext["emit"] }).emit = (agent, event) => void emit(run, agent, event);
+    run.scheduler = new Scheduler(
+      graph,
+      limiter,
+      (taskId) => {
+        const state = run.agents.get(taskId)!;
+        state.provider ??= pipeline.model(run, state.task).provider;
+        return state.provider;
+      },
+      (taskId) => void startAgent(run, taskId),
+      p.limits.concurrency,
+    );
+    runs.set(p.id, run);
+    return run;
+  }
+
+  function startJobDeadline(run: RunState) {
+    const deadline = setTimeout(() => {
+      if (!run.finished) cancelRun(run, new StopSignal("run deadline exceeded", "failed"));
+    }, run.limits.jobMs);
+    deadline.unref?.();
+    void run.done.then(() => clearTimeout(deadline));
+  }
+
+  // Leaves a surviving run's detached agents running and drops the run from this engine.
+  async function detachRun(run: RunState) {
+    run.detached = true;
+    run.scheduler.stop();
+    const waits: Promise<unknown>[] = [];
+    for (const state of run.agents.values()) {
+      if (state.status !== "running") continue;
+      if (state.handle?.detach) waits.push(state.handle.detach().catch(() => {}));
+      else if (state.handle) {
+        // An agent that cannot outlive Pi (in process) is cancelled.
+        state.controller?.abort(new StopSignal("parent exit", "cancelled"));
+      }
+    }
+    await Promise.all(waits);
+    (run as { telemetry?: Telemetry }).telemetry?.stop();
+    await run.store.flush(true);
+    runs.delete(run.id);
+  }
+
   const engine: Engine = {
     limiter,
     async run(specs, opts = {}) {
@@ -598,65 +758,14 @@ export function createEngine(options: EngineOptions): Engine {
         opts.dir ?? join(await runsRoot(cwd).catch(() => join(tmpdir(), "pinata-runs")), id);
       const mode = opts.mode ?? "lean";
       const store = await RunStore.create(dir, mode);
-      const controller = new AbortController();
-      const graph = new Graph(tasks);
-      let resolve!: (view: RunView) => void;
-      const done = new Promise<RunView>((r) => (resolve = r));
-      const run = {
-        id,
-        dir,
-        cwd,
-        mode,
-        limits,
-        signal: controller.signal,
-        tasks: graph.tasks,
-        results: new Map<string, Settled>(),
-        store,
-        data: opts.data ?? {},
-        controller,
-        agents: new Map(
-          tasks.map((t) => [t.id, { task: t, status: "queued" as const, usageAt: 0 }]),
-        ),
-        graph,
-        seq: -1,
-        current: emptyView(id),
-        consumers: new Set<Consumer>(),
-        policy: opts.policy ?? "allSettled",
-        finished: false,
-        pending: new Set(),
-        resolve,
-        done,
-        usage: ZERO_USAGE,
-      } as unknown as RunState;
-      (run as { settledResults: Map<string, Settled> }).settledResults = run.results as Map<
-        string,
-        Settled
-      >;
-      (run as { view: () => RunView }).view = () => run.current;
-      (run as { emit: RunContext["emit"] }).emit = (agent, event) => void emit(run, agent, event);
-      run.scheduler = new Scheduler(
-        graph,
-        limiter,
-        (taskId) => {
-          const state = run.agents.get(taskId)!;
-          state.provider ??= pipeline.model(run, state.task).provider;
-          return state.provider;
-        },
-        (taskId) => void startAgent(run, taskId),
-        limits.concurrency,
-      );
-      runs.set(id, run);
+      const run = createRun({ id, dir, cwd, mode, limits, tasks, store, opts });
       const handle = handleOf(run);
       // Listeners subscribe before the first event, so they see the whole run.
       for (const listener of runListeners) listener(handle);
       emit(run, undefined, { t: "run_started", tasks: tasks as TaskSpec[], mode });
       for (const task of tasks) emit(run, task.id, { t: "agent_queued" });
       if (mode === "observe") startTelemetry(run);
-      const deadline = setTimeout(() => {
-        if (!run.finished) cancelRun(run, new StopSignal("run deadline exceeded", "failed"));
-      }, limits.jobMs);
-      deadline.unref?.();
-      void done.then(() => clearTimeout(deadline));
+      startJobDeadline(run);
       try {
         if (pipeline.setup) await pipeline.setup(run);
       } catch (error) {
@@ -665,6 +774,92 @@ export function createEngine(options: EngineOptions): Engine {
       }
       run.scheduler.pump();
       return handle;
+    },
+    async resume(dir, opts = {}) {
+      const events = await readEvents(dir);
+      const first = events[0];
+      if (!first || first.t !== "run_started") throw new Error(`${dir} has no run log`);
+      // A live run is already followed; a finished one in memory is replaced by the log.
+      const existing = runs.get(first.run);
+      if (existing && !existing.finished) return handleOf(existing);
+      const before = replayView(events, first.run);
+      if (before.status !== "running") throw new Error(`Run ${first.run} has settled`);
+      // Tasks: the run's own, plus any added or requeued later (last definition wins).
+      const specs = new Map<string, TaskSpec>(first.tasks.map((t) => [t.id, t]));
+      for (const e of events)
+        if (e.t === "agent_queued" && e.task && e.agent) specs.set(e.agent, e.task);
+      const tasks = validateGraph([...specs.values()], {
+        allowWrites: opts.allowWrites ?? [...specs.values()].some((t) => t.role === "builder"),
+      });
+      const store = await RunStore.open(dir, before.mode);
+      const run = createRun({
+        id: first.run,
+        dir,
+        cwd: opts.cwd ?? process.cwd(),
+        mode: before.mode,
+        limits: validateLimits(opts.limits ?? {}),
+        tasks,
+        store,
+        opts,
+      });
+      run.current = before;
+      run.seq = before.seq;
+      run.usage = before.usage;
+      // Settled agents keep their verdicts and results; running ones are followed again.
+      for (const task of topological(tasks)) {
+        const agent = before.agents[task.id];
+        const state = run.agents.get(task.id)!;
+        if (!agent || agent.status === "queued") continue;
+        if (agent.status === "running") {
+          state.reattach = true;
+          continue;
+        }
+        state.status = agent.status;
+        const saved = await store.readResult<Settled & { task?: string }>(task.id);
+        if (saved) {
+          const { task: _task, ...settled } = saved;
+          run.settledResults.set(task.id, settled as Settled);
+        }
+        run.graph.restore(task.id, agent.status === "succeeded");
+      }
+      const handle = handleOf(run);
+      for (const listener of runListeners) listener(handle);
+      emit(run, undefined, { t: "run_resumed", reason: opts.reason ?? "Pi restarted" });
+      if (run.mode === "observe") startTelemetry(run);
+      startJobDeadline(run);
+      run.scheduler.pump();
+      maybeFinish(run);
+      return handle;
+    },
+    rerun(id) {
+      const run = runs.get(id);
+      if (!run) throw new Error(`Unknown run ${id}`);
+      if (run.controller.signal.aborted) throw new Error("The run was stopped; start a new run");
+      const lost = [...run.agents.values()].filter(
+        (a) => a.status === "cancelled" && run.settledResults.get(a.task.id)?.reason === LOST,
+      );
+      if (!lost.length) throw new Error("No task of this run was lost when Pi exited");
+      const reopened: string[] = [];
+      for (const a of lost)
+        for (const name of run.graph.reopen(a.task.id))
+          if (!reopened.includes(name)) reopened.push(name);
+      if (run.finished) {
+        run.finished = false;
+        run.done = new Promise<RunView>((resolve) => (run.resolve = resolve));
+        emit(run, undefined, { t: "run_resumed", reason: "rerun of tasks lost when Pi exited" });
+        if (run.mode === "observe") startTelemetry(run);
+      }
+      for (const name of reopened) {
+        const s = run.agents.get(name)!;
+        s.status = "queued";
+        s.handle = undefined;
+        s.budget = undefined;
+        run.settledResults.delete(name);
+        emit(run, name, { t: "agent_queued", task: s.task as TaskSpec });
+      }
+      run.scheduler.resume();
+      run.scheduler.pump();
+      return reopened;
     },
     status(id?: string) {
       if (id) return runs.get(id)?.current;
@@ -766,12 +961,15 @@ export function createEngine(options: EngineOptions): Engine {
       const handle = run?.agents.get(agent)?.handle;
       return handle ? handle.snapshot() : Promise.resolve(undefined);
     }) as Engine["snapshot"],
-    async shutdown(reason) {
-      const waits: Promise<RunView>[] = [];
+    async shutdown(reason, options = {}) {
+      const waits: Promise<unknown>[] = [];
       for (const run of runs.values())
         if (!run.finished) {
-          cancelRun(run, new StopSignal(reason, "cancelled"));
-          waits.push(run.done);
+          if (options.detach?.(handleOf(run))) waits.push(detachRun(run));
+          else {
+            cancelRun(run, new StopSignal(reason, "cancelled"));
+            waits.push(run.done);
+          }
         }
       await Promise.all(waits);
     },

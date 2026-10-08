@@ -19,7 +19,8 @@ import { agentDir, layeredConfig, modelCandidates, type PinataConfig } from "./c
 import { piPipeline, type PipelineStages, type PiRunData } from "./pipeline.ts";
 import { RuntimeCache, inherited, selectModel } from "./runtime.ts";
 import { prepareRun, verificationStages } from "../verify/stages.ts";
-import { writeRunRecord } from "../verify/integrate.ts";
+import { readRunRecord, writeRunRecord } from "../verify/integrate.ts";
+import { alive, identify } from "../backends/supervise.ts";
 import { headCommit } from "../workspace/snapshot.ts";
 import { agentMessages, type PinataUI } from "./ui.ts";
 import { RunServer } from "../ipc/server.ts";
@@ -127,6 +128,8 @@ export class PinataHost {
   readonly background = new Set<string>();
   // The widget, footer and live overlay; absent in tests that need no UI.
   ui: PinataUI | undefined;
+  // Runs that outlive this Pi (survive): detached at shutdown instead of cancelled.
+  readonly survivors = new Set<string>();
   // Socket servers of this session's runs (observe mode, or after /pinata watch).
   readonly servers = new Map<string, Promise<RunServer>>();
 
@@ -227,6 +230,8 @@ export class PinataHost {
       integratedChecks: params.integratedChecks ?? [],
       noIntegratedChecksReason: params.noIntegratedChecksReason ?? null,
     };
+    // A JSON copy for run.json, before the pipeline adds runtime state to `data`.
+    const saved = JSON.parse(JSON.stringify(data)) as Record<string, unknown>;
     const handle = await engine.run(tasks as TaskSpec[], {
       id,
       cwd: root,
@@ -251,7 +256,16 @@ export class PinataHost {
       noIntegratedChecksReason: params.noIntegratedChecksReason ?? null,
       passEnv: config.passEnv,
       taskMs: config.limits.taskMs,
+      resume: {
+        mode: handle.view().mode,
+        limits: config.limits as unknown as Record<string, unknown>,
+        data: saved,
+        survive: params.survive === true,
+        background: params.background === true,
+        owner: await identify(process.pid),
+      },
     });
+    if (params.survive) this.survivors.add(handle.id);
     return { handle, notices: layered.notices };
   }
 
@@ -338,9 +352,56 @@ export class PinataHost {
   async shutdown(reason: string): Promise<void> {
     this.shuttingDown = true;
     while (this.starting.size) await Promise.allSettled(this.starting);
-    await this.engineInstance?.shutdown(reason);
+    await this.engineInstance?.shutdown(reason, {
+      detach: (run) => this.survivors.has(run.id),
+    });
     for (const server of this.servers.values()) await (await server.catch(() => null))?.close();
     this.cache.dispose();
+  }
+
+  // Starts again the tasks of a run that were lost when an earlier Pi exited.
+  rerun(id: string): string[] {
+    if (!this.engineInstance) throw new Error(`Run ${id.slice(0, 8)} is not loaded in this Pi`);
+    return this.engineInstance.rerun(id);
+  }
+
+  // Resumes the runs an earlier Pi left unsettled in this repository (it exited, crashed or
+  // reloaded) unless another live Pi still owns them: detached agents are followed again,
+  // in-process ones are reported as lost. Returns the resumed run ids.
+  async resumeOrphans(ctx: ExtensionContext): Promise<string[]> {
+    const root = await repositoryRoot(ctx.cwd).catch(() => null);
+    if (!root) return [];
+    const resumed: string[] = [];
+    for (const dir of (await listRuns(await runsRoot(root))).slice(0, 50)) {
+      const record = await readRunRecord(dir).catch(() => null);
+      if (!record?.resume || this.handles.has(record.id)) continue;
+      const view = await replay(dir).catch(() => null);
+      if (view?.status !== "running") continue;
+      const owner = record.resume.owner;
+      if (owner && owner.pid !== process.pid && (await alive(owner))) continue;
+      try {
+        const handle = await this.engine(ctx).resume(dir, {
+          cwd: record.root,
+          limits: record.resume.limits,
+          allowWrites: record.allowWrites,
+          data: { ...record.resume.data },
+          reason: "Pi restarted",
+        });
+        this.handles.set(handle.id, handle);
+        if (record.resume.survive) this.survivors.add(handle.id);
+        if (record.resume.background) this.background.add(handle.id);
+        await writeRunRecord(dir, {
+          ...record,
+          resume: { ...record.resume, owner: await identify(process.pid) },
+        });
+        this.ui?.bind(ctx);
+        this.ui?.follow(handle, this.engine(ctx));
+        resumed.push(handle.id);
+      } catch {
+        // A run that cannot be resumed stays as it is; /pinata status reports it.
+      }
+    }
+    return resumed;
   }
 
   // Runs a previous Pi left unsettled (it crashed or was killed): their in-process agents are gone.

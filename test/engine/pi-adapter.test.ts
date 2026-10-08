@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 import { fauxAssistantMessage, fauxText, fauxToolCall } from "@earendil-works/pi-ai";
@@ -281,6 +281,14 @@ test("/pinata reports runs, modes and runs a crashed Pi left unsettled", async (
   void fauxText;
 });
 
+async function until(condition: () => boolean, what: string, ms = 10_000) {
+  const end = Date.now() + ms;
+  while (!condition()) {
+    if (Date.now() > end) throw new Error(`Timed out waiting for ${what}`);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
 const timeouts = () => process.getActiveResourcesInfo().filter((r) => r === "Timeout").length;
 const settle = () => new Promise((resolve) => setImmediate(resolve));
 
@@ -476,4 +484,48 @@ test("modes: lean by default with the socket on /pinata watch; observe starts it
   assert(!existsSync(join(lean.details.result.dir, "link.json")), "the session override wins");
   finish();
   for (const handler of a.handlers.session_shutdown) await handler({ reason: "quit" }, a.ctx);
+});
+
+test("the next Pi resumes a crashed run: lost tasks are reported, /pinata rerun finishes them, and the result is delivered", async (t) => {
+  const first = await adapter(t, reader);
+  const started = await first.call("pinata_run", {
+    tasks: [spec("kept"), spec("lost"), spec("after", "planner", { after: ["lost"] })],
+    background: true,
+  });
+  const { run, dir } = started.details.result;
+  await until(() => first.messages.length === 1, "the first delivery");
+  // A crash: the log ends while "lost" ran, and nothing was delivered.
+  const lines = (await readFile(join(dir, "events.jsonl"), "utf8")).trim().split("\n");
+  const kept = lines.filter((line) => {
+    const e = JSON.parse(line);
+    if (e.t === "run_settled") return false;
+    if ((e.agent === "lost" || e.agent === "after") && e.t !== "agent_queued")
+      return e.agent === "lost" && e.t === "agent_started";
+    return true;
+  });
+  await writeFile(join(dir, "events.jsonl"), kept.join("\n") + "\n");
+  await rm(join(dir, "delivered.json"), { force: true });
+  // The next Pi in the same repository.
+  const second = await adapter(t, reader);
+  second.ctx.cwd = first.world.repo;
+  Object.assign(second.ctx, { hasUI: true, mode: "print" });
+  second.ctx.ui.setWidget = () => {};
+  second.ctx.ui.setStatus = () => {};
+  for (const handler of second.handlers.session_start) await handler({}, second.ctx);
+  await until(() => second.notes.some((n) => /resumed 1 run/.test(n)), "the resume notice");
+  await until(() => second.messages.length === 1, "the delivery of the resumed run");
+  assert.match(second.messages[0].message.content, /lost/);
+  const command = second.commands.get("pinata");
+  await command.handler("", second.ctx);
+  assert.match(second.notes.at(-1)!, /cancelled/);
+  await command.handler(`rerun ${run.slice(0, 8)}`, second.ctx);
+  assert.match(second.notes.at(-1)!, /started again (after, lost|lost, after)/);
+  // A run delivers once; the rerun's outcome is in its status.
+  let status: any;
+  for (let i = 0; i < 200; i++) {
+    status = (await second.call("pinata_status", { run })).details.result;
+    if (status.status !== "running") break;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  assert.equal(status.status, "succeeded", JSON.stringify(status));
 });

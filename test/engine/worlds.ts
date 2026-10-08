@@ -55,6 +55,15 @@ export interface World {
   ): ReturnType<ReturnType<typeof createEngine>["run"]>;
   engine: ReturnType<typeof createEngine>;
   backend?: ProcessBackend;
+  dataOf?: (run: string) => Record<string, unknown>;
+  resume?: (
+    dir: string,
+    id: string,
+  ) => Promise<{
+    engine: ReturnType<typeof createEngine>;
+    backend: ProcessBackend;
+    handle: Awaited<ReturnType<ReturnType<typeof createEngine>["resume"]>>;
+  }>;
 }
 
 // OpenAI message content: a string or text parts; tool calls and results as JSON.
@@ -106,6 +115,7 @@ export async function inProcessWorld(
     turns,
     run: world.run,
     engine: world.engine,
+    dataOf: (id) => world.dataOf.get(id) ?? {},
   };
 }
 
@@ -160,35 +170,53 @@ export async function processWorld(
   // Priced: one prompt token costs 1 USD, so the first response exceeds a 1 USD limit.
   await loopback.writeModels(agentDir, options.priced ? 1_000_000 : 0);
   const command = devPi();
-  const backend = new ProcessBackend({
-    env: { PI_CODING_AGENT_DIR: agentDir },
-    ...(command.length && { command }),
-  });
-  const engine = createEngine({
-    backends: { process: backend },
-    pipeline: piPipeline(verificationStages()),
-    limiter: new Limiter({ cap: 64, initial: 64 }),
-  });
+  // A fresh engine, as a new Pi session would create (resume tests use a second one).
+  const newEngine = () => {
+    const backend = new ProcessBackend({
+      env: { PI_CODING_AGENT_DIR: agentDir },
+      ...(command.length && { command }),
+    });
+    const engine = createEngine({
+      backends: { process: backend },
+      pipeline: piPipeline(verificationStages()),
+      limiter: new Limiter({ cap: 64, initial: 64 }),
+    });
+    return { engine, backend };
+  };
+  const { engine, backend } = newEngine();
+  const dataOf = new Map<string, Record<string, unknown>>();
   let n = 0;
   const run: World["run"] = async (tasks, opts = {}) => {
     const id = opts.id ?? randomUUID();
     const config = validateConfig({ setup: false, ...(opts as any).config }).config;
     const prep = await prepareRun(repo, id, validateGraph(tasks, { allowWrites: true }), config);
+    const data = {
+      models: Object.fromEntries(tasks.map((task) => [task.id, LOOPBACK])),
+      instructions: [],
+      codemode: false,
+      backend: "process",
+      config,
+      prep,
+      ...opts.data,
+    };
+    dataOf.set(id, data);
     return engine.run(tasks, {
       cwd: repo,
       dir: join(dir, "runs", `run-${++n}`),
       ...opts,
       id,
-      data: {
-        models: Object.fromEntries(tasks.map((task) => [task.id, LOOPBACK])),
-        instructions: [],
-        codemode: false,
-        backend: "process",
-        config,
-        prep,
-        ...opts.data,
-      },
+      data,
     });
   };
-  return { kind: "process", dir, repo, turns, run, engine, backend };
+  // A new engine resumes a run from its directory with the data it started with.
+  const resume = async (runDir: string, id: string) => {
+    const next = newEngine();
+    const handle = await next.engine.resume(runDir, {
+      cwd: repo,
+      data: { ...dataOf.get(id) },
+      allowWrites: true,
+    });
+    return { ...next, handle };
+  };
+  return { kind: "process", dir, repo, turns, run, engine, backend, resume };
 }
