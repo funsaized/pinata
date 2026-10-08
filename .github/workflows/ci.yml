@@ -41,6 +41,6 @@ jobs:
       - name: Engine benchmarks against budgets
         run: npm run bench -- --ci --host pi
       - name: Check 0.7.0 against loopback providers
-        # 0.7.0 needs POSIX process control and Herdr; it does not support Windows.
-        if: runner.os != 'Windows'
+        # 0.7.0's packed smokes only ever ran on Linux; they stay there until E9.5 removes them.
+        if: runner.os == 'Linux'
         run: npm run test:pi

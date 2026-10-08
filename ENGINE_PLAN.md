@@ -1147,6 +1147,8 @@ Read this section and the plan before resuming after a context reset.
 - Quality score (`test/quality/score.mjs`): mean of builder oracle pass rate, review-control
   accuracy and scout factual accuracy over all opportunities; result-format failures counted
   separately. Gate 1 compares the engine against 0.6944 with 0 format failures.
+- 0.7.0's packed smokes (`npm run test:pi`) run in CI on Linux only, as before this branch;
+  on macOS its `resources` probe printed nothing. The engine's smokes run on all three OSes.
 - 0.7.0 dependency-cache tests are skipped on macOS (they never ran there before); E3.1's
   port must cover macOS.
 - Live scripts accept `PINATA_LIVE_SMOKE=1` (the plan's spelling) as well as 0.7.0's
@@ -1172,9 +1174,9 @@ Read this section and the plan before resuming after a context reset.
   Windows p50 0.11 / p95 0.40–0.48 / p99 2.2–3.6 ms; GitHub macOS p99 2.6 ms. Cause: a few
   launches per run are delayed by runner scheduling or garbage collection on shared 2–3 vCPU
   machines; the median and p95 are within target, so it is not the scheduler's own work.
-  Proposed target: keep p99 < 1 ms on the reference Linux machine (2x on Linux CI); on macOS and
-  Windows CI require p95 < 1 ms (2x) and p99 < 5 ms, the plan's everywhere target for
-  dependent launch. The test encodes exactly this.
+  Linux CI runners showed the same tail once (p99 2.2 ms). Proposed target: keep p99 < 1 ms
+  on the reference Linux machine; on CI runners require p95 < 1 ms (2x) and p99 < 5 ms, the
+  plan's everywhere target for dependent launch. The test encodes exactly this.
 - Shutdown waits for runs that are still being created, so a `/reload` that arrives while
   `pinata_run` resolves the repository cannot leave a run going (found by Windows CI).
 
