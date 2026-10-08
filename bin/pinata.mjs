@@ -2,6 +2,8 @@
 // The pinata command line.
 //   pinata view [run] [task]   attach a viewer to a live run, or open a finished one from its log
 //   pinata logs [run] [task] [--follow] [--json]   print a run's log
+//   pinata run <job.json> [--mode observe] [--json] [--watch]   run a job headless
+//   pinata resume <run>         continue a run that outlived its Pi
 // Runs live in <git common dir>/pinata/<run>; a live run has link.json (its socket). Both
 // commands run in the pi binary (the viewer interactively, logs in print mode).
 import { spawn, spawnSync } from "node:child_process";
@@ -13,6 +15,9 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const USAGE = `Usage:
   pinata view [run] [task]                 attach a viewer to a live run, or replay a finished one
   pinata logs [run] [task] [--follow] [--json]   print a run's log (the newest run by default)
+  pinata run <job.json> [--mode observe] [--json] [--watch]   run a job headless
+      exit codes: 0 succeeded, 1 failed, 2 invalid job, 3 cancelled
+  pinata resume <run>                      continue a run that outlived its Pi
 
 run: a run id prefix or a run directory. Start a live run's socket with /pinata watch in Pi,
 or run in observe mode.`;
@@ -114,6 +119,33 @@ function logs(args) {
   startPi(["headless", "main.ts"], ["-p", `/pinata-logs ${JSON.stringify(spec)}`], {}, "ignore");
 }
 
+function run(args) {
+  const job = args.find((a) => !a.startsWith("--") && args[args.indexOf(a) - 1] !== "--mode");
+  if (!job) fail("Usage: pinata run <job.json> [--mode observe] [--json] [--watch]");
+  if (!existsSync(job)) fail(`No job file ${job}`);
+  const at = args.indexOf("--mode");
+  const mode = at === -1 ? undefined : args[at + 1];
+  if (mode !== undefined && mode !== "lean" && mode !== "observe")
+    fail("--mode is lean or observe");
+  const spec = {
+    job: resolve(job),
+    ...(mode && { mode }),
+    json: args.includes("--json"),
+    watch: args.includes("--watch"),
+  };
+  startPi(["headless", "main.ts"], ["-p", `/pinata-run ${JSON.stringify(spec)}`], {}, "ignore");
+}
+
+function resume(args) {
+  const { runs } = resolveRuns(args.slice(0, 1), false);
+  startPi(
+    ["headless", "main.ts"],
+    ["-p", `/pinata-resume ${JSON.stringify({ dir: runs[0] })}`],
+    {},
+    "ignore",
+  );
+}
+
 function view(args) {
   // A live run first; a run given by id may also be a finished one (replayed from its log).
   const { runs, task } = resolveRuns(args, true);
@@ -128,6 +160,8 @@ function view(args) {
 const [command, ...rest] = process.argv.slice(2);
 if (command === "view") view(rest);
 else if (command === "logs") logs(rest);
+else if (command === "run") run(rest);
+else if (command === "resume") resume(rest);
 else {
   console.log(USAGE);
   process.exit(command && command !== "help" && command !== "--help" ? 1 : 0);

@@ -916,22 +916,22 @@ Gate 1 passes.
 
 ### M8: Headless and scripted runs
 
-- [ ] **E8.1 Headless host (M).**
+- [x] **E8.1 Headless host (M).**
   - Path: `headless/main.ts` runs per E5.6:
     `pi -p --mode json --no-session --extension engine/pi/extension.ts "/pinata-run <job.json>"`,
     or Node if E5.6 chose it.
   - Job files keep 0.7.0's `examples/*.json` job shape.
   - The `pinata` npm bin wraps it: `pinata run job.json [--mode observe] [--json]`.
   - Done when an example job runs headless on three OSes.
-- [ ] **E8.2 Reporters (S).**
+- [x] **E8.2 Reporters (S).**
   - Path: `headless/reporters.ts`. Text mode prints one line per state change. JSONL mode
     prints `AgentEvent`s.
   - Exit codes: 0 when everything succeeded, 1 on failure, 2 on validation error, 3 when
     cancelled.
   - Done when the tests assert the output and exit codes.
-- [ ] **E8.3 Viewers on headless runs (S).** The headless host starts the socket in observe
+- [x] **E8.3 Viewers on headless runs (S).** The headless host starts the socket in observe
       mode or on request. Done when `pinata view` attaches to a headless run.
-- [ ] **E8.4 Continue after Pi exits (S).**
+- [x] **E8.4 Continue after Pi exits (S).**
   - When the parent exits with unsettled detached agents and `survive: true`, start a
     headless host for that run. It replaces 0.7.0's background coordinator, and only runs
     when needed.
@@ -1163,7 +1163,10 @@ Read this section and the plan before resuming after a context reset.
 - M7: done (`engine/herdr/{client,panes}.ts`, `engine/backends/herdr-pi.ts`,
   `engine/agent/reporter.ts`, `docs/how-to/herdr.md`). Herdr tests run locally inside Herdr
   (`test/engine/herdr.test.ts`, and herdr-pi in the conformance suite); CI has no Herdr.
-  Next: M8 (headless).
+- M8: done (`engine/headless/{main,reporters}.ts`, `pinata run|resume|logs|view` in
+  `bin/pinata.mjs`, `PinataHost.resumeDir`/`undelivered`/`continueHeadless`; tests in
+  `test/engine/headless.test.ts`). Next: E9.1 Gate 2 (measure every target per backend and
+  mode, the UX lag, the Luna eval, and Luna live smokes per backend), E9.2, E9.3, E9.4, E9.5.
 - E0.7 upstream issue: not opened yet (outward-facing; include the `ensureTool` finding).
 
 ### Decisions and deviations
@@ -1340,6 +1343,15 @@ workspace create --env`; the command is quoted for the shell `pane process-info`
 - Engine fix found by E6.1: the per-agent wall clock was an `AbortSignal.timeout()` held only
   by `AbortSignal.any()`, which references its sources weakly, so it could be garbage
   collected and never fire. It is now an explicit timer.
+- Headless (M8): `pinata run <job>` runs `pi -p` with only `engine/headless/main.ts`, which
+  runs the job in the foreground through `PinataHost` and prints the text or JSONL reporter
+  to file descriptor 1; the exit code is `process.exitCode` (Pi honours it): 0 succeeded,
+  1 failed, 2 invalid job, 3 cancelled. Print mode, not `--mode json` (its protocol records
+  would interleave with the report). E8.4: when Pi exits, each unsettled `survive` run is
+  released (owner cleared in `run.json`) and a detached headless host (`/pinata-resume`,
+  output in `<run>/headless.log`) resumes it and finishes the graph; a reload resumes it in
+  the reloaded extension instead. The next Pi delivers background results that settled
+  meanwhile (once, `delivered.json`). `PINATA_NO_CONTINUE=1` disables the headless host.
 - `pinata logs` and the headless host run in the pi binary's print mode (E5.6's decision);
   `bin/pinata.mjs` is plain JavaScript because Node does not strip types under
   `node_modules`. Print mode needs stdin closed, and routes extensions' `process.stdout`
