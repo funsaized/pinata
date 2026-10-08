@@ -5,7 +5,9 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { Engine, RunHandle } from "../core/engine.ts";
+import { readJsonl } from "../core/store.ts";
 import { coalesce, type RunView } from "../core/view.ts";
+import { AgentDetail, type DetailSource } from "../ui/detail.ts";
 import { LiveScene, type SceneRun } from "../ui/live.ts";
 import { footerLine } from "../ui/text.ts";
 import { PinataWidget, widgetLines } from "../ui/widget.ts";
@@ -13,6 +15,8 @@ import { PinataWidget, widgetLines } from "../ui/widget.ts";
 export const WIDGET = "pinata";
 export const MOTION = "pinata-motion";
 const UPDATE_MS = 250;
+// The detail view streams text at up to 20 frames per second.
+const DETAIL_MS = 50;
 
 export type UIContext = Pick<ExtensionContext, "ui" | "hasUI" | "mode" | "cwd" | "sessionManager">;
 
@@ -41,6 +45,8 @@ export class PinataUI {
   private installed = false;
   private shown = false;
   scene: LiveScene | null = null;
+  detail: AgentDetail | null = null;
+  private engine: Pick<Engine, "subscribe" | "snapshot" | "steer"> | undefined;
   private opening = false;
   private epoch = 0;
   motion = process.env.PINATA_MOTION !== "off";
@@ -65,7 +71,8 @@ export class PinataUI {
   }
 
   // Follows a run of this session for its whole life, repairs included.
-  follow(handle: RunHandle, engine: Pick<Engine, "subscribe">): void {
+  follow(handle: RunHandle, engine: Pick<Engine, "subscribe" | "snapshot" | "steer">): void {
+    this.engine = engine;
     if (this.followed.has(handle.id)) return;
     const updates = coalesce(() => this.refresh(), UPDATE_MS);
     const unsubscribe = engine.subscribe(handle.id, (event) => updates.push(event));
@@ -207,11 +214,89 @@ export class PinataUI {
     }
   }
 
-  // Session end: close the overlay, stop following, and clear the widget and footer.
+  // The detail source for a run: live through the engine for this session's runs, from the
+  // run directory (events and transcripts) for any other.
+  detailSource(run: string, dir: string, view: RunView, cwd: string): DetailSource {
+    const live = this.followed.get(run);
+    const engine = this.engine;
+    const current = () => (live ? live.handle.view() : view);
+    const transcript = (agent: string) => readJsonl(join(dir, "transcripts", `${agent}.jsonl`));
+    return {
+      run,
+      cwd,
+      agents: () => current().order,
+      view: (agent) => current().agents[agent],
+      async load(agent) {
+        if (live && engine && current().agents[agent]?.status === "running") {
+          const snapshot = await engine.snapshot(run, agent);
+          if (snapshot) return snapshot;
+        }
+        const messages = await transcript(agent);
+        if (messages.length || !live || !engine) return { messages };
+        // Settled moments ago: the lean transcript is still being written.
+        return (await engine.snapshot(run, agent)) ?? { messages };
+      },
+      ...(live &&
+        engine && {
+          subscribe(agent, onEvent) {
+            const updates = coalesce((events) => {
+              for (const e of events) if (e.agent === agent) onEvent(e);
+            }, DETAIL_MS);
+            const stop = engine.subscribe(run, (e) => e.agent === agent && updates.push(e));
+            return () => {
+              stop();
+              updates.flush();
+            };
+          },
+          steer: (agent, text, as) => engine.steer(run, agent, text, as, "user"),
+        }),
+    };
+  }
+
+  // /pinata open [run] <task>: the agent detail overlay.
+  async openDetail(
+    found: { id: string; dir: string; view: RunView },
+    agent: string,
+    ctx: UIContext,
+  ): Promise<string | null> {
+    this.bind(ctx);
+    if (ctx.mode !== "tui") return "The detail view needs interactive Pi. Use pinata_status.";
+    if (!found.view.agents[agent])
+      return `Run ${found.id.slice(0, 8)} has no task ${agent} (tasks: ${found.view.order.join(", ")})`;
+    if (this.opening) return null;
+    this.opening = true;
+    try {
+      const source = this.detailSource(found.id, found.dir, found.view, ctx.cwd);
+      await ctx.ui.custom<void>(
+        (tui, theme, keys, done) => {
+          this.detail?.dispose();
+          this.detail = new AgentDetail({
+            tui,
+            theme,
+            keys,
+            done: () => done(undefined),
+            source,
+            agent,
+          });
+          return this.detail;
+        },
+        { overlay: true, overlayOptions: { width: "96%", maxHeight: "95%", anchor: "center" } },
+      );
+      return null;
+    } finally {
+      this.opening = false;
+      this.detail?.dispose();
+      this.detail = null;
+    }
+  }
+
+  // Session end: close the overlays, stop following, and clear the widget and footer.
   dispose(): void {
     this.epoch++;
     this.scene?.close();
     this.scene = null;
+    this.detail?.close();
+    this.detail = null;
     for (const f of this.followed.values()) f.stop();
     this.followed.clear();
     this.clear();
