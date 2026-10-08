@@ -191,7 +191,13 @@ test("legacy failed delivery with notifiedAt is retried rather than treated as d
   };
   await atomic(path.join(f.run, "manifest.json"), old);
   await start(f.run);
-  const delivered = await complete(f);
+  // The manifest already says "complete" (written above): wait for the retried delivery.
+  const until = Date.now() + 20_000;
+  let delivered = await complete(f);
+  while (delivered.background.notification?.status !== "delivered" && Date.now() < until) {
+    await sleep(50);
+    delivered = await complete(f);
+  }
   assert.equal(delivered.background.notification.status, "delivered");
   const state = await readJson(path.join(f.dir, "herdr.json"));
   assert.equal(state.submissions, 1);
