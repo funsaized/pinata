@@ -46,7 +46,8 @@ export interface Loopback {
   firstRequest: Map<string, number>;
   errors: string[];
   setResponder(responder: Responder): void;
-  writeModels(agentDir: string): Promise<void>;
+  // `inputCostPerMTok` prices prompts (USD per million tokens), for cost budget tests.
+  writeModels(agentDir: string, inputCostPerMTok?: number): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -167,11 +168,11 @@ export async function startLoopback(
     setResponder(next) {
       responder = next;
     },
-    async writeModels(agentDir) {
+    async writeModels(agentDir, inputCostPerMTok = 0) {
       await mkdir(agentDir, { recursive: true });
       await writeFile(
         join(agentDir, "models.json"),
-        JSON.stringify(loopbackModels(origin), null, 2),
+        JSON.stringify(loopbackModels(origin, inputCostPerMTok), null, 2),
       );
     },
     async close() {
@@ -183,7 +184,7 @@ export async function startLoopback(
 }
 
 // The models.json entry Pi needs to reach the loopback server.
-export function loopbackModels(origin: string) {
+export function loopbackModels(origin: string, inputCostPerMTok = 0) {
   return {
     providers: {
       [LOOPBACK_PROVIDER]: {
@@ -198,7 +199,7 @@ export function loopbackModels(origin: string) {
             input: ["text"],
             contextWindow: 65536,
             maxTokens: 8192,
-            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+            cost: { input: inputCostPerMTok, output: 0, cacheRead: 0, cacheWrite: 0 },
           },
         ],
       },

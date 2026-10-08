@@ -819,7 +819,7 @@ Gate 1 passes.
 
 ### M6: Process backend
 
-- [ ] **E6.1 `pi --mode rpc` backend (M).** Path: `backends/process.ts` spawns `pi` with
+- [x] **E6.1 `pi --mode rpc` backend (M).** Path: `backends/process.ts` spawns `pi` with
       0.7.0's `piArgs` flags:
   - `--mode rpc --offline --no-extensions --no-skills --no-prompt-templates --no-themes`
   - `--no-approve --provider --model --thinking --tools`
@@ -1150,7 +1150,10 @@ Read this section and the plan before resuming after a context reset.
   `bench/viewer.ts`) and E5.7 (`engine/sources/log.ts`, `engine/headless/*`,
   `test/engine/log.test.ts`, `pinata logs` in the Pi smoke) are done. E5.2 is done
   (`engine/core/telemetry.ts`; `processRss` is ready for M6 to report agent processes through
-  `Telemetry.processes`). M5 is done. Next: M6 (process backend).
+  `Telemetry.processes`). M5 is done.
+- M6: E6.1 is done (`engine/backends/process.ts`, `engine/sources/jsonl.ts`; conformance suite
+  `test/engine/backends.test.ts` runs every case on both backends through
+  `test/engine/worlds.ts`). Next: E6.5 selection and host wiring, then E6.2–E6.4, E6.6.
 - E0.7 upstream issue: not opened yet (outward-facing; include the `ensureTool` finding).
 
 ### Decisions and deviations
@@ -1279,6 +1282,16 @@ Read this section and the plan before resuming after a context reset.
   settings (`setTheme(name)` would). Windows has no pseudo-terminal for E5.6's measurement
   (and E4.6), so Windows numbers are not recorded; the viewer's code is shared and its
   attach/steer/re-attach test runs on Windows.
+- Process backend (E6.1): results come from `submit_result`'s tool result details
+  (`pinataResult`) in the RPC event stream, not `get_last_assistant_text`. Persona and agent
+  options go in files under `<run>/agents/<task>/` (no argv length limits). Completion is
+  Pi's `agent_settled`. An `abort` that reaches Pi before its run starts is a no-op, so the
+  handle aborts again at the next `agent_start`/`turn_start`, and stops the child if it has
+  not settled 5 s after an abort. Tests run children with the Pi devDependency's Node CLI
+  (no global Pi needed) against the loopback provider.
+- Engine fix found by E6.1: the per-agent wall clock was an `AbortSignal.timeout()` held only
+  by `AbortSignal.any()`, which references its sources weakly, so it could be garbage
+  collected and never fire. It is now an explicit timer.
 - `pinata logs` and the headless host run in the pi binary's print mode (E5.6's decision);
   `bin/pinata.mjs` is plain JavaScript because Node does not strip types under
   `node_modules`. Print mode needs stdin closed, and routes extensions' `process.stdout`
