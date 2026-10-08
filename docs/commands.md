@@ -49,18 +49,58 @@ scripts and less frequent operations such as `note`, `unlock`, and `retry-launch
 The `/pinata` command reads saved state without a model turn. The
 `/pinata-fix` and `/pinata-review` prompt templates ask Pi to coordinate work.
 
-| Command                 | Effect                                                                          |
-| ----------------------- | ------------------------------------------------------------------------------- |
-| `/pinata`               | Show a status card for the runs started in this session, or recent runs if none |
-| `/pinata runs`          | List the last ten runs in this repository with state, task counts, and cost     |
-| `/pinata <run-id>`      | Show one run by ID prefix, including each finished task's summary or error      |
-| `/pinata-fix <fix>`     | Delegate a well-specified fix to a builder and independent reviewer             |
-| `/pinata-review [what]` | Ask Pi to review your changes, a branch, or a pull request with reviewers       |
+| Command                  | Effect                                                                          |
+| ------------------------ | ------------------------------------------------------------------------------- |
+| `/pinata`                | Show a status card for the runs started in this session, or recent runs if none |
+| `/pinata runs`           | List the last ten runs in this repository with state, task counts, and cost     |
+| `/pinata <run-id>`       | Show one run by ID prefix, including each finished task's summary or error      |
+| `/pinata live [run-id]`  | Open the animated mascot and live saved task status; optional run ID prefix     |
+| `/pinata live demo`      | Preview the mascot and its states without starting agents or making model calls |
+| `/pinata motion on\|off` | Toggle mascot animation for this Pi session, including after reload             |
+| `/pinata-fix <fix>`      | Delegate a well-specified fix to a builder and independent reviewer             |
+| `/pinata-review [what]`  | Ask Pi to review your changes, a branch, or a pull request with reviewers       |
 
 While a run started from this session is active, Pi also shows each task's
 state, time, tokens, cost, and sampled memory above the editor and a summary in the footer. Both
 refresh every two seconds and disappear when the run finishes. In RPC mode they
 are sent as `setWidget` and `setStatus` requests; JSON and print modes have no UI.
+
+Interactive Pi adds a small animated companion above the task rows. Click its
+header in fullscreen mode or use `/pinata live` to open a larger 3D braille
+mascot with task names, roles, status, elapsed time, and run cost. It reads state
+every two seconds and renders animation at ten frames per second while open.
+Closing the view does not cancel or pause workers. RPC receives plain status
+instead of an interactive scene.
+
+If a completion command arrives while the overlay owns keyboard focus, closing
+it checks saved notifications so Pi can resume the authorized run. This uses the
+usual session checks and duplicate suppression; it does not restart workers.
+
+| Live-view key | Effect                                                                                                 |
+| ------------- | ------------------------------------------------------------------------------------------------------ |
+| Space         | Bonk the piñata; cosmetic only                                                                         |
+| M             | Toggle motion for this session                                                                         |
+| Esc or Q      | Close the overlay                                                                                      |
+| Left / Right  | Select another remembered run (or recent repository run when none are remembered)                      |
+| Up / Down     | Scroll task details when they do not fit                                                               |
+| D             | Advance the demo through scout, builder, review, waiting for integration, success, and rejected review |
+
+Fullscreen mouse users can also click the large mascot to bonk it. Regular mode
+uses the keyboard. Narrow or short terminals reduce the art to keep status usable.
+Up to twelve colored ribbons correspond to tasks in list order; running ribbons
+flutter and terminal tasks settle. A failed, rejected, blocked, or uncertain task
+stops the mascot's idle rotation and displays an attention message. Error details
+remain visible after a bonk.
+
+Confetti plays on an observed transition to all tasks succeeding. Builder runs
+also need `integration: verified`; finished workers alone do not trigger it.
+Opening an already completed run shows its success state without replaying the
+burst. Integration failure or rollback shows attention. The view never verifies,
+integrates, launches, or changes a run itself.
+
+Use `/pinata motion off` or start Pi with `PINATA_MOTION=off` for static art.
+The command and M key save the preference in this session and override the
+environment default. `NO_COLOR=1` removes the mascot's custom ANSI colors.
 
 `/pinata-fix` takes the desired behavior, affected files, and acceptance checks.
 It starts with builder → review when those are known, and adds investigation

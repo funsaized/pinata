@@ -8,6 +8,7 @@ helper commands for everyday use.
 Follow these lessons to complete a first task:
 
 - [Run your first scout](tutorials/first-scout.md): ask a code question and read the findings.
+- [Watch the live mascot](tutorials/live-mascot.md): try the controls, then watch two scouts work.
 - [Build and review a change](tutorials/build-and-review.md): delegate a fix through local integration.
 - [Run a scout with the Node helper](tutorials/helper-first-scout.md): use a self-contained practice repository and job.
 - [Build and review with the helper](tutorials/helper-build-and-review.md): launch, review, and integrate manually.

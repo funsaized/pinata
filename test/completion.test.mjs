@@ -127,6 +127,23 @@ test("reload defers recovery until active work and queued messages have settled"
   assert.equal(h.messages.length, 1);
 });
 
+test("closing a live view recovers an absorbed notification once and never resumes another session", async (t) => {
+  const f = await completed(t);
+  const h = host([{ type: "custom", customType: "pinata-run", data: { run: f.run } }]);
+  await h.completion.recover({ ...h.ctx, isIdle: () => false });
+  assert.equal(h.messages.length, 0);
+  await h.completion.recover({
+    ...h.ctx,
+    sessionManager: { ...h.ctx.sessionManager, getSessionFile: () => "/another-session.jsonl" },
+  });
+  assert.equal(h.messages.length, 0);
+  await h.completion.recover(h.ctx);
+  await h.completion.recover(h.ctx);
+  await h.commands.get("pinata-complete").handler(JSON.stringify(f.payload), h.ctx);
+  assert.equal(h.messages.length, 1);
+  assert.match(h.messages[0].message.content, /one=succeeded/);
+});
+
 test("resuming a native job cannot suspend a print process or another Pi session", async (t) => {
   const f = await fixture(t, [task("one", "scout", { delay: 1200 })], {
     env: {

@@ -111,6 +111,7 @@ always review before you merge.
 | Plan before changing anything   | "Have a planner propose the smallest fix for this issue."                |
 | Build, review, and apply        | "/skill:engmgmt Implement the approved plan with an independent review." |
 | Check on a run                  | `/pinata` (no model turn), or "How is the pinata run going?"             |
+| Watch the mascot and agents     | `/pinata live` (Space to bonk), or `/pinata live demo` to try it         |
 | Undo the last integration       | "Roll back the latest pinata integration."                               |
 | Tidy up old runs                | "Preview cleanup of old pinata runs, then clean up what's safe."         |
 
@@ -123,6 +124,14 @@ While a run is going, Pi shows each agent's state, time, tokens, cost, and sampl
 memory above the editor, and a one-line summary in the footer. Type `/pinata`
 for the same view in the transcript, or `/pinata runs` for past runs in this repository.
 Neither sends anything to the model.
+
+For a little paper magic, open `/pinata live`: a turning 3D terminal piñata with
+colored ribbons and the actual task statuses beside it. Press **Space** to bonk,
+**M** to toggle motion, and **Esc** to return to Pi; workers keep going. In
+fullscreen Pi you can also click the small companion above the editor to open it.
+The victory confetti waits for successful tasks and, for builder runs, verified
+integration. Try `/pinata live demo` without starting agents, then follow the
+[live mascot walkthrough](docs/tutorials/live-mascot.md).
 
 ## If something feels off
 

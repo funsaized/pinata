@@ -6,15 +6,19 @@ boundaries enforced at runtime, see [trust and safety](architecture.md#trust-and
 
 ## Tested environment
 
-The latest local validation on 2026-10-08 passed 153 deterministic tests,
+The latest local validation on 2026-10-08 passed 161 deterministic tests,
 formatting/lint, and the installed-Pi packed-package, native completion, and
-codemode checks. The live smoke and both builder → review and
-scout → builder → review workflows also passed.
+codemode checks. The live mascot was also exercised in interactive Pi with
+disposable scripted scout, builder, and reviewer workers: running states,
+failed checks, waiting for integration, verified-integration confetti, keyboard
+and fullscreen mouse controls, motion settings, and terminal resizing.
+The earlier live smoke and both builder → review and scout → builder → review
+workflows passed before the mascot change; they were not repeated for 0.7.0.
 
 | Component           | Latest local version |
 | ------------------- | -------------------- |
 | OS                  | Linux, x86_64        |
-| Node                | 24.21.0              |
+| Node                | 24.19.0 / 26.7.0     |
 | Pi                  | 1.1.0                |
 | Herdr client/server | 0.9.1                |
 | Git                 | 2.55.0               |
@@ -45,6 +49,12 @@ and protected rollback. Reuse tests cover invalidation, corrupt caches, excluded
 setup commands, private dependency copies, shared inspection lifetimes, and
 fallback to ordinary checkout. Memory tests cover sampling, stale readings, and
 process-identity changes.
+
+Mascot tests cover success and attention states, integration-gated celebrations,
+motion controls, narrow layouts, scrolling, stale reads, timer disposal, session
+switches, and completion recovery after closing the live view. Demo scenes are
+synthetic and do not establish worker behavior; the interactive fixture checks
+read actual saved runs but use no paid model calls.
 
 The packed-Pi suite verifies two skills and seven prompt templates. The
 `subagents` skill is discoverable; `engmgmt` remains explicit-only. Resources
