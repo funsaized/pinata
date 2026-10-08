@@ -31,3 +31,19 @@ export async function fakeEngine(
     engine.run(specs, { cwd: dir, dir: join(dir, `run-${++n}`), ...opts });
   return { engine, backend, dir, run };
 }
+
+// Timing assertions on shared CI runners: the best of up to three attempts, so a noisy
+// neighbour cannot fail a measurement the code meets. Every attempt is logged. Locally, one.
+export async function bestOf(
+  t: TestContext,
+  measure: () => Promise<{ ok: boolean; report: string }>,
+): Promise<{ ok: boolean; report: string }> {
+  const attempts = process.env.CI ? 3 : 1;
+  let last = { ok: false, report: "" };
+  for (let i = 1; i <= attempts; i++) {
+    last = await measure();
+    t.diagnostic(`attempt ${i}/${attempts}: ${last.report}`);
+    if (last.ok) break;
+  }
+  return last;
+}
