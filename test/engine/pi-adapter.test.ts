@@ -377,3 +377,55 @@ test("/pinata live opens the demo without runs or model calls, persists motion, 
   await command.handler("live demo", a.ctx);
   assert.match(a.notes.at(-1)!, /needs interactive Pi/);
 });
+
+test("/pinata open replays a finished run from disk in a session that never ran it", async (t) => {
+  const { initTheme } = await import("@earendil-works/pi-coding-agent");
+  initTheme("dark");
+  const first = await adapter(t, reader);
+  const out = await first.call("pinata_run", { tasks: [spec("look")] });
+  const run: string = out.details.result.run;
+  for (const handler of first.handlers.session_shutdown)
+    await handler({ reason: "quit" }, first.ctx);
+  // A second extension instance: a new Pi session with an empty engine.
+  const second = await adapter(t, reader);
+  second.ctx.cwd = first.world.repo;
+  let detail: any;
+  Object.assign(second.ctx, {
+    mode: "tui",
+    hasUI: true,
+    sessionManager: { getBranch: () => [] },
+  });
+  second.ctx.ui = {
+    notify: (text: string) => second.notes.push(text),
+    setWidget() {},
+    setStatus() {},
+    custom: (factory: any) =>
+      new Promise((done) => {
+        detail = factory(
+          { terminal: { rows: 100 }, requestRender() {} },
+          { fg: (_: string, x: string) => x },
+          { matches: (data: string, id: string) => id === "tui.select.cancel" && data === "\x1b" },
+          done,
+        );
+      }),
+  };
+  const command = second.commands.get("pinata");
+  await command.handler("runs", second.ctx);
+  assert.match(second.notes.at(-1)!, new RegExp(run.slice(0, 8)));
+  const pending = command.handler(`open ${run.slice(0, 8)} look`, second.ctx);
+  for (let i = 0; !detail && i < 400; i++) await new Promise((r) => setTimeout(r, 5));
+  assert(detail, second.notes.join("\n"));
+  await detail.ready;
+  // oxlint-disable-next-line no-control-regex
+  const text = detail
+    .render(100)
+    .join("\n")
+    .replace(/\x1b\[[0-9;]*m|\x1b\][^\x07]*\x07/g, "");
+  assert.match(text, /✓ scout look/);
+  assert.match(text, /Task look \(scout\)/);
+  assert.match(text, /README\.md/);
+  detail.handleInput("\x1b");
+  await pending;
+  await command.handler("open nope", second.ctx);
+  assert.match(second.notes.at(-1)!, /no task nope/);
+});
