@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { monitorEventLoopDelay } from "node:perf_hooks";
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 import { InProcessBackend } from "../../engine/backends/in-process.ts";
-import { createEngine } from "../../engine/core/engine.ts";
+import { createEngine, type Engine, type RunHandle } from "../../engine/core/engine.ts";
 import { Limiter } from "../../engine/core/limiter.ts";
 import type { AgentEvent, ModelRef, TaskSpec } from "../../engine/core/types.ts";
 import { piPipeline } from "../../engine/pi/pipeline.ts";
@@ -96,6 +96,8 @@ export async function runEngineScenario(
     agentDir: string;
     repo: string;
     runsDir: string;
+    // Called with the measured run as it starts (the TUI host opens Pi's surfaces on it).
+    onRun?: (handle: RunHandle, engine: Engine) => void;
   },
 ): Promise<EngineRaw> {
   const cache = new RuntimeCache(setup.agentDir);
@@ -230,6 +232,7 @@ export async function runEngineScenario(
       prep,
     },
   });
+  setup.onRun?.(handle, engine);
   await handle.done;
   const wallMs = now() - t0;
   peakRss = Math.max(peakRss, process.memoryUsage().rss);

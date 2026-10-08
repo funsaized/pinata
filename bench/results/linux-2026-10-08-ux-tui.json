@@ -1,0 +1,59 @@
+{
+  "meta": {
+    "date": "2026-10-08",
+    "os": "linux",
+    "release": "7.2.5-3-omarchy",
+    "arch": "x64",
+    "cpus": 32,
+    "memoryGB": 31,
+    "node": "v26.7.0",
+    "pi": "1.1.0",
+    "provider": "loopback",
+    "tokenDelayMs": 1
+  },
+  "results": [
+    {
+      "scenario": "ux-8",
+      "target": "engine",
+      "provider": "loopback",
+      "host": "pi binary (bun 1.3.14)",
+      "agents": 8,
+      "statuses": {
+        "succeeded": 8
+      },
+      "spawnMs": {
+        "n": 8,
+        "p50": 10.416,
+        "p95": 14.983,
+        "p99": 14.983,
+        "max": 14.983
+      },
+      "setupMs": {
+        "n": 8,
+        "p50": 4.466,
+        "p95": 4.759,
+        "p99": 4.759,
+        "max": 4.759
+      },
+      "toolCallMs": {
+        "n": 8,
+        "p50": 11.933,
+        "p95": 16.556,
+        "p99": 16.556,
+        "max": 16.556
+      },
+      "dependentMs": null,
+      "dependentRequestMs": null,
+      "memoryPerAgentMB": 11.13,
+      "peakRssMB": 245.31,
+      "loopLagP99Ms": 10.01,
+      "cpuMs": 1188,
+      "wallMs": 1901,
+      "notes": [
+        "memoryPerAgentMB: (peak RSS - RSS before the run) / most agents running at once",
+        "8 agents ran at once (limiter opened to 64)",
+        "loopback errors: 2"
+      ]
+    }
+  ]
+}
