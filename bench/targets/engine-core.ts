@@ -4,6 +4,11 @@ import { join } from "node:path";
 import { monitorEventLoopDelay } from "node:perf_hooks";
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 import { InProcessBackend } from "../../engine/backends/in-process.ts";
+import { ProcessBackend } from "../../engine/backends/process.ts";
+import { HerdrPiBackend } from "../../engine/backends/herdr-pi.ts";
+import type { AgentBackend } from "../../engine/backends/types.ts";
+import { processRss } from "../../engine/core/telemetry.ts";
+import { readFile } from "node:fs/promises";
 import { createEngine, type Engine, type RunHandle } from "../../engine/core/engine.ts";
 import { Limiter } from "../../engine/core/limiter.ts";
 import type { AgentEvent, ModelRef, TaskSpec } from "../../engine/core/types.ts";
@@ -35,6 +40,8 @@ export interface EngineRaw {
   baselineRss: number;
   peakRss: number;
   maxRunning: number;
+  // Agents in their own processes: mean of each agent process's peak RSS (MB).
+  childMemoryMB?: number;
   lagP99Ms: number | null;
   cpuMs: number;
   host: string;
@@ -102,11 +109,20 @@ export async function runEngineScenario(
 ): Promise<EngineRaw> {
   const cache = new RuntimeCache(setup.agentDir);
   const setupAt: Record<string, number> = {};
-  const backend = new InProcessBackend({
-    runtime: () => cache.get(setup.registry),
-    agentDir: setup.agentDir,
-    onSetup: (task) => (setupAt[task] ??= now()),
-  });
+  // BENCH_BACKEND=process|herdr-pi measures agents in their own Pi processes (Gate 2); their
+  // provider must be reachable from a child (the loopback provider's models.json).
+  const kind = (process.env.BENCH_BACKEND ?? "in-process") as "in-process" | "process" | "herdr-pi";
+  const childEnv = { PI_CODING_AGENT_DIR: setup.agentDir };
+  const backend: AgentBackend =
+    kind === "process"
+      ? new ProcessBackend({ env: childEnv })
+      : kind === "herdr-pi"
+        ? new HerdrPiBackend({ env: childEnv })
+        : new InProcessBackend({
+            runtime: () => cache.get(setup.registry),
+            agentDir: setup.agentDir,
+            onSetup: (task) => (setupAt[task] ??= now()),
+          });
   // The adaptive limiter starts a provider at 8; open it so N agents really run at once.
   const trace: Record<string, Record<string, number>> = {};
   const mark = (task: string, phase: string) => {
@@ -135,7 +151,7 @@ export async function runEngineScenario(
     return handle;
   };
   const engine = createEngine({
-    backends: { "in-process": backend },
+    backends: { [kind]: backend },
     pipeline,
     limiter: new Limiter({ cap: 64, initial: 64 }),
   });
@@ -170,7 +186,7 @@ export async function runEngineScenario(
         models: { "warm-up": setup.model },
         instructions: [],
         codemode: false,
-        backend: "in-process",
+        backend: kind,
       },
     },
   );
@@ -208,6 +224,40 @@ export async function runEngineScenario(
     () => (peakRss = Math.max(peakRss, process.memoryUsage().rss)),
     process.env.BENCH_NO_SAMPLER ? 1_000_000 : 10,
   );
+  // Agents in their own processes: each one's peak RSS, sampled from the OS.
+  const childPeak = new Map<string, number>();
+  let sampling = false;
+  const children =
+    kind === "in-process"
+      ? undefined
+      : setInterval(async () => {
+          if (sampling) return;
+          sampling = true;
+          try {
+            const pids = new Map<number, string>();
+            // Attached process agents are the backend's children; detached and herdr-pi
+            // agents record their pid in the run directory.
+            if (backend instanceof ProcessBackend)
+              for (const [key, child] of backend.children)
+                pids.set(child.pid, key.slice(key.indexOf("/") + 1));
+            for (const task of scenario.tasks) {
+              const raw = await readFile(
+                join(setup.runsDir, scenario.name, "agents", task.id, "pid.json"),
+                "utf8",
+              ).catch(() => null);
+              const pid = raw ? Number(JSON.parse(raw).pid) : NaN;
+              if (Number.isFinite(pid)) pids.set(pid, task.id);
+            }
+            const rss = await processRss([...pids.keys()]);
+            for (const [pid, mb] of rss)
+              if (mb !== null) {
+                const task = pids.get(pid)!;
+                childPeak.set(task, Math.max(childPeak.get(task) ?? 0, mb));
+              }
+          } finally {
+            sampling = false;
+          }
+        }, 200);
   let lag: ReturnType<typeof monitorEventLoopDelay> | undefined;
   try {
     if (process.env.BENCH_NO_LAG) throw new Error("off");
@@ -229,7 +279,7 @@ export async function runEngineScenario(
       models: Object.fromEntries(tasks.map((t) => [t.id, setup.model])),
       instructions: [],
       codemode: false,
-      backend: "in-process",
+      backend: kind,
       config,
       prep,
     },
@@ -239,6 +289,7 @@ export async function runEngineScenario(
   const wallMs = now() - t0;
   peakRss = Math.max(peakRss, process.memoryUsage().rss);
   clearInterval(sampler);
+  if (children) clearInterval(children);
   lag?.disable();
   const cpu = process.cpuUsage(cpu0);
   let lagP99Ms: number | null = null;
@@ -266,6 +317,9 @@ export async function runEngineScenario(
     baselineRss,
     peakRss,
     maxRunning,
+    ...(childPeak.size && {
+      childMemoryMB: [...childPeak.values()].reduce((a, b) => a + b, 0) / childPeak.size,
+    }),
     lagP99Ms,
     cpuMs: Math.round((cpu.user + cpu.system) / 1000),
     host: runtimeName(),
@@ -305,7 +359,9 @@ export function summarize(
       : [],
   );
   const notes = [
-    "memoryPerAgentMB: (peak RSS - RSS before the run) / most agents running at once",
+    raw.childMemoryMB !== undefined
+      ? "memoryPerAgentMB: mean peak RSS of each agent's own Pi process, sampled every 200 ms"
+      : "memoryPerAgentMB: (peak RSS - RSS before the run) / most agents running at once",
     `${raw.maxRunning} agents ran at once (limiter opened to 64)`,
     ...raw.errors.slice(0, 5).map((e) => `agent: ${e}`),
   ];
@@ -321,7 +377,12 @@ export function summarize(
     toolCallMs: stat(toolCall),
     dependentMs: stat(dependent),
     dependentRequestMs: stat(dependentRequest),
-    memoryPerAgentMB: raw.maxRunning ? mb((raw.peakRss - raw.baselineRss) / raw.maxRunning) : null,
+    memoryPerAgentMB:
+      raw.childMemoryMB !== undefined
+        ? Math.round(raw.childMemoryMB * 100) / 100
+        : raw.maxRunning
+          ? mb((raw.peakRss - raw.baselineRss) / raw.maxRunning)
+          : null,
     peakRssMB: mb(raw.peakRss),
     loopLagP99Ms: raw.lagP99Ms,
     cpuMs: raw.cpuMs,
