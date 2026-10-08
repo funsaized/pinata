@@ -32,6 +32,7 @@ export interface PiRunData {
   backend: BackendKind;
   // Repair feedback per task.
   feedback?: Record<string, string>;
+  webExtension?: string | null;
 }
 
 // Optional stages that later milestones plug in (builders, checks, reviews).
@@ -149,6 +150,8 @@ export function piPipeline(stages: PipelineStages = {}): Pipeline {
           mode: run.mode,
           codemode: data.codemode,
           transcript: run.store.transcriptPath(task.id),
+          root: run.cwd,
+          ...(task.role === "research" && data.webExtension && { webExtension: data.webExtension }),
         },
       };
     },

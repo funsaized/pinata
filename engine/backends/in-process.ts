@@ -117,8 +117,13 @@ export class InProcessBackend implements AgentBackend {
       shellCommandPrefix: prefix,
       ...(options.shellPath && { shellPath: options.shellPath }),
     });
-    const contextFiles = this.contextFiles.get(launch.cwd, options.agentDir, options.repoRoot);
-    const research = launch.task.role === "research" && options.webExtension;
+    const contextFiles = this.contextFiles.get(
+      launch.cwd,
+      options.agentDir,
+      launch.root ?? options.repoRoot,
+    );
+    const web = launch.webExtension ?? options.webExtension;
+    const research = launch.task.role === "research" && web;
     const loader = new DefaultResourceLoader({
       cwd: launch.cwd,
       agentDir: options.agentDir,
@@ -135,7 +140,7 @@ export class InProcessBackend implements AgentBackend {
         ),
         ...(launch.codemode ? [createCodemodeExtension()] : []),
       ],
-      ...(research && { additionalExtensionPaths: [options.webExtension!] }),
+      ...(research && { additionalExtensionPaths: [web] }),
       appendSystemPromptOverride: () => [launch.persona],
       agentsFilesOverride: () => ({ agentsFiles: contextFiles }),
     });

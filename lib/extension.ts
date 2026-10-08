@@ -15,7 +15,7 @@ export default function pinata(pi: ExtensionAPI) {
       pi,
       { Text, matchesKey, truncateToWidth, visibleWidth },
       {
-        onLiveClose: (ctx) => completion?.recover(ctx),
+        onLiveClose: (ctx: unknown) => completion?.recover(ctx),
       },
     ),
   );

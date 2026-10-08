@@ -140,6 +140,8 @@ export interface RunHandle {
   readonly dir: string;
   readonly done: Promise<RunView>;
   view(): RunView;
+  // Settled agents' verdicts and results, by task id.
+  results(): ReadonlyMap<string, Settled>;
 }
 
 interface AgentState {
@@ -287,6 +289,7 @@ export function createEngine(options: EngineOptions): Engine {
     dir: run.dir,
     done: run.done,
     view: () => run.current,
+    results: () => run.results,
   });
 
   function emit(run: RunState, agent: string | undefined, body: AgentEventInput): AgentEvent {

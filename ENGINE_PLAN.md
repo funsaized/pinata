@@ -437,7 +437,7 @@ M3, M4–M8 can run in parallel, except that M6, M7 and M8 need E5.3 and E5.4.
     Herdr is available there. 0.7.0 does not support Windows, so Windows has engine targets
     only.
   - Done when the files are committed and summarized in the [Results log](#results-log).
-- [ ] **E0.5 Accuracy baseline (S).**
+- [x] **E0.5 Accuracy baseline (S).**
   - Path: `PINATA_LIVE_SMOKE=1 PINATA_LIVE_CONFIG=examples/configs/luna.json npm run eval:live`
     on 0.7.0.
   - Freeze the fixture set and oracle version, then save the score report under
@@ -479,7 +479,7 @@ M3, M4–M8 can run in parallel, except that M6, M7 and M8 need E5.3 and E5.4.
   - Cancellation is one `AbortController` per run, with a child controller per agent.
   - Done when a fake-backend test of 64 tasks in chains and fans shows dependent launch
     p99 < 1 ms, and cancellation settles every agent.
-- [ ] **E1.3 Budgets (S).**
+- [x] **E1.3 Budgets (S).**
   - Path: `budgets.ts` covers four limits:
     - wall clock per task and per run, via `AbortSignal.timeout`, defaulting to 0.7.0's
       `LIMITS`;
@@ -537,7 +537,7 @@ exact, and the suite is green on three OSes.
 
 ### M2: In-process backend and the minimal Pi adapter
 
-- [ ] **E2.1 Shared child model runtime (S).**
+- [x] **E2.1 Shared child model runtime (S).**
   - Path: `pi/runtime.ts`.
     - Create it once per parent session with
       `ModelRuntime.create({ authPath: join(getAgentDir(), "auth.json"), modelsPath: join(getAgentDir(), "models.json") })`.
@@ -576,7 +576,7 @@ exact, and the suite is green on three OSes.
   - **Dispose:** write the transcript (lean) and call `session.dispose()`.
   - Done when the faux-provider tests pass for each role loadout, and inside the Pi binary
     spawn p50 < 10 ms and memory < 5 MB per agent at 8 and 32 agents.
-- [ ] **E2.3 Agent extension (M).** Path: `engine/agent/extension.ts` exports
+- [x] **E2.3 Agent extension (M).** Path: `engine/agent/extension.ts` exports
       `agentExtension(opts)`, a factory reused out of process by reading options from
       `PINATA_AGENT_OPTIONS` or a file.
   - **`submit_result`:** registered with the role schema and `terminate: true`. It stores
@@ -591,7 +591,7 @@ exact, and the suite is green on three OSes.
     don't register pinata tools in children.
   - Done when tests prove blocked writes return an error to the model without touching
     disk, and codemode cannot bypass the guard.
-- [ ] **E2.4 Personas and briefs (S).** Path: `agent/personas.ts` loads `prompts/<role>.md`
+- [x] **E2.4 Personas and briefs (S).** Path: `agent/personas.ts` loads `prompts/<role>.md`
       as persona text. `agent/brief.ts` ports `brief()` from `lib/worker.mjs` with these
       changes:
   - results go through `submit_result`, not JSON text;
@@ -602,7 +602,7 @@ exact, and the suite is green on three OSes.
     for siblings of a role. The task brief is the first user message.
   - Done when siblings' system prompts are byte-identical in a test, and briefs contain no
     supervisor-only state.
-- [ ] **E2.5 Live-checkout readers (S).**
+- [x] **E2.5 Live-checkout readers (S).**
   - Path: `workspace/live.ts`. Readers' cwd is the repository root.
   - `fingerprint()` is `git rev-parse HEAD` plus a sha256 of
     `git status --porcelain=v2 -z --untracked-files=all`, taken at start and at settle.
@@ -1077,20 +1077,21 @@ Verified against Pi 1.1.0 source. Re-check when upgrading.
 
 ## Results log
 
-| Date       | Item      | OS    | Measurement                                                                   | Value                              | Notes                                                    |
-| ---------- | --------- | ----- | ----------------------------------------------------------------------------- | ---------------------------------- | -------------------------------------------------------- |
-| 2026-10-08 | prototype | Linux | in-process SDK session spawn / memory                                         | ~1–2 ms / ~1–1.5 MB                | `bench/prototypes/inprocess-bench.ts`, faux, Pi 1.1.0    |
-| 2026-10-08 | prototype | Linux | `pi --mode rpc` worker flags ready / RSS                                      | ~320 ms / ~114 MB                  |                                                          |
-| 2026-10-08 | prototype | Linux | `git worktree add`                                                            | 35–40 ms                           | this repository                                          |
-| 2026-10-08 | E0.4      | Linux | 0.7.0 fan-out 1: spawn / tool call → 1st request / RSS per agent              | 1.41 s / 1.99 s / 219.5 MB         | loopback, 1 ms/token; `bench/baselines/0.7.0-linux.json` |
-| 2026-10-08 | E0.4      | Linux | 0.7.0 fan-out 8: spawn p50 (p95) / tool call p50 / peak RSS                   | 2.39 s (3.31 s) / 2.99 s / 913 MB  | RSS per agent 218 MB                                     |
-| 2026-10-08 | E0.4      | Linux | 0.7.0 fan-out 32: spawn p50 (p95) / tool call p50 / wall                      | 3.12 s (5.46 s) / 6.30 s / 12.6 s  | 0.7.0 concurrency max 16                                 |
-| 2026-10-08 | E0.4      | Linux | 0.7.0 fan-out 64: spawn p50 (p95) / tool call p50 / wall                      | 2.72 s (4.85 s) / 11.96 s / 22.4 s | peak RSS 1.30 GB                                         |
-| 2026-10-08 | E0.4      | Linux | 0.7.0 chain: dependent launch p50 / p99 / wall                                | 848 ms / 1.47 s / 6.2 s            | scout → planner → builder → reviewer                     |
-| 2026-10-08 | E0.4      | Linux | 0.7.0 stress-64: dependent launch p50 / p99 / wall                            | 4.58 s / 8.44 s / 24.2 s           | 16 chains + 32 fans                                      |
-| 2026-10-08 | E0.4      | Linux | 0.7.0 builder → reviewer: dependent launch / wall                             | 1.56 s / 4.3 s                     |                                                          |
-| 2026-10-08 | E0.4      | Linux | 0.7.0 ux-8: coordinator lag p99 / RSS per agent                               | 4.8 ms / 242 MB                    | 6,000-char streamed briefs                               |
-| 2026-10-08 | E1.2      | Linux | fake backend, 64 agents (8 fans + 8 chains): dependent launch p50 / p99 / max | 0.031 / 0.216 / 0.816 ms           | 480 samples over 10 runs; limiter opened to 64           |
+| Date       | Item      | OS    | Measurement                                                                        | Value                              | Notes                                                                                            |
+| ---------- | --------- | ----- | ---------------------------------------------------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------ |
+| 2026-10-08 | prototype | Linux | in-process SDK session spawn / memory                                              | ~1–2 ms / ~1–1.5 MB                | `bench/prototypes/inprocess-bench.ts`, faux, Pi 1.1.0                                            |
+| 2026-10-08 | prototype | Linux | `pi --mode rpc` worker flags ready / RSS                                           | ~320 ms / ~114 MB                  |                                                                                                  |
+| 2026-10-08 | prototype | Linux | `git worktree add`                                                                 | 35–40 ms                           | this repository                                                                                  |
+| 2026-10-08 | E0.4      | Linux | 0.7.0 fan-out 1: spawn / tool call → 1st request / RSS per agent                   | 1.41 s / 1.99 s / 219.5 MB         | loopback, 1 ms/token; `bench/baselines/0.7.0-linux.json`                                         |
+| 2026-10-08 | E0.4      | Linux | 0.7.0 fan-out 8: spawn p50 (p95) / tool call p50 / peak RSS                        | 2.39 s (3.31 s) / 2.99 s / 913 MB  | RSS per agent 218 MB                                                                             |
+| 2026-10-08 | E0.4      | Linux | 0.7.0 fan-out 32: spawn p50 (p95) / tool call p50 / wall                           | 3.12 s (5.46 s) / 6.30 s / 12.6 s  | 0.7.0 concurrency max 16                                                                         |
+| 2026-10-08 | E0.4      | Linux | 0.7.0 fan-out 64: spawn p50 (p95) / tool call p50 / wall                           | 2.72 s (4.85 s) / 11.96 s / 22.4 s | peak RSS 1.30 GB                                                                                 |
+| 2026-10-08 | E0.4      | Linux | 0.7.0 chain: dependent launch p50 / p99 / wall                                     | 848 ms / 1.47 s / 6.2 s            | scout → planner → builder → reviewer                                                             |
+| 2026-10-08 | E0.4      | Linux | 0.7.0 stress-64: dependent launch p50 / p99 / wall                                 | 4.58 s / 8.44 s / 24.2 s           | 16 chains + 32 fans                                                                              |
+| 2026-10-08 | E0.4      | Linux | 0.7.0 builder → reviewer: dependent launch / wall                                  | 1.56 s / 4.3 s                     |                                                                                                  |
+| 2026-10-08 | E0.4      | Linux | 0.7.0 ux-8: coordinator lag p99 / RSS per agent                                    | 4.8 ms / 242 MB                    | 6,000-char streamed briefs                                                                       |
+| 2026-10-08 | E0.5      | Linux | 0.7.0 Luna quality eval, 3 trials: composite score / result-format failures / cost | 0.6944 / 2 / $0.0528               | builder oracle 58/87, review controls 11/12, factual 21/42; `bench/baselines/quality-0.7.0.json` |
+| 2026-10-08 | E1.2      | Linux | fake backend, 64 agents (8 fans + 8 chains): dependent launch p50 / p99 / max      | 0.031 / 0.216 / 0.816 ms           | 480 samples over 10 runs; limiter opened to 64                                                   |
 
 ## Progress notes
 
@@ -1105,15 +1106,22 @@ Read this section and the plan before resuming after a context reset.
 - M1 (except E1.3's faux-provider tests): `engine/core/*`, `engine/backends/fake.ts`,
   tests in `test/engine/`.
 
-### In flight
+### In flight (resume here)
 
-- E0.3: harness, loopback provider, scenarios and the 0.7.0 target are in `bench/`. The
-  engine target (`bench/targets/engine.ts`) is a stub until the in-process backend exists
-  (E2.2); check E0.3 off then.
-- E0.5 (0.7.0 accuracy baseline, live Luna) runs after M1 lands.
-- E1.3: budgets are implemented and tested on the fake backend; the plan asks for a
-  faux-provider test of each budget, which lands with the in-process backend (E2.2).
+- M2 adapter is written and tested but E2.2, E2.6, E2.7, E2.8, E2.9 are not checked off yet:
+  - E2.2: still needs the in-Pi-binary spawn/memory measurement (wire `bench/targets/engine.ts`,
+    then check off E0.3 too).
+  - E2.6: packed-package test (`npm pack`, `npm install --prefix`, `pi -e <pkg dir>`; never
+    `pi install`) still to write; skills and prompts are rewritten.
+  - E2.7/E2.8: covered by `test/engine/pi-smoke.ts` (real `pi` binary) and
+    `test/engine/pi-adapter.test.ts`; add the smoke to CI (`node test/engine/pi-smoke.ts`).
+  - E2.9: `pi.extensions` now points at `engine/pi/extension.ts`. `PINATA_LEGACY=1` makes it
+    load 0.7.0's `lib/extension.ts` instead (0.7.0 smokes set it); E9.5 removes the shim.
+- CI: macOS p99 dependent launch 2.6 ms, Windows 9.6 ms on shared runners (Linux 0.2 ms).
+  Investigate with the diagnostics the test now prints; if the target cannot be met there,
+  record data, cause and a proposed target here (do not relax silently).
 - E0.7 upstream issue: not opened yet.
+- Then M3 (builders: worktrees, change capture, checks, reviews, integration) and Gate 1.
 
 ### Decisions and deviations
 
@@ -1131,6 +1139,15 @@ Read this section and the plan before resuming after a context reset.
   short-lived peaks.
 - macOS 0.7.0 baseline: not recorded. No macOS host with Herdr is available (CI has no
   Herdr). Windows has engine targets only, as planned.
+- Faux cost budgets: pi-ai's faux provider always reports cost 0, so tests wrap it
+  (`test/engine/faux.ts` `pricedFaux`) to set a response's cost.
+- An agent that exceeds its own budget (what was left of the run's `costUsd`) fails with
+  "cost limit reached"; the run is then cancelled (0.7.0 semantics).
+- Quality score (`test/quality/score.mjs`): mean of builder oracle pass rate, review-control
+  accuracy and scout factual accuracy over all opportunities; result-format failures counted
+  separately. Gate 1 compares the engine against 0.6944 with 0 format failures.
+- 0.7.0 dependency-cache tests are skipped on macOS (they never ran there before); E3.1's
+  port must cover macOS.
 - Live scripts accept `PINATA_LIVE_SMOKE=1` (the plan's spelling) as well as 0.7.0's
   `I_AUTHORIZE_PAID_MODEL_CALLS`.
 

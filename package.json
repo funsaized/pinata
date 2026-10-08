@@ -1,7 +1,7 @@
 {
   "name": "pi-pinata",
   "version": "0.7.0",
-  "description": "Pi subagents you can watch work: parallel agents in Herdr workspaces, reviewed changes, and automatic cleanup.",
+  "description": "Fast, low-footprint Pi subagents: in-process agents, live-checkout readers, reviewed builder changes, and Herdr or external viewers when you want them.",
   "keywords": [
     "herdr",
     "pi",
@@ -22,6 +22,7 @@
     "url": "git+https://github.com/funsaized/pinata.git"
   },
   "files": [
+    "engine/",
     "skills/",
     "prompts/",
     "lib/",
@@ -87,7 +88,7 @@
   },
   "pi": {
     "extensions": [
-      "./lib/extension.ts"
+      "./engine/pi/extension.ts"
     ],
     "skills": [
       "./skills/subagents",

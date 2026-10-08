@@ -145,6 +145,9 @@ try {
     `PI_CODING_AGENT_DIR=${agent}`,
     "--env",
     "PI_OFFLINE=1",
+    // The package's extension is the engine; this 0.7.0 smoke loads 0.7.0's instead.
+    "--env",
+    "PINATA_LEGACY=1",
   ]);
   pane = created.root_pane;
   await herdr([

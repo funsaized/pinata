@@ -1,0 +1,258 @@
+import assert from "node:assert/strict";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import test, { type TestContext } from "node:test";
+import { fauxAssistantMessage, fauxText, fauxToolCall } from "@earendil-works/pi-ai";
+import pinata from "../../engine/pi/extension.ts";
+import { pinataCommand } from "../../engine/pi/commands.ts";
+import { fauxWorld, type FauxTurn } from "./faux.ts";
+import { spec } from "./helpers.ts";
+
+const submit = (turn: FauxTurn) =>
+  fauxAssistantMessage(
+    [
+      fauxToolCall("submit_result", {
+        status: "succeeded",
+        summary: `${turn.agent} done`,
+        changedFiles: [],
+        checks: [],
+        findings: [],
+        blockers: [],
+        brief: `${turn.agent} brief`,
+      }),
+    ],
+    { stopReason: "toolUse" },
+  );
+
+// Loads the extension against a fake ExtensionAPI and a faux-provider world.
+async function adapter(t: TestContext, respond: (turn: FauxTurn) => any) {
+  const world = await fauxWorld(t, respond);
+  const previous = process.env.PI_CODING_AGENT_DIR;
+  process.env.PI_CODING_AGENT_DIR = world.agentDir;
+  t.after(() => {
+    if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previous;
+  });
+  const tools = new Map<string, any>();
+  const commands = new Map<string, any>();
+  const handlers: Record<string, Array<(e: any, ctx: any) => any>> = {};
+  const messages: Array<{ message: any; options: any }> = [];
+  const notes: string[] = [];
+  const pi: any = {
+    registerTool: (tool: any) => tools.set(tool.name, tool),
+    registerCommand: (name: string, options: any) => commands.set(name, options),
+    registerMessageRenderer() {},
+    on: (event: string, handler: any) => (handlers[event] ??= []).push(handler),
+    sendMessage: (message: any, options: any) => messages.push({ message, options }),
+    getSettings: () => ({}),
+    getAllTools: () => [],
+    getThinkingLevel: () => "off",
+  };
+  pinata(pi);
+  const ctx: any = {
+    cwd: world.repo,
+    modelRegistry: world.registry,
+    model: world.registry.find("faux", "faux-1"),
+    ui: { notify: (text: string) => notes.push(text) },
+  };
+  const call = (name: string, params: unknown, signal?: AbortSignal, updates: any[] = []) =>
+    tools.get(name).execute("call-1", params, signal, (u: any) => updates.push(u), ctx);
+  return { world, tools, commands, handlers, messages, notes, ctx, call };
+}
+
+const reader = (turn: FauxTurn) =>
+  turn.round === 0
+    ? fauxAssistantMessage([fauxToolCall("read", { path: "README.md" })], { stopReason: "toolUse" })
+    : submit(turn);
+
+test("the extension registers the tools and the command", async (t) => {
+  const a = await adapter(t, reader);
+  assert.deepEqual([...a.tools.keys()].sort(), [
+    "pinata_cancel",
+    "pinata_run",
+    "pinata_status",
+    "pinata_steer",
+  ]);
+  assert(a.commands.has("pinata"));
+  assert(a.handlers.session_shutdown?.length);
+});
+
+test("children never get pinata tools (recursion guard)", () => {
+  const registered: string[] = [];
+  process.env.PINATA_AGENT = "1";
+  try {
+    pinata({
+      registerTool: (x: any) => registered.push(x.name),
+      registerCommand() {},
+      registerMessageRenderer() {},
+      on() {},
+    } as any);
+  } finally {
+    delete process.env.PINATA_AGENT;
+  }
+  assert.deepEqual(registered, []);
+});
+
+test("pinata_run runs in the foreground, streams progress and returns compact results", async (t) => {
+  const a = await adapter(t, reader);
+  const updates: any[] = [];
+  const out = await a.call(
+    "pinata_run",
+    { tasks: [spec("one"), spec("two"), spec("plan", "planner", { after: ["one", "two"] })] },
+    undefined,
+    updates,
+  );
+  assert(!out.isError, JSON.stringify(out));
+  const r = out.details.result;
+  assert.equal(r.status, "succeeded");
+  assert.deepEqual(
+    r.tasks.map((x: any) => [x.id, x.status, x.brief]),
+    [
+      ["one", "succeeded", "one brief"],
+      ["two", "succeeded", "two brief"],
+      ["plan", "succeeded", "plan brief"],
+    ],
+  );
+  assert(updates.length >= 1 && /pinata [0-9a-f]{8} · /.test(updates.at(-1).content[0].text));
+  const summary = (await a.call("pinata_status", {})).details.result;
+  assert.equal(summary.run, r.run);
+  const full = (
+    await a.call("pinata_status", { run: r.run.slice(0, 8), task: "plan", detail: "result" })
+  ).details.result;
+  assert.equal(full.result.brief, "plan brief");
+  const transcript = (
+    await a.call("pinata_status", { run: r.run, task: "one", detail: "transcript" })
+  ).details.result;
+  assert.match(transcript.excerpt, /assistant: \[read/);
+  assert.match(transcript.transcript, /transcripts[\\/]one\.jsonl$/);
+  const steer = await a.call("pinata_steer", { run: r.run, task: "one", message: "x" });
+  assert.match(steer.content[0].text, /not running/);
+  const text = await pinataCommand(
+    (a.tools.get("pinata_run") as any).host ?? ({} as any),
+    "",
+    a.ctx,
+  ).catch(() => "");
+  void text;
+});
+
+test("validation errors come back as tool errors before anything starts", async (t) => {
+  const a = await adapter(t, reader);
+  const noApproval = await a.call("pinata_run", {
+    tasks: [spec("b", "builder", { ownership: ["x"], noChecksReason: "n/a" })],
+  });
+  assert.equal(noApproval.isError, true);
+  assert.match(noApproval.content[0].text, /approval is required/);
+  const research = await a.call("pinata_run", { tasks: [spec("r", "research")] });
+  assert.match(research.content[0].text, /pi-web-access/);
+  const cycle = await a.call("pinata_run", { tasks: [spec("a", "scout", { after: ["a"] })] });
+  assert.match(cycle.content[0].text, /after lists itself/);
+});
+
+test("Esc aborts a foreground run: every agent is cancelled", async (t) => {
+  const a = await adapter(t, async () => {
+    await new Promise((r) => setTimeout(r, 50));
+    return fauxAssistantMessage([fauxToolCall("read", { path: "README.md" })], {
+      stopReason: "toolUse",
+    });
+  });
+  const esc = new AbortController();
+  setTimeout(() => esc.abort(), 100);
+  const out = await a.call(
+    "pinata_run",
+    { tasks: [spec("a"), spec("b"), spec("c", "scout", { after: ["a"] })] },
+    esc.signal,
+  );
+  const r = out.details.result;
+  assert.equal(r.status, "cancelled");
+  for (const task of r.tasks) assert.equal(task.status, "cancelled");
+  assert.equal(r.tasks[0].reason ?? r.tasks[0].summary, "cancelled by the parent");
+});
+
+test("a background run delivers one follow-up message that resumes the parent", async (t) => {
+  const a = await adapter(t, reader);
+  const out = await a.call("pinata_run", { tasks: [spec("bg")], background: true });
+  const { run } = out.details.result;
+  assert.equal(out.details.result.status, "running");
+  for (let i = 0; i < 200 && !a.messages.length; i++) await new Promise((r) => setTimeout(r, 10));
+  assert.equal(a.messages.length, 1);
+  assert.equal(a.messages[0].message.customType, "pinata-result");
+  assert.deepEqual(a.messages[0].options, { triggerTurn: true, deliverAs: "followUp" });
+  assert.equal(a.messages[0].message.details.run, run);
+  const { deliver } = await import("../../engine/pi/delivery.ts");
+  const handle = {
+    done: Promise.resolve(a.messages[0].message.details),
+    dir: a.messages[0].message.details.dir,
+  } as any;
+  assert.equal(
+    await deliver({ sendMessage() {} } as any, handle),
+    false,
+    "a second delivery is refused",
+  );
+});
+
+test("reload or exit cancels in-process agents with the reason and flushes the log", async (t) => {
+  const a = await adapter(t, async () => {
+    await new Promise((r) => setTimeout(r, 30));
+    return fauxAssistantMessage([fauxToolCall("read", { path: "README.md" })], {
+      stopReason: "toolUse",
+    });
+  });
+  const running = a.call("pinata_run", { tasks: [spec("a"), spec("b")] });
+  await new Promise((r) => setTimeout(r, 60));
+  for (const handler of a.handlers.session_shutdown)
+    await handler({ type: "session_shutdown", reason: "reload" }, a.ctx);
+  const r = (await running).details.result;
+  assert.equal(r.status, "cancelled");
+  assert(r.tasks.every((x: any) => (x.reason ?? x.summary) === "parent reload"));
+  const log = await readFile(join(r.dir, "events.jsonl"), "utf8");
+  assert.match(log.trim().split("\n").at(-1)!, /"t":"run_settled"/);
+  const after = await a.call("pinata_run", { tasks: [spec("late")] });
+  assert.match(after.content[0].text, /shutting down/);
+});
+
+test("/pinata reports runs, modes and runs a crashed Pi left unsettled", async (t) => {
+  const a = await adapter(t, reader);
+  await a.call("pinata_run", { tasks: [spec("done")] });
+  const runs = join(a.world.repo, ".git", "pinata", "00000000-0000-4000-8000-000000000000");
+  await mkdir(runs, { recursive: true });
+  await writeFile(
+    join(runs, "events.jsonl"),
+    [
+      {
+        v: 1,
+        seq: 0,
+        run: "00000000-0000-4000-8000-000000000000",
+        at: 1,
+        t: "run_started",
+        tasks: [spec("lost")],
+        mode: "lean",
+      },
+      {
+        v: 1,
+        seq: 1,
+        run: "00000000-0000-4000-8000-000000000000",
+        agent: "lost",
+        at: 2,
+        t: "agent_started",
+        backend: "in-process",
+        model: { provider: "faux", id: "faux-1", thinking: "off" },
+        workspace: { kind: "live", path: a.world.repo },
+      },
+    ]
+      .map((e) => JSON.stringify(e))
+      .join("\n") + "\n",
+  );
+  const command = a.commands.get("pinata");
+  await command.handler("", a.ctx);
+  assert.match(a.notes.at(-1)!, /Interrupted \(Pi exited before they settled\): 00000000/);
+  assert.match(a.notes.at(-1)!, /✓ scout\s+done/);
+  await command.handler("runs", a.ctx);
+  assert.equal(a.notes.at(-1)!.split("\n").length, 2);
+  await command.handler("mode observe", a.ctx);
+  assert.match(a.notes.at(-1)!, /observe/);
+  const out = await a.call("pinata_run", { tasks: [spec("watched")] });
+  const events = await readFile(join(out.details.result.dir, "events.jsonl"), "utf8");
+  assert.match(events, /"t":"run_started"[^\n]*"mode":"observe"/);
+  assert.match(events, /"t":"turn_start"/, "observe mode logs everything");
+  void fauxText;
+});

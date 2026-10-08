@@ -188,16 +188,8 @@ export class RunStore {
     return this.writing;
   }
 
-  async markDelivered(): Promise<boolean> {
-    try {
-      const handle = await open(join(this.dir, "delivered.json"), "wx", 0o600);
-      await handle.writeFile(JSON.stringify({ at: Date.now() }));
-      await handle.close();
-      return true;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "EEXIST") return false;
-      throw error;
-    }
+  markDelivered(): Promise<boolean> {
+    return markDelivered(this.dir);
   }
 
   async close(): Promise<void> {
@@ -257,4 +249,17 @@ export async function writeJsonl(file: string, items: readonly unknown[]): Promi
 
 export function appendJsonl(file: string, item: unknown): Promise<void> {
   return appendFile(file, JSON.stringify(item) + "\n", { mode: 0o600 });
+}
+
+// Records that a run's result was delivered. True only for the first caller.
+export async function markDelivered(dir: string): Promise<boolean> {
+  try {
+    const handle = await open(join(dir, "delivered.json"), "wx", 0o600);
+    await handle.writeFile(JSON.stringify({ at: Date.now() }));
+    await handle.close();
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") return false;
+    throw error;
+  }
 }

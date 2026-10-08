@@ -245,6 +245,9 @@ export interface AgentLaunch {
   transcript?: string;
   // Repair feedback or a result-only retry.
   resultOnly?: boolean;
+  // The repository root (the run's cwd), and pi-web-access for research agents.
+  root?: string;
+  webExtension?: string;
 }
 
 export interface AgentHandle {

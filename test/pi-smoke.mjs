@@ -21,6 +21,8 @@ const env = {
   LANG: "C",
   LC_ALL: "C",
   PI_CODING_AGENT_DIR: agent,
+  // The package's extension is the engine; this 0.7.0 smoke loads 0.7.0's instead.
+  PINATA_LEGACY: "1",
   PI_OFFLINE: "1",
   npm_config_cache: path.join(repo.dir, "npm-cache"),
   npm_config_userconfig: path.join(repo.dir, "npmrc"),
