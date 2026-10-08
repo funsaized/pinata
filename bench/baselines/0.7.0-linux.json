@@ -1,0 +1,317 @@
+{
+  "meta": {
+    "date": "2026-10-08",
+    "os": "linux",
+    "release": "7.2.5-3-omarchy",
+    "arch": "x64",
+    "cpus": 32,
+    "memoryGB": 31,
+    "node": "v26.7.0",
+    "pi": "1.1.0",
+    "herdr": "herdr 0.9.1",
+    "provider": "loopback",
+    "tokenDelayMs": 1
+  },
+  "results": [
+    {
+      "scenario": "fanout-1",
+      "target": "legacy",
+      "provider": "loopback",
+      "host": "node v26.7.0",
+      "agents": 1,
+      "statuses": {
+        "succeeded": 1
+      },
+      "spawnMs": {
+        "n": 1,
+        "p50": 1412.069,
+        "p95": 1412.069,
+        "p99": 1412.069,
+        "max": 1412.069
+      },
+      "toolCallMs": {
+        "n": 1,
+        "p50": 1992.069,
+        "p95": 1992.069,
+        "p99": 1992.069,
+        "max": 1992.069
+      },
+      "dependentMs": null,
+      "memoryPerAgentMB": 219.54,
+      "peakRssMB": 335.03,
+      "loopLagP99Ms": 2.44,
+      "cpuMs": null,
+      "wallMs": 2520,
+      "notes": [
+        "memoryPerAgentMB: mean peak RSS of each worker's process tree, sampled every 100 ms",
+        "peakRssMB: peak RSS of all workers together plus the coordinator's peak",
+        "cpuMs is not measured: workers run in Herdr panes, outside this process tree"
+      ]
+    },
+    {
+      "scenario": "fanout-8",
+      "target": "legacy",
+      "provider": "loopback",
+      "host": "node v26.7.0",
+      "agents": 8,
+      "statuses": {
+        "succeeded": 8
+      },
+      "spawnMs": {
+        "n": 8,
+        "p50": 2389.917,
+        "p95": 3306.342,
+        "p99": 3306.342,
+        "max": 3306.342
+      },
+      "toolCallMs": {
+        "n": 8,
+        "p50": 2986.917,
+        "p95": 3903.342,
+        "p99": 3903.342,
+        "max": 3903.342
+      },
+      "dependentMs": null,
+      "memoryPerAgentMB": 218.05,
+      "peakRssMB": 913.43,
+      "loopLagP99Ms": 3.43,
+      "cpuMs": null,
+      "wallMs": 4510,
+      "notes": [
+        "memoryPerAgentMB: mean peak RSS of each worker's process tree, sampled every 100 ms",
+        "peakRssMB: peak RSS of all workers together plus the coordinator's peak",
+        "cpuMs is not measured: workers run in Herdr panes, outside this process tree"
+      ]
+    },
+    {
+      "scenario": "fanout-32",
+      "target": "legacy",
+      "provider": "loopback",
+      "host": "node v26.7.0",
+      "agents": 32,
+      "statuses": {
+        "succeeded": 32
+      },
+      "spawnMs": {
+        "n": 32,
+        "p50": 3118.489,
+        "p95": 5456.869,
+        "p99": 5703.497,
+        "max": 5703.497
+      },
+      "toolCallMs": {
+        "n": 32,
+        "p50": 6297.497,
+        "p95": 11500.656,
+        "p99": 11773.172,
+        "max": 11773.172
+      },
+      "dependentMs": null,
+      "memoryPerAgentMB": 217.78,
+      "peakRssMB": 998.84,
+      "loopLagP99Ms": 3.7,
+      "cpuMs": null,
+      "wallMs": 12571,
+      "notes": [
+        "memoryPerAgentMB: mean peak RSS of each worker's process tree, sampled every 100 ms",
+        "peakRssMB: peak RSS of all workers together plus the coordinator's peak",
+        "cpuMs is not measured: workers run in Herdr panes, outside this process tree"
+      ]
+    },
+    {
+      "scenario": "fanout-64",
+      "target": "legacy",
+      "provider": "loopback",
+      "host": "node v26.7.0",
+      "agents": 64,
+      "statuses": {
+        "succeeded": 64
+      },
+      "spawnMs": {
+        "n": 64,
+        "p50": 2719.348,
+        "p95": 4849.03,
+        "p99": 5458.333,
+        "max": 5458.333
+      },
+      "toolCallMs": {
+        "n": 64,
+        "p50": 11964.64,
+        "p95": 20208.462,
+        "p99": 21085.779,
+        "max": 21085.779
+      },
+      "dependentMs": null,
+      "memoryPerAgentMB": 217.92,
+      "peakRssMB": 1304.09,
+      "loopLagP99Ms": 4.15,
+      "cpuMs": null,
+      "wallMs": 22365,
+      "notes": [
+        "loopback errors: 2; first: SyntaxError: Unexpected end of JSON input",
+        "memoryPerAgentMB: mean peak RSS of each worker's process tree, sampled every 100 ms",
+        "peakRssMB: peak RSS of all workers together plus the coordinator's peak",
+        "cpuMs is not measured: workers run in Herdr panes, outside this process tree"
+      ]
+    },
+    {
+      "scenario": "chain",
+      "target": "legacy",
+      "provider": "loopback",
+      "host": "node v26.7.0",
+      "agents": 4,
+      "statuses": {
+        "succeeded": 4
+      },
+      "spawnMs": {
+        "n": 4,
+        "p50": 813.242,
+        "p95": 1467.584,
+        "p99": 1467.584,
+        "max": 1467.584
+      },
+      "toolCallMs": {
+        "n": 1,
+        "p50": 2075.584,
+        "p95": 2075.584,
+        "p99": 2075.584,
+        "max": 2075.584
+      },
+      "dependentMs": {
+        "n": 3,
+        "p50": 848.242,
+        "p95": 1465.967,
+        "p99": 1465.967,
+        "max": 1465.967
+      },
+      "memoryPerAgentMB": 218.38,
+      "peakRssMB": 402.52,
+      "loopLagP99Ms": 3.58,
+      "cpuMs": null,
+      "wallMs": 6235,
+      "notes": [
+        "memoryPerAgentMB: mean peak RSS of each worker's process tree, sampled every 100 ms",
+        "peakRssMB: peak RSS of all workers together plus the coordinator's peak",
+        "cpuMs is not measured: workers run in Herdr panes, outside this process tree"
+      ]
+    },
+    {
+      "scenario": "stress-64",
+      "target": "legacy",
+      "provider": "loopback",
+      "host": "node v26.7.0",
+      "agents": 64,
+      "statuses": {
+        "succeeded": 64
+      },
+      "spawnMs": {
+        "n": 64,
+        "p50": 2806.4,
+        "p95": 5179.06,
+        "p99": 6031.742,
+        "max": 6031.742
+      },
+      "toolCallMs": {
+        "n": 48,
+        "p50": 13446.542,
+        "p95": 22334.322,
+        "p99": 22926.139,
+        "max": 22926.139
+      },
+      "dependentMs": {
+        "n": 16,
+        "p50": 4582.818,
+        "p95": 8441.596,
+        "p99": 8441.596,
+        "max": 8441.596
+      },
+      "memoryPerAgentMB": 217.53,
+      "peakRssMB": 1163.97,
+      "loopLagP99Ms": 4.46,
+      "cpuMs": null,
+      "wallMs": 24196,
+      "notes": [
+        "memoryPerAgentMB: mean peak RSS of each worker's process tree, sampled every 100 ms",
+        "peakRssMB: peak RSS of all workers together plus the coordinator's peak",
+        "cpuMs is not measured: workers run in Herdr panes, outside this process tree"
+      ]
+    },
+    {
+      "scenario": "builder",
+      "target": "legacy",
+      "provider": "loopback",
+      "host": "node v26.7.0",
+      "agents": 2,
+      "statuses": {
+        "succeeded": 2
+      },
+      "spawnMs": {
+        "n": 2,
+        "p50": 1447.684,
+        "p95": 1491.399,
+        "p99": 1491.399,
+        "max": 1491.399
+      },
+      "toolCallMs": {
+        "n": 1,
+        "p50": 2063.684,
+        "p95": 2063.684,
+        "p99": 2063.684,
+        "max": 2063.684
+      },
+      "dependentMs": {
+        "n": 1,
+        "p50": 1561.399,
+        "p95": 1561.399,
+        "p99": 1561.399,
+        "max": 1561.399
+      },
+      "memoryPerAgentMB": 218.23,
+      "peakRssMB": 416.15,
+      "loopLagP99Ms": 3.5,
+      "cpuMs": null,
+      "wallMs": 4330,
+      "notes": [
+        "memoryPerAgentMB: mean peak RSS of each worker's process tree, sampled every 100 ms",
+        "peakRssMB: peak RSS of all workers together plus the coordinator's peak",
+        "cpuMs is not measured: workers run in Herdr panes, outside this process tree"
+      ]
+    },
+    {
+      "scenario": "ux-8",
+      "target": "legacy",
+      "provider": "loopback",
+      "host": "node v26.7.0",
+      "agents": 8,
+      "statuses": {
+        "succeeded": 8
+      },
+      "spawnMs": {
+        "n": 8,
+        "p50": 2463.498,
+        "p95": 2915.701,
+        "p99": 2915.701,
+        "max": 2915.701
+      },
+      "toolCallMs": {
+        "n": 8,
+        "p50": 3089.498,
+        "p95": 3541.701,
+        "p99": 3541.701,
+        "max": 3541.701
+      },
+      "dependentMs": null,
+      "memoryPerAgentMB": 241.73,
+      "peakRssMB": 2033.88,
+      "loopLagP99Ms": 4.77,
+      "cpuMs": null,
+      "wallMs": 5733,
+      "notes": [
+        "loopback errors: 2; first: SyntaxError: Unexpected end of JSON input",
+        "memoryPerAgentMB: mean peak RSS of each worker's process tree, sampled every 100 ms",
+        "peakRssMB: peak RSS of all workers together plus the coordinator's peak",
+        "cpuMs is not measured: workers run in Herdr panes, outside this process tree"
+      ]
+    }
+  ]
+}
