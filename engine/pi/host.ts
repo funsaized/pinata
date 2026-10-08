@@ -6,6 +6,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { InProcessBackend } from "../backends/in-process.ts";
+import { ProcessBackend } from "../backends/process.ts";
 import { DEPENDENCY_CAP } from "../agent/brief.ts";
 import { createEngine, type Engine, type RunHandle, type Settled } from "../core/engine.ts";
 import { listRuns, replay, runsRoot } from "../core/store.ts";
@@ -29,6 +30,7 @@ export const RESEARCH_UNAVAILABLE =
 export interface RunParams {
   tasks: TaskSpec[];
   background?: boolean;
+  survive?: boolean;
   cwd?: string;
   approval?: string;
   instructions?: string[];
@@ -145,7 +147,7 @@ export class PinataHost {
       ...(settings.shellCommandPrefix && { shellCommandPrefix: settings.shellCommandPrefix }),
     });
     this.engineInstance = createEngine({
-      backends: { "in-process": backend },
+      backends: { "in-process": backend, process: new ProcessBackend() },
       pipeline: piPipeline(this.stages),
     });
     return this.engineInstance;
@@ -218,6 +220,7 @@ export class PinataHost {
       instructions: params.instructions ?? [],
       codemode: config.codemode,
       backend: config.backend,
+      survive: params.survive === true,
       webExtension: this.webExtension(config),
       config,
       approval: params.approval ?? null,
