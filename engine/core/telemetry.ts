@@ -66,8 +66,9 @@ export async function processRss(pids: readonly number[]): Promise<Map<number, n
   if (!pids.length) return out;
   const run = (file: string, args: string[]) =>
     new Promise<string>((resolve) =>
-      execFile(file, args, { timeout: 5000, windowsHide: true }, (error, stdout) =>
-        resolve(error ? "" : stdout),
+      // ps and Get-Process exit non-zero when any pid is gone; the others are still listed.
+      execFile(file, args, { timeout: 10_000, windowsHide: true }, (_error, stdout) =>
+        resolve(String(stdout ?? "")),
       ),
     );
   if (process.platform === "linux") {

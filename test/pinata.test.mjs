@@ -259,7 +259,8 @@ for (const flag of ["TEST_AMBIGUOUS_BEFORE", "TEST_AMBIGUOUS_CREATE"]) {
   test(`ambiguous launch reconciles and retries the same attempt once: ${flag}`, async (t) => {
     const f = await fixture(t, [task("one")], {
       env: { [flag]: "1" },
-      config: { limits: { startupMs: 250, taskMs: 10_000, jobMs: 60_000 } },
+      // The retried launch must start within startupMs, even on a slow CI runner.
+      config: { limits: { startupMs: 1000, taskMs: 10_000, jobMs: 60_000 } },
     });
     assert.equal((await settled(f)).tasks[0].status, "uncertain");
     await retryLaunch(f.run, "one");
