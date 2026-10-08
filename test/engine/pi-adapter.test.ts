@@ -210,6 +210,23 @@ test("reload or exit cancels in-process agents with the reason and flushes the l
   assert.match(after.content[0].text, /shutting down/);
 });
 
+test("a reload that arrives while a run is being created still cancels it", async (t) => {
+  const a = await adapter(t, async () => {
+    await new Promise((r) => setTimeout(r, 30));
+    return fauxAssistantMessage([fauxToolCall("read", { path: "README.md" })], {
+      stopReason: "toolUse",
+    });
+  });
+  const running = a.call("pinata_run", { tasks: [spec("a")] });
+  // No await: shutdown starts while pinata_run is still resolving the repository.
+  for (const handler of a.handlers.session_shutdown)
+    await handler({ type: "session_shutdown", reason: "quit" }, a.ctx);
+  const out = await running;
+  const r = out.details.result;
+  assert.equal(r.status, "cancelled", JSON.stringify(out));
+  assert.equal(r.tasks[0].reason ?? r.tasks[0].summary, "parent exit");
+});
+
 test("/pinata reports runs, modes and runs a crashed Pi left unsettled", async (t) => {
   const a = await adapter(t, reader);
   await a.call("pinata_run", { tasks: [spec("done")] });

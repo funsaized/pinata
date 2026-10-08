@@ -1117,9 +1117,6 @@ Read this section and the plan before resuming after a context reset.
     `test/engine/pi-adapter.test.ts`; add the smoke to CI (`node test/engine/pi-smoke.ts`).
   - E2.9: `pi.extensions` now points at `engine/pi/extension.ts`. `PINATA_LEGACY=1` makes it
     load 0.7.0's `lib/extension.ts` instead (0.7.0 smokes set it); E9.5 removes the shim.
-- CI: macOS p99 dependent launch 2.6 ms, Windows 9.6 ms on shared runners (Linux 0.2 ms).
-  Investigate with the diagnostics the test now prints; if the target cannot be met there,
-  record data, cause and a proposed target here (do not relax silently).
 - E0.7 upstream issue: not opened yet.
 - Then M3 (builders: worktrees, change capture, checks, reviews, integration) and Gate 1.
 
@@ -1165,6 +1162,17 @@ Read this section and the plan before resuming after a context reset.
   engine-wide limiter adds the per-provider adaptive limit (starts at 8).
 - Reviewer results may omit `review.taskId`/`fingerprint`; the engine binds the verdict to
   the target it launched the reviewer against, and rejects mismatching values.
+
+- **Target not met on CI runners (M1 dependent launch < 1 ms p99).** Data, fake backend, 64
+  agents, 240 launches: Linux (local, 32 cores) p50 0.03 / p95 0.08 / p99 0.10–0.22 ms; GitHub
+  Windows p50 0.11 / p95 0.40–0.48 / p99 2.2–3.6 ms; GitHub macOS p99 2.6 ms. Cause: a few
+  launches per run are delayed by runner scheduling or garbage collection on shared 2–3 vCPU
+  machines; the median and p95 are within target, so it is not the scheduler's own work.
+  Proposed target: keep p99 < 1 ms on the reference Linux machine (2x on Linux CI); on macOS and
+  Windows CI require p95 < 1 ms (2x) and p99 < 5 ms, the plan's everywhere target for
+  dependent launch. The test encodes exactly this.
+- Shutdown waits for runs that are still being created, so a `/reload` that arrives while
+  `pinata_run` resolves the repository cannot leave a run going (found by Windows CI).
 
 ### Open questions
 
