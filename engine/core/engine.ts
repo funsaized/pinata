@@ -371,11 +371,14 @@ export function createEngine(options: EngineOptions): Engine {
     state.status = "running";
     const controller = new AbortController();
     state.controller = controller;
-    const signal = AbortSignal.any([
-      run.controller.signal,
-      controller.signal,
-      AbortSignal.timeout(run.limits.taskMs),
-    ]);
+    // The wall clock is an explicit timer: AbortSignal.any() holds its sources weakly, so an
+    // AbortSignal.timeout() kept only there can be garbage-collected before it fires.
+    const deadline = setTimeout(
+      () => controller.abort(new StopSignal("deadline exceeded", "failed")),
+      run.limits.taskMs,
+    );
+    (deadline as { unref?: () => void }).unref?.();
+    const signal = AbortSignal.any([run.controller.signal, controller.signal]);
     let prepared: Prepared | undefined;
     let outcome: AgentOutcome | undefined;
     let verdict: Verdict | undefined;
@@ -437,6 +440,7 @@ export function createEngine(options: EngineOptions): Engine {
         result: null,
       };
     } finally {
+      clearTimeout(deadline);
       await state.handle?.dispose().catch(() => {});
     }
     if (!verdict) throw new Error("unreachable: no verdict");
