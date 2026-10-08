@@ -40,7 +40,10 @@ export function gitRepo(
   files: Record<string, string> = { "README.md": "# Fixture\n" },
 ) {
   const run = (...args: string[]) => {
-    const r = spawnSync("git", ["-C", dir, ...args], { encoding: "utf8" });
+    // Fixtures keep their bytes on Windows runners, whose git converts line endings.
+    const r = spawnSync("git", ["-C", dir, "-c", "core.autocrlf=false", ...args], {
+      encoding: "utf8",
+    });
     if (r.status !== 0) throw new Error(r.stderr);
     return r.stdout;
   };
