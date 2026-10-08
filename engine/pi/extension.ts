@@ -17,6 +17,7 @@ export default async function pinata(pi: ExtensionAPI): Promise<void> {
   }
   const host = new PinataHost(pi);
   host.ui = new PinataUI(pi);
+  void host.owner();
   registerTools(pi, host);
   registerCommands(pi, host);
   registerDelivery(pi);

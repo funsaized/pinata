@@ -143,11 +143,12 @@ async function inPiTui(
       PI_TELEMETRY: "0",
       TERM: "xterm-256color",
     },
-    stdio: ["pipe", "pipe", "pipe"],
+    // macOS `script` calls tcgetattr on stdin: a pipe (a socket in Node) fails, /dev/null works.
+    stdio: [process.platform === "darwin" ? "ignore" : "pipe", "pipe", "pipe"],
   });
   let output = "";
-  child.stdout.on("data", (d: Buffer) => (output = (output + d.toString()).slice(-4000)));
-  child.stderr.on("data", (d: Buffer) => (output = (output + d.toString()).slice(-4000)));
+  child.stdout!.on("data", (d: Buffer) => (output = (output + d.toString()).slice(-4000)));
+  child.stderr!.on("data", (d: Buffer) => (output = (output + d.toString()).slice(-4000)));
   const exited = new Promise<void>((resolve) => child.on("close", () => resolve()));
   try {
     const deadline = Date.now() + 300_000;
@@ -159,7 +160,7 @@ async function inPiTui(
     await Promise.race([exited, new Promise((r) => setTimeout(r, 10_000))]);
   } finally {
     if (child.exitCode === null) child.kill("SIGKILL");
-    child.stdin.destroy();
+    child.stdin?.destroy();
   }
   const raw = JSON.parse(await readFile(spec.out as string, "utf8"));
   if (raw.error) throw new Error(`pi host: ${raw.error}`);
