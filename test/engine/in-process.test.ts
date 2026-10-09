@@ -165,8 +165,12 @@ test("a live-checkout reader flags a checkout that changed mid-run and creates n
     // The user edits the checkout after the reader's first round (its starting fingerprint
     // is measured in the background while it starts).
     if (turn.agent === "watch" && turn.round < 2) {
-      if (turn.round === 1)
+      // A real first turn takes seconds: the starting fingerprint (git status, slow on
+      // Windows) is measured long before the user's edit.
+      if (turn.round === 1) {
+        await new Promise((r) => setTimeout(r, 1500));
         await writeFile(join(world.repo, "README.md"), "# Changed by the user\n");
+      }
       return fauxAssistantMessage([fauxToolCall("read", { path: "README.md" })], {
         stopReason: "toolUse",
       });

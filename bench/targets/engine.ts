@@ -130,7 +130,9 @@ async function inPiTui(
   const command = `stty cols 120 rows 40; exec ${pi.map(shellQuote).join(" ")}`;
   const argv =
     process.platform === "darwin"
-      ? ["script", "-q", "/dev/null", "sh", "-c", command]
+      ? // macOS script needs stdin that is neither a socket (Node's pipes) nor ending (an EOF
+        // becomes ^D in the terminal): a shell pipe from a long sleep.
+        ["sh", "-c", `sleep 86400 | script -q /dev/null sh -c ${shellQuote(command)}`]
       : ["script", "-qfec", command, "/dev/null"];
   const child = spawn(argv[0], argv.slice(1), {
     cwd: spec.repo as string,
@@ -145,6 +147,8 @@ async function inPiTui(
     },
     // macOS `script` calls tcgetattr on stdin: a pipe (a socket in Node) fails, /dev/null works.
     stdio: [process.platform === "darwin" ? "ignore" : "pipe", "pipe", "pipe"],
+    // Its own process group, so the whole pipeline is stopped afterwards.
+    detached: true,
   });
   let output = "";
   child.stdout!.on("data", (d: Buffer) => (output = (output + d.toString()).slice(-4000)));
@@ -159,7 +163,12 @@ async function inPiTui(
     }
     await Promise.race([exited, new Promise((r) => setTimeout(r, 10_000))]);
   } finally {
-    if (child.exitCode === null) child.kill("SIGKILL");
+    if (child.exitCode === null)
+      try {
+        process.kill(-child.pid!, "SIGKILL");
+      } catch {
+        child.kill("SIGKILL");
+      }
     child.stdin?.destroy();
   }
   const raw = JSON.parse(await readFile(spec.out as string, "utf8"));

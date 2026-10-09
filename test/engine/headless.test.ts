@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { readdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import test, { type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 import { ModelRegistry, ModelRuntime } from "@earendil-works/pi-coding-agent";
@@ -104,7 +104,7 @@ test("job files keep 0.7.0's shape; exit codes map run outcomes", () => {
     "/work/jobs/job.json",
     "observe",
   );
-  assert.equal(params.cwd, "/work/repo");
+  assert.equal(params.cwd, resolve("/work/repo"));
   assert.equal(params.config!.mode, "observe", "--mode overrides the job's config");
   assert.throws(
     () => jobParams({ allowWrites: false, tasks: [spec("b", "builder")] }, "/j.json"),
