@@ -52,6 +52,22 @@ const KEYS = [
 ];
 const MERGED = ["models", "fallbacks", "limits"];
 
+// 0.7.0 limits that no longer apply: a notice, and dropped before validation.
+const RETIRED_LIMITS: Record<string, string> = {
+  startupMs: "config.limits.startupMs is ignored: agents need no pane or worker startup window.",
+};
+
+function currentLimits(limits: unknown, notices: string[]): unknown {
+  if (!limits || typeof limits !== "object" || Array.isArray(limits)) return limits ?? {};
+  const out = { ...(limits as Record<string, unknown>) };
+  for (const key of Object.keys(RETIRED_LIMITS))
+    if (key in out) {
+      notices.push(RETIRED_LIMITS[key]);
+      delete out[key];
+    }
+  return out;
+}
+
 export function validateConfig(input: unknown = {}): { config: PinataConfig; notices: string[] } {
   const value = input ?? {};
   checkedKeys(value, KEYS, "config");
@@ -97,7 +113,7 @@ export function validateConfig(input: unknown = {}): { config: PinataConfig; not
     config: {
       models: v.models ?? {},
       fallbacks: v.fallbacks ?? {},
-      limits: validateLimits(v.limits ?? {}),
+      limits: validateLimits(currentLimits(v.limits, notices)),
       passEnv: v.passEnv ?? [],
       ...(v.webExtension && { webExtension: v.webExtension }),
       ...(v.setup !== undefined && { setup: v.setup }),

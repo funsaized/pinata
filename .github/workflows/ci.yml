@@ -29,8 +29,6 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm run check
       - run: npm test
-      - name: Install supported Pi
-        run: npm install --global @earendil-works/pi-coding-agent@1.1.0
       - name: Download Pi's release binary
         # The engine runs inside Pi's Bun binary, as users run it.
         shell: bash
@@ -52,7 +50,3 @@ jobs:
       - name: Viewer runtimes (E5.6)
         if: runner.os != 'Windows'
         run: node bench/viewer.ts --runs 3
-      - name: Check 0.7.0 against loopback providers
-        # 0.7.0's packed smokes only ever ran on Linux; they stay there until E9.5 removes them.
-        if: runner.os == 'Linux'
-        run: npm run test:pi

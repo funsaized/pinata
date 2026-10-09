@@ -956,7 +956,7 @@ Gate 1 passes.
   - Bump the version to `1.0.0-next.N` for prereleases and write the CHANGELOG.
   - Done when `npm pack` contents are verified. Publishing to npm (the `next` tag) and
     merging to `master` need the user's explicit go-ahead.
-- [ ] **E9.5 Remove 0.7.0's execution path (S).**
+- [x] **E9.5 Remove 0.7.0's execution path (S).**
   - Remove the Herdr-only supervisor (`worker.mjs`, `launch.mjs`, `background.mjs`,
     `observe.mjs`, `completion.mjs`), the readiness probes, the file-based coordinator and
     the now-dead tests.
@@ -1167,6 +1167,10 @@ Read this section and the plan before resuming after a context reset.
   `bin/pinata.mjs`, `PinataHost.resumeDir`/`undelivered`/`continueHeadless`; tests in
   `test/engine/headless.test.ts`). Next: E9.1 Gate 2 (measure every target per backend and
   mode, the UX lag, the Luna eval, and Luna live smokes per backend), E9.3, E9.4, E9.5.
+- E9.5 is done: `lib/` is gone with 0.7.0's tests, fixtures, eval driver, bench target and
+  CI step; `PINATA_LEGACY` is gone. 0.7.0's numbers stay in `bench/baselines/` and the
+  Results log. The release-script tests (`test/*.test.mjs`) remain; the examples test is
+  ported (`test/engine/examples.test.ts`). 0.7.0's `limits.startupMs` now gives a notice.
 - E9.2 is done (`engine/migrate/legacy.ts`, `/pinata gc [confirm]`, `pinata gc [--confirm]`,
   `test/engine/migrate.test.ts`).
 - E0.7 upstream issue: not opened yet (outward-facing; include the `ensureTool` finding).

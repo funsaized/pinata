@@ -9,12 +9,6 @@ import { PinataUI } from "./ui.ts";
 export default async function pinata(pi: ExtensionAPI): Promise<void> {
   // Recursion guard: agents (and anything they start) never get pinata tools.
   if (process.env.PINATA_AGENT) return;
-  // Until E9.5 removes it, PINATA_LEGACY=1 runs 0.7.0's extension instead (for 0.7.0's own
-  // smokes and baselines). The two never load together.
-  if (process.env.PINATA_LEGACY === "1") {
-    const legacy = await import("../../lib/extension.ts");
-    return legacy.default(pi);
-  }
   const host = new PinataHost(pi);
   host.ui = new PinataUI(pi);
   void host.owner();
