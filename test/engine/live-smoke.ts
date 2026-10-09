@@ -1,6 +1,7 @@
 // Live smoke (spends real tokens): the engine inside the real `pi` binary with the user's model
 // configuration. The parent model is asked to call pinata_run with 3 parallel scouts and a
-// dependent planner; every agent must succeed. Requires PINATA_LIVE_SMOKE=1 and
+// dependent planner; every agent must succeed (PINATA_LIVE_BACKEND picks the backend).
+// Requires PINATA_LIVE_SMOKE=1 and
 // PINATA_LIVE_CONFIG (an approved pinata config, such as examples/configs/luna.json).
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -78,8 +79,12 @@ async function main() {
   ];
   // Pin every task to the approved file's choice, so global pinata role settings cannot add
   // other models to the smoke (as 0.7.0's quality eval does).
-  for (const task of tasks as Array<Record<string, unknown>>)
+  // PINATA_LIVE_BACKEND=process|herdr-pi runs every agent on that backend (Gate 2).
+  const backend = process.env.PINATA_LIVE_BACKEND;
+  for (const task of tasks as Array<Record<string, unknown>>) {
     task.model = config.models[task.role as string] ?? config.models.default;
+    if (backend) task.backend = backend;
+  }
   const env: NodeJS.ProcessEnv = { ...process.env, PI_SKIP_VERSION_CHECK: "1" };
   delete env.PINATA_AGENT;
   delete env.PINATA_LEGACY;
@@ -127,6 +132,7 @@ async function main() {
       totalCostUsd: Math.round(((result?.costUsd ?? 0) + (parentStats?.cost ?? 0)) * 1e6) / 1e6,
       elapsedMs: Date.now() - t0,
       model: `${parent.provider}/${parent.id}`,
+      backend: backend ?? "in-process",
     };
     console.log(JSON.stringify(summary));
     if (process.env.PINATA_LIVE_KEEP && result?.dir)

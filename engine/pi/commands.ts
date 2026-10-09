@@ -5,6 +5,7 @@ import type { PinataHost } from "./host.ts";
 import { integrationStatus, type RunSource } from "./ui.ts";
 import { insideHerdr } from "../herdr/client.ts";
 import { gcPanes } from "../herdr/panes.ts";
+import { legacyRoot, retireLegacy } from "../migrate/legacy.ts";
 import { runsRoot } from "../core/store.ts";
 import { repositoryRoot } from "./host.ts";
 
@@ -16,7 +17,7 @@ export const USAGE = [
   "/pinata open [run] <task>    an agent's conversation, live (Enter steers)",
   "/pinata watch [run] [task]   start the run's socket for an external viewer",
   "/pinata rerun <run>          start again the tasks lost when Pi exited",
-  "/pinata gc                   close pinata's Herdr workspaces whose work settled",
+  "/pinata gc [confirm]         retire 0.7.0 runs (preview; confirm acts) and close settled panes",
 ].join("\n");
 
 // Runs for /pinata live: this session's newest first, else the repository's history.
@@ -31,6 +32,24 @@ export function runSource(host: PinataHost): RunSource {
       return { view: found.view, integration: await integrationStatus(found.dir) };
     },
   };
+}
+
+// Repository GC: 0.7.0 run directories (preview unless confirmed), and inside Herdr the
+// workspaces of settled pinata work.
+export async function gcText(cwd: string, confirm: boolean): Promise<string> {
+  const root = await repositoryRoot(cwd);
+  const lines: string[] = [];
+  for (const item of await retireLegacy(await legacyRoot(root), { confirm }))
+    lines.push(
+      `0.7.0 ${item.run.slice(0, 8)} ${item.what === "run" ? "" : `${item.what}: `}${item.action}${item.reason ? ` (${item.reason})` : ""}`,
+    );
+  if (insideHerdr())
+    for (const e of await gcPanes(await runsRoot(root)))
+      lines.push(`${e.action.padEnd(6)} ${e.label}: ${e.reason}`);
+  if (!lines.length) return "Nothing to clean up.";
+  if (!confirm && lines.some((l) => /would /.test(l)))
+    lines.push("Preview only: /pinata gc confirm (or pinata gc --confirm) acts on it.");
+  return lines.join("\n");
 }
 
 export async function pinataCommand(
@@ -102,12 +121,7 @@ export async function pinataCommand(
     const reopened = host.rerun(found.id);
     return `pinata ${short(found.id)}: started again ${reopened.join(", ")}`;
   }
-  if (sub === "gc") {
-    if (!insideHerdr()) return "pinata gc closes Herdr workspaces; run Pi inside Herdr.";
-    const entries = await gcPanes(await runsRoot(await repositoryRoot(ctx.cwd)));
-    if (!entries.length) return "No pinata workspaces in this Herdr session.";
-    return entries.map((e) => `${e.action.padEnd(6)} ${e.label}: ${e.reason}`).join("\n");
-  }
+  if (sub === "gc") return gcText(ctx.cwd, rest[0] === "confirm");
   if (sub === "mode") {
     const mode = rest[0];
     if (mode !== "lean" && mode !== "observe")

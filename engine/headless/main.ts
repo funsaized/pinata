@@ -10,6 +10,7 @@ import type { RunHandle } from "../core/engine.ts";
 import { ValidationError } from "../core/validate.ts";
 import type { RunView } from "../core/view.ts";
 import { PinataHost, type RunParams } from "../pi/host.ts";
+import { gcText } from "../pi/commands.ts";
 import { followEvents } from "../sources/log.ts";
 import { JsonReporter, TextReporter, type Reporter } from "./reporters.ts";
 
@@ -146,6 +147,18 @@ export default function headless(pi: ExtensionAPI): void {
         process.exitCode = exitCode(await host.foreground(handle, undefined));
       } catch (error) {
         err(`pinata: ${(error as Error).message}`);
+        process.exitCode = EXIT.failed;
+      }
+    },
+  });
+  pi.registerCommand("pinata-gc", {
+    description: "Retire 0.7.0 runs and close settled panes (headless)",
+    handler: async (raw, ctx) => {
+      try {
+        const { confirm } = JSON.parse(raw) as { confirm?: boolean };
+        out(await gcText(ctx.cwd, confirm === true));
+      } catch (error) {
+        err(`pinata gc: ${(error as Error).message}`);
         process.exitCode = EXIT.failed;
       }
     },
