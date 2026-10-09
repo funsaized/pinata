@@ -1,11 +1,11 @@
-// Benchmark runner. One command produces comparable JSON for 0.7.0 ("legacy") and the engine.
+// Benchmark runner: comparable JSON for the engine. 0.7.0's numbers are recorded in
+// bench/baselines (its code was removed in E9.5).
 //
 //   node bench/run.ts                              engine, faux provider, all scenarios
-//   node bench/run.ts --provider loopback --compare  engine and 0.7.0 over the loopback provider
-//   node bench/run.ts --target legacy --provider loopback --out bench/baselines/0.7.0-linux.json
+//   node bench/run.ts --provider loopback          engine over the loopback provider
 //   node bench/run.ts --ci                         fail when a result exceeds 2x its budget
 //
-// Options: --target engine|legacy (repeatable), --compare (both), --provider faux|loopback|live,
+// Options: --provider faux|loopback|live,
 // --scenario <name> (repeatable), --host node|pi|tui, --token-delay <ms>, --out <file>.
 // --host tui runs interactive Pi under a pseudo-terminal (Linux and macOS; the UX benchmark).
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -27,7 +27,7 @@ export function scenarios(): Scenario[] {
 }
 
 interface Args {
-  targets: Array<"engine" | "legacy">;
+  targets: Array<"engine">;
   provider: "faux" | "loopback" | "live";
   scenarios: string[];
   host: "node" | "pi" | "tui";
@@ -52,9 +52,7 @@ function parse(argv: string[]): Args {
       if (v === undefined) throw new Error(`${flag} needs a value`);
       return v;
     };
-    if (flag === "--target") args.targets.push(value() as "engine" | "legacy");
-    else if (flag === "--compare") args.targets.push("engine", "legacy");
-    else if (flag === "--provider") args.provider = value() as Args["provider"];
+    if (flag === "--provider") args.provider = value() as Args["provider"];
     else if (flag === "--scenario") args.scenarios.push(value());
     else if (flag === "--host") args.host = value() as Args["host"];
     else if (flag === "--token-delay") args.tokenDelayMs = Number(value());
@@ -64,8 +62,6 @@ function parse(argv: string[]): Args {
   }
   if (!args.targets.length) args.targets.push("engine");
   args.targets = [...new Set(args.targets)];
-  if (args.targets.includes("legacy") && args.provider !== "loopback")
-    throw new Error("0.7.0 runs agents in separate Pi processes; use --provider loopback");
   return args;
 }
 
@@ -75,14 +71,10 @@ function version(argv: string[]) {
 }
 
 async function runTarget(
-  target: "engine" | "legacy",
+  _target: "engine",
   scenario: Scenario,
   args: Args,
 ): Promise<ScenarioResult> {
-  if (target === "legacy") {
-    const { runLegacy } = await import("./targets/legacy.ts");
-    return runLegacy(scenario, { tokenDelayMs: args.tokenDelayMs });
-  }
   const { runEngine } = await import("./targets/engine.ts");
   return runEngine(scenario, {
     provider: args.provider,
@@ -164,7 +156,6 @@ async function main() {
       memoryGB: Math.round(totalmem() / 1073741824),
       node: process.version,
       pi: version(["pi", "--version"]),
-      herdr: args.targets.includes("legacy") ? version(["herdr", "--version"]) : undefined,
       provider: args.provider,
       tokenDelayMs: args.tokenDelayMs,
     },

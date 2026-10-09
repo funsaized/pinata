@@ -87,10 +87,18 @@ test("0.7.0 runs are retired with 0.7.0's GC rules; artifacts and engine runs ar
   const again = await retireLegacy(root);
   assert(!again.some((i) => i.run === id(1) || i.run === id(2)), "retired runs stay retired");
   void active;
+  void coordinated;
 });
 
 test("0.7.0 config keys that no longer apply produce a one-line notice", () => {
   const { notices } = validateConfig({ herdr: "/usr/bin/herdr" });
   assert.equal(notices.length, 1);
   assert(!notices[0].includes("\n"));
+});
+
+test("0.7.0's limits.startupMs gives a notice instead of an error", () => {
+  const { config, notices } = validateConfig({ limits: { startupMs: 30_000, taskMs: 60_000 } });
+  assert.equal(config.limits.taskMs, 60_000);
+  assert.deepEqual(notices.length, 1);
+  assert.match(notices[0], /startupMs is ignored/);
 });
