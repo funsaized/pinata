@@ -66,9 +66,13 @@ export async function stopChild(child: ChildProcess, graceMs = KILL_GRACE_MS): P
   if (child.exitCode !== null || child.signalCode !== null || child.pid === undefined) return;
   const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
   child.stdin?.end();
+  // An exit event can fail to arrive for a detached child on Windows (seen in a headless
+  // host): never wait for it longer than the grace period plus a margin.
+  const bounded = () =>
+    Promise.race([exited, new Promise<void>((r) => setTimeout(r, graceMs + 3000).unref?.())]);
   if (process.platform === "win32") {
     killTree(child.pid);
-    await exited;
+    await bounded();
     return;
   }
   try {
@@ -77,7 +81,7 @@ export async function stopChild(child: ChildProcess, graceMs = KILL_GRACE_MS): P
     // Already gone.
   }
   const timer = setTimeout(() => killTree(child.pid!), graceMs);
-  await exited;
+  await bounded();
   clearTimeout(timer);
   // Grandchildren in the group (a stuck bash tool) go too.
   killTree(child.pid);
