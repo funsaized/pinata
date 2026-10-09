@@ -1,43 +1,44 @@
-# Documentation
+# pinata documentation
 
-Start by asking your agent to delegate. You do not need to write job JSON or run
-helper commands for everyday use.
+Organized in four kinds: tutorials to learn, how-to guides for tasks, reference to look
+things up, and explanation to understand.
 
 ## Tutorials
 
-Follow these lessons to complete a first task:
-
-- [Run your first scout](tutorials/first-scout.md): ask a code question and read the findings.
-- [Watch the live mascot](tutorials/live-mascot.md): try the controls, then watch two scouts work.
-- [Build and review a change](tutorials/build-and-review.md): delegate a fix through local integration.
-- [Run a scout with the Node helper](tutorials/helper-first-scout.md): use a self-contained practice repository and job.
-- [Build and review with the helper](tutorials/helper-build-and-review.md): launch, review, and integrate manually.
+- [First run](tutorials/first-run.md): a read-only scout and planner, and where to see them.
+- [Build and review](tutorials/build-and-review.md): a builder, an independent reviewer,
+  integration and rollback.
+- [Watching agents](tutorials/watching-agents.md): the widget, the detail view, steering,
+  the live mascot and the external viewer.
 
 ## How-to guides
 
-Use these when you have a specific task:
-
-- [Set up pinata](setup.md): install, reload, and check readiness with Pi.
-- [Review your own changes](../examples/README.md#review-your-own-changes): `/pinata-review` for uncommitted work, a branch, or a pull request.
-- [Agent examples](../examples/README.md): copy and adapt prompts for each role.
-- [Recover and clean up a run](recovery.md): ask Pi to resume, repair, cancel, or undo work.
-- [Builder dependencies](dependencies.md): automatic setup, overrides, and `.worktreeinclude` for local files.
-- [Codemode](codemode.md): advanced worker tool configuration and limits.
-- [Helper examples](../examples/helper.md): adapt task JSON, model configurations, and complete jobs.
-- [Manual recovery](manual-recovery.md): recover with exact helper commands.
-- [Run the tests](testing.md): local fixtures, Herdr smoke tests, and live checks.
-- [Publish to npm](publication.md): inspect, publish, and verify an authorized release.
-- [Mirror to GitHub Packages](github-packages.md): sync published npm versions.
+- [Choose a mode](how-to/modes.md): lean or observe.
+- [Choose a backend](how-to/backends.md): in-process, process or herdr-pi.
+- [Use pinata inside Herdr](how-to/herdr.md)
+- [Run jobs headless](how-to/headless.md): scripts and CI.
+- [Give builders their dependencies](how-to/dependencies.md)
+- [Recover, rerun and clean up](how-to/recover.md), including upgrading from 0.7.0.
+- [Enable research](how-to/research.md)
+- [Set up on Windows and macOS](how-to/platforms.md)
 
 ## Reference
 
-Look up fields, commands, and supported behavior:
-
-- [Command reference](commands.md): command signatures, effects, and exit behavior.
-- [Configuration reference](configuration.md): job, task, configuration, and result fields.
-- [Coordinator reference](../skills/subagents/reference.md): the contract for coordinating agents.
-- [Validation and limitations](validation.md): tested versions, coverage, and supported claims.
+- [Tools](reference/tools.md): the model-facing tools, tasks and results.
+- [Commands](reference/commands.md): `/pinata …` in Pi and the `pinata` command.
+- [Configuration](reference/config.md)
+- [Events](reference/events.md): the run log's schema.
+- [Socket protocol](reference/socket-protocol.md): for viewers.
 
 ## Explanation
 
-- [How pinata runs a job](architecture.md): worktrees, evidence, review, integration, and trust boundaries.
+- [Architecture](explanation/architecture.md)
+- [Trust and safety](explanation/trust.md)
+
+## Maintainers
+
+- [Testing](maintainers/testing.md)
+- [Publication](maintainers/publication.md)
+- [GitHub Packages](maintainers/github-packages.md)
+
+Commands in these docs are run by the test suite unless marked _manual_.

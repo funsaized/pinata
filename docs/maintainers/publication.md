@@ -1,8 +1,10 @@
 # Publish pinata to npm
 
+Commands on this page are _manual_: they publish, authenticate or need registry access.
+
 How to release `pi-pinata` to npm once you have explicit authorization. Nothing
 on this page authorizes a commit, push, tag, publication, or deployment by
-itself. Recorded test results are in [validation](validation.md); the local test
+itself. Recorded test results are in [testing](testing.md); the local test
 commands are in [testing](testing.md).
 
 Package: **pi-pinata**. Publisher: **funsaized**
@@ -15,7 +17,7 @@ or read credential files to check identity.
 
 ## Automated release
 
-The [release workflow](../.github/workflows/release.yml) runs on a pushed `vX.Y.Z`
+The [release workflow](../../.github/workflows/release.yml) runs on a pushed `vX.Y.Z`
 tag. With release authorization, bump `package.json` and `package-lock.json`,
 complete the local checks below (including the real Pi smoke test), and commit
 the reviewed release. Push the commit and its matching tag:
@@ -51,10 +53,10 @@ workflow below. Never move a published release tag or overwrite a package versio
 
 ```sh
 npm ci --ignore-scripts
+npm run check
 npm test
-npm run test:pi
-npm run lint
-npm run format:check
+node test/engine/pi-smoke.ts
+node test/engine/package-smoke.ts
 npm pack --dry-run --json --ignore-scripts
 ```
 
@@ -105,11 +107,11 @@ npm pack pi-pinata@0.2.0 --pack-destination "$RELEASE_CHECK" --ignore-scripts
 tar -tzf "$RELEASE_CHECK/pi-pinata-0.2.0.tgz"
 npm install --prefix "$RELEASE_CHECK/install" --ignore-scripts "$RELEASE_CHECK/pi-pinata-0.2.0.tgz"
 PI_CODING_AGENT_DIR="$RELEASE_CHECK/pi-agent" pi install "$RELEASE_CHECK/install/node_modules/pi-pinata" --no-approve
-PI_CODING_AGENT_DIR="$RELEASE_CHECK/pi-agent" node "$RELEASE_CHECK/install/node_modules/pi-pinata/lib/pinata.mjs" resources "$RELEASE_CHECK"
+node "$RELEASE_CHECK/install/node_modules/pi-pinata/bin/pinata.mjs" help
 ```
 
 Use the version you actually published in every command. Check that the file
-list matches the approved artifact and the resource probe returns `ok: true`.
+list matches the approved artifact and the `pinata` command prints its usage.
 The temporary Pi agent directory keeps this verification out of personal config.
 
 Record the output and the tested install path. If publication returns an
@@ -132,12 +134,11 @@ and keeps the unscoped npm package unchanged.
 ## Removal
 
 Use `pi remove npm:pi-pinata`, or the exact registered local path for a local
-installation. Resolve active runs before removing helper files. Package removal
-does not delete user work or run evidence. The isolated removal check is recorded
-in [validation](validation.md); follow [run cleanup](recovery.md#cancel-and-clean-up)
+installation. Let active runs settle (or cancel them) first. Package removal
+does not delete user work or run evidence. Follow [run cleanup](../how-to/recover.md)
 before removing an active installation.
 
 ---
 
-Part of the [pinata documentation](README.md). Related: [validation](validation.md),
-[testing](testing.md), [architecture](architecture.md#trust-and-safety).
+Part of the [pinata documentation](../README.md). Related: [testing](testing.md),
+[testing](testing.md), [trust and safety](../explanation/trust.md).

@@ -2,30 +2,22 @@
 
 Fast, observable subagents for Pi.
 
-Ask for a scout, a researcher, a planner, a builder, or a reviewer, and each one
-opens in its own [Herdr](https://herdr.dev/) workspace
-**where you can watch it work**. When they finish, Pi brings their results back.
-Every builder change gets a separate review before it reaches your checkout.
-
-https://github.com/user-attachments/assets/d1b45899-beef-4dcc-9b0e-d59ab28c6a5d
+Ask for a scout, a researcher, a planner, a builder, or a reviewer. Pi delegates the work,
+the agents run in parallel where they can, and their results come back to Pi. Every
+builder change gets an independent review before it reaches your checkout.
 
 ## Install
+
+In Pi's terminal (_manual_):
 
 ```sh
 pi install npm:pi-pinata
 ```
 
-Then enable Herdr's Pi integration, so Pi can resume on its own when the agents
-finish:
-
-```sh
-herdr integration install pi
-```
-
-Reload Pi, run it inside a Herdr session, and you're ready. You'll need Pi
-1.0.2+, Herdr 0.9.1+, Node 22.19+, and Git; research also uses
-[pi-web-access](https://github.com/nicobailon/pi-web-access). [Setup](docs/setup.md)
-covers models, sessions, and checking your install.
+Reload Pi. You need Pi 1.1.0+, Node 22.19+ (for the `pinata` command), and Git, on Linux,
+macOS or Windows. Research tasks also use
+[pi-web-access](https://github.com/nicobailon/pi-web-access). [Herdr](https://herdr.dev/) is
+optional: inside Herdr, agents can run in their own panes.
 
 ## Try this first
 
@@ -41,11 +33,6 @@ Then have research check both reports against the official docs.
 ```
 
 ```text
-/skill:engmgmt Fix this bug, test it, and have a reviewer sign off before it
-touches my checkout.
-```
-
-```text
 /pinata-fix Correct the seconds-to-milliseconds conversion in src/duration.mjs.
 ```
 
@@ -53,8 +40,8 @@ touches my checkout.
 /pinata-review Focus on the error handling.
 ```
 
-That's enough to start. Pi picks the agents, writes their briefs, and decides
-who waits for whom.
+Pi picks the agents, writes their briefs, and decides who waits for whom. Start with the
+[first-run tutorial](docs/tutorials/first-run.md).
 
 ## Meet the team
 
@@ -66,111 +53,37 @@ who waits for whom.
 | Builder (`builder`)     | Makes the change and runs the checks.           |
 | Reviewer (`reviewer`)   | Checks the diff and challenges the assumptions. |
 
-Rule of thumb: scout before you understand the code, research before you trust
-an outside fact, plan when the change is big, build when the path is clear, and
-always review before you merge.
-
 ## What it's like to use
 
-- **Watch any agent.** Each agent is a real Pi session in its own Herdr
-  workspace. Switch to one whenever you like and see what it's reading and
-  running.
-- **Pi picks up the results.** With Herdr's Pi integration enabled, Pi resumes
-  on its own when the agents finish and reads their reports. While they work, it
-  sits idle and uses no tokens.
-- **Agents work from your current files.** Uncommitted edits and new files come
-  along, so agents see the same code you're looking at.
-- **Agents can wait on each other.** Ask for "research once both scouts are
-  done" and Pi sets up the order. Anything that doesn't depend on other work
-  runs in parallel.
-- **Builder changes are reviewed before they land.** Each builder works in its
-  own worktree, and a separate reviewer has to approve that exact change before
-  pinata applies it to your checkout. You can roll an integration back as long
-  as you haven't edited those files since. Committing is left to you.
-- **Review your own work, too.** `/pinata-review` points several reviewers at
-  your uncommitted changes, a branch, or a GitHub pull request and gives you one
-  combined list of findings.
-- **Cost and memory are visible.** Above the editor, Pi lists each running agent
-  with time, tokens, cost, and sampled memory usage. Set `limits.costUsd` to stop
-  a run at a dollar amount.
-- **Cleanup is automatic.** Finished workspaces close, and worktrees are removed
-  once their work is done or merged. Results are kept, so you can go back and
-  read what each agent found.
-- **Same model as you.** Agents use your current Pi model by default. You can
-  give each role its own model and thinking level.
-
-## Common asks
-
-| Want                            | Ask naturally                                                            |
-| ------------------------------- | ------------------------------------------------------------------------ |
-| Understand unfamiliar code      | "Have a scout map how payments flow through this service."               |
-| Investigate from several angles | "Send three scouts in parallel: API, database, and tests."               |
-| Check facts against sources     | "Have research verify these claims against the official docs."           |
-| Review your changes             | "/pinata-review", "/pinata-review main", or "/pinata-review 123"         |
-| Fix an understood bug           | "/pinata-fix Correct the conversion in src/duration.mjs; run npm test."  |
-| Plan before changing anything   | "Have a planner propose the smallest fix for this issue."                |
-| Build, review, and apply        | "/skill:engmgmt Implement the approved plan with an independent review." |
-| Check on a run                  | `/pinata` (no model turn), or "How is the pinata run going?"             |
-| Watch the mascot and agents     | `/pinata live` (Space to bonk), or `/pinata live demo` to try it         |
-| Undo the last integration       | "Roll back the latest pinata integration."                               |
-| Tidy up old runs                | "Preview cleanup of old pinata runs, then clean up what's safe."         |
-
-## Where to look while it runs
-
-Each agent gets its own Herdr workspace in the sidebar. Open one to watch that
-agent think, read files, and call tools as it goes.
-
-While a run is going, Pi shows each agent's state, time, tokens, cost, and sampled
-memory above the editor, and a one-line summary in the footer. Type `/pinata`
-for the same view in the transcript, or `/pinata runs` for past runs in this repository.
-Neither sends anything to the model.
-
-For a little paper magic, open `/pinata live`: a turning 3D terminal piñata with
-colored ribbons and the actual task statuses beside it. Press **Space** to bonk,
-**M** to toggle motion, and **Esc** to return to Pi; workers keep going. In
-fullscreen Pi you can also click the small companion above the editor to open it.
-The victory confetti waits for successful tasks and, for builder runs, verified
-integration. Try `/pinata live demo` without starting agents, then follow the
-[live mascot walkthrough](docs/tutorials/live-mascot.md).
-
-## If something feels off
-
-Ask Pi for the run's status first; it says which agent is stuck and why.
-[Recovery](docs/recovery.md) covers resuming, repairing, and cleaning up a run,
-and [setup](docs/setup.md#3-ask-pi-to-check-setup-and-delegate) helps when an agent won't
-start.
-
-## Process overhead
-
-Each agent runs in its own Pi process. For a tiny task, starting the agent can
-take longer than doing the work. piñata is built for jobs with several independent
-tasks, where running them in parallel can make up for that overhead.
-
-## Good to know
-
-- Agents get a copy of your files as they were when you asked, uncommitted
-  changes included. Ignored files like `node_modules` and `.env` are left out
-  unless you list them in [`.worktreeinclude`](docs/dependencies.md#copy-local-files-with-worktreeinclude).
-- Builders run commands with your permissions, so read a builder's task before
-  you approve it. [Concepts](docs/architecture.md#trust-and-safety) has details.
-- Tested on Linux; macOS should work. See [validation](docs/validation.md).
+- **Fast.** Agents run inside your Pi by default: one starts in a few milliseconds and uses
+  a megabyte or two, so many can work at once.
+- **Visible.** A widget above the editor shows every agent's state, time, tokens, cost and
+  current tool. `/pinata open <task>` shows an agent's whole conversation as it streams, and
+  you can steer it from there. `pinata view` follows a run from another terminal.
+- **Reviewed before it lands.** Each builder works in its own git worktree; its checks run
+  after it finishes, and an independent reviewer must approve that exact change before
+  pinata applies it to your checkout (never staged or committed). You can roll it back.
+- **Recoverable.** Runs are logged on disk. A run started with `survive: true` keeps going
+  when Pi exits; the next Pi picks it up. `/pinata rerun` restarts tasks lost in a crash.
+- **Scriptable.** `pinata run job.json` runs a job without an interactive Pi, with plain or
+  JSONL output and exit codes for CI.
 
 ## Documentation
 
-| I want to…                                | Start here                                                        |
-| ----------------------------------------- | ----------------------------------------------------------------- |
-| Learn with a small, read-only run         | [Run your first scout](docs/tutorials/first-scout.md)             |
-| Learn the build and review cycle          | [Build and review a change](docs/tutorials/build-and-review.md)   |
-| Choose a task for each agent              | [Agent examples](examples/README.md)                              |
-| Copy a model config or a complete job     | [Example configs and jobs](examples/helper.md#files-you-can-copy) |
-| Give builders their dependencies          | [Dependencies](docs/dependencies.md)                              |
-| Install or configure pinata               | [Setup](docs/setup.md)                                            |
-| Resume, repair, or clean up a run         | [Recovery](docs/recovery.md)                                      |
-| See every command and tool                | [Commands](docs/commands.md)                                      |
-| Use the helper directly                   | [Helper tutorial](docs/tutorials/helper-first-scout.md)           |
-| Understand worktrees, reviews, and safety | [Concepts](docs/architecture.md)                                  |
+| I want to…                                 | Start here                                                                           |
+| ------------------------------------------ | ------------------------------------------------------------------------------------ |
+| Run my first agents                        | [First run](docs/tutorials/first-run.md)                                             |
+| Build, review and apply a change           | [Build and review](docs/tutorials/build-and-review.md)                               |
+| Watch agents work                          | [Watching agents](docs/tutorials/watching-agents.md)                                 |
+| Choose lean or observe mode                | [Modes](docs/how-to/modes.md)                                                        |
+| Run agents as processes or Herdr panes     | [Backends](docs/how-to/backends.md), [Herdr](docs/how-to/herdr.md)                   |
+| Run jobs from scripts or CI                | [Headless runs](docs/how-to/headless.md)                                             |
+| Give builders their dependencies           | [Dependencies](docs/how-to/dependencies.md)                                          |
+| Recover, rerun or clean up                 | [Recovery](docs/how-to/recover.md)                                                   |
+| Set up on Windows or macOS                 | [Platforms](docs/how-to/platforms.md)                                                |
+| Look up a tool, command or config key      | [Reference](docs/README.md#reference)                                                |
+| Understand how it works and what it trusts | [Architecture](docs/explanation/architecture.md), [Trust](docs/explanation/trust.md) |
 
-The [documentation index](docs/README.md) also links to contributor testing,
-recorded validation, and npm publication instructions.
+The [documentation index](docs/README.md) lists everything, including maintainer docs.
 
-MIT licensed. Made w/ Opus 5.5, a bit of hand crafted code, and a lot of stepping through & debugging :P
+MIT licensed.

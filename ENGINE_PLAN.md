@@ -945,7 +945,7 @@ Gate 1 passes.
     0.7.0 GC rules.
   - Config keys that no longer apply produce a one-line notice.
   - Done when a repository with 0.7.0 runs upgrades cleanly.
-- [ ] **E9.3 Docs (M).**
+- [x] **E9.3 Docs (M).**
   - Rewrite `README.md` and `docs/` in Diataxis form: tutorials (first run, build and
     review, watching agents), how-tos (modes, backends, Herdr, headless, Windows and
     macOS setup), reference (tools, config, events, socket protocol), and explanation
@@ -1167,6 +1167,10 @@ Read this section and the plan before resuming after a context reset.
   `bin/pinata.mjs`, `PinataHost.resumeDir`/`undelivered`/`continueHeadless`; tests in
   `test/engine/headless.test.ts`). Next: E9.1 Gate 2 (measure every target per backend and
   mode, the UX lag, the Luna eval, and Luna live smokes per backend), E9.3, E9.4, E9.5.
+- E9.3 is done: `README.md` and `docs/` in Diátaxis form (tutorials, how-to, reference,
+  explanation, maintainers); `test/engine/docs.test.ts` checks every relative link, every
+  `/pinata` and `pinata` subcommand named, and that shell commands are run by the suite or
+  marked _manual_ (maintainer pages are manual as a whole: they publish or authenticate).
 - E9.5 is done: `lib/` is gone with 0.7.0's tests, fixtures, eval driver, bench target and
   CI step; `PINATA_LEGACY` is gone. 0.7.0's numbers stay in `bench/baselines/` and the
   Results log. The release-script tests (`test/*.test.mjs`) remain; the examples test is
