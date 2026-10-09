@@ -250,12 +250,21 @@ test("a surviving graph with dependents finishes in a headless host after its Pi
   await until(
     async () => (await readEvents(handle.dir)).some((e) => e.t === "run_settled"),
     "the headless host to finish the run",
-    60_000,
+    // Windows: PowerShell process-identity checks take seconds each.
+    process.platform === "win32" ? 180_000 : 60_000,
   ).catch(async (error) => {
     // Say why: the headless host's own log and each agent's stderr.
-    const logs = [join(handle.dir, "headless.log")];
+    const logs = [
+      join(handle.dir, "headless.log"),
+      join(handle.dir, "run.json"),
+      join(handle.dir, "events.jsonl"),
+    ];
     for (const agent of ["first", "second"])
-      logs.push(join(handle.dir, "agents", agent, "stderr.log"));
+      logs.push(
+        join(handle.dir, "agents", agent, "stderr.log"),
+        join(handle.dir, "agents", agent, "events.jsonl"),
+        join(handle.dir, "agents", agent, "pid.json"),
+      );
     const text = await Promise.all(
       logs.map(
         async (f) => `--- ${f}\n${(await readFile(f, "utf8").catch(() => "(none)")).slice(-3000)}`,
