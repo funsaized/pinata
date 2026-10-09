@@ -27,9 +27,12 @@ task fields, config and result fields.
 - `pinata_integrate` applies approved builder changes and runs integrated checks.
 - `pinata_rollback` restores the checkout from the integration journal.
 
-Agents run inside this Pi by default: they start in about a millisecond and
-share its model connections. They end if Pi exits or reloads, and are reported
-as cancelled.
+Agents run inside this Pi by default: they start in a few milliseconds and
+share its model connections. They end if Pi exits or reloads; the next Pi reports
+them as cancelled ("Pi exited before this agent settled"), and `/pinata rerun <run>`
+starts them again. For work that must outlive Pi, call `pinata_run` with
+`background: true` and `survive: true`: agents then run as separate processes, the
+next Pi picks the run up, and if Pi exits first a headless host finishes it.
 
 ## Scope and preflight
 

@@ -5,21 +5,22 @@ Full human reference: `../../docs/` (read only if this is not enough).
 
 ## Tools
 
-| Tool               | Parameters and effect                                                                                                                                                          |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `pinata_run`       | `{tasks, background?, cwd?, approval?, instructions?, config?, integratedChecks?, noIntegratedChecksReason?}`. Creates and starts a run. `approval` is required with builders. |
-| `pinata_status`    | `{run?, task?, detail?: "summary" \| "result" \| "transcript"}`. Read-only. Without `run`, the latest run.                                                                     |
-| `pinata_steer`     | `{run, task, message, as?: "steer" \| "followUp"}`. Message a running agent; recorded and shown to its reviewer.                                                               |
-| `pinata_cancel`    | `{run, task?}`. Cancel a run or one agent.                                                                                                                                     |
-| `pinata_repair`    | `{run, task, feedback}`. Re-run a builder in its worktree with feedback, within `limits.repairs`; its reviews run again.                                                       |
-| `pinata_integrate` | `{run}`. Apply approved builder changes to the checkout and run `integratedChecks`. Never stages or commits.                                                                   |
-| `pinata_rollback`  | `{run, confirm: true}`. Restore the checkout from the latest integration journal where files still match.                                                                      |
+| Tool               | Parameters and effect                                                                                                                                                                                                                                   |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pinata_run`       | `{tasks, background?, survive?, cwd?, approval?, instructions?, config?, integratedChecks?, noIntegratedChecksReason?}`. Creates and starts a run. `approval` is required with builders. `survive` (with `background`) keeps the run going if Pi exits. |
+| `pinata_status`    | `{run?, task?, detail?: "summary" \| "result" \| "transcript"}`. Read-only. Without `run`, the latest run.                                                                                                                                              |
+| `pinata_steer`     | `{run, task, message, as?: "steer" \| "followUp"}`. Message a running agent; recorded and shown to its reviewer.                                                                                                                                        |
+| `pinata_cancel`    | `{run, task?}`. Cancel a run or one agent.                                                                                                                                                                                                              |
+| `pinata_repair`    | `{run, task, feedback}`. Re-run a builder in its worktree with feedback, within `limits.repairs`; its reviews run again.                                                                                                                                |
+| `pinata_integrate` | `{run}`. Apply approved builder changes to the checkout and run `integratedChecks`. Never stages or commits.                                                                                                                                            |
+| `pinata_rollback`  | `{run, confirm: true}`. Restore the checkout from the latest integration journal where files still match.                                                                                                                                               |
 
 `run` accepts a unique prefix of the run id. Tools return JSON and report errors
 as failed tool results. A completed call can still report failed tasks: read the
 statuses.
 
-Commands (no model turn): `/pinata` (status), `/pinata runs`, `/pinata mode lean|observe`.
+Commands (no model turn): `/pinata` (status), `/pinata runs`, `/pinata open [run] <task>`,
+`/pinata live`, `/pinata watch`, `/pinata mode lean|observe`, `/pinata rerun <run>`, `/pinata gc`.
 
 ## Task
 

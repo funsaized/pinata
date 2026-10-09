@@ -1,5 +1,7 @@
 # Mirror npm releases to GitHub Packages
 
+Commands on this page are _manual_: they publish, authenticate or need registry access.
+
 npm is the release source. The GitHub mirror downloads an already-published
 `pi-pinata` version and publishes it as `@funsaized/pi-pinata`. GitHub requires
 the scope; the name on npm stays `pi-pinata`.
@@ -9,12 +11,12 @@ file contents, executable bits, and the remaining metadata before publication,
 then downloads the GitHub package and checks them again. It does not rebuild
 from the current branch, run package lifecycle scripts, or publish to npm.
 
-The [release workflow](../.github/workflows/release.yml) calls this mirror
+The [release workflow](../../.github/workflows/release.yml) calls this mirror
 automatically after publishing and verifying each npm release.
 
 ## Run a sync
 
-The [sync workflow](../.github/workflows/sync-github-package.yml) checks npm's
+The [sync workflow](../../.github/workflows/sync-github-package.yml) checks npm's
 `latest` version daily at 07:23 UTC. Scheduled runs can be delayed by GitHub.
 To mirror a release immediately:
 
@@ -72,7 +74,7 @@ pi install npm:@funsaized/pi-pinata
 This configures npm's registry mapping for the scope and installs into your
 personal Pi configuration. Restart Pi or run `/reload`. Do not install both
 copies into the same Pi configuration: they provide the same skill and prompt
-names. Use [setup](setup.md) to remove the old source and check collisions.
+names. Use [platforms](../how-to/platforms.md) to remove the old source and check collisions.
 
 ## Tags and missed versions
 
@@ -107,4 +109,4 @@ backfill tags, and mismatched artifacts without contacting a registry.
 Sources: [GitHub npm registry](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-npm-registry),
 [package visibility and access](https://docs.github.com/en/packages/learn-github-packages/configuring-a-packages-access-control-and-visibility).
 
-[Publish to npm](publication.md) · [Documentation index](README.md)
+[Publish to npm](publication.md) · [Documentation index](../README.md)

@@ -1,15 +1,14 @@
-# Helper examples and configuration
+# Task and job examples
 
-Use these examples when operating the Node helper directly or writing integrations.
-For everyday delegation, use the [chat assignments](README.md). Start with the
-[helper tutorial](../docs/tutorials/helper-first-scout.md) for a complete run.
+Use these examples when writing job files for [`pinata run`](../docs/how-to/headless.md)
+or integrations. For everyday delegation, use the [chat assignments](README.md).
 
-Task objects belong in a job's `tasks` array or a file passed to `add`; they are
-not complete jobs. See [configuration reference](../docs/configuration.md).
+Task objects belong in a job's `tasks` array; they are not complete jobs. See the
+[tool reference](../docs/reference/tools.md) and [configuration](../docs/reference/config.md).
 
 ## Scout: find local evidence
 
-This task fits the greeting repository in the [helper tutorial](../docs/tutorials/helper-first-scout.md):
+This task fits a small greeting repository (`greet.mjs` and its test):
 
 ```json
 {
@@ -125,7 +124,7 @@ branch since `main`), or `"reviewPr": 482` (a GitHub pull request, fetched with
 
 Expect a fingerprint-bound `approve` or `changes_requested` verdict. Approval
 cannot include unresolved medium, high, or critical findings. A rejection needs
-[repair and re-review](../docs/recovery.md#repair-a-failed-task-or-rejected-review),
+[repair and re-review](../docs/how-to/recover.md#a-task-failed-or-a-review-asked-for-changes),
 not a more flattering reviewer prompt.
 
 ## Model configs
@@ -157,7 +156,7 @@ treats that change as "not ready" and skips the model, so these configs say `max
 
 ## Complete jobs
 
-Each file in [jobs/](jobs/) is a complete job for `init`. Replace `cwd`,
+Each file in [jobs/](jobs/) is a complete job for `pinata run`. Replace `cwd`,
 `approval`, and the assignment text before use.
 
 | File                                                          | Shape                                                                           |
@@ -177,8 +176,8 @@ the lockfile. Use the detected `npm ci` when they might not.
 
 | File                                               | Use                                                                             |
 | -------------------------------------------------- | ------------------------------------------------------------------------------- |
-| [scout-job.json](scout-job.json)                   | Complete read-only job for the helper scout tutorial                            |
-| [tutorial-build-job.json](tutorial-build-job.json) | Complete greeting builder/reviewer job for the helper build tutorial            |
+| [scout-job.json](scout-job.json)                   | Complete read-only scout job                                                    |
+| [tutorial-build-job.json](tutorial-build-job.json) | Complete greeting builder and reviewer job                                      |
 | [job.json](job.json)                               | Generic builder/reviewer template; replace all assignment and path placeholders |
 | [configs/](configs/)                               | Model and behavior configs; see [Model configs](#model-configs)                 |
 | [jobs/](jobs/)                                     | Complete jobs for common shapes; see [Complete jobs](#complete-jobs)            |
