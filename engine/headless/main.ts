@@ -124,6 +124,17 @@ export async function runJob(
   return exitCode(await host.foreground(handle, undefined));
 }
 
+// Keeps the host alive while a run is in flight: detached agents are unref'd children, so
+// awaiting them alone would let the process exit with the run unfinished.
+async function held<T>(work: () => Promise<T>): Promise<T> {
+  const hold = setInterval(() => {}, 60_000);
+  try {
+    return await work();
+  } finally {
+    clearInterval(hold);
+  }
+}
+
 export default function headless(pi: ExtensionAPI): void {
   const host = new PinataHost(pi);
   pi.on("session_shutdown", async () => {
@@ -132,10 +143,12 @@ export default function headless(pi: ExtensionAPI): void {
   pi.registerCommand("pinata-run", {
     description: "Run a pinata job file (headless)",
     handler: async (raw, ctx) => {
-      process.exitCode = await runJob(host, JSON.parse(raw) as RunArgs, ctx).catch((error) => {
-        err(`pinata: ${(error as Error).message}`);
-        return EXIT.failed;
-      });
+      process.exitCode = await held(() => runJob(host, JSON.parse(raw) as RunArgs, ctx)).catch(
+        (error) => {
+          err(`pinata: ${(error as Error).message}`);
+          return EXIT.failed;
+        },
+      );
     },
   });
   pi.registerCommand("pinata-resume", {
@@ -149,7 +162,7 @@ export default function headless(pi: ExtensionAPI): void {
         const stop = engine.onRun((run) => engine.subscribe(run.id, (e) => reporter.push(e)));
         const handle = await host.resumeDir(dir, ctx);
         stop();
-        process.exitCode = exitCode(await host.foreground(handle, undefined));
+        process.exitCode = exitCode(await held(() => host.foreground(handle, undefined)));
       } catch (error) {
         err(`pinata: ${(error as Error).message}`);
         process.exitCode = EXIT.failed;
