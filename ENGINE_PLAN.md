@@ -940,7 +940,7 @@ Gate 1 passes.
 ### M9: Release from the engine branch
 
 - [ ] **E9.1 Gate 2 (S).** See [Gates](#gates).
-- [ ] **E9.2 Migration (S).**
+- [x] **E9.2 Migration (S).**
   - `pinata gc` understands 0.7.0 run directories and retires them safely, porting the
     0.7.0 GC rules.
   - Config keys that no longer apply produce a one-line notice.
@@ -1166,7 +1166,9 @@ Read this section and the plan before resuming after a context reset.
 - M8: done (`engine/headless/{main,reporters}.ts`, `pinata run|resume|logs|view` in
   `bin/pinata.mjs`, `PinataHost.resumeDir`/`undelivered`/`continueHeadless`; tests in
   `test/engine/headless.test.ts`). Next: E9.1 Gate 2 (measure every target per backend and
-  mode, the UX lag, the Luna eval, and Luna live smokes per backend), E9.2, E9.3, E9.4, E9.5.
+  mode, the UX lag, the Luna eval, and Luna live smokes per backend), E9.3, E9.4, E9.5.
+- E9.2 is done (`engine/migrate/legacy.ts`, `/pinata gc [confirm]`, `pinata gc [--confirm]`,
+  `test/engine/migrate.test.ts`).
 - E0.7 upstream issue: not opened yet (outward-facing; include the `ensureTool` finding).
 
 ### Decisions and deviations
@@ -1352,6 +1354,11 @@ workspace create --env`; the command is quoted for the shell `pane process-info`
   output in `<run>/headless.log`) resumes it and finishes the graph; a reload resumes it in
   the reloaded extension instead. The next Pi delivers background results that settled
   meanwhile (once, `delivered.json`). `PINATA_NO_CONTINUE=1` disables the headless host.
+- Migration (E9.2): 0.7.0's GC rules are ported conservatively and without 0.7.0's evidence
+  snapshots: a 0.7.0 worktree is removed only when `git status` shows nothing, or, for a
+  builder, when integration was verified and every changed file equals the checkout's byte for
+  byte. 0.7.0 panes are closed only inside Herdr, while still owned and idle. A retired run
+  keeps its manifest and evidence and gets `retired.json`.
 - `pinata logs` and the headless host run in the pi binary's print mode (E5.6's decision);
   `bin/pinata.mjs` is plain JavaScript because Node does not strip types under
   `node_modules`. Print mode needs stdin closed, and routes extensions' `process.stdout`

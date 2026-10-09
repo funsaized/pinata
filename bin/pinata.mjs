@@ -18,6 +18,7 @@ const USAGE = `Usage:
   pinata run <job.json> [--mode observe] [--json] [--watch]   run a job headless
       exit codes: 0 succeeded, 1 failed, 2 invalid job, 3 cancelled
   pinata resume <run>                      continue a run that outlived its Pi
+  pinata gc [--confirm]                    retire 0.7.0 runs (preview by default) and settled panes
 
 run: a run id prefix or a run directory. Start a live run's socket with /pinata watch in Pi,
 or run in observe mode.`;
@@ -162,6 +163,13 @@ if (command === "view") view(rest);
 else if (command === "logs") logs(rest);
 else if (command === "run") run(rest);
 else if (command === "resume") resume(rest);
+else if (command === "gc")
+  startPi(
+    ["headless", "main.ts"],
+    ["-p", `/pinata-gc ${JSON.stringify({ confirm: rest.includes("--confirm") })}`],
+    {},
+    "ignore",
+  );
 else {
   console.log(USAGE);
   process.exit(command && command !== "help" && command !== "--help" ? 1 : 0);
