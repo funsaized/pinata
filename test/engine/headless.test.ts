@@ -251,7 +251,18 @@ test("a surviving graph with dependents finishes in a headless host after its Pi
     async () => (await readEvents(handle.dir)).some((e) => e.t === "run_settled"),
     "the headless host to finish the run",
     60_000,
-  );
+  ).catch(async (error) => {
+    // Say why: the headless host's own log and each agent's stderr.
+    const logs = [join(handle.dir, "headless.log")];
+    for (const agent of ["first", "second"])
+      logs.push(join(handle.dir, "agents", agent, "stderr.log"));
+    const text = await Promise.all(
+      logs.map(
+        async (f) => `--- ${f}\n${(await readFile(f, "utf8").catch(() => "(none)")).slice(-3000)}`,
+      ),
+    );
+    throw new Error(`${(error as Error).message}\n${text.join("\n")}`);
+  });
   const view = await replay(handle.dir);
   assert.equal(view.status, "succeeded", JSON.stringify(view.agents));
   assert.equal(view.agents.second.status, "succeeded", "the dependent ran without Pi");
