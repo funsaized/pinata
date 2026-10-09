@@ -1152,7 +1152,10 @@ Read this section and the plan before resuming after a context reset.
 ### In flight (resume here)
 
 - Nothing. M0–M9 are checked off; Gates 1 and 2 passed with recorded deviations; CI is green on
-  all six jobs (run 37871522603). E9.4 is prepared, not published.
+  all six jobs (run 37871522603).
+- Released 2026-10-09 with the user's approval: PR #9 merged into `master` (87dae87), tag
+  `v1.0.0-next.0`, npm `pi-pinata@1.0.0-next.0` on `next` (`latest` stays 0.7.0), GitHub
+  Packages mirror and GitHub prerelease (release run 37903723526).
 - Later items: not started; no data justifies them yet. L1 needs slow worktree setup (measured
   35–40 ms); L9 needs a failed lag target (ux-8 p99 11.1 ms, target < 20 ms); L2–L8, L10 and
   L11 are features, not performance fixes.
@@ -1161,8 +1164,8 @@ Read this section and the plan before resuming after a context reset.
   `engine/ipc`, viewer `engine/viewer`, headless `engine/headless`, Herdr `engine/herdr`,
   0.7.0 migration `engine/migrate`; CLI `bin/pinata.mjs`; tests `test/engine`; benchmarks
   `bench`; docs `docs` (Diátaxis).
-- Waiting on the user: publishing `1.0.0-next.0` to npm (`next`), tags/releases, merging to
-  `master`. E0.7 issue: https://github.com/earendil-works/pi/issues/10706.
+- Next release decision: 1.0.0 (npm `latest`) after Herdr and live smokes on macOS and
+  Windows (Open questions). E0.7 issue: https://github.com/earendil-works/pi/issues/10706.
 
 ### Decisions and deviations
 
