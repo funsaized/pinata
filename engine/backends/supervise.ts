@@ -66,10 +66,14 @@ export async function stopChild(child: ChildProcess, graceMs = KILL_GRACE_MS): P
   if (child.exitCode !== null || child.signalCode !== null || child.pid === undefined) return;
   const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
   child.stdin?.end();
-  // An exit event can fail to arrive for a detached child on Windows (seen in a headless
-  // host): never wait for it longer than the grace period plus a margin.
-  const bounded = () =>
-    Promise.race([exited, new Promise<void>((r) => setTimeout(r, graceMs + 3000).unref?.())]);
+  // A detached child is unref'd, so a host with nothing else to do (the headless host) would
+  // exit while it waits here: a ref'd timer keeps it alive, and bounds the wait for an exit
+  // event that may never come.
+  const bounded = async () => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([exited, new Promise<void>((r) => (timer = setTimeout(r, graceMs + 3000)))]);
+    clearTimeout(timer);
+  };
   if (process.platform === "win32") {
     killTree(child.pid);
     await bounded();
