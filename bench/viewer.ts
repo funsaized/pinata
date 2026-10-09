@@ -73,7 +73,9 @@ async function once(argv: string[], i: number): Promise<{ startupMs: number; rss
   const command = `stty cols 120 rows 40; exec ${argv.map(shellQuote).join(" ")}`;
   const script =
     process.platform === "darwin"
-      ? ["script", "-q", "/dev/null", "sh", "-c", command]
+      ? // macOS script needs stdin that is neither a socket (Node's pipes) nor ending (an EOF
+        // becomes ^D in the terminal): a shell pipe from a long sleep.
+        ["sh", "-c", `sleep 86400 | script -q /dev/null sh -c ${shellQuote(command)}`]
       : ["script", "-qfec", command, "/dev/null"];
   const t0 = performance.timeOrigin + performance.now();
   const child = spawn(script[0], script.slice(1), {
@@ -89,6 +91,8 @@ async function once(argv: string[], i: number): Promise<{ startupMs: number; rss
     },
     // macOS `script` calls tcgetattr on stdin: a pipe (a socket in Node) fails, /dev/null works.
     stdio: [process.platform === "darwin" ? "ignore" : "pipe", "pipe", "pipe"],
+    // Its own process group, so the whole pipeline is stopped afterwards.
+    detached: true,
   });
   let output = "";
   child.stdout!.on("data", (d: Buffer) => (output = (output + d).slice(-2000)));
@@ -105,7 +109,11 @@ async function once(argv: string[], i: number): Promise<{ startupMs: number; rss
     if (mark.status !== "live") throw new Error(`viewer status ${mark.status}`);
     return { startupMs: mark.at - t0, rssMB: mark.rssMB };
   } finally {
-    child.kill("SIGKILL");
+    try {
+      process.kill(-child.pid!, "SIGKILL");
+    } catch {
+      child.kill("SIGKILL");
+    }
   }
 }
 
