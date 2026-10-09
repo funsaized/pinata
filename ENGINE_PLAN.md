@@ -952,7 +952,7 @@ Gate 1 passes.
     (architecture, trust).
   - Done when the docs build passes `oxfmt` and every command in them is tested or
     marked manual.
-- [ ] **E9.4 Release preparation (S).**
+- [x] **E9.4 Release preparation (S).**
   - Bump the version to `1.0.0-next.N` for prereleases and write the CHANGELOG.
   - Done when `npm pack` contents are verified. Publishing to npm (the `next` tag) and
     merging to `master` need the user's explicit go-ahead.
@@ -1119,6 +1119,14 @@ Verified against Pi 1.1.0 source. Re-check when upgrading.
 | 2026-10-08 | E5.6      | Linux | same, (b) Node + pi-coding-agent components / (c) Node + pi-tui only                                          | 467 ms / 166 MB; 121 ms / 99 MB                            | (c) has no Pi components (plain status lines); macOS numbers come from CI's "Viewer runtimes" step                              |
 | 2026-10-08 | E6.6      | Linux | agent process startup (spawn -> first RPC response) / RSS, median of 5: `pi --mode rpc`, pi binary / Node CLI | 295 ms / 132 MB; 458 ms / 140 MB                           | loopback prompt round trip 33 / 66 ms; `bench/slim.ts`                                                                          |
 | 2026-10-08 | E6.6      | Linux | slim runner (pi-agent-core + pi-ai only): Bun / Node / Node + Pi's tools (parity)                             | 94 ms / 84 MB; 200 ms / 101 MB; 451 ms / 153 MB            | not shipped: memory gain 1.6x without tools (bar 2x) and none with tool parity                                                  |
+| 2026-10-09 | E9.1      | Linux | in-process, pi binary, loopback: spawn p50 at 1 / 8 agents, lean; observe                                     | 2.3 / 8.9 ms; 2.3 / 9.1 ms                                 | target < 10 ms (64-agent bursts: recorded deviation); tool call p50 3.4 / 10.2 ms                                               |
+| 2026-10-09 | E9.1      | Linux | in-process memory per running agent at 1 / 8 / 64, lean; observe                                              | 0.5 / 0.8 / 1.9 MB; 0.75 / 1.0 / 1.8 MB                    | targets < 5 MB (lean), < 10 MB + log (observe); dependent p99 0.13 / 0.15 ms                                                    |
+| 2026-10-09 | E9.1      | Linux | process backend, loopback: tool call → first request p50 (fan-out 1 / 8 / chain / builder)                    | 404 / 483 / 396 / 422 ms                                   | target < 500 ms; 144–146 MB per agent (target ~115–155 MB); dependent p99 0.18 ms; 1 process per agent                          |
+| 2026-10-09 | E9.1      | Linux | herdr-pi backend, loopback: tool call → first request p50 (fan-out 1 / 8 / chain)                             | 657 / 815 / 665 ms                                         | target < 1.5 s; 156–158 MB per agent (target ~120–160 MB + pane); dependent p99 0.21 ms                                         |
+| 2026-10-09 | E9.1      | Linux | interactive pi, ux-8 with widget, footer and detail view: lag p99                                             | 11.1 ms                                                    | target < 20 ms                                                                                                                  |
+| 2026-10-09 | E9.1      | Linux | engine Luna quality eval, 3 trials: composite / format failures / cost                                        | 0.9365 / 0 / $0.0450                                       | builder oracle 1.0, review 12/12, factual 0.81; `bench/results/quality-engine-2026-10-09.json`; baseline 0.6944                 |
+| 2026-10-09 | E9.1      | Linux | Luna live smoke (3 scouts + planner) per backend: in-process / process / herdr-pi                             | succeeded, $0.0043 / $0.0042 / $0.0044                     | 47 / 50 / 54 s                                                                                                                  |
+| 2026-10-09 | live cost | Linux | total live spend so far                                                                                       | $0.4063                                                    | evals $0.1668 + smokes $0.2395                                                                                                  |
 
 ## Progress notes
 
@@ -1167,6 +1175,11 @@ Read this section and the plan before resuming after a context reset.
   `bin/pinata.mjs`, `PinataHost.resumeDir`/`undelivered`/`continueHeadless`; tests in
   `test/engine/headless.test.ts`). Next: E9.1 Gate 2 (measure every target per backend and
   mode, the UX lag, the Luna eval, and Luna live smokes per backend), E9.3, E9.4, E9.5.
+- E9.4 is prepared, not published: version `1.0.0-next.0`, `CHANGELOG.md`, release tags
+  `vX.Y.Z-next.N` publish to npm's `next` dist-tag and make a GitHub prerelease
+  (`scripts/release-npm.mjs`, `release.yml`); `npm pack` holds 117 files, only `bin`,
+  `docs`, `engine`, `examples`, `prompts`, `skills` and the top-level files. Publishing,
+  tagging and merging wait for the user.
 - E9.3 is done: `README.md` and `docs/` in Diátaxis form (tutorials, how-to, reference,
   explanation, maintainers); `test/engine/docs.test.ts` checks every relative link, every
   `/pinata` and `pinata` subcommand named, and that shell commands are run by the suite or
@@ -1392,5 +1405,8 @@ workspace create --env`; the command is quoted for the shell `pane process-info`
 
 ### Open questions
 
+- Live smokes on macOS and Windows (Gate 2 asks "where credentials allow"): CI has no model
+  credentials, so only Linux live smokes ran. Run `test/engine/live-smoke.ts` there with an
+  approved config before 1.0.0.
 - Herdr on macOS and Windows: `test/engine/herdr.test.ts` and the herdr-pi conformance cases
   need a machine with Herdr; CI has none. Run them there before 1.0.0.
