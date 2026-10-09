@@ -3,7 +3,6 @@
   "codemode": true,
   "limits": {
     "concurrency": 3,
-    "startupMs": 30000,
     "taskMs": 1200000,
     "jobMs": 5400000,
     "repairs": 2,
