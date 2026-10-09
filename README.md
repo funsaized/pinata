@@ -11,10 +11,11 @@ builder change gets an independent review before it reaches your checkout.
 In Pi's terminal (_manual_):
 
 ```sh
-pi install npm:pi-pinata
+pi install npm:pi-pinata@1.0.0-next.0
 ```
 
-Reload Pi. You need Pi 1.1.0+, Node 22.19+ (for the `pinata` command), and Git, on Linux,
+This is the 1.0 prerelease (npm's `next`); `npm:pi-pinata` alone installs 0.7.0 until 1.0.0
+is released. Reload Pi. You need Pi 1.1.0+, Node 22.19+ (for the `pinata` command), and Git, on Linux,
 macOS or Windows. Research tasks also use
 [pi-web-access](https://github.com/nicobailon/pi-web-access). [Herdr](https://herdr.dev/) is
 optional: inside Herdr, agents can run in their own panes.
