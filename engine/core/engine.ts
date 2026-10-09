@@ -152,6 +152,12 @@ export interface ResumeOptions {
   reason?: string;
 }
 
+// PINATA_DEBUG=1 traces agent phases to stderr (diagnosis only).
+const trace = process.env.PINATA_DEBUG
+  ? (run: string, agent: string, phase: string) =>
+      process.stderr.write(`pinata-debug ${run.slice(0, 8)} ${agent} ${phase}\n`)
+  : () => {};
+
 // Tasks in dependency order.
 function topological(tasks: readonly Task[]): Task[] {
   const byId = new Map(tasks.map((t) => [t.id, t]));
@@ -483,7 +489,9 @@ export function createEngine(options: EngineOptions): Engine {
           await state.handle.detach();
           return;
         }
+        trace(run.id, id, "following");
         outcome = await state.handle.done;
+        trace(run.id, id, `done ${outcome.stopReason}`);
         if (signal.aborted) {
           const why = stopReason(signal);
           verdict = {
@@ -496,6 +504,7 @@ export function createEngine(options: EngineOptions): Engine {
           break;
         }
         verdict = await pipeline.verify(run, task, prepared, outcome, signal);
+        trace(run.id, id, `verified ${verdict.status}`);
         if (verdict.retry !== "result-only" || resultOnly) break;
         await state.handle.dispose().catch(() => {});
         state.handle = undefined;
@@ -513,6 +522,7 @@ export function createEngine(options: EngineOptions): Engine {
     } finally {
       clearTimeout(deadline);
       if (!detaching) await state.handle?.dispose().catch(() => {});
+      trace(run.id, id, "disposed");
     }
     if (!verdict) throw new Error("unreachable: no verdict");
     const { retry: _retry, ...final } = verdict;

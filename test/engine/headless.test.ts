@@ -213,6 +213,9 @@ test("a surviving graph with dependents finishes in a headless host after its Pi
   });
   const previous = { pi: process.env.PINATA_PI, dir: process.env.PI_CODING_AGENT_DIR };
   process.env.PINATA_PI = PI;
+  // The headless host inherits this: its phases go to headless.log.
+  process.env.PINATA_DEBUG = "1";
+  t.after(() => void delete process.env.PINATA_DEBUG);
   process.env.PI_CODING_AGENT_DIR = w.agentDir;
   t.after(() => {
     if (previous.pi === undefined) delete process.env.PINATA_PI;
