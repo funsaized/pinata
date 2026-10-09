@@ -1144,54 +1144,16 @@ Read this section and the plan before resuming after a context reset.
 
 ### In flight (resume here)
 
-- M3: E3.1–E3.6 are done (tests in `test/engine/{workspace,paths,checks,builders,integrate}.test.ts`).
-  E3.7 Gate 1: the Luna eval (0.9406 vs 0.6944, 0 format failures) and the loopback A/B
-  (engine faster on every scenario) are recorded; waiting for green CI on all three OSes
-  (Windows had a hanging pull-request test and three Windows-only failures, fixed in
-  1808de0; check `gh run list --branch engine`), then record Gate 1 and check off E3.7.
-- M4: E4.1 and E4.2 are done (`engine/ui/{widget,live,mascot}.ts`, `engine/pi/ui.ts`, tests
-  in `test/engine/ui.test.ts` and `pi-adapter.test.ts`). E4.4 and E4.5 are done (`test/engine/detail.test.ts`, `pi-adapter.test.ts`).
-  E4.3 and E4.6: `npm run bench -- --host tui --scenario ux-8` runs interactive `pi` under
-  `script` with the widget, footer and the first agent's detail view open (CI: Linux, macOS).
-  M4 is done.
-- M5: E5.1, E5.3 and E5.4 are done (`engine/ipc/*`, `test/engine/ipc.test.ts`, the modes test
-  in `pi-adapter.test.ts`; CI covers the three OSes). Next: E5.2 telemetry, E5.5 viewer
-  (`pinata view` through a small `bin/pinata.mjs` that starts `pi` with the viewer extension),
-  E5.5 (`engine/viewer/*`, `bin/pinata.mjs`, `test/engine/viewer.test.ts`), E5.6 (decision (a),
-  `bench/viewer.ts`) and E5.7 (`engine/sources/log.ts`, `engine/headless/*`,
-  `test/engine/log.test.ts`, `pinata logs` in the Pi smoke) are done. E5.2 is done
-  (`engine/core/telemetry.ts`; `processRss` is ready for M6 to report agent processes through
-  `Telemetry.processes`). M5 is done.
-- M6: E6.1 is done (`engine/backends/process.ts`, `engine/sources/jsonl.ts`; conformance suite
-  `test/engine/backends.test.ts` runs every case on both backends through
-  `test/engine/worlds.ts`). E6.5 is done (`selectBackend` in `engine/pi/pipeline.ts`; `survive` on `pinata_run`, which
-  needs `background`). E6.2–E6.4 are done (`engine/agent/detached.ts`,
-  `engine/backends/{process,supervise}.ts`, `engine.resume`/`rerun`/detaching `shutdown`,
-  `PinataHost.resumeOrphans`; tests in `test/engine/{survive,backends,pi-adapter}.test.ts`).
-  E6.6 is closed (numbers in the Results log; not shipped). M6 is done.
-- M7: done (`engine/herdr/{client,panes}.ts`, `engine/backends/herdr-pi.ts`,
-  `engine/agent/reporter.ts`, `docs/how-to/herdr.md`). Herdr tests run locally inside Herdr
-  (`test/engine/herdr.test.ts`, and herdr-pi in the conformance suite); CI has no Herdr.
-- M8: done (`engine/headless/{main,reporters}.ts`, `pinata run|resume|logs|view` in
-  `bin/pinata.mjs`, `PinataHost.resumeDir`/`undelivered`/`continueHeadless`; tests in
-  `test/engine/headless.test.ts`). Next: E9.1 Gate 2 (measure every target per backend and
-  mode, the UX lag, the Luna eval, and Luna live smokes per backend), E9.3, E9.4, E9.5.
-- E9.4 is prepared, not published: version `1.0.0-next.0`, `CHANGELOG.md`, release tags
-  `vX.Y.Z-next.N` publish to npm's `next` dist-tag and make a GitHub prerelease
-  (`scripts/release-npm.mjs`, `release.yml`); `npm pack` holds 117 files, only `bin`,
-  `docs`, `engine`, `examples`, `prompts`, `skills` and the top-level files. Publishing,
-  tagging and merging wait for the user.
-- E9.3 is done: `README.md` and `docs/` in Diátaxis form (tutorials, how-to, reference,
-  explanation, maintainers); `test/engine/docs.test.ts` checks every relative link, every
-  `/pinata` and `pinata` subcommand named, and that shell commands are run by the suite or
-  marked _manual_ (maintainer pages are manual as a whole: they publish or authenticate).
-- E9.5 is done: `lib/` is gone with 0.7.0's tests, fixtures, eval driver, bench target and
-  CI step; `PINATA_LEGACY` is gone. 0.7.0's numbers stay in `bench/baselines/` and the
-  Results log. The release-script tests (`test/*.test.mjs`) remain; the examples test is
-  ported (`test/engine/examples.test.ts`). 0.7.0's `limits.startupMs` now gives a notice.
-- E9.2 is done (`engine/migrate/legacy.ts`, `/pinata gc [confirm]`, `pinata gc [--confirm]`,
-  `test/engine/migrate.test.ts`).
-- E0.7: https://github.com/earendil-works/pi/issues/10706.
+- Every backlog item M0–M9 is implemented; E9.4 is prepared, not published. What remains:
+  green CI on all six jobs (E0.6), then record Gate 1 (E3.7) and Gate 2 (E9.1) as passed in
+  the Results log and check them off. All their measurements are already recorded below.
+- Where things are: engine core `engine/core`, backends `engine/backends`
+  (in-process, process, herdr-pi, detached), Pi adapter `engine/pi`, UI `engine/ui`, socket
+  `engine/ipc`, viewer `engine/viewer`, headless `engine/headless`, Herdr `engine/herdr`,
+  0.7.0 migration `engine/migrate`; CLI `bin/pinata.mjs`; tests `test/engine`; benchmarks
+  `bench`; docs `docs` (Diátaxis).
+- Waiting on the user: publishing `1.0.0-next.0` to npm (`next`), tags/releases, merging to
+  `master`. E0.7 issue: https://github.com/earendil-works/pi/issues/10706.
 
 ### Decisions and deviations
 
