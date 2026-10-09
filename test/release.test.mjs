@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import { execFileSync } from "node:child_process";
-import { validateRelease } from "../scripts/release-npm.mjs";
+import { distTag, validateRelease } from "../scripts/release-npm.mjs";
 
 const manifest = JSON.parse(await fs.readFile(new URL("../package.json", import.meta.url)));
 const lock = JSON.parse(await fs.readFile(new URL("../package-lock.json", import.meta.url)));
@@ -19,7 +19,7 @@ test("release accepts the actual package artifact", () => {
 });
 
 test("release rejects mismatched refs, metadata, lockfiles and unexpected contents", () => {
-  for (const invalid of ["master", "v99.99.99", `${tag}-preview`])
+  for (const invalid of ["master", "v99.99.99", `${tag}-preview`, "v1.0.0-beta.1"])
     assert.throws(() => validateRelease(invalid, manifest, lock, packed));
   for (const changed of [{ name: "another-package" }, { publishConfig: {} }, { private: true }])
     assert.throws(() => validateRelease(tag, { ...manifest, ...changed }, lock, packed));
@@ -36,4 +36,11 @@ test("release rejects mismatched refs, metadata, lockfiles and unexpected conten
     );
   }
   assert.throws(() => validateRelease(tag, manifest, lock, { ...packed, files: [] }));
+});
+
+test("prereleases publish to next, stable versions to latest", () => {
+  assert.equal(distTag("1.0.0-next.0"), "next");
+  assert.equal(distTag("1.0.0-next.12"), "next");
+  assert.equal(distTag("1.0.0"), "latest");
+  assert.equal(distTag("0.7.0"), "latest");
 });

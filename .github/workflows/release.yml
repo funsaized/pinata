@@ -74,5 +74,7 @@ jobs:
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             echo "Release $RELEASE_TAG already exists"
           else
-            gh release create "$RELEASE_TAG" --verify-tag --title "pi-pinata $VERSION" --generate-notes
+            # Prereleases (X.Y.Z-next.N) are GitHub prereleases, as they are npm's `next`.
+            case "$VERSION" in *-*) PRE=--prerelease ;; *) PRE= ;; esac
+            gh release create "$RELEASE_TAG" --verify-tag --title "pi-pinata $VERSION" --generate-notes $PRE
           fi

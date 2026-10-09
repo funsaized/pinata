@@ -1,6 +1,6 @@
 {
   "name": "pi-pinata",
-  "version": "0.7.0",
+  "version": "1.0.0-next.0",
   "description": "Fast, low-footprint Pi subagents: in-process agents, live-checkout readers, reviewed builder changes, and Herdr or external viewers when you want them.",
   "keywords": [
     "herdr",
