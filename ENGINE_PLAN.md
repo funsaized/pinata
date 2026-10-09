@@ -451,7 +451,8 @@ M3, M4–M8 can run in parallel, except that M6, M7 and M8 need E5.3 and E5.4.
     exceeds 2× its target, which absorbs runner variance.
   - Gate the 0.7.0 tests that need POSIX or Herdr to Linux/macOS.
   - Done when the workflow is green on all six jobs.
-- [ ] **E0.7 Upstream request (S).**
+- [x] **E0.7 Upstream request (S).** Opened: https://github.com/earendil-works/pi/issues/10706
+      (also reports `ensureTool`'s `spawnSync` per `grep`/`find` call).
   - Path: open an issue on `earendil-works/pi` asking for the parent model runtime to be
     exposed to extensions: `ctx.modelRuntime`, or `createAgentSession({ modelRegistry })`.
   - Done when the issue link is recorded here. Not blocking: E2.1 has a workaround.
@@ -1190,7 +1191,7 @@ Read this section and the plan before resuming after a context reset.
   ported (`test/engine/examples.test.ts`). 0.7.0's `limits.startupMs` now gives a notice.
 - E9.2 is done (`engine/migrate/legacy.ts`, `/pinata gc [confirm]`, `pinata gc [--confirm]`,
   `test/engine/migrate.test.ts`).
-- E0.7 upstream issue: not opened yet (outward-facing; include the `ensureTool` finding).
+- E0.7: https://github.com/earendil-works/pi/issues/10706.
 
 ### Decisions and deviations
 
@@ -1261,7 +1262,7 @@ Read this section and the plan before resuming after a context reset.
   setup if data later shows large bursts matter.
 - Pi's `grep` and `find` call `ensureTool()` on every call, which runs `spawnSync("rg
 --version")` unless rg is in `~/.pi/agent/bin`; that blocks the event loop per call for
-  in-process agents. Reported upstream with E0.7.
+  in-process agents. Reported upstream: https://github.com/earendil-works/pi/issues/10706.
 - Live fingerprints: at most one `git status` per repository runs at a time; requests that
   arrive meanwhile share the next one.
 
