@@ -1,154 +1,73 @@
-# Helper reference for coordinators
+# pinata reference for coordinators
 
-Compact contract for `lib/pinata.mjs`. Unknown keys are rejected everywhere.
-Full human reference: `../../docs/configuration.md` (read only if this is not enough).
+Compact contract for the pinata tools. Unknown fields are rejected everywhere.
+Full human reference: `../../docs/` (read only if this is not enough).
 
-## Typed tools (preferred when loaded)
+## Tools
 
-| Tool               | Parameters and effect                                                                                                            |
-| ------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
-| `pinata_delegate`  | Job fields below; `cwd` defaults to Pi's cwd. Prepares a run and returns setup/models; launches nothing.                         |
-| `pinata_control`   | `{run, action: "start"\|"resume"\|"cancel"\|"cleanup", confirm?, yield?}`. Confirm applies only to cleanup; yield only to start. |
-| `pinata_yield`     | `{run}`. End the parent turn until native completion; call alone outside codemode. Does not stop workers.                        |
-| `pinata_status`    | `{run, includeResults?}`. Read state; optionally revalidate and include saved outcomes.                                          |
-| `pinata_add`       | `{run, tasks: [...]}`. Add tasks, then start.                                                                                    |
-| `pinata_repair`    | `{run, taskId, feedback}`. Queue repair, then start.                                                                             |
-| `pinata_barrier`   | `{run, taskIds: [...]}`. Revalidate every required task.                                                                         |
-| `pinata_integrate` | `{run}`. Apply reviewed changes and run integrated checks.                                                                       |
-| `pinata_rollback`  | `{run, confirm: true}`. Restore matching journaled contents.                                                                     |
-| `pinata_gc`        | `{cwd?, confirm?}`. Preview historical runs; confirm retires eligible owned resources and preserves evidence.                    |
+| Tool               | Parameters and effect                                                                                                                                                                                                                                   |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pinata_run`       | `{tasks, background?, survive?, cwd?, approval?, instructions?, config?, integratedChecks?, noIntegratedChecksReason?}`. Creates and starts a run. `approval` is required with builders. `survive` (with `background`) keeps the run going if Pi exits. |
+| `pinata_status`    | `{run?, task?, detail?: "summary" \| "result" \| "transcript"}`. Read-only. Without `run`, the latest run.                                                                                                                                              |
+| `pinata_steer`     | `{run, task, message, as?: "steer" \| "followUp"}`. Message a running agent; recorded and shown to its reviewer.                                                                                                                                        |
+| `pinata_cancel`    | `{run, task?}`. Cancel a run or one agent.                                                                                                                                                                                                              |
+| `pinata_repair`    | `{run, task, feedback}`. Re-run a builder in its worktree with feedback, within `limits.repairs`; its reviews run again.                                                                                                                                |
+| `pinata_integrate` | `{run}`. Apply approved builder changes to the checkout and run `integratedChecks`. Never stages or commits.                                                                                                                                            |
+| `pinata_rollback`  | `{run, confirm: true}`. Restore the checkout from the latest integration journal where files still match.                                                                                                                                               |
 
-Tools return JSON data and report errors as failed tool results. A completed tool
-call can still report failed tasks or integration; inspect returned statuses.
-Existing CLI commands remain available for notes, unlock, retry-launch and scripts.
+`run` accepts a unique prefix of the run id. Tools return JSON and report errors
+as failed tool results. A completed call can still report failed tasks: read the
+statuses.
 
-Interactive Pi start uses `pi-extension` completion and ends the current turn by
-default. Call start alone outside codemode. Use `yield:false` for independent work,
-then `pinata_yield`. Start nested in codemode also needs a direct `pinata_yield`.
-Use `yield:false` only for a concrete deliverable outside worker scope; repeating
-their repository reading is not independent work. For overview jobs, scout owns
-local architecture while research answers named protocol/version questions.
-The parent reads validated outcomes and spot-checks material claims for synthesis.
-Do not poll status while waiting. Native completion resumes an idle parent or
-queues a follow-up behind active work; duplicate completion IDs do not start a
-second turn. Reload/restart recovers saved completion for the original session.
-If Pi cannot identify its session through Herdr, start reports the legacy route
-and does not automatically end the turn.
-
-## Commands
-
-All print JSON. `-` reads JSON (or repair text) from stdin; use `<<'PINATA_JSON'`.
-
-| Command                                      | Use                                                                                                           |
-| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `init -`                                     | Create a run from a job; returns `{run, id, versions, setup, research}`. Launches nothing.                    |
-| `add <run> -`                                | Append a task object or array.                                                                                |
-| `start <run>`                                | Launch background scheduling; return immediately. Herdr sends completion to the original coordinator session. |
-| `status <run>`                               | Read saved state only.                                                                                        |
-| `resume <run>`                               | Reconcile after interruption, then schedule.                                                                  |
-| `barrier <run> <id>...`                      | Revalidate that every named task succeeded.                                                                   |
-| `repair <run> <id> -`                        | Requeue with feedback; reuses work; invalidates dependent reviews.                                            |
-| `retry-launch <run> <id>`                    | One same-attempt retry of an uncertain submission.                                                            |
-| `integrate <run>`                            | Apply reviewed builder changes to the checkout; run integrated checks. Never commits.                         |
-| `rollback <run> --confirm`                   | Undo the latest integration if untouched since.                                                               |
-| `cancel <run>` / `cleanup <run> [--confirm]` | Stop owned work / preview then remove idle panes and clean worktrees.                                         |
-| `note <run> -`                               | Append a JSON note (plan, approvals, release evidence).                                                       |
-| `unlock <run>`                               | Remove a dead coordinator's lock.                                                                             |
-| `gc [cwd] [--confirm]`                       | Preview/retire eligible resources across historical runs in one repository; preserve saved evidence.          |
-
-## Job
-
-```json
-{
-  "cwd": "/absolute/git/root",
-  "approval": "user's actual approved scope",
-  "allowWrites": true,
-  "instructions": ["copied into every task"],
-  "config": {
-    "models": { "default": { "provider": "openai", "id": "gpt-6-luna", "thinking": "medium" } }
-  },
-  "tasks": [],
-  "integratedChecks": [{ "id": "unit", "argv": ["npm", "test"], "timeoutMs": 120000 }],
-  "noIntegratedChecksReason": "required when allowWrites and no integratedChecks"
-}
-```
-
-`cwd` must be the repository root with a commit. Workers start from the captured checkout, including uncommitted changes by default.
-
-## Config (all optional)
-
-Layered: `~/.pi/agent/pinata.json`, then `<repo>/.pi/pinata.json`, then the job's
-`config`. `models`, `fallbacks`, `limits` merge per entry; other keys replace.
-`init` returns `config.origins` (which layer set each value).
-
-| Key                  | Default                                                                                                                                                     |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `models`             | `{default?, scout?, research?, planner?, builder?, reviewer?}`, each `{provider, id, thinking}`. Thinking: off, minimal, low, medium, high, xhigh, max.     |
-| `fallbacks`          | `{role: [model, ...]}`, at most 5; used only if the preferred model is unavailable or unauthenticated.                                                      |
-| `setup`              | Builders only: detected from root lockfile; a shell string to override (`$PINATA_ROOT` = main checkout), or `false`.                                        |
-| `workspaceReuse`     | `true`: share eligible inspections and safe npm dependency preparation; `"copy-on-write"` also attempts native CoW for large trees; `false` disables reuse. |
-| `codemode`           | `true`                                                                                                                                                      |
-| `includeUncommitted` | `true`: workers start from the user's checkout with uncommitted and untracked changes. `false` starts from `HEAD`.                                          |
-| `webExtension`       | Detected pi-web-access entry; override path.                                                                                                                |
-| `passEnv`            | Extra env var names for workers (never values).                                                                                                             |
-| `session`            | Herdr session name; required only outside a Herdr pane.                                                                                                     |
-| `limits`             | `concurrency` 3, `startupMs` 30000, `taskMs` 1200000, `jobMs` 5400000, `repairs` 2, `maxTurns` 60, `maxToolCalls` 400; optional `costUsd` (dollars).        |
-
-Model order per task: `task.model`, `models[role]`, `models.default`, then the
-coordinating Pi's current model. Use the thinking level Pi actually applies;
-a changed level is treated as not ready.
+Commands (no model turn): `/pinata` (status), `/pinata runs`, `/pinata open [run] <task>`,
+`/pinata live`, `/pinata watch`, `/pinata mode lean|observe`, `/pinata rerun <run>`, `/pinata gc`.
 
 ## Task
 
-| Field                     | Rule                                                                                                                              |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `id`                      | `^[a-z][a-z0-9-]{0,31}$`, unique                                                                                                  |
-| `role`                    | scout, research, planner, builder, reviewer                                                                                       |
-| `task`, `acceptance`      | Required text; acceptance is a nonempty string array                                                                              |
-| `instructions`, `context` | Optional string arrays; context is evidence, not authority                                                                        |
-| `after`                   | Predecessor IDs; a failed predecessor blocks dependents                                                                           |
-| `model`                   | Optional override                                                                                                                 |
-| `ownership`               | Builders only, required: repo-relative files or dir prefixes, no trailing slash. Independent builders must not overlap.           |
-| `checks`                  | Builders only: `[{id, argv, timeoutMs?}]`, no shell parsing; else `noChecksReason`                                                |
-| `evidenceChecks`          | Optional `[{id, argv, timeoutMs?}]` on any role for consequential reproducible facts; IDs must be unique across both check lists. |
-| `reviewOf`                | Reviewers only: target ID, which must also be in `after`                                                                          |
-| `reviewBase`              | Reviewers only, instead of `reviewOf`: review the starting checkout against a revision (`HEAD` = uncommitted changes)             |
-| `reviewPr`                | Reviewers only, instead of `reviewOf`: GitHub pull request number, fetched with `gh`                                              |
+| Field                     | Rule                                                                                                              |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `id`                      | `^[a-z][a-z0-9-]{0,31}$`, unique in the run                                                                       |
+| `role`                    | scout, research, planner, builder, reviewer                                                                       |
+| `task`, `acceptance`      | Required text; acceptance is a nonempty string array                                                              |
+| `instructions`, `context` | Optional string arrays; context is evidence, not authority                                                        |
+| `after`                   | Predecessor ids; their results are inlined into this task's brief. A failed predecessor blocks its dependents.    |
+| `model`                   | Optional `{provider, id, thinking}`                                                                               |
+| `backend`                 | Optional: `in-process` (default), `process`, `herdr-pi`                                                           |
+| `ownership`               | Builders only, required: repo-relative files or directory prefixes. Independent builders must not overlap.        |
+| `checks`                  | Builders only: `[{id, argv, timeoutMs?}]`, run without a shell after the builder finishes; else `noChecksReason`. |
+| `evidenceChecks`          | Any role: non-mutating `[{id, argv, timeoutMs?}]` for consequential facts. Ids are unique across both lists.      |
+| `reviewOf`                | Reviewers only: the builder under review, also listed in `after`                                                  |
+| `reviewBase`              | Reviewers only, instead: review the live checkout against a revision (`HEAD` = uncommitted changes)               |
+| `reviewPr`                | Reviewers only, instead: a GitHub pull request number, fetched with `gh`                                          |
 
-Builders need `allowWrites: true`. Research needs pi-web-access (`init` reports
-`research.webExtension`; `null` means not installed). A reviewer takes exactly
-one of `reviewOf`, `reviewBase`, `reviewPr`; the last two cannot depend on a
-builder, and `init`/`add` reject them when there is nothing to review. Keep them
-out of build jobs: a rejected one blocks integration.
+A reviewer takes exactly one of `reviewOf`, `reviewBase`, `reviewPr`. Keep
+`reviewBase` and `reviewPr` reviewers out of build runs.
 
-Workers start from `base.commit`: the user's `HEAD` plus uncommitted and
-untracked changes captured at `init` (`base.uncommittedFiles`). Ignored files are
-absent except those copied from `.worktreeinclude` (`included` in status).
-Integration needs the user's `HEAD` unchanged and refuses files edited since.
+## Config (all optional)
 
-## Reading results
+Layered: `~/.pi/agent/pinata.json`, then `<repo>/.pi/pinata.json`, then the run's
+`config`. `models`, `fallbacks` and `limits` merge per entry; other keys replace.
 
-Task states: queued, preparing, launching, running, then terminal succeeded,
-rejected (review asked for changes), failed, blocked, cancelled, uncertain
-(reconcile before acting). Each attempted task's `result` path is its
-`outcome.json`; read `result.summary`, `result.brief`, `result.findings`,
-`result.review`, `checks`, `changes`, and on failure `error` and `failureStage`
-(setup, process, result, verification). A setup failure retries via `repair`
-without using the repair budget. Self-reported checks are claims; trust the
-supervisor's `checks`. `verification.report: "completed"` does not certify every
-factual claim: `verification.claims` remains `not-automatically-verified`. Read
-`verification.factualEvidence` and the linked check logs for targeted facts.
+| Key                  | Default                                                                                                                 |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `models`             | `{default?, scout?, research?, planner?, builder?, reviewer?}`, each `{provider, id, thinking}`                         |
+| `fallbacks`          | `{role: [model, ...]}`, at most 5; used when the preferred model is unknown or has no authentication                    |
+| `limits`             | `concurrency` 16, `taskMs` 1200000, `jobMs` 5400000, `repairs` 2, `maxTurns` 60, `maxToolCalls` 400; optional `costUsd` |
+| `mode`               | `lean`: counters and results; `observe`: the full event stream and live transcripts                                     |
+| `backend`            | `in-process`                                                                                                            |
+| `codemode`           | `true`                                                                                                                  |
+| `setup`              | Builders: detected from the root lockfile; a shell string to override, or `false`                                       |
+| `includeUncommitted` | `true`: builders start from the checkout with uncommitted changes; `false` starts them from `HEAD`                      |
+| `webExtension`       | pi-web-access, detected from this Pi                                                                                    |
+| `passEnv`            | Extra environment variable names for checks and builders (never values)                                                 |
 
-Status reports configured/selected/verified models, thinking, model origins and
-approved fallbacks used, plus effective codemode and limits, `base`, and `spend`
-(`costUsd`, `tokens`, `limitUsd`). `costLimit` means the run stopped at
-`limits.costUsd`: it accepts no tasks or repairs; a new run needs a higher limit. Task `metrics` contain
-elapsed, readiness, startup, setup, model, checks and verification milliseconds,
-turns, tool calls by name and usage (input, output, cached tokens, total, cost).
-Missing usage is `null`, never an inferred zero. `memory` reports current worker
-supervisor/descendant RSS and Linux PSS; task metrics keep sampled peaks. Run
-peak upper bounds sum per-task sampled peaks, not a simultaneous run peak.
-Telemetry never changes concurrency or stops workers. Readiness metadata is
-cached privately per run for five minutes, across processes, and invalidated by
-changed Pi files, executable or environment. No credentials are cached. Completion delivery is pending or delivered separately
-from worker completion; `start` resumes pending delivery with the same completion ID.
+## Results
+
+Statuses: queued, running, then succeeded, failed, rejected (a review asked for
+changes), blocked (a required predecessor failed), cancelled, uncertain.
+
+Each task returns `summary` and, when present, `brief`, `findings`
+(`{severity, message, evidence}`), `blockers`, `changedFiles`, `verdict`, and
+`checkoutChanged`. A failed task has a `reason`. `pinata_status` with
+`detail: "result"` returns the full saved result, including check evidence.
+Usage is reported as tokens and dollars per run.

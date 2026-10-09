@@ -15,8 +15,17 @@ const npm = (args) =>
     stdio: ["ignore", "pipe", "pipe"],
   });
 
+// Stable versions publish to `latest`; prereleases (X.Y.Z-next.N) only to `next`.
+export function distTag(version) {
+  return /^\d+\.\d+\.\d+-next\.\d+$/.test(version) ? "next" : "latest";
+}
+
 export function validateRelease(tag, manifest, lock, packed) {
-  assert.match(tag, /^v\d+\.\d+\.\d+$/, "Release an exact stable vX.Y.Z tag");
+  assert.match(
+    tag,
+    /^v\d+\.\d+\.\d+(?:-next\.\d+)?$/,
+    "Release an exact vX.Y.Z or vX.Y.Z-next.N tag",
+  );
   assert.equal(manifest.name, NAME);
   assert.equal(manifest.version, tag.slice(1), "Tag and package version differ");
   assert.equal(manifest.repository?.url, REPOSITORY);
@@ -26,12 +35,18 @@ export function validateRelease(tag, manifest, lock, packed) {
   assert.equal(packed.name, NAME);
   assert.equal(packed.version, manifest.version);
   assert.equal(packed.filename, `${NAME}-${manifest.version}.tgz`);
-  const allowed = /^(?:package\.json|README\.md|LICENSE|(?:skills|prompts|lib|docs|examples)\/.+)$/;
+  const allowed =
+    /^(?:package\.json|README\.md|LICENSE|(?:bin|engine|skills|prompts|docs|examples)\/.+)$/;
   for (const { path: file } of packed.files) {
     assert(allowed.test(file), `Unexpected packed file: ${file}`);
     assert(!file.split("/").some((part) => part.startsWith(".") || part === "node_modules"));
   }
-  for (const required of ["lib/pinata.mjs", "skills/subagents/SKILL.md", "skills/engmgmt/SKILL.md"])
+  for (const required of [
+    "engine/pi/extension.ts",
+    "bin/pinata.mjs",
+    "skills/subagents/SKILL.md",
+    "skills/engmgmt/SKILL.md",
+  ])
     assert(
       packed.files.some((file) => file.path === required),
       `Missing ${required}`,
@@ -72,8 +87,19 @@ export async function release(tag) {
     const existing = await published(manifest.version);
     if (!existing) {
       assert.equal(npm(["whoami"]).trim(), "funsaized", "Unexpected npm publisher");
-      console.log(`Publishing ${NAME}@${manifest.version}: ${packed.files.length} inspected files`);
-      npm(["publish", tarball, "--access", "public", "--provenance", "--ignore-scripts"]);
+      console.log(
+        `Publishing ${NAME}@${manifest.version} (${distTag(manifest.version)}): ${packed.files.length} inspected files`,
+      );
+      npm([
+        "publish",
+        tarball,
+        "--access",
+        "public",
+        "--provenance",
+        "--ignore-scripts",
+        "--tag",
+        distTag(manifest.version),
+      ]);
     }
     // A retry can only accept the exact tarball already on npm, never another build.
     let remote;

@@ -9,7 +9,7 @@ Ask Pi to delegate explicitly: `/scout` or another persona command alone applies
 the prompt to your current conversation and does not launch a worker.
 
 For complete walkthroughs, see [the tutorials](../docs/README.md#tutorials).
-For task JSON, model configs, and complete jobs, see [helper examples](helper.md).
+For task JSON, model configs, and complete jobs, see [task and job examples](jobs.md).
 
 For parallel explanations, use distinct assignments and let the parent synthesize:
 
@@ -50,7 +50,7 @@ suite and any setup it needs. Do not install dependencies or execute commands.
 ## Research: answer a question from sources
 
 Use research when the answer depends on external documentation. It needs
-[pi-web-access setup](../docs/setup.md#enable-research) and approval for external
+[pi-web-access setup](../docs/how-to/research.md) and approval for external
 requests. Ask a scout first if you do not yet know the dependency version.
 
 ### Check a version-specific API
@@ -179,4 +179,4 @@ The coordinator may skip scout, research, or planning tasks that the job does
 not need. It still owns scope, collection of every result, review resolution,
 and final verification.
 
-[Configuration and job examples](helper.md) · [Documentation index](../docs/README.md)
+[Task and job examples](jobs.md) · [Documentation index](../docs/README.md)

@@ -1,7 +1,7 @@
 {
   "name": "pi-pinata",
-  "version": "0.7.0",
-  "description": "Pi subagents you can watch work: parallel agents in Herdr workspaces, reviewed changes, and automatic cleanup.",
+  "version": "1.0.0-next.0",
+  "description": "Fast, low-footprint Pi subagents: in-process agents, live-checkout readers, reviewed builder changes, and Herdr or external viewers when you want them.",
   "keywords": [
     "herdr",
     "pi",
@@ -21,10 +21,14 @@
     "type": "git",
     "url": "git+https://github.com/funsaized/pinata.git"
   },
+  "bin": {
+    "pinata": "bin/pinata.mjs"
+  },
   "files": [
+    "bin/",
+    "engine/",
     "skills/",
     "prompts/",
-    "lib/",
     "docs/",
     "examples/",
     "README.md",
@@ -32,25 +36,35 @@
   ],
   "os": [
     "linux",
-    "darwin"
+    "darwin",
+    "win32"
   ],
   "type": "module",
   "scripts": {
-    "test": "node --test test/*.test.mjs",
-    "test:pi": "node test/pi-smoke.mjs && node test/completion-smoke.mjs && node test/codemode-smoke.mjs",
-    "test:herdr": "node test/herdr-smoke.mjs",
-    "test:live": "node test/live-smoke.mjs",
-    "test:e2e": "node test/e2e-build.mjs && node test/e2e-review.mjs",
-    "eval:live": "node test/quality/live.mjs",
-    "bench:workspace": "node test/benchmark-workspace.mjs",
-    "check": "npm run format:check && npm run lint",
-    "lint": "oxlint lib test scripts",
-    "format:check": "oxfmt --check package.json lib test scripts .github examples README.md BACKLOG.md docs skills prompts",
-    "format": "oxfmt package.json lib test scripts .github examples README.md BACKLOG.md docs skills prompts"
+    "test": "node scripts/test.mjs",
+    "test:engine": "node --test \"test/engine/**/*.test.ts\"",
+    "test:live": "node test/engine/live-smoke.ts",
+    "eval:live": "node test/quality/engine.ts",
+    "bench": "node --expose-gc bench/run.ts",
+    "bench:loopback": "node --expose-gc bench/run.ts --provider loopback",
+    "bench:live": "node bench/run.ts --provider live",
+    "check": "npm run format:check && npm run lint && npm run typecheck",
+    "lint": "oxlint test scripts engine bench bin",
+    "typecheck": "tsc -p tsconfig.json",
+    "format:check": "oxfmt --check package.json tsconfig.json test scripts .github examples README.md BACKLOG.md ENGINE_PLAN.md docs skills prompts engine bench bin",
+    "format": "oxfmt package.json tsconfig.json test scripts .github examples README.md BACKLOG.md ENGINE_PLAN.md docs skills prompts engine bench bin",
+    "test:herdr": "node --test test/engine/herdr.test.ts"
   },
   "devDependencies": {
+    "@earendil-works/pi-agent-core": "1.1.0",
+    "@earendil-works/pi-ai": "1.1.0",
+    "@earendil-works/pi-coding-agent": "1.1.0",
+    "@earendil-works/pi-tui": "1.1.0",
+    "@types/node": "22.19.1",
     "oxfmt": "0.71.0",
-    "oxlint": "1.86.0"
+    "oxlint": "1.86.0",
+    "typebox": "1.3.27",
+    "typescript": "7.0.2"
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",
@@ -73,7 +87,7 @@
   },
   "pi": {
     "extensions": [
-      "./lib/extension.ts"
+      "./engine/pi/extension.ts"
     ],
     "skills": [
       "./skills/subagents",

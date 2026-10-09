@@ -1,0 +1,844 @@
+{
+  "harness": "engine",
+  "date": "2026-10-09",
+  "command": "PINATA_LIVE_SMOKE=1 PINATA_LIVE_CONFIG=examples/configs/luna.json PINATA_EVAL_TRIALS=3 node test/quality/engine.ts",
+  "config": {
+    "models": {
+      "default": {
+        "provider": "openai",
+        "id": "gpt-6-luna",
+        "thinking": "medium"
+      },
+      "scout": {
+        "provider": "openai",
+        "id": "gpt-6-luna",
+        "thinking": "low"
+      },
+      "reviewer": {
+        "provider": "openai",
+        "id": "gpt-6-luna",
+        "thinking": "high"
+      }
+    }
+  },
+  "trials": 3,
+  "frozen": {
+    "./fixtures.mjs": "9633169be6255831ffb86e2f42fe382c08518bdabcff560c993727f667f49fe2",
+    "./oracle.mjs": "c6eb89bfd36c91c3bcff4a48684d79c3ade1e0e2a877a5ee8ab57cbf29d08596",
+    "./report.mjs": "448c68b2d99a1c3408d190566c126a83a72346057ed13af5377ca0e8a67d623f",
+    "./score.mjs": "14667e2c2af26eef122d88fb0d1eff320d5d9d2520cfce4985a914937e78d5d4"
+  },
+  "score": {
+    "composite": 0.9365,
+    "builderPassRate": 1,
+    "reviewAccuracy": 1,
+    "factualAccuracy": 0.8095,
+    "resultFormatFailures": 0
+  },
+  "costUsd": 0.04499,
+  "summary": {
+    "completedCases": 15,
+    "infrastructureErrors": 0,
+    "builderOracle": [
+      {
+        "case": "trial-1-pipeline",
+        "passed": 29,
+        "total": 29
+      },
+      {
+        "case": "trial-2-pipeline",
+        "passed": 29,
+        "total": 29
+      },
+      {
+        "case": "trial-3-pipeline",
+        "passed": 29,
+        "total": 29
+      }
+    ],
+    "reviewControls": {
+      "total": 12,
+      "evaluated": 12,
+      "falseApprovals": 0,
+      "falseRejections": 0,
+      "missingVerdicts": 0
+    },
+    "factualClaims": {
+      "total": 42,
+      "correct": 34,
+      "incorrect": 1,
+      "missing": 7,
+      "supported": 33,
+      "noncanonical": 23
+    },
+    "liveTasks": 24,
+    "failedLiveTasks": 0,
+    "missingUsage": 0,
+    "latencyMs": {
+      "min": 19441,
+      "median": 39169,
+      "max": 54265
+    },
+    "usage": {
+      "input": 233774,
+      "output": 36211,
+      "cacheRead": 350720,
+      "cacheWrite": 0,
+      "totalTokens": 620705,
+      "cost": 0.0449901
+    },
+    "limitation": "Small controlled fixture, not a global model benchmark. Seeded builders are deterministic; their reviewers are live. Missing verdicts and usage are reported separately. All trials are retained, including failures below the quality thresholds.",
+    "quality": {
+      "passed": false,
+      "thresholds": {
+        "builderPassRate": 1,
+        "factualAccuracy": 1,
+        "supportedClaims": 1,
+        "falseApprovals": 0,
+        "falseRejections": 0,
+        "missingVerdicts": 0
+      },
+      "failures": [
+        "Factual accuracy is below 100%",
+        "Some factual answers lack matching source evidence"
+      ]
+    }
+  },
+  "cases": [
+    {
+      "name": "trial-1-pipeline",
+      "elapsedMs": 93507,
+      "oracle": {
+        "passed": 29,
+        "total": 29
+      },
+      "tasks": [
+        {
+          "id": "scout-a",
+          "role": "scout",
+          "status": "succeeded",
+          "failureStage": null,
+          "claims": {
+            "correct": 7,
+            "incorrect": 0,
+            "missing": 0
+          },
+          "error": null,
+          "usage": {
+            "input": 4774,
+            "output": 873,
+            "cacheRead": 7168,
+            "cacheWrite": 0,
+            "totalTokens": 12815,
+            "cost": 0.00098558
+          }
+        },
+        {
+          "id": "scout-b",
+          "role": "scout",
+          "status": "succeeded",
+          "failureStage": null,
+          "claims": {
+            "correct": 7,
+            "incorrect": 0,
+            "missing": 0
+          },
+          "error": null,
+          "usage": {
+            "input": 5836,
+            "output": 1280,
+            "cacheRead": 7168,
+            "cacheWrite": 0,
+            "totalTokens": 14284,
+            "cost": 0.00129528
+          }
+        },
+        {
+          "id": "build",
+          "role": "builder",
+          "status": "succeeded",
+          "failureStage": null,
+          "error": null,
+          "usage": {
+            "input": 10070,
+            "output": 1862,
+            "cacheRead": 28672,
+            "cacheWrite": 0,
+            "totalTokens": 40604,
+            "cost": 0.00222472
+          }
+        },
+        {
+          "id": "review",
+          "role": "reviewer",
+          "status": "succeeded",
+          "verdict": "approve",
+          "failureStage": null,
+          "error": null,
+          "usage": {
+            "input": 11728,
+            "output": 1936,
+            "cacheRead": 17920,
+            "cacheWrite": 0,
+            "totalTokens": 31584,
+            "cost": 0.00232
+          }
+        }
+      ]
+    },
+    {
+      "name": "trial-1-leading-zero",
+      "elapsedMs": 30916,
+      "oracle": {
+        "passed": 28,
+        "total": 29
+      },
+      "tasks": [
+        {
+          "id": "build",
+          "role": "builder",
+          "status": "succeeded",
+          "failureStage": null,
+          "error": null,
+          "usage": {
+            "input": 5431,
+            "output": 417,
+            "cacheRead": 5033,
+            "cacheWrite": 5432,
+            "totalTokens": 16313,
+            "cost": 0
+          }
+        },
+        {
+          "id": "review",
+          "role": "reviewer",
+          "status": "rejected",
+          "verdict": "changes_requested",
+          "failureStage": null,
+          "error": null,
+          "usage": {
+            "input": 10606,
+            "output": 1059,
+            "cacheRead": 23552,
+            "cacheWrite": 0,
+            "totalTokens": 35217,
+            "cost": 0.00182562
+          }
+        }
+      ]
+    },
+    {
+      "name": "trial-1-invalid-calendar",
+      "elapsedMs": 43659,
+      "oracle": {
+        "passed": 24,
+        "total": 29
+      },
+      "tasks": [
+        {
+          "id": "build",
+          "role": "builder",
+          "status": "succeeded",
+          "failureStage": null,
+          "error": null,
+          "usage": {
+            "input": 5233,
+            "output": 318,
+            "cacheRead": 4934,
+            "cacheWrite": 5234,
+            "totalTokens": 15719,
+            "cost": 0
+          }
+        },
+        {
+          "id": "review",
+          "role": "reviewer",
+          "status": "rejected",
+          "verdict": "changes_requested",
+          "failureStage": null,
+          "error": null,
+          "usage": {
+            "input": 8517,
+            "output": 1770,
+            "cacheRead": 14848,
+            "cacheWrite": 0,
+            "totalTokens": 25135,
+            "cost": 0.00188518
+          }
+        }
+      ]
+    },
+    {
+      "name": "trial-1-reference",
+      "elapsedMs": 54571,
+      "oracle": {
+        "passed": 29,
+        "total": 29
+      },
+      "tasks": [
+        {
+          "id": "build",
+          "role": "builder",
+          "status": "succeeded",
+          "failureStage": null,
+          "error": null,
+          "usage": {
+            "input": 5409,
+            "output": 406,
+            "cacheRead": 5022,
+            "cacheWrite": 5410,
+            "totalTokens": 16247,
+            "cost": 0
+          }
+        },
+        {
+          "id": "review",
+          "role": "reviewer",
+          "status": "succeeded",
+          "verdict": "approve",
+          "failureStage": null,
+          "error": null,
+          "usage": {
+            "input": 10186,
+            "output": 2339,
+            "cacheRead": 17920,
+            "cacheWrite": 0,
+            "totalTokens": 30445,
+            "cost": 0.0023673
+          }
+        }
+      ]
+    },
+    {
+      "name": "trial-1-small-year",
+      "elapsedMs": 36001,
+      "oracle": {
+        "passed": 28,
+        "total": 29
+      },
+      "tasks": [
+        {
+          "id": "build",
+          "role": "builder",
+          "status": "succeeded",
+          "failureStage": null,
+          "error": null,
+          "usage": {
+            "input": 5411,
+            "output": 407,
+            "cacheRead": 5023,
+            "cacheWrite": 5412,
+            "totalTokens": 16253,
+            "cost": 0
+          }
+        },
+        {
+          "id": "review",
+          "role": "reviewer",
+          "status": "rejected",
+          "verdict": "changes_requested",
+          "failureStage": null,
+          "error": null,
+          "usage": {
+            "input": 10060,
+            "output": 1389,
+            "cacheRead": 16896,
+            "cacheWrite": 0,
+            "totalTokens": 28345,
+            "cost": 0.00186946
+          }
+        }
+      ]
+    },
+    {
+      "name": "trial-2-pipeline",
+      "elapsedMs": 88199,
+      "oracle": {
+        "passed": 29,
+        "total": 29
+      },
+      "tasks": [
+        {
+          "id": "scout-a",
+          "role": "scout",
+          "status": "succeeded",
+          "failureStage": null,
+          "claims": {
+            "correct": 6,
+            "incorrect": 1,
+            "missing": 0
+          },
+          "error": null,
+          "usage": {
+            "input": 5053,
+            "output": 823,
+            "cacheRead": 7168,
+            "cacheWrite": 0,
+            "totalTokens": 13044,
+            "cost": 0.00098848
+          }
+        },
+        {
+          "id": "scout-b",
+          "role": "scout",
+          "status": "succeeded",
+          "failureStage": null,
+          "claims": {
+            "correct": 0,
+            "incorrect": 0,
+            "missing": 7
+          },
+          "error": null,
+          "usage": {
+            "input": 9167,
+            "output": 931,
+            "cacheRead": 3584,
+            "cacheWrite": 0,
+            "totalTokens": 13682,
+            "cost": 0.00141804
+          }
+        },
+        {
+          "id": "build",
+          "role": "builder",
+          "status": "succeeded",
+          "failureStage": null,
+          "error": null,
+          "usage": {
+            "input": 10871,
+            "output": 1699,
+            "cacheRead": 31232,
+            "cacheWrite": 0,
+            "totalTokens": 43802,
+            "cost": 0.00224892
+          }
+        },
+        {
+          "id": "review",
+          "role": "reviewer",
+          "status": "succeeded",
+          "verdict": "approve",
+          "failureStage": null,
+          "error": null,
+          "usage": {
+            "input": 9974,
+            "output": 1281,
+            "cacheRead": 8192,
+            "cacheWrite": 0,
+            "totalTokens": 19447,
+            "cost": 0.00171982
+          }
+        }
+      ]
+    },
+    {
+      "name": "trial-2-reference",
+      "elapsedMs": 40144,
+      "oracle": {
+        "passed": 29,
+        "total": 29
+      },
+      "tasks": [
+        {
+          "id": "build",
+          "role": "builder",
+          "status": "succeeded",
+          "failureStage": null,
+          "error": null,
+          "usage": {
+            "input": 5409,
+            "output": 406,
+            "cacheRead": 5022,
+            "cacheWrite": 5410,
+            "totalTokens": 16247,
+            "cost": 0
+          }
+        },
+        {
+          "id": "review",
+          "role": "reviewer",
+          "status": "succeeded",
+          "verdict": "approve",
+          "failureStage": null,
+          "error": null,
+          "usage": {
+            "input": 9623,
+            "output": 1767,
+            "cacheRead": 11264,
+            "cacheWrite": 0,
+            "totalTokens": 22654,
+            "cost": 0.00195844
+          }
+        }
+      ]
+    },
+    {
+      "name": "trial-2-invalid-calendar",
+      "elapsedMs": 43497,
+      "oracle": {
+        "passed": 24,
+        "total": 29
+      },
+      "tasks": [
+        {
+          "id": "build",
+          "role": "builder",
+          "status": "succeeded",
+          "failureStage": null,
+          "error": null,
+          "usage": {
+            "input": 5233,
+            "output": 318,
+            "cacheRead": 4934,
+            "cacheWrite": 5234,
+            "totalTokens": 15719,
+            "cost": 0
+          }
+        },
+        {
+          "id": "review",
+          "role": "reviewer",
+          "status": "rejected",
+          "verdict": "changes_requested",
+          "failureStage": null,
+          "error": null,
+          "usage": {
+            "input": 11383,
+            "output": 1835,
+            "cacheRead": 15872,
+            "cacheWrite": 0,
+            "totalTokens": 29090,
+            "cost": 0.00221452
+          }
+        }
+      ]
+    },
+    {
+      "name": "trial-2-leading-zero",
+      "elapsedMs": 43663,
+      "oracle": {
+        "passed": 28,
+        "total": 29
+      },
+      "tasks": [
+        {
+          "id": "build",
+          "role": "builder",
+          "status": "succeeded",
+          "failureStage": null,
+          "error": null,
+          "usage": {
+            "input": 5431,
+            "output": 417,
+            "cacheRead": 5033,
+            "cacheWrite": 5432,
+            "totalTokens": 16313,
+            "cost": 0
+          }
+        },
+        {
+          "id": "review",
+          "role": "reviewer",
+          "status": "rejected",
+          "verdict": "changes_requested",
+          "failureStage": null,
+          "error": null,
+          "usage": {
+            "input": 7724,
+            "output": 1848,
+            "cacheRead": 20480,
+            "cacheWrite": 0,
+            "totalTokens": 30052,
+            "cost": 0.0019012
+          }
+        }
+      ]
+    },
+    {
+      "name": "trial-2-small-year",
+      "elapsedMs": 44903,
+      "oracle": {
+        "passed": 28,
+        "total": 29
+      },
+      "tasks": [
+        {
+          "id": "build",
+          "role": "builder",
+          "status": "succeeded",
+          "failureStage": null,
+          "error": null,
+          "usage": {
+            "input": 5411,
+            "output": 407,
+            "cacheRead": 5023,
+            "cacheWrite": 5412,
+            "totalTokens": 16253,
+            "cost": 0
+          }
+        },
+        {
+          "id": "review",
+          "role": "reviewer",
+          "status": "rejected",
+          "verdict": "changes_requested",
+          "failureStage": null,
+          "error": null,
+          "usage": {
+            "input": 10115,
+            "output": 1937,
+            "cacheRead": 18944,
+            "cacheWrite": 0,
+            "totalTokens": 30996,
+            "cost": 0.00216944
+          }
+        }
+      ]
+    },
+    {
+      "name": "trial-3-pipeline",
+      "elapsedMs": 83263,
+      "oracle": {
+        "passed": 29,
+        "total": 29
+      },
+      "tasks": [
+        {
+          "id": "scout-a",
+          "role": "scout",
+          "status": "succeeded",
+          "failureStage": null,
+          "claims": {
+            "correct": 7,
+            "incorrect": 0,
+            "missing": 0
+          },
+          "error": null,
+          "usage": {
+            "input": 3716,
+            "output": 921,
+            "cacheRead": 8704,
+            "cacheWrite": 0,
+            "totalTokens": 13341,
+            "cost": 0.00091914
+          }
+        },
+        {
+          "id": "scout-b",
+          "role": "scout",
+          "status": "succeeded",
+          "failureStage": null,
+          "claims": {
+            "correct": 7,
+            "incorrect": 0,
+            "missing": 0
+          },
+          "error": null,
+          "usage": {
+            "input": 4421,
+            "output": 863,
+            "cacheRead": 3584,
+            "cacheWrite": 0,
+            "totalTokens": 8868,
+            "cost": 0.00090944
+          }
+        },
+        {
+          "id": "build",
+          "role": "builder",
+          "status": "succeeded",
+          "failureStage": null,
+          "error": null,
+          "usage": {
+            "input": 16120,
+            "output": 1549,
+            "cacheRead": 9216,
+            "cacheWrite": 0,
+            "totalTokens": 26885,
+            "cost": 0.00247866
+          }
+        },
+        {
+          "id": "review",
+          "role": "reviewer",
+          "status": "succeeded",
+          "verdict": "approve",
+          "failureStage": null,
+          "error": null,
+          "usage": {
+            "input": 21819,
+            "output": 1771,
+            "cacheRead": 19968,
+            "cacheWrite": 0,
+            "totalTokens": 43558,
+            "cost": 0.00326708
+          }
+        }
+      ]
+    },
+    {
+      "name": "trial-3-leading-zero",
+      "elapsedMs": 29668,
+      "oracle": {
+        "passed": 28,
+        "total": 29
+      },
+      "tasks": [
+        {
+          "id": "build",
+          "role": "builder",
+          "status": "succeeded",
+          "failureStage": null,
+          "error": null,
+          "usage": {
+            "input": 5431,
+            "output": 417,
+            "cacheRead": 5033,
+            "cacheWrite": 5432,
+            "totalTokens": 16313,
+            "cost": 0
+          }
+        },
+        {
+          "id": "review",
+          "role": "reviewer",
+          "status": "rejected",
+          "verdict": "changes_requested",
+          "failureStage": null,
+          "error": null,
+          "usage": {
+            "input": 9487,
+            "output": 1317,
+            "cacheRead": 11776,
+            "cacheWrite": 0,
+            "totalTokens": 22580,
+            "cost": 0.00172496
+          }
+        }
+      ]
+    },
+    {
+      "name": "trial-3-invalid-calendar",
+      "elapsedMs": 34605,
+      "oracle": {
+        "passed": 24,
+        "total": 29
+      },
+      "tasks": [
+        {
+          "id": "build",
+          "role": "builder",
+          "status": "succeeded",
+          "failureStage": null,
+          "error": null,
+          "usage": {
+            "input": 5233,
+            "output": 318,
+            "cacheRead": 4934,
+            "cacheWrite": 5234,
+            "totalTokens": 15719,
+            "cost": 0
+          }
+        },
+        {
+          "id": "review",
+          "role": "reviewer",
+          "status": "rejected",
+          "verdict": "changes_requested",
+          "failureStage": null,
+          "error": null,
+          "usage": {
+            "input": 15882,
+            "output": 1571,
+            "cacheRead": 3584,
+            "cacheWrite": 0,
+            "totalTokens": 21037,
+            "cost": 0.00240954
+          }
+        }
+      ]
+    },
+    {
+      "name": "trial-3-reference",
+      "elapsedMs": 35027,
+      "oracle": {
+        "passed": 29,
+        "total": 29
+      },
+      "tasks": [
+        {
+          "id": "build",
+          "role": "builder",
+          "status": "succeeded",
+          "failureStage": null,
+          "error": null,
+          "usage": {
+            "input": 5409,
+            "output": 406,
+            "cacheRead": 5022,
+            "cacheWrite": 5410,
+            "totalTokens": 16247,
+            "cost": 0
+          }
+        },
+        {
+          "id": "review",
+          "role": "reviewer",
+          "status": "succeeded",
+          "verdict": "approve",
+          "failureStage": null,
+          "error": null,
+          "usage": {
+            "input": 6048,
+            "output": 1534,
+            "cacheRead": 17408,
+            "cacheWrite": 0,
+            "totalTokens": 24990,
+            "cost": 0.00154588
+          }
+        }
+      ]
+    },
+    {
+      "name": "trial-3-small-year",
+      "elapsedMs": 50833,
+      "oracle": {
+        "passed": 28,
+        "total": 29
+      },
+      "tasks": [
+        {
+          "id": "build",
+          "role": "builder",
+          "status": "succeeded",
+          "failureStage": null,
+          "error": null,
+          "usage": {
+            "input": 5411,
+            "output": 407,
+            "cacheRead": 5023,
+            "cacheWrite": 5412,
+            "totalTokens": 16253,
+            "cost": 0
+          }
+        },
+        {
+          "id": "review",
+          "role": "reviewer",
+          "status": "rejected",
+          "verdict": "changes_requested",
+          "failureStage": null,
+          "error": null,
+          "usage": {
+            "input": 10594,
+            "output": 2056,
+            "cacheRead": 25600,
+            "cacheWrite": 0,
+            "totalTokens": 38250,
+            "cost": 0.0023434
+          }
+        }
+      ]
+    }
+  ]
+}
