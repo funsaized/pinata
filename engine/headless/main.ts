@@ -143,7 +143,12 @@ export default function headless(pi: ExtensionAPI): void {
     handler: async (raw, ctx) => {
       const { dir } = JSON.parse(raw) as { dir: string };
       try {
+        // Progress goes to stderr (the run's headless.log when Pi started this host).
+        const engine = host.engine(ctx);
+        const reporter = new TextReporter(err);
+        const stop = engine.onRun((run) => engine.subscribe(run.id, (e) => reporter.push(e)));
         const handle = await host.resumeDir(dir, ctx);
+        stop();
         process.exitCode = exitCode(await host.foreground(handle, undefined));
       } catch (error) {
         err(`pinata: ${(error as Error).message}`);
