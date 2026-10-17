@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.0.0-next.0
+## 1.0.0 (2026-10-17)
 
 A new engine. pinata 0.7.0 ran every agent as a separate Pi in a Herdr workspace with a file-based
 coordinator; 1.0 runs agents inside your Pi by default, with the same roles, reviews and
