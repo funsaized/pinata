@@ -4,8 +4,8 @@ Commands on this page are _manual_: they publish, authenticate or need registry 
 
 How to release `pi-pinata` to npm once you have explicit authorization. Nothing
 on this page authorizes a commit, push, tag, publication, or deployment by
-itself. Recorded test results are in [testing](testing.md); the local test
-commands are in [testing](testing.md).
+itself. The local test commands are in [testing](testing.md); recorded results are in the
+repository's `ENGINE_PLAN.md` (Results log).
 
 Package: **pi-pinata**. Publisher: **funsaized**
 ([npm profile](https://www.npmjs.com/~funsaized)). Repository:
@@ -18,18 +18,21 @@ or read credential files to check identity.
 ## Automated release
 
 The [release workflow](../../.github/workflows/release.yml) runs on a pushed `vX.Y.Z`
-tag. With release authorization, bump `package.json` and `package-lock.json`,
-complete the local checks below (including the real Pi smoke test), and commit
-the reviewed release. Push the commit and its matching tag:
+tag. With release authorization, bump `package.json` and `package-lock.json` on a
+release branch, complete the local checks below (including the real Pi smoke test),
+and merge the reviewed release into `master` through a pull request with green CI.
+Then tag the merge commit and push only the tag:
 
 ```sh
-npm version 0.2.0 --no-git-tag-version
-# Review, test, and commit the release changes before tagging.
-git tag v0.2.0
-git push origin master v0.2.0
+npm version 1.0.1 --no-git-tag-version
+# Commit on a release branch, open a PR, and merge it once CI is green.
+git fetch origin
+git push origin origin/master:refs/tags/v1.0.1
 ```
 
-Use the intended version for future releases. CI runs unit tests and formatting/lint
+Use the intended version for future releases. A `vX.Y.Z` tag publishes to npm's
+`latest`; a `vX.Y.Z-next.N` tag publishes to `next` only and creates a GitHub
+prerelease. CI runs unit tests and formatting/lint
 checks, validates the tag, lockfile, package identity, and packed paths, then
 publishes the exact tarball with provenance using the repository's `NPM_TOKEN`
 secret. The token must belong to `funsaized` and permit publication of `pi-pinata`.
@@ -42,7 +45,7 @@ For a failed run, inspect its result before retrying. The workflow can also be
 manually dispatched against an existing release tag:
 
 ```sh
-gh workflow run release.yml --ref master -f tag=v0.2.0
+gh workflow run release.yml --ref master -f tag=v1.0.1
 ```
 
 A version already on npm is accepted only when its integrity matches the local
@@ -62,7 +65,7 @@ npm pack --dry-run --json --ignore-scripts
 
 Review the included paths. You should see only package metadata, README/LICENSE,
 the two skills, seven prompt templates, runtime modules, docs, and examples. There
-should be no run state, logs, tests, PLAN.md, .git, node_modules, secrets, or
+should be no run state, logs, tests, ENGINE_PLAN.md, .git, node_modules, secrets, or
 other development debris.
 
 For a real local artifact, use `npm pack --ignore-scripts`. That creates an
@@ -90,7 +93,7 @@ After reviewing the exact packed artifact, version, staged diff (if committing),
 and action-specific authorization:
 
 ```sh
-npm publish ./pi-pinata-0.2.0.tgz --access public
+npm publish ./pi-pinata-1.0.1.tgz --access public
 ```
 
 Use the actual inspected tarball and version, not a stale filename. Follow npm's
@@ -101,11 +104,11 @@ authorized actions.
 Verify registry metadata, then inspect a fresh download of the published version:
 
 ```sh
-npm view pi-pinata@0.2.0 version dist.integrity repository maintainers --json
+npm view pi-pinata@1.0.1 version dist.integrity repository maintainers --json
 RELEASE_CHECK=$(mktemp -d)
-npm pack pi-pinata@0.2.0 --pack-destination "$RELEASE_CHECK" --ignore-scripts
-tar -tzf "$RELEASE_CHECK/pi-pinata-0.2.0.tgz"
-npm install --prefix "$RELEASE_CHECK/install" --ignore-scripts "$RELEASE_CHECK/pi-pinata-0.2.0.tgz"
+npm pack pi-pinata@1.0.1 --pack-destination "$RELEASE_CHECK" --ignore-scripts
+tar -tzf "$RELEASE_CHECK/pi-pinata-1.0.1.tgz"
+npm install --prefix "$RELEASE_CHECK/install" --ignore-scripts "$RELEASE_CHECK/pi-pinata-1.0.1.tgz"
 PI_CODING_AGENT_DIR="$RELEASE_CHECK/pi-agent" pi install "$RELEASE_CHECK/install/node_modules/pi-pinata" --no-approve
 node "$RELEASE_CHECK/install/node_modules/pi-pinata/bin/pinata.mjs" help
 ```
@@ -141,4 +144,4 @@ before removing an active installation.
 ---
 
 Part of the [pinata documentation](../README.md). Related: [testing](testing.md),
-[testing](testing.md), [trust and safety](../explanation/trust.md).
+[GitHub Packages](github-packages.md), [trust and safety](../explanation/trust.md).
