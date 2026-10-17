@@ -1,0 +1,72 @@
+name: Live smoke (paid model calls)
+
+# Manual only. Runs test/engine/live-smoke.ts (3 scouts + a planner on Luna) with the
+# OPENAI_API_KEY repository secret, about $0.005 per backend. Herdr is not on the runners, so
+# herdr-pi is not offered.
+on:
+  workflow_dispatch:
+    inputs:
+      os:
+        description: Runner
+        type: choice
+        options: [windows-latest, macos-latest, ubuntu-latest]
+        default: windows-latest
+      backends:
+        description: "Backends, comma-separated: in-process, process"
+        type: string
+        default: in-process,process
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-smoke
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    if: github.repository == 'funsaized/pinata'
+    runs-on: ${{ inputs.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "22.19.0"
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts
+      - name: Download Pi's release binary
+        shell: bash
+        run: echo "PINATA_PI=$(node scripts/pi-binary.mjs 1.1.0 "$RUNNER_TEMP/pi-binary" | tail -n 1)" >> "$GITHUB_ENV"
+      - name: Live smoke per backend
+        shell: bash
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          PINATA_LIVE_SMOKE: "1"
+          PINATA_LIVE_CONFIG: examples/configs/luna.json
+          BACKENDS: ${{ inputs.backends }}
+        run: |
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo "::error::Add an OPENAI_API_KEY repository secret (an OpenAI platform API key)"
+            exit 1
+          fi
+          status=0
+          for backend in ${BACKENDS//,/ }; do
+            case "$backend" in
+              in-process) unset PINATA_LIVE_BACKEND ;;
+              process) export PINATA_LIVE_BACKEND=process ;;
+              *) echo "::error::Unknown backend: $backend"; exit 1 ;;
+            esac
+            echo "::group::$backend"
+            node test/engine/live-smoke.ts | tee -a "$RUNNER_TEMP/smoke.jsonl" || status=1
+            echo "::endgroup::"
+          done
+          {
+            echo "### Live smoke on $RUNNER_OS"
+            echo '```'
+            cat "$RUNNER_TEMP/smoke.jsonl" 2>/dev/null
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit $status
