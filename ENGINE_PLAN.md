@@ -966,7 +966,7 @@ Gate 1 passes.
   - Keep anything still imported.
   - Done when `lib/` holds only what the engine still uses, or is gone.
 
-### Later (on the engine branch, after Gate 2 or when data justifies it)
+### Later (feature branches off `master`, when data justifies it)
 
 - [ ] **L1 Copy-on-write workspaces.** Only if E0.3 or E3.1 data on large repositories
       shows worktree setup matters. Options: Linux overlayfs through bubblewrap or reflink,
@@ -1167,6 +1167,8 @@ Read this section and the plan before resuming after a context reset.
   `engine/ipc`, viewer `engine/viewer`, headless `engine/headless`, Herdr `engine/herdr`,
   0.7.0 migration `engine/migrate`; CLI `bin/pinata.mjs`; tests `test/engine`; benchmarks
   `bench`; docs `docs` (Diátaxis).
+- The `engine` branch is retired (merged in PR #9 and PR #10). Work continues on `master` and
+  short-lived branches from it; CI runs on pushes to `master` and on pull requests.
 - Next release decision: 1.0.0 (npm `latest`) after Herdr and live smokes on macOS and
   Windows (Open questions). E0.7 issue: https://github.com/earendil-works/pi/issues/10706.
 

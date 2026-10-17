@@ -2,7 +2,7 @@ name: Tests and Pi compatibility
 
 on:
   push:
-    branches: [master, engine]
+    branches: [master]
   pull_request:
   workflow_dispatch:
 
