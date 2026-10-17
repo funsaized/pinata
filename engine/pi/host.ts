@@ -396,10 +396,12 @@ export class PinataHost {
     onUpdate?: (text: string, view: RunView) => void,
   ): Promise<RunView> {
     const engine = this.engineInstance!;
-    const progress = coalesce(
-      () => onUpdate?.(progressLine(handle.view()), handle.view()),
-      PROGRESS_MS,
-    );
+    let updated = false;
+    const update = () => {
+      updated = true;
+      onUpdate?.(progressLine(handle.view()), handle.view());
+    };
+    const progress = coalesce(update, PROGRESS_MS);
     const unsubscribe = onUpdate
       ? engine.subscribe(handle.id, (e: AgentEvent) => progress.push(e))
       : () => {};
@@ -413,6 +415,8 @@ export class PinataHost {
       signal?.removeEventListener("abort", onAbort);
       unsubscribe();
       progress.flush();
+      // A run can settle before its events reach this subscription: report its final state.
+      if (onUpdate && !updated) update();
     }
   }
 
