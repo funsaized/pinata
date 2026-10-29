@@ -1,45 +1,54 @@
 # Pinata demo
 
-`pinata-demo.mp4` records a real Pi coordinator running a pinata 0.6.0 job on a
-small HTTP retry client. The checkout has uncommitted work: a half-finished
-Retry-After helper in `client.mjs` and a new, untracked test file. One
-`/skill:engmgmt` request, pasted in one go, asks for the rest of the feature.
+[`pinata-demo.mp4`](pinata-demo.mp4) is a two-minute walkthrough of piñata 1.0
+running in Pi. A team upgrades **Pulse**, a small service-health checker, with
+bounded concurrency, deadlines, retries, a terminal report, and regression tests.
 
-Pi starts two scouts (the retry loop and the tests) and a research agent (RFC
-9110's Retry-After rules) in parallel, under a $0.95 cost limit it set from the
-request. All three see the uncommitted files. When they finish, a builder wires
-the delay into the retry loop with a 30-second cap and adds regression tests. The
-independent reviewer asks for a stronger ordering test. The builder's first
-repair fails pinata's own check, because the files it reported did not match what
-it changed; the second repair passes, and the reviewer approves the new change. Pinata integrates it on top of the
-uncommitted work and runs `node --test` again: 6 passed. Nothing is committed.
+The walkthrough shows:
 
-The widget above the editor shows each agent's state, time, tokens, and cost
-while it works. Afterwards `/pinata` prints the run without a model turn,
-`/pinata-review` sends three reviewers (correctness, risk, tests) over the
-result and merges their findings, and `/pinata runs` lists both runs.
+- **Lean mode:** two scouts investigate in parallel, then a planner uses both reports.
+- **Observe mode:** a process-backed checker builder and an in-process dashboard
+  builder work on separate files, each with an independent reviewer.
+- **Inspection and steering:** `/pinata open` shows a live agent; a steer asks for
+  a regression covering a cleanup operation that never settles.
+- **An external viewer:** `pinata view` follows the same run from another terminal.
+- **Review and repair:** the checker reviewer catches a late-response cleanup
+  leak. The builder repairs it in the same worktree, adds a regression, and gets
+  a fresh approval.
+- **Verified integration:** `pinata_integrate` applies the approved changes and
+  passes the integrated checks. A separate test run shows **17 tests passing**.
+- **The result:** five real local HTTP endpoints exercise healthy responses,
+  a successful retry, a timeout, and a non-retryable 404.
+- **Headless operation:** `pinata run ../audit.json --mode observe` runs two
+  real audits and exits with code 0.
 
-Recorded on 2026-10-06 with Pi 1.0.4 and Herdr 0.9.1. The coordinator ran on
-OpenAI `gpt-6-astra` (medium thinking); every worker ran on `gpt-6-luna`, pinned
-by the fixture's `.pi/pinata.json`. Pi loaded only the pinata extension, Herdr's
-Pi integration, the `subagents` and `engmgmt` skills, and the `/pinata-review`
-prompt; one appended system line said the request was the user's approval for
-this disposable repository. Workers spent $0.020 on the build and $0.006 on the
-review. No model responses or terminal output were scripted.
+The live mascot view is connected to the verified build run. The demonstration
+leaves its four changed files unstaged and uncommitted.
 
-Earlier takes are not shown. In two, the reviewer kept asking for changes and
-the repair budget ran out, so pinata refused to integrate. In one, a coordinator
-on `gpt-6-luna` added a `reviewBase` reviewer to the build job, which blocked
-integration; the `subagents` skill now warns against that.
+## Recording and editing
 
-The request, `/pinata`, and `/pinata runs` play at real speed and Pi's summaries
-at 3x. Planning plays at 6x, agents at work at 12x, and the review at 10x; the
-bar at the bottom shows the speed. Long pauses are
-shortened. The header and stage captions are editorial, and worker workspaces
-were renamed from their task IDs for readability. The video is not included in
-the npm package.
+Recorded on 2026-10-29 with pi-pinata 1.0.0 (application commit `d09c20a`),
+Pi 1.1.0, and Node 26.7.0 on Linux. The coordinator uses OpenAI `gpt-6.1-sol`
+with medium thinking. Workers use `gpt-6-luna`: low for scouts, medium for
+builders and the planner, high for reviewers. Pi loads the pinata extension
+and the repository's `subagents` skill in an isolated configuration.
 
-Capture: asciinema 3.2.1 in headless mode, attached to an isolated named Herdr
-session in a 140x44 terminal, driven through the Herdr CLI. Render: agg 1.9.0
-and FFmpeg, H.264 at 15 fps with a web-compatible pixel format and fast-start
-metadata, under 10 MB so it can be uploaded to GitHub.
+Both terminals are actual 116×30 PTYs. Model responses, tool output, review
+verdicts, tests, and agent states come from real runs. Pulse is a disposable
+fixture written for the demonstration; its HTTP server runs locally.
+
+The headings, chapter strip, captions, and terminal crops are editorial.
+Playback speeds are marked; setup, waiting, and repeated output are cut.
+The opening shot previews the build, and the closing shot returns to its result.
+The verified live view was reopened after integration. Earlier takes are omitted.
+
+The export is a silent H.264 MP4 at 1600×1000 and 15 fps, with a web-compatible
+pixel format and fast-start metadata. The media directory is excluded from the
+npm package.
+
+## Source
+
+[`pinata-demo-source.zip`](pinata-demo-source.zip) contains the original terminal
+captures, edit decision list, offline renderer, starter and finished fixtures,
+headless job, and verification evidence. Its README explains how to re-render
+the video with Python, pyte, Pillow, FFmpeg, and a monospaced font.
