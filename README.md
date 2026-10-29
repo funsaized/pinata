@@ -6,11 +6,7 @@ Ask for a scout, a researcher, a planner, a builder, or a reviewer. Pi delegates
 the agents run in parallel where they can, and their results come back to Pi. Every
 builder change gets an independent review before it reaches your checkout.
 
-
-
-https://github.com/user-attachments/assets/f5fc2db0-da4e-4f3d-be0c-66726c09b106
-
-
+https://github.com/user-attachments/assets/ecc96a80-7fc6-4455-95fb-dfae7f3a7511
 
 ## Install
 
