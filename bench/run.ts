@@ -1,3 +1,4 @@
+import { scaleScenarios } from "./scenarios/scale.ts";
 // Benchmark runner: comparable JSON for the engine. 0.7.0's numbers are recorded in
 // bench/baselines (its code was removed in E9.5).
 //
@@ -23,7 +24,17 @@ import { ux } from "./scenarios/ux.ts";
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 
 export function scenarios(): Scenario[] {
-  return [fanout(1), fanout(8), fanout(32), fanout(64), chain(), stress(), builder(), ux()];
+  return [
+    fanout(1),
+    fanout(8),
+    fanout(32),
+    fanout(64),
+    chain(),
+    stress(),
+    builder(),
+    ux(),
+    ...scaleScenarios(),
+  ];
 }
 
 interface Args {
@@ -111,8 +122,8 @@ export function overBudget(results: ScenarioResult[], budgets: Budget[], factor:
 
 async function main() {
   const args = parse(process.argv.slice(2));
-  const selected = scenarios().filter(
-    (s) => !args.scenarios.length || args.scenarios.includes(s.name),
+  const selected = scenarios().filter((s) =>
+    args.scenarios.length ? args.scenarios.includes(s.name) : !s.name.startsWith("scale-"),
   );
   if (!selected.length) throw new Error(`No scenario matches ${args.scenarios.join(", ")}`);
   const results: ScenarioResult[] = [];

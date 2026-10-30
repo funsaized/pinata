@@ -5,7 +5,7 @@
       "id": "gpt-6-luna",
       "thinking": "medium"
     },
-    "research": {
+    "researcher": {
       "provider": "openai",
       "id": "gpt-6.1-sol",
       "thinking": "medium"

@@ -1,3 +1,4 @@
+import { discoverAgents } from "../pi/definitions.ts";
 // The headless host: a Pi extension that `pinata` runs in print mode (the E5.6 decision: the
 // pi binary, no extra runtime). Its commands print to stdout and never send a model turn.
 //   pi -p --no-session --no-extensions --extension engine/headless/main.ts "/pinata-run <json>"
@@ -9,7 +10,7 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-c
 import type { RunHandle } from "../core/engine.ts";
 import { ValidationError } from "../core/validate.ts";
 import type { RunView } from "../core/view.ts";
-import { PinataHost, type RunParams } from "../pi/host.ts";
+import { PinataHost, repositoryRoot, type RunParams } from "../pi/host.ts";
 import { gcText } from "../pi/commands.ts";
 import { followEvents } from "../sources/log.ts";
 import { JsonReporter, TextReporter, type Reporter } from "./reporters.ts";
@@ -72,6 +73,7 @@ export function jobParams(job: Job, jobFile: string, mode?: "lean" | "observe"):
   const base = dirname(resolve(jobFile));
   return {
     tasks: job.tasks as RunParams["tasks"],
+    allowWrites: job.allowWrites,
     cwd: job.cwd ? (isAbsolute(job.cwd) ? job.cwd : resolve(base, job.cwd)) : process.cwd(),
     ...(job.approval !== undefined && { approval: job.approval }),
     ...(job.instructions && { instructions: job.instructions }),
@@ -139,6 +141,35 @@ export default function headless(pi: ExtensionAPI): void {
   const host = new PinataHost(pi);
   pi.on("session_shutdown", async () => {
     await host.shutdown("headless host exit");
+  });
+  pi.registerCommand("pinata-agents", {
+    description: "List, inspect, or validate agent definitions",
+    handler: async (raw, ctx) => {
+      try {
+        const { action, name } = JSON.parse(raw) as { action: string; name?: string };
+        const agents = discoverAgents(await repositoryRoot(ctx.cwd).catch(() => ctx.cwd));
+        if (action === "show") {
+          if (!name || !agents.has(name)) throw new ValidationError(`Unknown agent ${name}`);
+          out(JSON.stringify(agents.get(name), null, 2));
+        } else if (action === "validate") out(`Validated ${agents.size} agent definitions.`);
+        else
+          out(
+            JSON.stringify(
+              [...agents.values()].map(({ name, description, workspace, source }) => ({
+                name,
+                description,
+                workspace,
+                source,
+              })),
+              null,
+              2,
+            ),
+          );
+      } catch (error) {
+        err(`pinata agents: ${(error as Error).message}`);
+        process.exitCode = EXIT.invalid;
+      }
+    },
   });
   pi.registerCommand("pinata-run", {
     description: "Run a pinata job file (headless)",

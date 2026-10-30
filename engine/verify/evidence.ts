@@ -1,3 +1,4 @@
+import { writes, reviews as isReviewer } from "../core/definitions.ts";
 // Evidence describes an immutable builder artifact, never the current destination.
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
@@ -115,7 +116,7 @@ export async function loadChanges(
 ): Promise<{ record: RunRecord; evidence: VerifiedChanges }> {
   const record = await readRunRecord(dir);
   need(record.allowWrites, "Integration is not authorized for this run");
-  const tasks = validateGraph(record.tasks, { allowWrites: true });
+  const tasks = validateGraph(record.tasks, { allowWrites: true, definitions: record.definitions });
   const view = await replay(dir);
   need(
     view.status === "succeeded",
@@ -131,7 +132,7 @@ export async function loadChanges(
     results.set(task.id, saved);
   }
   const builders: VerifiedBuilder[] = [];
-  for (const task of ordered(tasks).filter((t) => t.role === "builder")) {
+  for (const task of ordered(tasks).filter((t) => writes(t))) {
     const saved = results.get(task.id)!;
     const data = saved.data as unknown as BuilderData | undefined;
     need(
@@ -173,7 +174,7 @@ export async function loadChanges(
           `Check log ${task.id}/${check.id}/${stream} is stale or corrupt`,
         );
       }
-    const reviews = tasks.filter((t) => t.role === "reviewer" && t.reviewOf === task.id);
+    const reviews = tasks.filter((t) => isReviewer(t) && t.reviewOf === task.id);
     need(reviews.length, `Independent review required for ${task.id}`);
     for (const review of reviews) {
       const r = results.get(review.id)!.result?.review;

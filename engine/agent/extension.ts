@@ -81,7 +81,7 @@ export function agentExtension(
 ): ExtensionFactory {
   return (pi: ExtensionAPI) => {
     const allowed = allowedTools(opts);
-    const schema = resultSchema(opts.role);
+    const schema = resultSchema(opts.definition ?? opts.role);
     pi.registerTool({
       name: SUBMIT,
       label: "Submit result",
@@ -93,6 +93,7 @@ export function agentExtension(
         try {
           result = validateResult(params as AgentResult, {
             role: opts.role,
+            definition: opts.definition,
             reviewTarget: opts.reviewTarget,
           });
         } catch (error) {

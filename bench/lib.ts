@@ -54,6 +54,7 @@ export interface ScenarioResult {
   dependentRequestMs?: Stat | null;
   memoryPerAgentMB: number | null;
   peakRssMB: number | null;
+  settledHeapDeltaMB?: number;
   loopLagP99Ms: number | null;
   cpuMs: number | null;
   wallMs: number;

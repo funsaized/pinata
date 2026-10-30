@@ -190,7 +190,12 @@ export async function fauxWorld(
   ) => {
     const id = opts.id ?? randomUUID();
     const config = validateConfig({ setup: false, ...opts.config }).config;
-    const prep = await prepareRun(repo, id, validateGraph(tasks, { allowWrites: true }), config);
+    const prep = await prepareRun(
+      repo,
+      id,
+      validateGraph(tasks, { allowWrites: true, definitions: opts.data?.definitions }),
+      config,
+    );
     const data = {
       models: Object.fromEntries(tasks.map((task) => [task.id, MODEL])),
       instructions: [],

@@ -5,35 +5,59 @@
   "instructions": ["Follow the repository's AGENTS.md. Do not stage, commit, push, or publish."],
   "config": {
     "models": {
-      "default": { "provider": "openai", "id": "gpt-6-luna", "thinking": "medium" },
-      "scout": { "provider": "openai", "id": "gpt-6-luna", "thinking": "low" },
-      "reviewer": { "provider": "openai", "id": "gpt-6-astra", "thinking": "medium" }
+      "default": {
+        "provider": "openai",
+        "id": "gpt-6-luna",
+        "thinking": "medium"
+      },
+      "scout": {
+        "provider": "openai",
+        "id": "gpt-6-luna",
+        "thinking": "low"
+      },
+      "reviewer": {
+        "provider": "openai",
+        "id": "gpt-6-astra",
+        "thinking": "medium"
+      }
     }
   },
   "tasks": [
     {
       "id": "scout",
-      "role": "scout",
       "task": "Find why test/duration.test.mjs fails. Name the function, its callers, and the smallest fix. Do not edit files.",
-      "acceptance": ["Cites the failing function and test by file and line"]
+      "acceptance": ["Cites the failing function and test by file and line"],
+      "agent": "scout"
     },
     {
       "id": "fix",
-      "role": "builder",
       "after": ["scout"],
       "task": "Apply the scout's minimal fix to src/duration.mjs.",
       "acceptance": ["npm test passes", "Only src/duration.mjs changes"],
       "ownership": ["src/duration.mjs"],
-      "checks": [{ "id": "unit", "argv": ["npm", "test"], "timeoutMs": 120000 }]
+      "checks": [
+        {
+          "id": "unit",
+          "argv": ["npm", "test"],
+          "timeoutMs": 120000
+        }
+      ],
+      "agent": "builder"
     },
     {
       "id": "review",
-      "role": "reviewer",
       "after": ["fix"],
       "reviewOf": "fix",
       "task": "Challenge the fix: correctness, edge cases, and whether npm test proves the acceptance criteria.",
-      "acceptance": ["Approve only if the fix is correct, minimal, and tested"]
+      "acceptance": ["Approve only if the fix is correct, minimal, and tested"],
+      "agent": "reviewer"
     }
   ],
-  "integratedChecks": [{ "id": "unit", "argv": ["npm", "test"], "timeoutMs": 120000 }]
+  "integratedChecks": [
+    {
+      "id": "unit",
+      "argv": ["npm", "test"],
+      "timeoutMs": 120000
+    }
+  ]
 }

@@ -1,13 +1,15 @@
 import { join } from "node:path";
-import type { Check, Task } from "../core/types.ts";
+import type { Check, TaskSpec } from "../core/types.ts";
 import { atomicJson, privateDir, readJson } from "../core/store.ts";
 
 // What the host records when a run starts, for integration after a reload.
 export interface RunRecord {
+  schemaVersion?: 2;
+  definitions?: import("../core/definitions.ts").Definitions;
   id: string;
   root: string;
   head: string; // the user's HEAD when the run started
-  tasks: Task[];
+  tasks: TaskSpec[];
   allowWrites: boolean;
   integratedChecks: Check[];
   noIntegratedChecksReason: string | null;
@@ -30,5 +32,8 @@ export async function writeRunRecord(dir: string, record: RunRecord): Promise<vo
 }
 
 export async function readRunRecord(dir: string): Promise<RunRecord> {
-  return readJson<RunRecord>(join(dir, "run.json"));
+  const record = await readJson<RunRecord>(join(dir, "run.json"));
+  if (record.schemaVersion !== undefined && record.schemaVersion !== 2)
+    throw new Error(`Unsupported run record schema: ${record.schemaVersion}`);
+  return record;
 }

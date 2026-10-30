@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 import { fauxAssistantMessage, fauxText, fauxToolCall } from "@earendil-works/pi-ai";
 import pinata from "../../engine/pi/extension.ts";
 import { pinataCommand } from "../../engine/pi/commands.ts";
+import { PinataHost } from "../../engine/pi/host.ts";
+import { statusTool } from "../../engine/pi/tools.ts";
 import { fauxWorld, type FauxTurn } from "./faux.ts";
 import { spec } from "./helpers.ts";
 
@@ -34,6 +36,13 @@ async function adapter(t: TestContext, respond: (turn: FauxTurn) => any) {
     if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR;
     else process.env.PI_CODING_AGENT_DIR = previous;
   });
+  // These tests exercise an explicitly installed personal workflow.
+  await mkdir(join(world.agentDir, "pinata", "agents"), { recursive: true });
+  for (const name of ["planner", "researcher"])
+    await copyFile(
+      new URL(`../../examples/agents/${name}.md`, import.meta.url),
+      join(world.agentDir, "pinata", "agents", `${name}.md`),
+    );
   const tools = new Map<string, any>();
   const commands = new Map<string, any>();
   const handlers: Record<string, Array<(e: any, ctx: any) => any>> = {};
@@ -72,6 +81,7 @@ const reader = (turn: FauxTurn) =>
 test("the extension registers the tools and the command", async (t) => {
   const a = await adapter(t, reader);
   assert.deepEqual([...a.tools.keys()].sort(), [
+    "pinata_agents",
     "pinata_cancel",
     "pinata_changes",
     "pinata_integrate",
@@ -509,8 +519,24 @@ test("the next Pi resumes a crashed run: lost tasks are reported, /pinata rerun 
   });
   await writeFile(join(dir, "events.jsonl"), kept.join("\n") + "\n");
   await rm(join(dir, "delivered.json"), { force: true });
-  // The next Pi in the same repository.
-  const second = await adapter(t, reader);
+  // Definitions are frozen: deleting the original and replacing the new Pi's copy
+  // must not alter the queued planner or its rerun.
+  const original = await readFile(
+    join(first.world.agentDir, "pinata", "agents", "planner.md"),
+    "utf8",
+  );
+  await rm(join(first.world.agentDir, "pinata", "agents", "planner.md"));
+  const second = await adapter(t, (turn) => {
+    if (turn.agent === "after") {
+      assert.match(turn.system, /smallest correct implementation/);
+      assert(!turn.system.includes("CHANGED DEFINITION"));
+    }
+    return reader(turn);
+  });
+  await writeFile(
+    join(second.world.agentDir, "pinata", "agents", "planner.md"),
+    original.replace("smallest correct implementation", "CHANGED DEFINITION"),
+  );
   second.ctx.cwd = first.world.repo;
   Object.assign(second.ctx, { hasUI: true, mode: "print" });
   second.ctx.ui.setWidget = () => {};
@@ -536,7 +562,7 @@ test("the next Pi resumes a crashed run: lost tasks are reported, /pinata rerun 
 
 test("orchestrator tools hand off artifacts, integrate after HEAD advancement, and verify the destination", async (t) => {
   const a = await adapter(t, (turn) => {
-    if (turn.role === "builder" && turn.round === 0)
+    if (turn.role === "implementer" && turn.round === 0)
       return fauxAssistantMessage(
         [fauxToolCall("write", { path: "README.md", content: "# Implemented\n" })],
         { stopReason: "toolUse" },
@@ -546,22 +572,33 @@ test("orchestrator tools hand off artifacts, integrate after HEAD advancement, a
         fauxToolCall("submit_result", {
           status: "succeeded",
           summary: "done",
-          changedFiles: turn.role === "builder" ? ["README.md"] : [],
+          changedFiles: turn.role === "implementer" ? ["README.md"] : [],
           checks: [],
           findings: [],
           blockers: [],
-          ...(turn.role === "reviewer" ? { review: { verdict: "approve" } } : {}),
+          ...(turn.role === "auditor" ? { review: { verdict: "approve" } } : {}),
         }),
       ],
       { stopReason: "toolUse" },
     );
   });
+  const directory = join(a.world.agentDir, "pinata", "agents");
+  for (const [preset, name] of [
+    ["builder", "implementer"],
+    ["reviewer", "auditor"],
+  ]) {
+    const text = await readFile(new URL(`../../agents/${preset}.md`, import.meta.url), "utf8");
+    await writeFile(
+      join(directory, `${name}.md`),
+      text.replace(`name: "${preset}"`, `name: "${name}"`),
+    );
+  }
   const run = await a.call("pinata_run", {
     approval: "Fixture authorizes these local writes",
     config: { setup: false },
     tasks: [
-      spec("build", "builder", { ownership: ["README.md"], noChecksReason: "fixture" }),
-      spec("review", "reviewer", { reviewOf: "build", after: ["build"] }),
+      spec("build", "implementer", { ownership: ["README.md"], noChecksReason: "fixture" }),
+      spec("review", "auditor", { reviewOf: "build", after: ["build"] }),
     ],
     integratedChecks: [{ id: "check", argv: [process.execPath, "-e", "0"] }],
   });
@@ -569,6 +606,15 @@ test("orchestrator tools hand off artifacts, integrate after HEAD advancement, a
   assert.equal(result.status, "succeeded", JSON.stringify(run));
   assert.equal(result.handoff.tool, "pinata_changes");
   assert.equal(result.tasks[0].artifact.scope, "builder-artifact");
+  assert.equal(result.tasks[0].agent, "implementer");
+  assert.deepEqual(result.tasks[0].engineChecks, {
+    passed: 0,
+    failed: 0,
+    notRun: 0,
+    noChecksReason: "fixture",
+  });
+  assert.equal(result.tasks[1].review.scope, "artifact");
+  assert.equal(result.tasks[1].review.fingerprint, result.tasks[0].artifact.fingerprint);
   const changes = (await a.call("pinata_changes", { run: result.run })).details.result;
   assert.equal(changes.scope, "builder-artifacts");
   assert(existsSync(changes.builders[0].patch));
@@ -599,5 +645,72 @@ test("orchestrator tools hand off artifacts, integrate after HEAD advancement, a
   assert.equal(
     (await a.call("pinata_rollback", { run: result.run, confirm: true })).details.result.status,
     "rolled_back",
+  );
+});
+
+test("custom definitions execute through the public tool and freeze their prompt", async (t) => {
+  const a = await adapter(t, (turn) => {
+    assert.match(turn.system, /CUSTOM PROMPT/);
+    assert(!turn.tools.includes("bash"));
+    return fauxAssistantMessage(
+      [
+        fauxToolCall("submit_result", {
+          status: "succeeded",
+          summary: "custom done",
+          data: { answer: 42 },
+        }),
+      ],
+      { stopReason: "toolUse" },
+    );
+  });
+  const directory = join(a.world.repo, ".pi", "pinata", "agents");
+  await mkdir(directory, { recursive: true });
+  await writeFile(
+    join(directory, "analyst.md"),
+    "---\nschemaVersion: 1\nname: analyst\ndescription: Analyze a question\nworkspace: live-readonly\ntools: [read]\n---\nCUSTOM PROMPT",
+  );
+  const available = await a.call("pinata_agents", {});
+  assert(available.details.result.some((d: any) => d.name === "analyst"));
+  const out = await a.call("pinata_run", {
+    tasks: [
+      {
+        id: "analysis",
+        agent: "analyst",
+        task: "Answer",
+        evidenceChecks: [{ id: "evidence", argv: [process.execPath, "-e", "0"] }],
+      },
+    ],
+  });
+  assert(!out.isError, JSON.stringify(out));
+  assert.equal(out.details.result.status, "succeeded");
+  const saved = JSON.parse(await readFile(join(out.details.result.dir, "run.json"), "utf8"));
+  const reference = saved.tasks[0].definition;
+  assert.equal(typeof reference, "string");
+  assert.equal(saved.definitions[reference].prompt, "CUSTOM PROMPT");
+  await writeFile(join(directory, "analyst.md"), "invalid now");
+  const result = await a.call("pinata_status", {
+    run: out.details.result.run,
+    task: "analysis",
+    detail: "result",
+  });
+  assert.equal(result.details.result.result.data.answer, 42);
+  assert.equal(saved.definitions[reference].prompt, "CUSTOM PROMPT");
+  const historical = (await statusTool(
+    new PinataHost({} as any),
+    { run: out.details.result.run },
+    a.ctx,
+  )) as any;
+  assert.equal(historical.tasks[0].data.answer, 42);
+  assert.deepEqual(historical.tasks[0].engineChecks, { passed: 1, failed: 0, notRun: 0 });
+  await rm(join(out.details.result.dir, "results", "analysis.json"));
+  const unavailable = (await statusTool(
+    new PinataHost({} as any),
+    { run: out.details.result.run },
+    a.ctx,
+  )) as any;
+  assert.equal(
+    unavailable.tasks[0].engineChecks,
+    undefined,
+    "missing evidence must not be represented as unexecuted checks",
   );
 });

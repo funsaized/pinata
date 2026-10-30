@@ -7,7 +7,7 @@ results; a completed call can still report failed tasks, so read the statuses.
 | Tool               | Parameters                                                                                                              | Effect                                                                                                                                                                                                                                          |
 | ------------------ | ----------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `pinata_run`       | `{tasks, background?, survive?, cwd?, approval?, instructions?, config?, integratedChecks?, noIntegratedChecksReason?}` | Creates and starts a run. Waits and streams progress, or with `background` returns at once and delivers the result as a follow-up message. `survive` (with `background`) keeps the run going if Pi exits. `approval` is required with builders. |
-| `pinata_status`    | `{run?, task?, detail?: "summary" \| "result" \| "transcript"}`                                                         | Read-only. Without `run`, the latest run.                                                                                                                                                                                                       |
+| `pinata_status`    | `{run?, task?, offset?, limit?, detail?: "summary" \| "result" \| "transcript"}`                                        | Read-only. Without `run`, the latest run.                                                                                                                                                                                                       |
 | `pinata_steer`     | `{run, task, message, as?: "steer" \| "followUp"}`                                                                      | Messages a running agent; recorded and shown to its reviewer.                                                                                                                                                                                   |
 | `pinata_cancel`    | `{run, task?}`                                                                                                          | Cancels a run or one agent.                                                                                                                                                                                                                     |
 | `pinata_repair`    | `{run, task, feedback}`                                                                                                 | Reruns a builder in its worktree with feedback, within `limits.repairs`; its reviews run again.                                                                                                                                                 |
@@ -21,15 +21,15 @@ results; a completed call can still report failed tasks, so read the statuses.
 | Field                     | Rule                                                                                                           |
 | ------------------------- | -------------------------------------------------------------------------------------------------------------- |
 | `id`                      | `^[a-z][a-z0-9-]{0,31}$`, unique in the run                                                                    |
-| `role`                    | `scout`, `research`, `planner`, `builder`, `reviewer`                                                          |
-| `task`, `acceptance`      | Required text; `acceptance` is a nonempty string array                                                         |
+| `agent`                   | `scout`, `builder`, `reviewer`, or an installed custom definition                                              |
+| `task`, `acceptance`      | Required task text; optional nonempty `acceptance` string array                                                |
 | `instructions`, `context` | Optional string arrays; context is evidence, not authority                                                     |
 | `after`                   | Predecessor ids; their results are inlined into this task's brief. A failed predecessor blocks its dependents. |
 | `model`                   | Optional `{provider, id, thinking}`                                                                            |
 | `backend`                 | Optional `in-process` (default), `process`, `herdr-pi`                                                         |
 | `ownership`               | Builders, required: repository-relative files or directory prefixes. Independent builders must not overlap.    |
 | `checks`                  | Builders: `[{id, argv, timeoutMs?}]`, run without a shell after the builder finishes; else `noChecksReason`.   |
-| `evidenceChecks`          | Any role: non-mutating `[{id, argv, timeoutMs?}]` for consequential facts. Ids are unique across both lists.   |
+| `evidenceChecks`          | Any agent: non-mutating `[{id, argv, timeoutMs?}]` for consequential facts. Ids are unique across both lists.  |
 | `reviewOf`                | Reviewers: the builder under review, also listed in `after`                                                    |
 | `reviewBase`              | Reviewers, instead: review the live checkout against a revision (`HEAD` = uncommitted changes)                 |
 | `reviewPr`                | Reviewers, instead: a GitHub pull request number, fetched with `gh`                                            |
@@ -37,16 +37,16 @@ results; a completed call can still report failed tasks, so read the statuses.
 A reviewer takes exactly one of `reviewOf`, `reviewBase`, `reviewPr`. Check `timeoutMs`
 defaults to 120000 (at most 1200000).
 
-## Tools by role
+## Preset tools
 
-| Role                       | Pi tools                                                                                        |
-| -------------------------- | ----------------------------------------------------------------------------------------------- |
-| Scout, planner, reviewer   | `read`, `grep`, `find`, `ls`                                                                    |
-| Research                   | `read`, `grep`, `find`, `ls`, `web_enable`, `web_search`, `fetch_content`, `get_search_content` |
-| Builder                    | `read`, `bash`, `edit`, `write`                                                                 |
-| Builder, result-only retry | `read`, `grep`, `find`, `ls`                                                                    |
+| Role                        | Pi tools                                                                                        |
+| --------------------------- | ----------------------------------------------------------------------------------------------- |
+| Scout, reviewer             | `read`, `grep`, `find`, `ls`                                                                    |
+| Optional researcher example | `read`, `grep`, `find`, `ls`, `web_enable`, `web_search`, `fetch_content`, `get_search_content` |
+| Builder                     | `read`, `bash`, `edit`, `write`                                                                 |
+| Builder, result-only retry  | `read`, `grep`, `find`, `ls`                                                                    |
 
-Every role also has `submit_result`, and `codemode` when enabled (the default).
+Every agent also has `submit_result`, and `codemode` when enabled (the default).
 
 ## Results
 
@@ -87,3 +87,22 @@ An explicit `checks` list replaces the run's destination checks for that invocat
 source through a private index; the user's index is unchanged. Ignored dependencies,
 external services and the environment are not content-attested. Check omissions remain
 explicit and never count as passed. Receipt logs survive subsequent verification attempts.
+
+## Agent discovery
+
+`pinata_agents {}` lists available definitions without injecting their complete prompts.
+`pinata_agents {"name":"scout"}` returns one definition, its tools, workspace, defaults,
+source, and digest. New tasks use `agent`; `role` remains a deprecated input alias.
+Simple read-only tasks may omit `acceptance`. Custom writers and reviewers follow the
+same authorization, ownership, and evidence rules as the corresponding presets.
+
+Large run summaries are paginated: at most 64 tasks and 32 KiB of task summaries per
+response. `taskCount` and `counts` cover the whole run; `nextOffset` identifies the next
+page for `pinata_status {run, offset}`. `limit` can reduce the page size. A task marked
+`truncated` has its full evidence available through `detail: "result"`.
+
+`engineChecks` counts executed successes, failures, and planned checks not run; these
+are separate from the agent's reported checks. `review` includes the exact target
+fingerprint and scope. `artifact` identifies the original base/result trees; it does
+not establish destination verification. For captured writer results, compact
+`changedFiles` comes from the engine's actual diff.

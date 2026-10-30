@@ -1,3 +1,4 @@
+import { taskSpec } from "../../engine/core/definitions.ts";
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { readFile, writeFile, unlink, chmod, symlink } from "node:fs/promises";
@@ -74,7 +75,7 @@ async function integrated(
     id: handle.id,
     root: world.repo,
     head,
-    tasks: validateGraph(tasks, { allowWrites: true }),
+    tasks: validateGraph(tasks, { allowWrites: true }).map(taskSpec),
     allowWrites: true,
     integratedChecks: checks,
     noIntegratedChecksReason: checks.length ? null : "fixture",
@@ -216,7 +217,7 @@ test("after a repair, integration undoes the earlier integration and applies the
     id: handle.id,
     root: world.repo,
     head,
-    tasks: validateGraph(tasks, { allowWrites: true }),
+    tasks: validateGraph(tasks, { allowWrites: true }).map(taskSpec),
     allowWrites: true,
     integratedChecks: [],
     noIntegratedChecksReason: "fixture",
@@ -267,7 +268,7 @@ async function recordedRun(world: Awaited<ReturnType<typeof fauxWorld>>, tasks: 
     id: handle.id,
     root: world.repo,
     head,
-    tasks: validateGraph(tasks, { allowWrites: true }),
+    tasks: validateGraph(tasks, { allowWrites: true }).map(taskSpec),
     allowWrites: true,
     integratedChecks: passing,
     noIntegratedChecksReason: null,

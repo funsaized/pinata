@@ -1,3 +1,4 @@
+import { writes, reviews, type AgentDefinition } from "./definitions.ts";
 // Per-role result schemas for the `submit_result` tool, ported from 0.7.0's envelope() and
 // validateResult(). The schema is the tool's parameter schema; semantic rules that a schema
 // cannot express are checked here and returned to the model as a tool error.
@@ -30,7 +31,8 @@ const reportedCheck = Type.Object(
 
 const source = Type.Object(
   {
-    url: text("https:// URL of the source"),
+    url: Type.Optional(text("http(s) URL of the source")),
+    path: Type.Optional(text("repository-relative source path")),
     title: text(),
     supports: text("the claim this source supports"),
     applicability: text("why it applies to this version and context"),
@@ -63,15 +65,29 @@ function common(role: Role) {
   };
 }
 
-export function resultSchema(role: Role): TSchema {
-  const fields: Record<string, TSchema> = common(role);
-  if (role === "scout" || role === "planner")
+export function resultSchema(agent: Role | AgentDefinition): TSchema {
+  const definition = typeof agent === "string" ? undefined : agent;
+  const role = typeof agent === "string" ? agent : agent.name;
+  const kind = definition
+    ? writes({ definition })
+      ? "builder"
+      : reviews({ definition })
+        ? "reviewer"
+        : "reader"
+    : role;
+  const fields: Record<string, TSchema> = common(kind);
+  if (definition) {
+    fields.brief = text("concise findings with supporting evidence");
+    fields.sources = Type.Array(source);
+    fields.data = Type.Record(Type.String(), Type.Unknown());
+  }
+  if (!definition && (role === "scout" || role === "planner"))
     fields.brief = text("one plain-text string: findings with file:line evidence");
-  if (role === "research") {
+  if (!definition && role === "research") {
     fields.brief = text("one plain-text string, at most 8000 characters", 8000);
     fields.sources = Type.Array(source, { description: "at least one source when succeeded" });
   }
-  if (role === "reviewer")
+  if (kind === "reviewer")
     fields.review = Type.Object(
       {
         verdict: Type.Union([Type.Literal("approve"), Type.Literal("changes_requested")], {
@@ -86,7 +102,15 @@ export function resultSchema(role: Role): TSchema {
       },
       { additionalProperties: false },
     );
-  const optional = new Set(["brief", "sources", "review"]);
+  const optional = new Set([
+    "brief",
+    "sources",
+    "review",
+    "data",
+    ...(definition
+      ? [...(kind === "builder" ? [] : ["changedFiles"]), "checks", "findings", "blockers"]
+      : []),
+  ]);
   return Type.Object(
     Object.fromEntries(
       Object.entries(fields).map(([k, v]) => [k, optional.has(k) ? Type.Optional(v) : v]),
@@ -97,6 +121,7 @@ export function resultSchema(role: Role): TSchema {
 
 export interface ResultContext {
   role: Role;
+  definition?: AgentDefinition;
   // A reviewer's target: the builder task (or null for existing changes) and its fingerprint.
   reviewTarget?: { taskId: string | null; fingerprint: string };
 }
@@ -123,7 +148,17 @@ function bind(
 
 // Checks the rules a schema cannot express. Returns the result with reviewer bindings filled in.
 export function validateResult(input: AgentResult, ctx: ResultContext): AgentResult {
-  const result: AgentResult = { ...input };
+  const result: AgentResult = {
+    ...input,
+    changedFiles: input.changedFiles ?? [],
+    checks: input.checks ?? [],
+    findings: input.findings ?? [],
+    blockers: input.blockers ?? [],
+  };
+  if (Buffer.byteLength(JSON.stringify(result)) > 128 * 1024)
+    fail("Result exceeds 128 KiB; return a concise result and reference larger artifacts.");
+  const writer = writes(ctx);
+  const reviewer = reviews(ctx);
   if (result.status === "succeeded" && result.blockers.length)
     fail("A succeeded result cannot list blockers; use status blocked or failed, or remove them.");
   const seen = new Set<string>();
@@ -138,19 +173,41 @@ export function validateResult(input: AgentResult, ctx: ResultContext): AgentRes
     if (seen.has(file)) fail(`changedFiles lists ${JSON.stringify(file)} twice.`);
     seen.add(file);
   }
-  if (ctx.role !== "builder" && result.changedFiles.length)
+  if (!writer && result.changedFiles.length)
     fail(`A ${ctx.role} does not change files; changedFiles must be empty.`);
-  if (ctx.role === "reviewer" && result.review && ctx.reviewTarget)
+  if (reviewer && result.review && ctx.reviewTarget)
     result.review = bind(result.review, ctx.reviewTarget);
   if (result.status !== "succeeded") return result;
-  if ((ctx.role === "scout" || ctx.role === "planner" || ctx.role === "research") && !result.brief)
+  if (
+    (ctx.definition
+      ? ctx.definition.output.require.includes("brief")
+      : ["scout", "planner", "research"].includes(ctx.role)) &&
+    !result.brief
+  )
     fail(`A succeeded ${ctx.role} result needs brief: the findings, with file:line evidence.`);
-  if (ctx.role === "research") {
-    if (!result.sources?.length) fail("A succeeded research result needs at least one source.");
-    for (const s of result.sources) {
+  if (
+    ctx.definition
+      ? ctx.definition.output.require.includes("sources") || result.sources !== undefined
+      : ctx.role === "research"
+  ) {
+    if (
+      !result.sources?.length &&
+      (!ctx.definition || ctx.definition.output.require.includes("sources"))
+    )
+      fail("This succeeded result requires at least one source.");
+    for (const s of result.sources ?? []) {
+      if (ctx.definition && s.path !== undefined) {
+        if (s.url !== undefined) fail("A source must name either a URL or a local path");
+        try {
+          relative(s.path);
+        } catch {
+          fail(`Invalid source path ${s.path}`);
+        }
+        continue;
+      }
       let url: URL;
       try {
-        url = new URL(s.url);
+        url = new URL(s.url ?? "");
       } catch {
         fail(`Source URL ${JSON.stringify(s.url)} is not a valid URL.`);
       }
@@ -158,7 +215,7 @@ export function validateResult(input: AgentResult, ctx: ResultContext): AgentRes
         fail(`Source URL ${JSON.stringify(s.url)} must be http(s) without credentials.`);
     }
   }
-  if (ctx.role === "reviewer") {
+  if (reviewer) {
     const review = result.review;
     if (!review) fail("A succeeded reviewer result needs review: { verdict }.");
 

@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const USAGE = `Usage:
+  pinata agents [list|show <name>|validate]   inspect reusable agent definitions
   pinata view [run] [task]                 attach a viewer to a live run, or replay a finished one
   pinata logs [run] [task] [--follow] [--json]   print a run's log (the newest run by default)
   pinata run <job.json> [--mode observe] [--json] [--watch]   run a job headless
@@ -163,7 +164,21 @@ if (command === "view") view(rest);
 else if (command === "logs") logs(rest);
 else if (command === "run") run(rest);
 else if (command === "resume") resume(rest);
-else if (command === "gc")
+else if (command === "agents") {
+  const action = rest[0] ?? "list";
+  if (
+    !["list", "show", "validate"].includes(action) ||
+    (action === "show" && !rest[1]) ||
+    rest.length > (action === "show" ? 2 : 1)
+  )
+    fail("Usage: pinata agents [list|show <name>|validate]");
+  startPi(
+    ["headless", "main.ts"],
+    ["-p", `/pinata-agents ${JSON.stringify({ action, name: rest[1] })}`],
+    {},
+    "ignore",
+  );
+} else if (command === "gc")
   startPi(
     ["headless", "main.ts"],
     ["-p", `/pinata-gc ${JSON.stringify({ confirm: rest.includes("--confirm") })}`],

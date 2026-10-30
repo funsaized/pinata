@@ -1,3 +1,5 @@
+import { PreparationGate } from "../workspace/preparation.ts";
+import { writes, reviews as isReviewer } from "../core/definitions.ts";
 // Verification stages for the Pi pipeline: builders in worktrees (setup, change capture,
 // ownership, checks, fingerprint), reviewers of builders and of existing changes, and evidence
 // checks for any role.
@@ -76,7 +78,7 @@ async function resolveRun(
   tasks: readonly Task[],
   config: PinataConfig,
 ): Promise<RunPrep> {
-  const builders = tasks.some((t) => t.role === "builder");
+  const builders = tasks.some((t) => writes(t));
   const reviews = tasks.filter((t) => t.reviewBase !== undefined || t.reviewPr !== undefined);
   const prep: RunPrep = { subjects: {} };
   if (builders) prep.base = await snapshotBase(root, runId, config.includeUncommitted);
@@ -104,7 +106,7 @@ function builderAncestors(run: RunContext, task: Task): Task[] {
       seen.add(name);
       const dep = run.tasks.get(name)!;
       visit(dep);
-      if (dep.role === "builder") out.push(dep);
+      if (writes(dep)) out.push(dep);
     }
   };
   visit(task);
@@ -179,9 +181,10 @@ const failed = (
 });
 
 export function verificationStages(): PipelineStages {
+  const preparation = new PreparationGate();
   return {
     workspaceRef(run, task) {
-      if (task.role === "builder") return { kind: "worktree", path: worktreePath(run, task.id) };
+      if (writes(task)) return { kind: "worktree", path: worktreePath(run, task.id) };
       if (task.reviewOf) return { kind: "worktree", path: worktreePath(run, task.reviewOf) };
       if (task.reviewPr !== undefined)
         return { kind: "worktree", path: worktreePath(run, `pr-${task.reviewPr}`) };
@@ -190,44 +193,45 @@ export function verificationStages(): PipelineStages {
 
     async prepareWorkspace(run, task, signal, options = {}) {
       const d = data(run);
-      if (task.role === "builder") {
-        const path = worktreePath(run, task.id);
-        // A builder an earlier Pi started keeps its worktree exactly as it is.
-        if (options.reattach && existsSync(path)) {
-          const head = line(await git(path, ["rev-parse", "HEAD"]));
-          return Worktree.create(run.cwd, path, head);
-        }
-        const base = d.prep.base!;
-        const predecessors = builderAncestors(run, task).map((b) => {
-          const changes = builderData(run.results.get(b.id))?.changes;
-          if (!changes) throw new Error(`Dependency ${b.id} has no verified changes`);
-          return changes;
-        });
-        const composed = await composeBase(run.cwd, base.commit, predecessors);
-        const tree = await Worktree.create(run.cwd, path, composed.commit);
-        await copyIncluded(run.cwd, path);
-        if (d.prep.setup?.command) {
-          try {
-            await provision({
-              worktree: path,
-              baseTree: tree.baseTree,
-              setup: d.prep.setup,
-              cacheRoot: join(run.dir, "..", "cache", "dependencies"),
-              markerDir: join(run.dir, "setup"),
-              task: task.id,
-              root: run.cwd,
-              passEnv: d.config?.passEnv ?? [],
-              logDir: join(run.dir, "setup", task.id),
-              timeoutMs: run.limits.taskMs,
-              signal,
-            });
-          } catch (error) {
-            if (error instanceof SetupError) throw new Error(error.message);
-            throw error;
+      if (writes(task))
+        return preparation.run(signal, async () => {
+          const path = worktreePath(run, task.id);
+          // A builder an earlier Pi started keeps its worktree exactly as it is.
+          if (options.reattach && existsSync(path)) {
+            const head = line(await git(path, ["rev-parse", "HEAD"]));
+            return Worktree.create(run.cwd, path, head);
           }
-        }
-        return tree;
-      }
+          const base = d.prep.base!;
+          const predecessors = builderAncestors(run, task).map((b) => {
+            const changes = builderData(run.results.get(b.id))?.changes;
+            if (!changes) throw new Error(`Dependency ${b.id} has no verified changes`);
+            return changes;
+          });
+          const composed = await composeBase(run.cwd, base.commit, predecessors);
+          const tree = await Worktree.create(run.cwd, path, composed.commit);
+          await copyIncluded(run.cwd, path);
+          if (d.prep.setup?.command) {
+            try {
+              await provision({
+                worktree: path,
+                baseTree: tree.baseTree,
+                setup: d.prep.setup,
+                cacheRoot: join(run.dir, "..", "cache", "dependencies"),
+                markerDir: join(run.dir, "setup"),
+                task: task.id,
+                root: run.cwd,
+                passEnv: d.config?.passEnv ?? [],
+                logDir: join(run.dir, "setup", task.id),
+                timeoutMs: run.limits.taskMs,
+                signal,
+              });
+            } catch (error) {
+              if (error instanceof SetupError) throw new Error(error.message);
+              throw error;
+            }
+          }
+          return tree;
+        });
       if (task.reviewOf) return new ReadOnlyTree(worktreePath(run, task.reviewOf));
       if (task.reviewPr !== undefined) {
         const name = `pr-${task.reviewPr}`;
@@ -249,7 +253,7 @@ export function verificationStages(): PipelineStages {
     async reviewTarget(run, task) {
       // Only reviewers touch the disk here: a reader's prepare stays free of I/O, so agents in a
       // burst start without waiting behind each other's tool work.
-      if (task.role !== "reviewer") return undefined;
+      if (!isReviewer(task)) return undefined;
       const reviews = join(run.dir, "reviews");
       await mkdir(reviews, { recursive: true, mode: 0o700 });
       if (task.reviewOf) {
@@ -308,7 +312,7 @@ export function verificationStages(): PipelineStages {
 
     async verify(run, task, prepared, outcome, verdict, signal) {
       const workspace = prepared.workspace;
-      if (task.role === "builder" && workspace instanceof Worktree) {
+      if (writes(task) && workspace instanceof Worktree) {
         if (!outcome.result && verdict.failureStage === "result")
           return { ...verdict, retry: "result-only" };
         if (await workspace.headMoved())

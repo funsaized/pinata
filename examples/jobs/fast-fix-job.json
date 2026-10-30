@@ -5,20 +5,30 @@
   "tasks": [
     {
       "id": "fix",
-      "role": "builder",
       "task": "Fix formatSeconds in src/duration.mjs: convert the seconds argument to milliseconds before calling ms().",
       "acceptance": ["Existing duration tests pass", "Only src/duration.mjs changes"],
       "ownership": ["src/duration.mjs"],
-      "checks": [{ "id": "unit", "argv": ["npm", "test"] }]
+      "checks": [
+        {
+          "id": "unit",
+          "argv": ["npm", "test"]
+        }
+      ],
+      "agent": "builder"
     },
     {
       "id": "review",
-      "role": "reviewer",
       "after": ["fix"],
       "reviewOf": "fix",
       "task": "Independently review the formatSeconds change, boundary cases, and supervisor check logs.",
-      "acceptance": ["Approve only if the fix meets the builder's acceptance criteria"]
+      "acceptance": ["Approve only if the fix meets the builder's acceptance criteria"],
+      "agent": "reviewer"
     }
   ],
-  "integratedChecks": [{ "id": "unit", "argv": ["npm", "test"] }]
+  "integratedChecks": [
+    {
+      "id": "unit",
+      "argv": ["npm", "test"]
+    }
+  ]
 }

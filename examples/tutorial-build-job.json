@@ -17,7 +17,6 @@
   "tasks": [
     {
       "id": "build",
-      "role": "builder",
       "task": "Make greet trim leading and trailing whitespace from its string argument. Add a test for greet(' Ada ') returning 'Hello, Ada!'. Keep the existing greeting test passing. Do not change the behavior for internal spaces or add non-string handling.",
       "acceptance": [
         "greet(' Ada ') returns 'Hello, Ada!'.",
@@ -31,18 +30,19 @@
           "argv": ["node", "--test", "greet.test.mjs"],
           "timeoutMs": 30000
         }
-      ]
+      ],
+      "agent": "builder"
     },
     {
       "id": "review",
-      "role": "reviewer",
       "task": "Inspect the actual greeting changes and supervisor check evidence. Check that the regression test exercises surrounding whitespace and that internal spaces and the existing greeting are preserved. Report concrete defects, or approve the current evidence if the acceptance criteria hold.",
       "acceptance": [
         "The review cites the actual diff and check evidence.",
         "The verdict addresses the builder's acceptance criteria without proposing unrelated changes."
       ],
       "after": ["build"],
-      "reviewOf": "build"
+      "reviewOf": "build",
+      "agent": "reviewer"
     }
   ],
   "integratedChecks": [

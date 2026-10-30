@@ -64,6 +64,7 @@ class Client {
   helloed = false;
   role: "viewer" | "agent" = "viewer";
   pending: AgentEvent[] = [];
+  pendingBytes = 0;
   // The highest event seq the client has (from a snapshot or a batch) and acknowledged.
   queued = -1;
   acked = -1;
@@ -77,7 +78,13 @@ class Client {
   }
 
   send(frame: ServerFrame): void {
-    if (!this.socket.destroyed) this.socket.write(encode(frame));
+    if (this.socket.destroyed) return;
+    // A stalled viewer can reconnect to the durable log; never grow its socket queue forever.
+    if (this.socket.writableLength > 4 * 1024 * 1024) {
+      this.socket.destroy();
+      return;
+    }
+    this.socket.write(encode(frame));
   }
 }
 
@@ -192,6 +199,7 @@ export class RunServer {
     const view = this.options.source.view();
     if (!view) return;
     client.pending = [];
+    client.pendingBytes = 0;
     clearTimeout(client.timer);
     client.timer = undefined;
     client.queued = view.seq;
@@ -203,9 +211,11 @@ export class RunServer {
   private push(client: Client, event: AgentEvent): void {
     if (event.seq <= client.queued) return; // already in the snapshot
     client.pending.push(event);
+    client.pendingBytes += Buffer.byteLength(JSON.stringify(event));
     client.queued = event.seq;
     // Too far behind: drop the backlog and send the current state instead.
-    if (client.queued - client.acked > MAX_UNACKED) return this.snapshot(client);
+    if (client.queued - client.acked > MAX_UNACKED || client.pendingBytes > 512 * 1024)
+      return this.snapshot(client);
     client.timer ??= setTimeout(() => this.flush(client), BATCH_MS);
   }
 
@@ -214,6 +224,7 @@ export class RunServer {
     if (!client.pending.length) return;
     const events = client.pending;
     client.pending = [];
+    client.pendingBytes = 0;
     client.send({ type: "events", events });
   }
 

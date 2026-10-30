@@ -1,3 +1,4 @@
+import { copyFile, mkdir } from "node:fs/promises";
 // Headless runs (M8): job files, reporters and exit codes, viewers on headless runs, and runs
 // that continue in a headless host after their Pi exits. Children run the Pi devDependency's
 // CLI against the loopback provider.
@@ -63,6 +64,11 @@ async function world(
   });
   t.after(() => loopback.close());
   await loopback.writeModels(agentDir);
+  await mkdir(join(agentDir, "pinata", "agents"), { recursive: true });
+  await copyFile(
+    new URL("../../examples/agents/planner.md", import.meta.url),
+    join(agentDir, "pinata", "agents", "planner.md"),
+  );
   return { dir, repo, agentDir };
 }
 
@@ -115,6 +121,29 @@ test("job files keep 0.7.0's shape; exit codes map run outcomes", () => {
   assert.equal(exitCode(view("succeeded")), EXIT.succeeded);
   assert.equal(exitCode(view("failed")), EXIT.failed);
   assert.equal(exitCode(view("cancelled")), EXIT.cancelled);
+});
+
+test("pinata agents lists, inspects and validates definitions through the CLI", async (t) => {
+  const w = await world(t, reader);
+  const listed = pinata(["agents", "list"], w);
+  assert.equal(await listed.exited, 0, listed.err());
+  const agents = JSON.parse(listed.out());
+  assert.deepEqual(agents.map((agent: { name: string }) => agent.name).sort(), [
+    "builder",
+    "planner",
+    "reviewer",
+    "scout",
+  ]);
+  assert(agents.every((agent: { prompt?: string }) => agent.prompt === undefined));
+  const shown = pinata(["agents", "show", "planner"], w);
+  assert.equal(await shown.exited, 0, shown.err());
+  assert.match(JSON.parse(shown.out()).prompt, /plan/i);
+  const validated = pinata(["agents", "validate"], w);
+  assert.equal(await validated.exited, 0, validated.err());
+  assert.match(validated.out(), /Validated 4 agent definitions/);
+  const missing = pinata(["agents", "show", "missing"], w);
+  assert.equal(await missing.exited, EXIT.invalid);
+  assert.match(missing.err(), /Unknown agent missing/);
 });
 
 test("pinata run executes a job headless: JSONL events, then exit 0; a failure exits 1, an invalid job 2", async (t) => {

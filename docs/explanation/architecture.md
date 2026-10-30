@@ -25,11 +25,33 @@ headless host) can follow, and the host steers them through a control file.
 
 ## Agents
 
+An agent definition is reusable instructions and defaults. A task invokes it with a
+specific request. The Pi adapter discovers definitions, resolves model and tool defaults,
+and saves an immutable snapshot before dispatch. The core receives plain execution data;
+it does not load Markdown or discover Pi extensions. Resolution is an internal step, not
+another object users need to manage.
+
 Every agent loads the agent extension (`engine/agent`). It registers `submit_result` with
-the role's result schema, and guards every tool call, including those made from codemode
-scripts: tools outside the role's loadout are refused, readers cannot write, and builders
-can only edit owned paths in their worktree. Siblings of a role get byte-identical system
-prompts, which keeps model caches warm; the brief carries the task.
+the definition's result contract, and guards every tool call, including those made from
+codemode scripts. Tools outside the allowlist are refused. Workspace capabilities determine
+whether a task reads the live checkout, writes an isolated worktree, or reviews a bound
+target. Names select definitions; they do not grant permissions. Siblings with the same
+definition and tool configuration get byte-identical system prompts; the brief carries
+the task. Historical runs without definitions retain their saved role semantics.
+
+The shipped presets are scout, builder, and reviewer. Planner and researcher are ordinary
+definitions in `examples/agents`, activated by copying them into a discovery directory.
+The parent composes the workflow and owns integration. Pinata supplies execution,
+workspace modes, evidence, and visibility.
+
+## Scheduling and bounds
+
+Ready tasks share a provider-aware limiter, with round-robin dispatch across runs. Worktree
+preparation has a separate two-slot gate, so heavy setup cannot fan out with the entire
+model queue. Results are limited to 128 KiB, dependency summaries share a 32 KiB budget,
+and compact status results paginate. Full evidence stays on disk. Definition and context
+caches are bounded; slow viewer connections resnapshot or disconnect before their output
+queues grow indefinitely. Completed run history still consumes memory until its host exits.
 
 ## Workspaces
 
@@ -60,3 +82,9 @@ Everything lives in `<git common dir>/pinata/<run>`: `events.jsonl`, `run.json`,
 `results/`, `transcripts/`, `handoffs/<digest>/`, `verification/<attempt>/`,
 `integration/journal.json`, worktrees, and per-agent files for out-of-process agents.
 Directories are private (0700).
+
+New `run.json` records use schema version 2 and contain a table of agent definitions keyed
+by digest. Tasks reference that table; `run_started` carries the same snapshots. Resume,
+repair, and rerun use saved definitions even if local files change or disappear. Required
+extension entry-file hashes are checked before new launches. This does not snapshot
+extension dependencies or external services. See [events](../reference/events.md).

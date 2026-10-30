@@ -18,7 +18,7 @@ the job file):
   "tasks": [
     {
       "id": "map",
-      "role": "scout",
+      "agent": "scout",
       "task": "Map duration parsing.",
       "acceptance": ["file:line citations"]
     }

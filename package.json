@@ -1,7 +1,7 @@
 {
   "name": "pi-pinata",
-  "version": "1.1.0",
-  "description": "Fast, low-footprint Pi subagents: in-process agents, live-checkout readers, reviewed builder changes, and Herdr or external viewers when you want them.",
+  "version": "2.0.0-next.0",
+  "description": "Pi stays small. Your subagent system should too. Fast, opinionated subagents with sharp defaults and your wiring.",
   "keywords": [
     "herdr",
     "pi",
@@ -27,6 +27,7 @@
   "files": [
     "bin/",
     "engine/",
+    "agents/",
     "skills/",
     "prompts/",
     "docs/",
@@ -51,8 +52,8 @@
     "check": "npm run format:check && npm run lint && npm run typecheck",
     "lint": "oxlint test scripts engine bench bin",
     "typecheck": "tsc -p tsconfig.json",
-    "format:check": "oxfmt --check package.json tsconfig.json test scripts .github examples README.md BACKLOG.md docs skills prompts engine bench bin",
-    "format": "oxfmt package.json tsconfig.json test scripts .github examples README.md BACKLOG.md docs skills prompts engine bench bin",
+    "format:check": "oxfmt --check package.json tsconfig.json test scripts .github examples README.md BACKLOG.md docs skills prompts engine bench bin agents",
+    "format": "oxfmt package.json tsconfig.json test scripts .github examples README.md BACKLOG.md docs skills prompts engine bench bin agents",
     "test:herdr": "node --test test/engine/herdr.test.ts"
   },
   "devDependencies": {
@@ -90,13 +91,10 @@
       "./engine/pi/extension.ts"
     ],
     "skills": [
-      "./skills/subagents",
-      "./skills/engmgmt"
+      "./skills/subagents"
     ],
     "prompts": [
       "./prompts/scout.md",
-      "./prompts/research.md",
-      "./prompts/planner.md",
       "./prompts/builder.md",
       "./prompts/reviewer.md",
       "./prompts/pinata-review.md",

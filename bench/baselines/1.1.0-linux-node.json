@@ -1,0 +1,388 @@
+{
+  "meta": {
+    "date": "2026-10-30",
+    "os": "linux",
+    "release": "7.2.8-9-omarchy",
+    "arch": "x64",
+    "cpus": 32,
+    "memoryGB": 31,
+    "node": "v26.7.0",
+    "pi": "1.4.0",
+    "provider": "faux",
+    "tokenDelayMs": 1
+  },
+  "results": [
+    {
+      "scenario": "fanout-1",
+      "target": "engine",
+      "provider": "faux",
+      "host": "node v26.7.0",
+      "agents": 1,
+      "statuses": {
+        "succeeded": 1
+      },
+      "spawnMs": {
+        "n": 1,
+        "p50": 1.974,
+        "p95": 1.974,
+        "p99": 1.974,
+        "max": 1.974
+      },
+      "setupMs": {
+        "n": 1,
+        "p50": 1.894,
+        "p95": 1.894,
+        "p99": 1.894,
+        "max": 1.894
+      },
+      "toolCallMs": {
+        "n": 1,
+        "p50": 2.581,
+        "p95": 2.581,
+        "p99": 2.581,
+        "max": 2.581
+      },
+      "dependentMs": null,
+      "dependentRequestMs": null,
+      "memoryPerAgentMB": 4.35,
+      "peakRssMB": 175.2,
+      "loopLagP99Ms": 9.45,
+      "cpuMs": 59,
+      "wallMs": 130,
+      "notes": [
+        "memoryPerAgentMB: (peak RSS - RSS before the run) / most agents running at once",
+        "1 agents ran at once (limiter opened to 64)"
+      ]
+    },
+    {
+      "scenario": "fanout-8",
+      "target": "engine",
+      "provider": "faux",
+      "host": "node v26.7.0",
+      "agents": 8,
+      "statuses": {
+        "succeeded": 8
+      },
+      "spawnMs": {
+        "n": 8,
+        "p50": 6.397,
+        "p95": 9.832,
+        "p99": 9.832,
+        "max": 9.832
+      },
+      "setupMs": {
+        "n": 8,
+        "p50": 2.482,
+        "p95": 2.61,
+        "p99": 2.61,
+        "max": 2.61
+      },
+      "toolCallMs": {
+        "n": 8,
+        "p50": 6.971,
+        "p95": 10.482,
+        "p99": 10.482,
+        "max": 10.482
+      },
+      "dependentMs": null,
+      "dependentRequestMs": null,
+      "memoryPerAgentMB": 0.19,
+      "peakRssMB": 192.91,
+      "loopLagP99Ms": 13.63,
+      "cpuMs": 174,
+      "wallMs": 221,
+      "notes": [
+        "memoryPerAgentMB: (peak RSS - RSS before the run) / most agents running at once",
+        "8 agents ran at once (limiter opened to 64)"
+      ]
+    },
+    {
+      "scenario": "fanout-32",
+      "target": "engine",
+      "provider": "faux",
+      "host": "node v26.7.0",
+      "agents": 32,
+      "statuses": {
+        "succeeded": 32
+      },
+      "spawnMs": {
+        "n": 32,
+        "p50": 15.328,
+        "p95": 27.046,
+        "p99": 27.415,
+        "max": 27.415
+      },
+      "setupMs": {
+        "n": 32,
+        "p50": 1.744,
+        "p95": 2.22,
+        "p99": 2.31,
+        "max": 2.31
+      },
+      "toolCallMs": {
+        "n": 32,
+        "p50": 16.182,
+        "p95": 27.993,
+        "p99": 28.368,
+        "max": 28.368
+      },
+      "dependentMs": null,
+      "dependentRequestMs": null,
+      "memoryPerAgentMB": 0.38,
+      "peakRssMB": 212.34,
+      "loopLagP99Ms": 46.79,
+      "cpuMs": 630,
+      "wallMs": 591,
+      "notes": [
+        "memoryPerAgentMB: (peak RSS - RSS before the run) / most agents running at once",
+        "32 agents ran at once (limiter opened to 64)"
+      ]
+    },
+    {
+      "scenario": "fanout-64",
+      "target": "engine",
+      "provider": "faux",
+      "host": "node v26.7.0",
+      "agents": 64,
+      "statuses": {
+        "succeeded": 64
+      },
+      "spawnMs": {
+        "n": 64,
+        "p50": 26.464,
+        "p95": 48.579,
+        "p99": 50.484,
+        "max": 50.484
+      },
+      "setupMs": {
+        "n": 64,
+        "p50": 1.685,
+        "p95": 1.746,
+        "p99": 1.927,
+        "max": 1.927
+      },
+      "toolCallMs": {
+        "n": 64,
+        "p50": 27.549,
+        "p95": 49.829,
+        "p99": 51.751,
+        "max": 51.751
+      },
+      "dependentMs": null,
+      "dependentRequestMs": null,
+      "memoryPerAgentMB": 0.45,
+      "peakRssMB": 242.27,
+      "loopLagP99Ms": 97.06,
+      "cpuMs": 1097,
+      "wallMs": 1071,
+      "notes": [
+        "memoryPerAgentMB: (peak RSS - RSS before the run) / most agents running at once",
+        "64 agents ran at once (limiter opened to 64)"
+      ]
+    },
+    {
+      "scenario": "chain",
+      "target": "engine",
+      "provider": "faux",
+      "host": "node v26.7.0",
+      "agents": 4,
+      "statuses": {
+        "succeeded": 4
+      },
+      "spawnMs": {
+        "n": 4,
+        "p50": 1.452,
+        "p95": 28.313,
+        "p99": 28.313,
+        "max": 28.313
+      },
+      "setupMs": {
+        "n": 4,
+        "p50": 1.144,
+        "p95": 1.519,
+        "p99": 1.519,
+        "max": 1.519
+      },
+      "toolCallMs": {
+        "n": 1,
+        "p50": 1.953,
+        "p95": 1.953,
+        "p99": 1.953,
+        "max": 1.953
+      },
+      "dependentMs": {
+        "n": 3,
+        "p50": 0.077,
+        "p95": 0.085,
+        "p99": 0.085,
+        "max": 0.085
+      },
+      "dependentRequestMs": {
+        "n": 3,
+        "p50": 21.027,
+        "p95": 28.391,
+        "p99": 28.391,
+        "max": 28.391
+      },
+      "memoryPerAgentMB": 0.25,
+      "peakRssMB": 242.45,
+      "loopLagP99Ms": 6.13,
+      "cpuMs": 112,
+      "wallMs": 392,
+      "notes": [
+        "memoryPerAgentMB: (peak RSS - RSS before the run) / most agents running at once",
+        "1 agents ran at once (limiter opened to 64)"
+      ]
+    },
+    {
+      "scenario": "stress-64",
+      "target": "engine",
+      "provider": "faux",
+      "host": "node v26.7.0",
+      "agents": 64,
+      "statuses": {
+        "succeeded": 64
+      },
+      "spawnMs": {
+        "n": 64,
+        "p50": 13.956,
+        "p95": 35.454,
+        "p99": 37.218,
+        "max": 37.218
+      },
+      "setupMs": {
+        "n": 64,
+        "p50": 1.626,
+        "p95": 1.723,
+        "p99": 2.079,
+        "max": 2.079
+      },
+      "toolCallMs": {
+        "n": 48,
+        "p50": 21.085,
+        "p95": 37.508,
+        "p99": 38.544,
+        "max": 38.544
+      },
+      "dependentMs": {
+        "n": 16,
+        "p50": 0.018,
+        "p95": 0.041,
+        "p99": 0.041,
+        "max": 0.041
+      },
+      "dependentRequestMs": {
+        "n": 16,
+        "p50": 0.728,
+        "p95": 1.118,
+        "p99": 1.118,
+        "max": 1.118
+      },
+      "memoryPerAgentMB": 0.02,
+      "peakRssMB": 243.19,
+      "loopLagP99Ms": 58.52,
+      "cpuMs": 666,
+      "wallMs": 692,
+      "notes": [
+        "memoryPerAgentMB: (peak RSS - RSS before the run) / most agents running at once",
+        "48 agents ran at once (limiter opened to 64)"
+      ]
+    },
+    {
+      "scenario": "builder",
+      "target": "engine",
+      "provider": "faux",
+      "host": "node v26.7.0",
+      "agents": 2,
+      "statuses": {
+        "succeeded": 2
+      },
+      "spawnMs": {
+        "n": 2,
+        "p50": 20.316,
+        "p95": 28.961,
+        "p99": 28.961,
+        "max": 28.961
+      },
+      "setupMs": {
+        "n": 2,
+        "p50": 1.2,
+        "p95": 1.815,
+        "p99": 1.815,
+        "max": 1.815
+      },
+      "toolCallMs": {
+        "n": 1,
+        "p50": 29.363,
+        "p95": 29.363,
+        "p99": 29.363,
+        "max": 29.363
+      },
+      "dependentMs": {
+        "n": 1,
+        "p50": 0.042,
+        "p95": 0.042,
+        "p99": 0.042,
+        "max": 0.042
+      },
+      "dependentRequestMs": {
+        "n": 1,
+        "p50": 20.358,
+        "p95": 20.358,
+        "p99": 20.358,
+        "max": 20.358
+      },
+      "memoryPerAgentMB": 0,
+      "peakRssMB": 239.96,
+      "loopLagP99Ms": 4,
+      "cpuMs": 69,
+      "wallMs": 271,
+      "notes": [
+        "memoryPerAgentMB: (peak RSS - RSS before the run) / most agents running at once",
+        "1 agents ran at once (limiter opened to 64)"
+      ]
+    },
+    {
+      "scenario": "ux-8",
+      "target": "engine",
+      "provider": "faux",
+      "host": "node v26.7.0",
+      "agents": 8,
+      "statuses": {
+        "succeeded": 8
+      },
+      "spawnMs": {
+        "n": 8,
+        "p50": 4.443,
+        "p95": 6.977,
+        "p99": 6.977,
+        "max": 6.977
+      },
+      "setupMs": {
+        "n": 8,
+        "p50": 1.66,
+        "p95": 1.985,
+        "p99": 1.985,
+        "max": 1.985
+      },
+      "toolCallMs": {
+        "n": 8,
+        "p50": 4.895,
+        "p95": 7.452,
+        "p99": 7.452,
+        "max": 7.452
+      },
+      "dependentMs": null,
+      "dependentRequestMs": null,
+      "memoryPerAgentMB": 0,
+      "peakRssMB": 240,
+      "loopLagP99Ms": 3.03,
+      "cpuMs": 230,
+      "wallMs": 1766,
+      "notes": [
+        "memoryPerAgentMB: (peak RSS - RSS before the run) / most agents running at once",
+        "8 agents ran at once (limiter opened to 64)"
+      ]
+    }
+  ]
+}

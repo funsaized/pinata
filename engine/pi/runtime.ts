@@ -74,7 +74,7 @@ export class RuntimeCache {
 export interface ModelChoice {
   model: ModelRef;
   // Why this model: task, config role, config default, or the parent session.
-  origin: "task" | "role" | "default" | "session" | "fallback";
+  origin: "task" | "role" | "definition" | "default" | "session" | "fallback";
   skipped: string[];
 }
 

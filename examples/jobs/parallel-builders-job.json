@@ -4,46 +4,70 @@
   "allowWrites": true,
   "config": {
     "models": {
-      "default": { "provider": "openai", "id": "gpt-6-luna", "thinking": "medium" },
-      "reviewer": { "provider": "openai", "id": "gpt-6-astra", "thinking": "medium" }
+      "default": {
+        "provider": "openai",
+        "id": "gpt-6-luna",
+        "thinking": "medium"
+      },
+      "reviewer": {
+        "provider": "openai",
+        "id": "gpt-6-astra",
+        "thinking": "medium"
+      }
     },
     "setup": "cp -a --reflink=auto \"$PINATA_ROOT/node_modules\" ."
   },
   "tasks": [
     {
       "id": "api",
-      "role": "builder",
       "task": "Replace with the approved server-side change.",
       "acceptance": ["Replace with a concrete acceptance criterion"],
       "ownership": ["src/server"],
       "checks": [
-        { "id": "server", "argv": ["npm", "test", "--", "src/server"], "timeoutMs": 180000 }
-      ]
+        {
+          "id": "server",
+          "argv": ["npm", "test", "--", "src/server"],
+          "timeoutMs": 180000
+        }
+      ],
+      "agent": "builder"
     },
     {
       "id": "cli",
-      "role": "builder",
       "task": "Replace with the approved CLI change.",
       "acceptance": ["Replace with a concrete acceptance criterion"],
       "ownership": ["src/cli"],
-      "checks": [{ "id": "cli", "argv": ["npm", "test", "--", "src/cli"], "timeoutMs": 180000 }]
+      "checks": [
+        {
+          "id": "cli",
+          "argv": ["npm", "test", "--", "src/cli"],
+          "timeoutMs": 180000
+        }
+      ],
+      "agent": "builder"
     },
     {
       "id": "review-api",
-      "role": "reviewer",
       "after": ["api"],
       "reviewOf": "api",
       "task": "Review the server change against its acceptance criteria.",
-      "acceptance": ["Approve only with evidence"]
+      "acceptance": ["Approve only with evidence"],
+      "agent": "reviewer"
     },
     {
       "id": "review-cli",
-      "role": "reviewer",
       "after": ["cli"],
       "reviewOf": "cli",
       "task": "Review the CLI change against its acceptance criteria.",
-      "acceptance": ["Approve only with evidence"]
+      "acceptance": ["Approve only with evidence"],
+      "agent": "reviewer"
     }
   ],
-  "integratedChecks": [{ "id": "all", "argv": ["npm", "test"], "timeoutMs": 300000 }]
+  "integratedChecks": [
+    {
+      "id": "all",
+      "argv": ["npm", "test"],
+      "timeoutMs": 300000
+    }
+  ]
 }

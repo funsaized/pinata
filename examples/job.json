@@ -17,7 +17,6 @@
   "tasks": [
     {
       "id": "build",
-      "role": "builder",
       "task": "Replace with the approved implementation assignment",
       "acceptance": ["Replace with a concrete acceptance criterion"],
       "ownership": ["src/replace-with-owned-file.js"],
@@ -27,17 +26,18 @@
           "argv": ["node", "--test", "test/replace-with-relevant-test.mjs"],
           "timeoutMs": 120000
         }
-      ]
+      ],
+      "agent": "builder"
     },
     {
       "id": "review",
-      "role": "reviewer",
       "task": "Independently challenge the actual changes, caller assumptions, failure handling, and regression-check evidence. Distinguish concrete defects from speculation.",
       "acceptance": [
         "The accepted behavior is supported by actual changes and verification, with no unresolved blocking defects."
       ],
       "after": ["build"],
-      "reviewOf": "build"
+      "reviewOf": "build",
+      "agent": "reviewer"
     }
   ],
   "integratedChecks": [

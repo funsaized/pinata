@@ -187,7 +187,12 @@ export function mood(view: RunView | null | undefined, integration?: string | nu
         kind: "ready",
         text: "No current destination verification. Ask the coordinator to run checks.",
       };
-    if (agents.some((a) => a.role === "builder") && integration !== "verified")
+    if (
+      agents.some(
+        (a) => a.workspaceMode === "worktree" || (!a.workspaceMode && a.role === "builder"),
+      ) &&
+      integration !== "verified"
+    )
       return {
         kind: "ready",
         text: "Builder reviews complete. Ready for coordinator-owned integration.",
@@ -200,7 +205,13 @@ export function mood(view: RunView | null | undefined, integration?: string | nu
           : "All agents home. ¡Fiesta!",
     };
   }
-  if (agents.some((a) => a.role === "reviewer" && a.status === "running"))
+  if (
+    agents.some(
+      (a) =>
+        (a.workspaceMode === "review-target" || (!a.workspaceMode && a.role === "reviewer")) &&
+        a.status === "running",
+    )
+  )
     return { kind: "review", text: "A second pair of eyes…" };
   return {
     kind: "working",

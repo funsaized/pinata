@@ -1,4 +1,10 @@
-# Agent examples
+# Examples
+
+The presets are scout, builder, and reviewer. [planner](agents/planner.md) and
+[researcher](agents/researcher.md) are optional definitions: copy them to
+`.pi/pinata/agents/` or your personal Pi agent directory before running jobs that use
+them. See [creating agents](../docs/how-to/agents.md). The example files are packaged,
+but are never automatically registered.
 
 For a well-specified fix, use [fast-fix-job.json](jobs/fast-fix-job.json):
 builder → independent reviewer. Add a scout when a concrete uncertainty needs

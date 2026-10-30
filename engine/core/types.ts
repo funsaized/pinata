@@ -1,8 +1,10 @@
+import type { AgentDefinition, Definitions } from "./definitions.ts";
 // Engine contracts. This file is the source of truth.
 // Nothing under engine/core imports Pi.
 
 export const ROLES = ["scout", "research", "planner", "builder", "reviewer"] as const;
-export type Role = (typeof ROLES)[number];
+// Role is retained as a display/legacy field; names no longer select execution behavior.
+export type Role = string;
 
 export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 export type ThinkingLevel = (typeof THINKING_LEVELS)[number];
@@ -26,9 +28,11 @@ export interface Check {
 
 export interface TaskSpec {
   id: string; // ^[a-z][a-z0-9-]{0,31}$
-  role: Role;
+  agent?: string;
+  role?: Role; // legacy selector
+  definition?: string; // saved definition digest; assigned by the host
   task: string;
-  acceptance: string[];
+  acceptance?: string[];
   instructions?: string[];
   context?: string[];
   after?: string[]; // dependencies; their results are inlined into this task's first message
@@ -44,7 +48,10 @@ export interface TaskSpec {
 }
 
 // A task after validation: optional lists are present.
-export interface Task extends TaskSpec {
+export interface Task extends Omit<TaskSpec, "definition"> {
+  role: string;
+  definition?: AgentDefinition;
+  acceptance: string[];
   after: string[];
   ownership: string[];
   instructions: string[];
@@ -100,7 +107,7 @@ export interface ToolRecord {
 }
 
 export type EventBody =
-  | { t: "run_started"; tasks: TaskSpec[]; mode: Mode }
+  | { t: "run_started"; tasks: TaskSpec[]; mode: Mode; definitions?: Definitions }
   | { t: "agent_queued"; task?: TaskSpec } // task: added or requeued after run_started
   | { t: "agent_started"; backend: BackendKind | "fake"; model: ModelRef; workspace: WorkspaceRef }
   | { t: "turn_start"; turn: number }
@@ -164,7 +171,8 @@ export interface ReportedCheck {
   detail: string;
 }
 export interface Source {
-  url: string;
+  url?: string;
+  path?: string;
   title: string;
   supports: string;
   applicability: string;
@@ -182,6 +190,7 @@ export interface AgentResult {
   findings: Finding[];
   blockers: string[];
   brief?: string;
+  data?: Record<string, unknown>;
   sources?: Source[];
   review?: Review;
   // Set by the engine: a live-checkout reader saw the checkout change mid-run.
@@ -233,6 +242,7 @@ export interface AgentOptions {
   task: string;
   role: Role;
   tools: string[];
+  definition?: AgentDefinition;
   // Builders: repo-relative ownership and the worktree root edits must stay in.
   ownership: string[];
   writeRoot?: string;
@@ -261,6 +271,7 @@ export interface AgentLaunch {
   // The repository root (the run's cwd), and pi-web-access for research agents.
   root?: string;
   webExtension?: string;
+  extensions?: string[];
   // The agent must outlive this Pi (`survive`): a detached process that the next Pi reattaches.
   detached?: boolean;
 }

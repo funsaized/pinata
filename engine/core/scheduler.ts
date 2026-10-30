@@ -38,11 +38,14 @@ export class Scheduler {
   }
 
   // Starts every ready task the limiter allows. Returns how many started.
-  pump(): number {
+  pump(maxStarts = Infinity): number {
     if (this.stopped) return 0;
     this.waiting.push(...this.graph.takeReady());
     let started = 0;
-    for (let i = 0; i < this.waiting.length && this.holding.size < this.maxRunning;) {
+    for (
+      let i = 0;
+      i < this.waiting.length && this.holding.size < this.maxRunning && started < maxStarts;
+    ) {
       const id = this.waiting[i];
       const provider = this.provider(id);
       if (!this.limiter.tryAcquire(provider)) {

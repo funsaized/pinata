@@ -4,24 +4,24 @@ All keys are optional. Layered: `~/.pi/agent/pinata.json`, then `<repo>/.pi/pina
 then the run's `config`. `models`, `fallbacks` and `limits` merge per entry; other keys
 replace. Unknown keys are rejected.
 
-| Key                  | Default and meaning                                                                                |
-| -------------------- | -------------------------------------------------------------------------------------------------- |
-| `models`             | `{default?, scout?, research?, planner?, builder?, reviewer?}`, each `{provider, id, thinking}`    |
-| `fallbacks`          | `{role: [model, …]}`, at most 5, used when the preferred model is unknown or has no authentication |
-| `limits`             | See below                                                                                          |
-| `mode`               | `lean`; or `observe` (see [modes](../how-to/modes.md))                                             |
-| `backend`            | `in-process`; or `process`, `herdr-pi` (see [backends](../how-to/backends.md))                     |
-| `codemode`           | `true`: agents get Pi's `codemode` tool                                                            |
-| `setup`              | Builders' setup: detected from root lockfiles; a command string to override; `false` for none      |
-| `includeUncommitted` | `true`: builders start from the checkout with uncommitted changes; `false` starts them from `HEAD` |
-| `webExtension`       | pi-web-access's entry file, detected from this Pi                                                  |
-| `passEnv`            | Extra environment variable names for agents' checks and setup (never values)                       |
+| Key                  | Default and meaning                                                                                     |
+| -------------------- | ------------------------------------------------------------------------------------------------------- |
+| `models`             | `{default?, [agentName]?}`, each `{provider, id, thinking}`                                             |
+| `fallbacks`          | `{agentName: [model, …]}`, at most 5, used when the preferred model is unknown or has no authentication |
+| `limits`             | See below                                                                                               |
+| `mode`               | `lean`; or `observe` (see [modes](../how-to/modes.md))                                                  |
+| `backend`            | `in-process`; or `process`, `herdr-pi` (see [backends](../how-to/backends.md))                          |
+| `codemode`           | `true`: agents get Pi's `codemode` tool                                                                 |
+| `setup`              | Builders' setup: detected from root lockfiles; a command string to override; `false` for none           |
+| `includeUncommitted` | `true`: builders start from the checkout with uncommitted changes; `false` starts them from `HEAD`      |
+| `webExtension`       | pi-web-access's entry file, detected from this Pi                                                       |
+| `passEnv`            | Extra environment variable names for agents' checks and setup (never values)                            |
 
 ## Models
 
 `thinking` is `off`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max`. A task uses the
-first of `task.model`, `models[role]`, `models.default` and this Pi's current model; if that
-model is unknown or has no configured authentication, `fallbacks[role]` in order.
+first of `task.model`, `models[agent]`, the definition model, `models.default` and this Pi's current model; if that
+model is unknown or has no configured authentication, `fallbacks[agent]` (or definition fallbacks) in order.
 
 ## Limits
 
@@ -75,3 +75,10 @@ directories and, on Windows, the system variables), plus `passEnv` names and
 
 0.7.0's `pi`, `herdr`, `session`, `workspaceReuse` and `limits.startupMs` are ignored with a
 one-line notice.
+
+## Custom agent defaults
+
+`models` and `fallbacks` accept any installed agent name. A definition's model default
+applies after an explicit task model and configured agent model, before the configured
+default and current Pi model. `toolProviders` maps names to `{extension, tools}` records;
+it merges per provider across config layers. See [creating agents](../how-to/agents.md).

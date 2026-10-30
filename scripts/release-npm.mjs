@@ -36,7 +36,7 @@ export function validateRelease(tag, manifest, lock, packed) {
   assert.equal(packed.version, manifest.version);
   assert.equal(packed.filename, `${NAME}-${manifest.version}.tgz`);
   const allowed =
-    /^(?:package\.json|README\.md|LICENSE|(?:bin|engine|skills|prompts|docs|examples)\/.+)$/;
+    /^(?:package\.json|README\.md|LICENSE|(?:bin|engine|agents|skills|prompts|docs|examples)\/.+)$/;
   for (const { path: file } of packed.files) {
     assert(allowed.test(file), `Unexpected packed file: ${file}`);
     assert(!file.split("/").some((part) => part.startsWith(".") || part === "node_modules"));
@@ -45,7 +45,11 @@ export function validateRelease(tag, manifest, lock, packed) {
     "engine/pi/extension.ts",
     "bin/pinata.mjs",
     "skills/subagents/SKILL.md",
-    "skills/engmgmt/SKILL.md",
+    "agents/scout.md",
+    "agents/builder.md",
+    "agents/reviewer.md",
+    "examples/agents/planner.md",
+    "examples/agents/researcher.md",
   ])
     assert(
       packed.files.some((file) => file.path === required),

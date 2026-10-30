@@ -1,5 +1,10 @@
 # Enable research
 
+Researcher is an optional [agent example](../../examples/agents/researcher.md). Install
+it using [creating agents](agents.md), then use `agent: "researcher"`. It is not a
+default preset. Its tools come from pi-web-access through the same tool-provider
+resolution available to any custom agent.
+
 Research agents search the web through [pi-web-access](https://github.com/nicobailon/pi-web-access).
 Install it in Pi (_manual_):
 
