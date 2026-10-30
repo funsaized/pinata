@@ -4,8 +4,7 @@ Commands on this page are _manual_: they publish, authenticate or need registry 
 
 How to release `pi-pinata` to npm once you have explicit authorization. Nothing
 on this page authorizes a commit, push, tag, publication, or deployment by
-itself. The local test commands are in [testing](testing.md); recorded results are in the
-repository's `ENGINE_PLAN.md` (Results log).
+itself. The local test commands are in [testing](testing.md); record validation results in the release pull request.
 
 Package: **pi-pinata**. Publisher: **funsaized**
 ([npm profile](https://www.npmjs.com/~funsaized)). Repository:
@@ -65,7 +64,7 @@ npm pack --dry-run --json --ignore-scripts
 
 Review the included paths. You should see only package metadata, README/LICENSE,
 the two skills, seven prompt templates, runtime modules, docs, and examples. There
-should be no run state, logs, tests, ENGINE_PLAN.md, .git, node_modules, secrets, or
+should be no run state, logs, tests, .git, node_modules, secrets, or
 other development debris.
 
 For a real local artifact, use `npm pack --ignore-scripts`. That creates an

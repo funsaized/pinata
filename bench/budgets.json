@@ -1,5 +1,5 @@
 {
-  "note": "Engine targets from ENGINE_PLAN.md (Targets, E2.2, M1). bench --ci fails a result above twice its budget. Large-burst spawn uses the proposed per-agent setup target recorded in the plan's Progress notes.",
+  "note": "Engine performance targets. bench --ci fails a result above twice its budget. Large-burst spawn uses a per-agent setup target.",
   "budgets": [
     { "scenario": "fanout-1", "metric": "spawnMs.p50", "max": 10 },
     { "scenario": "fanout-8", "metric": "spawnMs.p50", "max": 10 },

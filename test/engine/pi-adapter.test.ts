@@ -73,12 +73,14 @@ test("the extension registers the tools and the command", async (t) => {
   const a = await adapter(t, reader);
   assert.deepEqual([...a.tools.keys()].sort(), [
     "pinata_cancel",
+    "pinata_changes",
     "pinata_integrate",
     "pinata_repair",
     "pinata_rollback",
     "pinata_run",
     "pinata_status",
     "pinata_steer",
+    "pinata_verify",
   ]);
   assert(a.commands.has("pinata"));
   assert(a.handlers.session_shutdown?.length);
@@ -530,4 +532,72 @@ test("the next Pi resumes a crashed run: lost tasks are reported, /pinata rerun 
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
   assert.equal(status.status, "succeeded", JSON.stringify(status));
+});
+
+test("orchestrator tools hand off artifacts, integrate after HEAD advancement, and verify the destination", async (t) => {
+  const a = await adapter(t, (turn) => {
+    if (turn.role === "builder" && turn.round === 0)
+      return fauxAssistantMessage(
+        [fauxToolCall("write", { path: "README.md", content: "# Implemented\n" })],
+        { stopReason: "toolUse" },
+      );
+    return fauxAssistantMessage(
+      [
+        fauxToolCall("submit_result", {
+          status: "succeeded",
+          summary: "done",
+          changedFiles: turn.role === "builder" ? ["README.md"] : [],
+          checks: [],
+          findings: [],
+          blockers: [],
+          ...(turn.role === "reviewer" ? { review: { verdict: "approve" } } : {}),
+        }),
+      ],
+      { stopReason: "toolUse" },
+    );
+  });
+  const run = await a.call("pinata_run", {
+    approval: "Fixture authorizes these local writes",
+    config: { setup: false },
+    tasks: [
+      spec("build", "builder", { ownership: ["README.md"], noChecksReason: "fixture" }),
+      spec("review", "reviewer", { reviewOf: "build", after: ["build"] }),
+    ],
+    integratedChecks: [{ id: "check", argv: [process.execPath, "-e", "0"] }],
+  });
+  const result = run.details.result;
+  assert.equal(result.status, "succeeded", JSON.stringify(run));
+  assert.equal(result.handoff.tool, "pinata_changes");
+  assert.equal(result.tasks[0].artifact.scope, "builder-artifact");
+  const changes = (await a.call("pinata_changes", { run: result.run })).details.result;
+  assert.equal(changes.scope, "builder-artifacts");
+  assert(existsSync(changes.builders[0].patch));
+  assert.equal(
+    (await a.call("pinata_verify", { run: result.run })).details.result.application,
+    "different",
+  );
+  await writeFile(join(a.world.repo, "unrelated.txt"), "next feature");
+  a.world.fixture.git("add", "unrelated.txt");
+  a.world.fixture.git(
+    "-c",
+    "user.name=t",
+    "-c",
+    "user.email=t@e",
+    "-c",
+    "commit.gpgsign=false",
+    "commit",
+    "-qm",
+    "advance",
+  );
+  const integrated = (await a.call("pinata_integrate", { run: result.run })).details.result;
+  assert.equal(integrated.status, "verified", JSON.stringify(integrated));
+  assert.equal(integrated.verification.application, "exact");
+  const status = (await a.call("pinata_status", { run: result.run })).details.result;
+  assert.equal(status.integration, "verified");
+  assert.equal(status.verification.freshness, "current");
+  assert.equal(status.verification.review, "builder-artifacts-only");
+  assert.equal(
+    (await a.call("pinata_rollback", { run: result.run, confirm: true })).details.result.status,
+    "rolled_back",
+  );
 });

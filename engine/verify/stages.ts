@@ -2,6 +2,7 @@
 // ownership, checks, fingerprint), reviewers of builders and of existing changes, and evidence
 // checks for any role.
 import { existsSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ReviewTargetBrief } from "../agent/brief.ts";
@@ -9,7 +10,7 @@ import type { RunContext, Settled, Verdict } from "../core/engine.ts";
 import type { AgentResult, ChangeSet, Check, Task, Workspace } from "../core/types.ts";
 import type { PinataConfig } from "../pi/config.ts";
 import type { PipelineStages } from "../pi/pipeline.ts";
-import { digest, fingerprint } from "../workspace/changes.ts";
+import { writeTree } from "../workspace/changes.ts";
 import { provision, resolveSetup, SetupError, type Setup } from "../workspace/dependencies.ts";
 import { git, line } from "../workspace/git.ts";
 import { copyIncluded } from "../workspace/include.ts";
@@ -18,6 +19,7 @@ import { caseInsensitive, owns } from "../workspace/paths.ts";
 import { dropRefs, snapshotBase, type Base } from "../workspace/snapshot.ts";
 import { Worktree, composeBase } from "../workspace/worktree.ts";
 import { environment, runChecks, type CheckEvidence } from "./checks.ts";
+import { builderFingerprint, retainArtifact } from "./evidence.ts";
 import {
   localSubject,
   pullRequestSubject,
@@ -34,6 +36,8 @@ export interface RunPrep {
 }
 
 export interface BuilderData {
+  fingerprintVersion?: 2;
+  verificationId?: string;
   changes: ChangeSet;
   checks: CheckEvidence[];
   worktree: string;
@@ -253,6 +257,10 @@ export function verificationStages(): PipelineStages {
         const b = builderData(settled);
         if (!settled || settled.status !== "succeeded" || !b || !settled.fingerprint)
           throw new Error(`Review target ${task.reviewOf} is not verified`);
+        if ((await writeTree(b.worktree)) !== b.changes.tree)
+          throw new Error(
+            `Review target ${task.reviewOf} changed after verification; repair and re-review`,
+          );
         const diff = join(reviews, `${task.id}.diff`);
         await writeFile(
           diff,
@@ -311,6 +319,8 @@ export function verificationStages(): PipelineStages {
           .filter((c) => !owns(task.ownership, c.path, ci))
           .map((c) => c.path);
         const data: BuilderData = {
+          fingerprintVersion: 2,
+          verificationId: randomUUID(),
           changes,
           checks: [],
           worktree: workspace.path,
@@ -366,15 +376,13 @@ export function verificationStages(): PipelineStages {
               { data: data as never },
             );
         }
+        const hash = builderFingerprint(data, result);
+        if (verdict.status === "succeeded")
+          await retainArtifact(run.cwd, run.id, task.id, hash, data);
         return {
           ...verdict,
           data: data as never,
-          fingerprint: fingerprint({
-            base: changes.base,
-            tree: changes.tree,
-            checksDigest: digest(data.checks.map((c) => [c.id, c.passed, c.stdoutSha256])),
-            resultDigest: digest(result),
-          }),
+          fingerprint: hash,
         };
       }
       // Readers: evidence checks run where the reader read, and must not change it.
@@ -397,7 +405,12 @@ export function verificationStages(): PipelineStages {
           return failed(verdict, `Evidence check ${bad?.id ?? "?"} failed`, "verification", {
             data: { checks } as never,
           });
-        return { ...verdict, data: { checks } as never };
+        verdict = { ...verdict, data: { checks } as never };
+      }
+      if (task.reviewOf) {
+        const b = builderData(run.results.get(task.reviewOf));
+        if (!b || (await writeTree(b.worktree)) !== b.changes.tree)
+          return failed(verdict, "Review target changed during review; repair and re-review");
       }
       void LiveWorkspace;
       return verdict;

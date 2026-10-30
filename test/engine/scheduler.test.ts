@@ -45,7 +45,7 @@ function shape() {
 
 // CI runners are shared and noisy; like the bench gate, CI allows twice the target. On GitHub's
 // runners the tail (p99) is 2-4 ms while p95 stays under 0.5 ms, so there p99 is held to the
-// plan's general 5 ms dependent-launch target (see ENGINE_PLAN.md notes).
+// general 5 ms dependent-launch target.
 const TOLERANCE = process.env.CI ? 2 : 1;
 const P99_LIMIT = process.env.CI ? 5 : TOLERANCE;
 
