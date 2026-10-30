@@ -6,6 +6,10 @@ Ask for a scout, a researcher, a planner, a builder, or a reviewer. Pi delegates
 the agents run in parallel where they can, and their results come back to Pi. Every
 builder change gets an independent review before it reaches your checkout.
 
+[![Watch the 50-second piñata demo: meet your subagents](media/pinata-demo-poster.png)](media/pinata-demo.mp4)
+
+[Watch the demo](media/pinata-demo.mp4) · Parallel builders, independent review, passing tests.
+
 ## Install
 
 In Pi's terminal (_manual_):
