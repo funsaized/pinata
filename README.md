@@ -75,7 +75,7 @@ scout → plan → build → review sequence.
 ```
 
 `pinata_agents` lists available definitions; `pinata agents show scout` inspects one.
-See [creating agents](docs/how-to/agents.md) and the [v2 migration guide](docs/how-to/migrate-v2.md).
+See [creating agents](docs/how-to/agents.md).
 
 ## What it's like to use
 
