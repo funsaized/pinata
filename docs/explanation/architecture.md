@@ -42,12 +42,21 @@ files included); a dependent builder starts from its predecessors' verified chan
 
 When a builder finishes, the engine captures its change as a git tree, refuses writes
 outside ownership or a mismatch with what it reported, runs its checks, and fingerprints
-the result. A reviewer's verdict is bound to that fingerprint. Integration applies approved
-changes to your checkout without staging or committing, journals every file so rollback is
-safe, and runs the integrated checks.
+the result. A reviewer's verdict is bound to that fingerprint and original base/result.
+`pinata_changes` exports those artifacts for the orchestrator, independent of destination
+HEAD. Private Git refs retain the base commits and result trees.
+
+The orchestrator owns integration. `pinata_integrate` is an optional exact application
+helper: it checks file before-states, journals writes, leaves the index untouched, and
+runs destination checks. Conflicts go back to the orchestrator for reconciliation.
+`pinata_verify` runs destination checks independently and records their HEAD, content
+tree, outcomes, and application relationship. It never promotes builder reviews into
+reviews of the combined tree. Destination mutations are locked per checkout across
+Pinata processes; external Git/editor activity is not controlled by this lock.
 
 ## Storage
 
 Everything lives in `<git common dir>/pinata/<run>`: `events.jsonl`, `run.json`,
-`results/`, `transcripts/`, worktrees, and per-agent files for out-of-process agents.
+`results/`, `transcripts/`, `handoffs/<digest>/`, `verification/<attempt>/`,
+`integration/journal.json`, worktrees, and per-agent files for out-of-process agents.
 Directories are private (0700).

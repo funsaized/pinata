@@ -50,11 +50,15 @@ authorization, exhausted budgets, or genuine blockers.
    Use `pinata_repair`, then read the re-review of the new evidence. Preserve
    unrelated changes.
    Do not bypass a rejection or reset counters by inventing another task.
-7. **Integrate.** Use `pinata_integrate` only after all required tasks and reviews pass.
-   Integration is serial, journaled, and conflict-checked. Run the project's
-   checks on the integrated result. A failed integrated check means the job is
-   not complete: diagnose and repair within budget, or report a blocker. Existing
-   completed downstream builders may require a new, explicitly reconciled plan.
+7. **Integrate.** Own the integration decision and inspect `pinata_changes` after
+   required tasks and reviews pass. Use `pinata_integrate` as an optional exact
+   application helper: unrelated HEAD advancement is allowed, but changed destination
+   files are never overwritten. Reconcile conflicts through the project's tools,
+   then obtain fresh independent review and run `pinata_verify` on the resulting
+   destination. Saved builder checks and approvals describe the original base and
+   artifact, not the combined tree. Failed or omitted destination checks are not
+   verified completion. Diagnose and repair within budget, or report a blocker.
+   Existing completed downstream builders may require an explicitly reconciled plan.
 8. **Deliver or release.** Perform authorized delivery actions yourself through
    bash and the project's existing tools. A library/CLI may need only packaging.
    Do not assume Vercel or a production deployment. See the release gate below.

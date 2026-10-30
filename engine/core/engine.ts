@@ -1,6 +1,7 @@
 // The engine facade: createEngine({ backends, pipeline, store, clock }) runs task graphs.
 // No Pi imports here: backends and the pipeline supply everything Pi-specific.
 import { randomUUID } from "node:crypto";
+import { unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { AgentBudget } from "./budgets.ts";
@@ -860,6 +861,13 @@ export function createEngine(options: EngineOptions): Engine {
         if (run.mode === "observe") startTelemetry(run);
       }
       for (const name of reopened) {
+        // Persist invalidation before launching a repair. Another process must not consume
+        // the previous result while queued events are still buffered.
+        try {
+          unlinkSync(join(run.dir, "results", `${name}.json`));
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        }
         const s = run.agents.get(name)!;
         s.status = "queued";
         s.handle = undefined;
@@ -944,6 +952,13 @@ export function createEngine(options: EngineOptions): Engine {
       }
       state.repairs = (state.repairs ?? 0) + 1;
       for (const name of reopened) {
+        // Invalidate on disk before the repaired task can start or another host can
+        // export its old approval. The queued event may still be buffered.
+        try {
+          unlinkSync(join(run.dir, "results", `${name}.json`));
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        }
         const s = run.agents.get(name)!;
         s.status = "queued";
         s.handle = undefined;

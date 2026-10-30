@@ -8,7 +8,7 @@ A backend decides where an agent's Pi session runs.
 | `process`    | a `pi --mode rpc` child per agent       | about 0.4–0.5 s          | about 145 MB     | with `survive`      |
 | `herdr-pi`   | an interactive Pi in its own Herdr pane | about 0.7–0.8 s          | about 157 MB     | yes                 |
 
-Measured on the reference Linux machine (Results log in `ENGINE_PLAN.md`).
+Measured on the reference Linux machine for the 1.0 release.
 
 ## Pick one
 

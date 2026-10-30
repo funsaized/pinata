@@ -11,6 +11,8 @@ results; a completed call can still report failed tasks, so read the statuses.
 | `pinata_steer`     | `{run, task, message, as?: "steer" \| "followUp"}`                                                                      | Messages a running agent; recorded and shown to its reviewer.                                                                                                                                                                                   |
 | `pinata_cancel`    | `{run, task?}`                                                                                                          | Cancels a run or one agent.                                                                                                                                                                                                                     |
 | `pinata_repair`    | `{run, task, feedback}`                                                                                                 | Reruns a builder in its worktree with feedback, within `limits.repairs`; its reviews run again.                                                                                                                                                 |
+| `pinata_changes`   | `{run}`                                                                                                                 | Return immutable builder artifacts, bases, patches, checks and approving reviews; leave the destination unchanged.                                                                                                                              |
+| `pinata_verify`    | `{run, checks?, noChecksReason?}`                                                                                       | Check the destination without applying changes; defaults to the run's `integratedChecks`.                                                                                                                                                       |
 | `pinata_integrate` | `{run}`                                                                                                                 | Applies approved builder changes to the checkout and runs `integratedChecks`. Never stages or commits.                                                                                                                                          |
 | `pinata_rollback`  | `{run, confirm: true}`                                                                                                  | Restores the checkout from the integration journal where files still match.                                                                                                                                                                     |
 
@@ -56,3 +58,32 @@ Each task returns `summary` and, when present, `brief`, `findings`
 `checkoutChanged`. A failed task has a `reason`. `pinata_status` with `detail: "result"`
 returns the full saved result, including check evidence. Usage is reported in tokens and
 dollars.
+
+## Integration evidence
+
+The orchestrator invokes integration tools; workers cannot, and the engine never applies
+changes automatically. `pinata_changes` requires all tasks to succeed and each builder
+to have current approving reviews. Its versioned manifest includes the starting HEAD,
+actual per-builder base commit/tree (including uncommitted snapshots and predecessor
+changes), result tree, fingerprint, dependency order, changes, check logs and review
+bindings. Patches come from recorded Git objects, not the live worktree. Repaired output
+needs fresh review and a new handoff. Earlier handoffs remain historical artifacts.
+
+`pinata_integrate` permits HEAD advancement when affected paths still match their
+recorded before-states. Conflicts require orchestrator reconciliation, never an automatic
+merge. It returns `verified`, `applied_unverified`, or `verification_failed` and an exact
+verification receipt. An existing journal cannot be resumed or rolled back after HEAD or
+the index changes; subsequent file edits are protected too.
+
+`pinata_verify` returns `scope: "destination-checks"`, the actual HEAD/content tree and
+index digest, check commands/outcomes/logs, and `application: "exact" | "different"`
+with `differingPaths`. "Different" includes changes not yet applied. Its `status` is
+`verified`, `verification_failed`, `not_run`, or `source_changed`. The review scope is
+always `builder-artifacts-only`; passing checks never grants review of reconciliation.
+An explicit `checks` list replaces the run's destination checks for that invocation.
+
+`pinata_status` reports the latest destination receipt with freshness `current`,
+`historical`, or `unknown`. Verification captures tracked and non-ignored untracked
+source through a private index; the user's index is unchanged. Ignored dependencies,
+external services and the environment are not content-attested. Check omissions remain
+explicit and never count as passed. Receipt logs survive subsequent verification attempts.

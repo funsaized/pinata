@@ -24,7 +24,9 @@ task fields, config and result fields.
 - `pinata_steer` sends a running agent a message (`steer` or `followUp`).
 - `pinata_cancel` cancels a run or one agent.
 - `pinata_repair` re-runs a builder in its worktree with review feedback.
-- `pinata_integrate` applies approved builder changes and runs integrated checks.
+- `pinata_changes` returns immutable reviewed artifacts, bases, patches and check logs.
+- `pinata_integrate` optionally applies approved artifacts exactly and runs destination checks.
+- `pinata_verify` checks the current destination without applying changes.
 - `pinata_rollback` restores the checkout from the integration journal.
 
 Agents run inside this Pi by default: they start in a few milliseconds and
@@ -49,8 +51,9 @@ next Pi picks the run up, and if Pi exits first a headless host finishes it.
 4. Builders work in a git worktree created from the checkout as it was at the
    start, uncommitted and untracked files included. Ignored files such as
    `node_modules` are absent unless setup or `.worktreeinclude` provides them.
-   Integration refuses files edited after the run started, so tell the user not
-   to edit a builder's files until integration.
+   Exact application refuses affected files edited after the run started. Unrelated
+   commits may advance HEAD; the orchestrator reconciles overlapping edits using
+   `pinata_changes` without restarting unrelated verified work.
 5. Models: each task uses `task.model`, else the configured role or default model
    (`~/.pi/agent/pinata.json`, then `<repo>/.pi/pinata.json`, then the run's
    `config`), else this Pi's current model. Put in `config` only what the user
@@ -102,9 +105,15 @@ OS sandbox**: a builder's `bash` runs with the user's permissions.
   fails the builder whatever it claimed. Self-reported checks are claims.
 - For a rejected review, call `pinata_repair` with concise feedback; the builder
   continues in its worktree and its reviewer runs again on the new change.
-- Call `pinata_integrate` after every builder has a current approving review.
-  It applies the changes to the checkout without staging or committing, and runs
-  the integrated checks. A failed integrated check means the job is not done.
+- Own integration after every builder has a current approving review. Read
+  `pinata_changes` for the original bases, immutable patches, checks and reviews.
+  Use `pinata_integrate` for exact application when affected files still match;
+  it journals writes, leaves the index unchanged, and runs integrated checks.
+  For conflicts, reconcile through your repository tools and obtain fresh review
+  of the resulting change. Use `pinata_verify` for checks on the actual destination.
+  Neither tool grants review of a combined tree: builder approvals remain scoped
+  to their original artifacts. A failed or omitted check is not verified delivery.
+  No automatic integration happens when agents finish; subagents cannot invoke it.
 - Cancel with `pinata_cancel`. Results, transcripts and logs stay in the run
   directory (`<git common dir>/pinata/<run>`); `/pinata runs` lists runs.
 

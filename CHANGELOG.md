@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.1.0 (2026-10-30)
+
+- The orchestrator owns integration into an evolving repository. `pinata_changes`
+  exports reviewed builder artifacts with their actual bases, immutable patches,
+  dependency order and check logs. Unrelated HEAD advancement no longer blocks exact
+  application through `pinata_integrate`.
+- `pinata_verify` checks the current destination independently of application and records
+  its HEAD, content tree, check outcomes and relationship to the original artifacts.
+  Original builder reviews do not become reviews of reconciled changes.
+- Destination checks detect changes to already-dirty and untracked source. Omitted checks
+  report `not_run` or `applied_unverified`; historical verification is identified explicitly.
+- Integration and rollback protect subsequent file, HEAD and index changes and serialize
+  destination operations across Pinata processes. Legacy journals require manual reconciliation.
+- Repaired results are invalidated immediately; reviewers reject a worktree that changes
+  after verification. Private refs retain verified artifacts and handoff logs survive repair.
+- Removed the retired `ENGINE_PLAN.md` and its active references.
+
 ## 1.0.0 (2026-10-17)
 
 A new engine. pinata 0.7.0 ran every agent as a separate Pi in a Herdr workspace with a file-based

@@ -1,4 +1,4 @@
-// Prototype behind the ENGINE_PLAN.md measurements: in-process subagents inside the real Pi binary.
+// Prototype for measuring in-process subagents inside the real Pi binary.
 // Uses pi-ai's faux provider, so it makes no network calls and spends no tokens.
 //
 // Run from the repository root (Linux shown; any OS with Pi works):
