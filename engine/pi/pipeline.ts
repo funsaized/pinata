@@ -1,3 +1,6 @@
+import { atomicJson, privateDir } from "../core/store.ts";
+import { writes, taskTools, type Definitions } from "../core/definitions.ts";
+import { validateToolExtensions, type ToolExtension } from "./tool-providers.ts";
 // The Pi pipeline: everything between the engine core and a backend. It picks models and
 // workspaces, builds the persona and brief, and verifies outcomes.
 import { join } from "node:path";
@@ -27,6 +30,8 @@ import { LiveWorkspace } from "../workspace/live.ts";
 // Per-run data the adapter supplies in RunOptions.data.
 export interface PiRunData {
   models: Record<string, ModelRef>;
+  definitions?: Definitions;
+  toolExtensions?: ToolExtension[];
   instructions: string[];
   codemode: boolean;
   backend: BackendKind;
@@ -116,15 +121,30 @@ export function piPipeline(stages: PipelineStages = {}): Pipeline {
     },
     async prepare(run, task, signal, options = {}) {
       const data = runData(run);
+      // Result-only repair does not load the original task's extension tools.
+      const resultOnly = options.resultOnly === true;
+      const tools = resultOnly ? ROLE_TOOLS.repair : taskTools(task);
+      const requiredExtensions = data.toolExtensions?.filter((e) =>
+        e.tools.some((tool) => tools.includes(tool)),
+      );
+      if (requiredExtensions && !options.reattach) validateToolExtensions(requiredExtensions);
       const workspace =
         (await stages.prepareWorkspace?.(run, task, signal, {
           reattach: options.reattach === true,
         })) ?? new LiveWorkspace(run.cwd);
       // A result-only attempt inspects and reports; it cannot write.
-      const resultOnly = options.resultOnly === true;
-      const writes = task.role === "builder" && !resultOnly;
-      const tools = resultOnly ? ROLE_TOOLS.repair : ROLE_TOOLS[task.role];
+      const canWrite = writes(task) && !resultOnly;
       const reviewTarget = await stages.reviewTarget?.(run, task, { workspace }, signal);
+      const predecessors = dependencies(run, task);
+      let dependencyIndex: string | undefined;
+      if (predecessors.length > 4) {
+        await privateDir(join(run.dir, "dependencies"));
+        dependencyIndex = join(run.dir, "dependencies", `${task.id}.json`);
+        await atomicJson(
+          dependencyIndex,
+          predecessors.map(({ id, role, status, path }) => ({ id, agent: role, status, path })),
+        );
+      }
       const remaining =
         run.limits.costUsd === undefined
           ? undefined
@@ -137,12 +157,13 @@ export function piPipeline(stages: PipelineStages = {}): Pipeline {
           model: data.models[task.id],
           cwd: workspace.path,
           tools,
-          persona: systemPrompt(task.role, tools, data.codemode),
+          persona: systemPrompt(task.definition ?? task.role, tools, data.codemode),
           brief: brief({
             task,
             instructions: data.instructions,
             workspace: { kind: workspace.kind, path: workspace.path },
-            dependencies: dependencies(run, task),
+            dependencies: predecessors,
+            dependencyIndex,
             reviewTarget,
             feedback: data.feedback?.[task.id],
             resultOnly,
@@ -157,10 +178,11 @@ export function piPipeline(stages: PipelineStages = {}): Pipeline {
             run: run.id,
             task: task.id,
             role: task.role,
+            definition: task.definition,
             tools,
             ownership: task.ownership,
-            readOnly: !writes,
-            ...(writes && { writeRoot: workspace.path }),
+            readOnly: !canWrite,
+            ...(canWrite && { writeRoot: workspace.path }),
             ...(reviewTarget && {
               reviewTarget: { taskId: reviewTarget.taskId, fingerprint: reviewTarget.fingerprint },
             }),
@@ -173,7 +195,15 @@ export function piPipeline(stages: PipelineStages = {}): Pipeline {
           // A run that must survive this Pi uses detached processes.
           ...(data.survive &&
             selectBackend(task.backend, data) === "process" && { detached: true }),
-          ...(task.role === "research" && data.webExtension && { webExtension: data.webExtension }),
+          ...(data.toolExtensions
+            ? {
+                extensions: data.toolExtensions
+                  .filter((e) => e.tools.some((tool) => tools.includes(tool)))
+                  .map((e) => e.path),
+              }
+            : task.role === "research" && data.webExtension
+              ? { webExtension: data.webExtension }
+              : {}),
         },
       };
     },

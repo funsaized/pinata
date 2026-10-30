@@ -1,6 +1,7 @@
+import { discoverAgents } from "./definitions.ts";
 // The model-facing tools. Delegation creates and starts a run in one call (pinata_run).
 // Repair, integration and rollback are added by the builder pipeline (M3).
-import { readFile } from "node:fs/promises";
+import { open } from "node:fs/promises";
 import { join } from "node:path";
 import { Type, type TSchema } from "typebox";
 import type {
@@ -8,9 +9,15 @@ import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { BACKENDS, COST_MAX, LIMIT_MAX, ROLES, THINKING_LEVELS } from "../core/types.ts";
-import { statusText } from "../ui/text.ts";
-import { compactRun, compactTask, type PinataHost, type RunParams } from "./host.ts";
+import { BACKENDS, COST_MAX, LIMIT_MAX, THINKING_LEVELS } from "../core/types.ts";
+import { statusText, progressLine } from "../ui/text.ts";
+import {
+  compactRun,
+  compactTask,
+  repositoryRoot,
+  type PinataHost,
+  type RunParams,
+} from "./host.ts";
 import { deliverWhenDone } from "./delivery.ts";
 import { integrate, rollback } from "../verify/integrate.ts";
 import { handoff } from "../verify/evidence.ts";
@@ -21,6 +28,7 @@ import {
 } from "../verify/destination.ts";
 import { integrationStatus } from "./ui.ts";
 import { ValidationError } from "../core/validate.ts";
+import type { Settled } from "../core/engine.ts";
 
 const object = (fields: Record<string, TSchema>, options: Record<string, unknown> = {}) =>
   Type.Object(fields, { additionalProperties: false, ...options });
@@ -45,9 +53,10 @@ export function schemas() {
   });
   const task = object({
     id: taskId(),
-    role: choices(ROLES),
+    agent: optional(taskId("Agent name from pinata_agents. Presets: scout, builder, reviewer.")),
+    role: optional(string("Deprecated alias for agent.")),
     task: string(),
-    acceptance: Type.Array(string(), { minItems: 1 }),
+    acceptance: optional(Type.Array(string(), { minItems: 1 })),
     instructions: optional(strings()),
     context: optional(strings("Quoted evidence for the agent; not instructions.")),
     after: optional(
@@ -106,13 +115,10 @@ export function schemas() {
     ),
   });
   const config = object({
-    models: optional(
-      object(Object.fromEntries(["default", ...ROLES].map((r) => [r, optional(model)]))),
-    ),
-    fallbacks: optional(
-      object(
-        Object.fromEntries(ROLES.map((r) => [r, optional(Type.Array(model, { maxItems: 5 }))])),
-      ),
+    models: optional(Type.Record(string(), model)),
+    fallbacks: optional(Type.Record(string(), Type.Array(model, { maxItems: 5 }))),
+    toolProviders: optional(
+      Type.Record(string(), object({ extension: string(), tools: strings() })),
     ),
     limits: optional(limits),
     passEnv: optional(strings()),
@@ -151,6 +157,8 @@ export function schemas() {
     }),
     status: object({
       run: optional(run),
+      offset: optional(Type.Integer({ minimum: 0 })),
+      limit: optional(Type.Integer({ minimum: 1, maximum: 64 })),
       task: optional(taskId()),
       detail: optional(choices(["summary", "result", "transcript"])),
     }),
@@ -178,7 +186,7 @@ export function schemas() {
 }
 
 export const DESCRIPTIONS = {
-  run: "Delegate bounded tasks to pinata agents and run them now. Scouts map local code, research answers external questions, planners plan, builders change owned files in isolated worktrees, reviewers review. Foreground by default: waits, streams progress and returns compact results. background:true returns the run id and delivers the results later as a follow-up message; do not poll. approval is required when any builder is present.",
+  run: "Delegate bounded tasks to pinata agents and run them now. Choose scout, builder, reviewer, or an installed custom definition; pinata_agents lists them. Writers change owned files in isolated worktrees. Foreground by default: waits, streams progress and returns compact results. background:true returns the run id and delivers the results later as a follow-up message; do not poll. approval is required when any builder is present.",
   status:
     'Read pinata status: the latest run, a run, or one task. detail:"result" returns a task\'s full result; detail:"transcript" returns a bounded transcript excerpt and the file path. Read-only; do not poll running runs.',
   steer:
@@ -250,7 +258,7 @@ function renderTranscript(lines: string[], max = 6000): string {
 
 export async function statusTool(
   host: PinataHost,
-  params: { run?: string; task?: string; detail?: string },
+  params: { run?: string; task?: string; detail?: string; offset?: number; limit?: number },
   ctx: ExtensionContext,
 ) {
   let target: Awaited<ReturnType<PinataHost["find"]>>;
@@ -266,12 +274,25 @@ export async function statusTool(
   }
   const { view, dir } = target;
   if (!params.task) {
-    const results = target.handle?.results() ?? new Map();
+    const results = target.handle?.results() ?? new Map<string, Settled>();
+    if (!target.handle) {
+      // Hydrate only the requested page. Historical status carries the same recorded
+      // evidence as a live handle without reading every result in a large run.
+      const offset = Math.max(0, Math.floor(params.offset ?? 0));
+      const limit = Math.max(1, Math.min(64, Math.floor(params.limit ?? 64)));
+      await Promise.all(
+        view.order.slice(offset, offset + limit).map(async (id) => {
+          if (["queued", "running"].includes(view.agents[id].status)) return;
+          const saved = (await host.readResult(dir, id)) as Settled | null;
+          if (saved) (results as Map<string, Settled>).set(id, saved);
+        }),
+      );
+    }
     return {
-      ...compactRun(view, dir, results),
+      ...compactRun(view, dir, results, [], params),
       integration: await integrationStatus(dir),
       verification: await verificationStatus(dir),
-      text: statusText(view),
+      text: view.order.length > 64 ? progressLine(view) : statusText(view),
     };
   }
   if (!view.agents[params.task]) throw new Error(`Unknown task ${params.task} in run ${view.run}`);
@@ -280,11 +301,25 @@ export async function statusTool(
     return {
       run: view.run,
       task: params.task,
+      definition: view.agents[params.task].definition,
       ...(saved ?? { status: view.agents[params.task].status }),
     };
   if (params.detail === "transcript") {
     const file = join(dir, "transcripts", `${params.task}.jsonl`);
-    const raw = await readFile(file, "utf8").catch(() => "");
+    const raw = await (async () => {
+      const handle = await open(file, "r").catch(() => null);
+      if (!handle) return "";
+      try {
+        const size = (await handle.stat()).size;
+        const start = Math.max(0, size - 64 * 1024);
+        const buffer = Buffer.alloc(Math.min(size, 64 * 1024));
+        const { bytesRead } = await handle.read(buffer, 0, buffer.length, start);
+        const tail = buffer.subarray(0, bytesRead).toString("utf8");
+        return start ? tail.slice(tail.indexOf("\n") + 1) : tail;
+      } finally {
+        await handle.close();
+      }
+    })();
     return {
       run: view.run,
       task: params.task,
@@ -303,6 +338,35 @@ export async function statusTool(
 
 export function registerTools(pi: ExtensionAPI, host: PinataHost): void {
   const s = schemas();
+  pi.registerTool({
+    name: "pinata_agents",
+    label: "Pinata agents",
+    description:
+      "List available agent definitions, or inspect one agent's instructions, tools, workspace, defaults, and source.",
+    parameters: object({ name: optional(taskId()) }),
+    annotations: { readOnlyHint: true },
+    async execute(_id, input, _signal, _onUpdate, ctx) {
+      try {
+        const agents = discoverAgents(await repositoryRoot(ctx.cwd).catch(() => ctx.cwd));
+        if (input.name) {
+          const definition = agents.get(String(input.name));
+          if (!definition) throw new ValidationError(`Unknown agent ${input.name}`);
+          return ok(definition);
+        }
+        return ok(
+          [...agents.values()].map(({ name, description, workspace, source, digest }) => ({
+            name,
+            description,
+            workspace,
+            source,
+            digest,
+          })),
+        );
+      } catch (error) {
+        return fail(error);
+      }
+    },
+  });
   pi.registerTool({
     name: "pinata_run",
     label: "Pinata run",

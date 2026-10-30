@@ -42,3 +42,22 @@ On a platform you have no machine for, run the
 (paid model calls)", or `gh workflow run live-smoke.yml -f os=windows-latest`). It uses the
 `OPENAI_API_KEY` repository secret (an OpenAI platform API key) and covers the in-process and
 process backends; the runners have no Herdr.
+
+## Definition and scale regression checks
+
+The normal benchmarks now use resolved definitions. Set `BENCH_LEGACY=1` for a
+comparison against legacy role dispatch on the same code and machine. Existing
+performance budgets and their 2× CI tolerance remain unchanged. Definition fixtures
+exercise custom writers/reviewers, local research sources, tool providers across
+backends, snapshot recovery, pagination, and a 1,000-task queue.
+
+Additional scale benchmarks are opt-in (faux provider, no paid calls):
+
+```sh
+npm run bench -- --scenario scale-queue-1000 --scenario scale-fanin-256 --scenario scale-batches-8
+```
+
+They measure queueing, dependency fan-in, and repeated batches with at most 64 active
+agents. `settledHeapDeltaMB` measures heap retained after GC while compact run history
+is still available; it is not per-session live memory. Compare repeat runs on a quiet
+host. Provider latency is separate from engine overhead.

@@ -1,3 +1,4 @@
+import { discoverAgents, readDefinition, resolveTasks } from "../../engine/pi/definitions.ts";
 // The shipped examples (configs and job files) satisfy the engine's input contracts.
 import assert from "node:assert/strict";
 import { readdir, readFile } from "node:fs/promises";
@@ -27,7 +28,14 @@ test("example configs and job files satisfy the engine's contracts", async () =>
   for (const file of jobs) {
     const job = (await json(file)) as Job;
     const params = jobParams(job, join(ROOT, file));
-    const tasks = validateGraph(params.tasks, { allowWrites: true });
+    const agents = discoverAgents(undefined, join(ROOT, "test", "absent-agent-dir"));
+    for (const name of ["planner", "researcher"])
+      agents.set(name, readDefinition(join(ROOT, "examples", "agents", `${name}.md`)));
+    const resolved = resolveTasks(params.tasks, agents);
+    const tasks = validateGraph(resolved.tasks, {
+      allowWrites: true,
+      definitions: resolved.definitions,
+    });
     assert(tasks.length, file);
     validateChecks(params.integratedChecks ?? [], "integratedChecks");
     validateConfig(params.config ?? {});

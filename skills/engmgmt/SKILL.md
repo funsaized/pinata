@@ -7,6 +7,9 @@ license: MIT
 
 # Engineering management
 
+Optional recipe: register this skill explicitly. Install the planner and researcher
+examples first if your workflow uses them.
+
 First **read and follow `../subagents/SKILL.md`**. There is no skill inheritance.
 That skill defines the tools, models, ownership, results, cancellation, recovery,
 and the compact reference.
@@ -25,7 +28,7 @@ authorization, exhausted budgets, or genuine blockers.
    `pinata_run`.
 2. **Choose the shortest useful workflow.** For a well-specified fix with known
    files and checks, go directly to builder → independent reviewer → integrate.
-   Add a `scout` for a concrete unanswered local question and `research` for
+   Add a `scout` for a concrete unanswered local question and `researcher` for
    necessary external docs. Run them in parallel when inputs are independent;
    version-specific research waits for the versions it needs. Neither role
    implements changes. Avoid a separate investigation that repeats the builder's

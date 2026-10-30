@@ -11,7 +11,11 @@ const cache = new Map<Role, string>();
 export function personaText(role: Role, dir = PROMPTS): string {
   const cached = dir === PROMPTS ? cache.get(role) : undefined;
   if (cached) return cached;
-  let text = readFileSync(`${dir}${role}.md`, "utf8").replace(/\r\n/g, "\n");
+  const file =
+    dir === PROMPTS && ["planner", "research"].includes(role)
+      ? fileURLToPath(new URL(`./legacy/${role}.md`, import.meta.url))
+      : `${dir}${role}.md`;
+  let text = readFileSync(file, "utf8").replace(/\r\n/g, "\n");
   text = text.replace(/^---\n[\s\S]*?\n---\n/, "");
   text = text.replace(/\$\{@:-([^}]*)\}/g, "$1").replace(/\$\{@\}/g, "the assigned task");
   text = text.replace(

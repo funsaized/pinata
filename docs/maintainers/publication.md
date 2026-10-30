@@ -63,7 +63,8 @@ npm pack --dry-run --json --ignore-scripts
 ```
 
 Review the included paths. You should see only package metadata, README/LICENSE,
-the two skills, seven prompt templates, runtime modules, docs, and examples. There
+the packaged skills (subagents registered by default), five prompt templates, three agent
+presets, optional agent examples, runtime modules, and docs. There
 should be no run state, logs, tests, .git, node_modules, secrets, or
 other development debris.
 

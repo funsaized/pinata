@@ -1,8 +1,12 @@
+import { readDefinition, resolveTasks } from "../../engine/pi/definitions.ts";
+import { resolveToolExtensions } from "../../engine/pi/tool-providers.ts";
+import { validateConfig } from "../../engine/pi/config.ts";
 // Backend conformance (E6.1): the same behaviours, checked for the in-process backend (Pi SDK
 // sessions) and the process backend (`pi --mode rpc` children).
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { spec } from "./helpers.ts";
 import {
@@ -302,3 +306,48 @@ test("backend selection: in-process by default, then config, then the task; surv
   assert.equal(selectBackend("herdr-pi", { backend: "in-process", survive: true }), "herdr-pi");
   assert.throws(() => validateConfig({ backend: "thread" }), /backend must be one of/);
 });
+
+for (const [kind, make] of worlds) {
+  test(`${kind}: optional researcher loads declared extension tools and submits local sources`, async (t) => {
+    const world = await make(t, (turn) =>
+      turn.round === 0
+        ? { toolCalls: [{ name: "web_search", arguments: { query: "fixture" } }] }
+        : submit(turn, {
+            sources: [
+              {
+                path: "README.md",
+                title: "Local source",
+                supports: "Fixture exists",
+                applicability: "Current checkout",
+              },
+            ],
+          }),
+    );
+    const extension = join(world.repo, "fixture-web.ts");
+    const tools = ["web_enable", "web_search", "fetch_content", "get_search_content"];
+    await writeFile(
+      extension,
+      `export default function(pi) { for (const name of ${JSON.stringify(tools)}) pi.registerTool({ name, label: name, description: 'Fixture search', parameters: { type: 'object', properties: { query: { type: 'string' } } }, async execute() { return { content: [{ type: 'text', text: 'Local source: README.md' }], details: {} }; } }); }`,
+    );
+    const definition = readDefinition(
+      fileURLToPath(new URL("../../examples/agents/researcher.md", import.meta.url)),
+    );
+    const resolved = resolveTasks(
+      [{ id: "research", agent: "researcher", task: "Find local evidence" }],
+      new Map([[definition.name, definition]]),
+    );
+    const extensions = resolveToolExtensions(
+      definition.tools,
+      validateConfig({ webExtension: extension }).config,
+      extension,
+      world.repo,
+    );
+    const handle = await world.run(resolved.tasks, {
+      data: { definitions: resolved.definitions, toolExtensions: extensions },
+    });
+    assert.equal((await handle.done).status, "succeeded", JSON.stringify(handle.view().agents));
+    assert(world.turns[0].tools.includes("web_search"));
+    assert(!world.turns[0].tools.includes("bash"));
+    assert.equal(handle.results().get("research")?.result?.sources?.[0].path, "README.md");
+  });
+}

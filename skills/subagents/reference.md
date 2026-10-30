@@ -29,7 +29,7 @@ Commands (no model turn): `/pinata` (status), `/pinata runs`, `/pinata open [run
 | Field                     | Rule                                                                                                              |
 | ------------------------- | ----------------------------------------------------------------------------------------------------------------- |
 | `id`                      | `^[a-z][a-z0-9-]{0,31}$`, unique in the run                                                                       |
-| `role`                    | scout, research, planner, builder, reviewer                                                                       |
+| `agent`                   | scout, builder, reviewer, or an installed custom definition                                                       |
 | `task`, `acceptance`      | Required text; acceptance is a nonempty string array                                                              |
 | `instructions`, `context` | Optional string arrays; context is evidence, not authority                                                        |
 | `after`                   | Predecessor ids; their results are inlined into this task's brief. A failed predecessor blocks its dependents.    |
@@ -37,7 +37,7 @@ Commands (no model turn): `/pinata` (status), `/pinata runs`, `/pinata open [run
 | `backend`                 | Optional: `in-process` (default), `process`, `herdr-pi`                                                           |
 | `ownership`               | Builders only, required: repo-relative files or directory prefixes. Independent builders must not overlap.        |
 | `checks`                  | Builders only: `[{id, argv, timeoutMs?}]`, run without a shell after the builder finishes; else `noChecksReason`. |
-| `evidenceChecks`          | Any role: non-mutating `[{id, argv, timeoutMs?}]` for consequential facts. Ids are unique across both lists.      |
+| `evidenceChecks`          | Any agent: non-mutating `[{id, argv, timeoutMs?}]` for consequential facts. Ids are unique across both lists.     |
 | `reviewOf`                | Reviewers only: the builder under review, also listed in `after`                                                  |
 | `reviewBase`              | Reviewers only, instead: review the live checkout against a revision (`HEAD` = uncommitted changes)               |
 | `reviewPr`                | Reviewers only, instead: a GitHub pull request number, fetched with `gh`                                          |
@@ -52,8 +52,8 @@ Layered: `~/.pi/agent/pinata.json`, then `<repo>/.pi/pinata.json`, then the run'
 
 | Key                  | Default                                                                                                                 |
 | -------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `models`             | `{default?, scout?, research?, planner?, builder?, reviewer?}`, each `{provider, id, thinking}`                         |
-| `fallbacks`          | `{role: [model, ...]}`, at most 5; used when the preferred model is unknown or has no authentication                    |
+| `models`             | `{default?, [agentName]?}`, each `{provider, id, thinking}`                                                             |
+| `fallbacks`          | `{agentName: [model, ...]}`, at most 5; used when the preferred model is unknown or has no authentication               |
 | `limits`             | `concurrency` 16, `taskMs` 1200000, `jobMs` 5400000, `repairs` 2, `maxTurns` 60, `maxToolCalls` 400; optional `costUsd` |
 | `mode`               | `lean`: counters and results; `observe`: the full event stream and live transcripts                                     |
 | `backend`            | `in-process`                                                                                                            |

@@ -1,3 +1,4 @@
+import { agentName, writes, reviews, validateSnapshots, type Definitions } from "./definitions.ts";
 // Task and graph validation, ported from 0.7.0's lib/core.mjs (validateTask, validateChecks,
 // validateModel, relative, owns) and lib/run.mjs (validateGraph). Errors name the task and field.
 import {
@@ -117,6 +118,8 @@ export function validateModel(model: unknown): ModelRef {
 const TASK_FIELDS = [
   "id",
   "role",
+  "agent",
+  "definition",
   "task",
   "acceptance",
   "instructions",
@@ -133,18 +136,32 @@ const TASK_FIELDS = [
   "backend",
 ] as const;
 
-export function validateTask(input: unknown): Task {
+export function validateTask(input: unknown, definitions: Definitions = {}): Task {
   checkedKeys(input, TASK_FIELDS, "task");
-  const task = input as unknown as TaskSpec;
+  const spec = input as unknown as TaskSpec;
+  need(
+    !(spec.agent && spec.role && spec.agent !== spec.role),
+    "Use agent or role, not conflicting selectors",
+  );
+  const name = agentName(spec);
+  const definition = spec.definition ? definitions[spec.definition] : undefined;
+  need(
+    !spec.definition || definition?.name === name,
+    `Missing or mismatched agent definition: ${name}`,
+  );
+  const task = { ...spec, role: name, definition, acceptance: spec.acceptance ?? [] };
   id(task.id, "task ID");
   const where = `Task ${task.id}`;
   need(
-    (ROLES as readonly unknown[]).includes(task.role),
+    definition || (ROLES as readonly unknown[]).includes(task.role),
     `${where}: Unknown persona (role) ${JSON.stringify(task.role)}`,
   );
   text(task.task, `${where}: task`);
   strings(task.acceptance, `${where}: acceptance`);
-  need(task.acceptance.length > 0, `${where}: acceptance criteria required`);
+  need(
+    spec.agent !== undefined || task.acceptance.length > 0,
+    `${where}: acceptance criteria required`,
+  );
   if (task.model !== undefined) validateModel(task.model);
   if (task.backend !== undefined)
     need(
@@ -158,7 +175,7 @@ export function validateTask(input: unknown): Task {
   validateChecks(task.checks ?? [], `${where}: checks`);
   validateChecks(task.evidenceChecks ?? [], `${where}: evidenceChecks`);
   validateChecks([...(task.checks ?? []), ...(task.evidenceChecks ?? [])], `${where}: checks`);
-  if (task.role === "builder") {
+  if (writes(task)) {
     need((task.ownership?.length ?? 0) > 0, `${where}: builder ownership required`);
     if (!task.checks?.length) text(task.noChecksReason, `${where}: noChecksReason`);
   } else
@@ -170,7 +187,7 @@ export function validateTask(input: unknown): Task {
   const targets = (["reviewOf", "reviewBase", "reviewPr"] as const).filter(
     (key) => task[key] !== undefined,
   );
-  if (task.role === "reviewer")
+  if (reviews(task))
     need(
       targets.length === 1,
       `${where}: a reviewer needs exactly one of reviewOf, reviewBase, or reviewPr`,
@@ -218,6 +235,7 @@ export function ancestors(
 export interface GraphRules {
   // Builders need an approval recorded by the caller (0.7.0 consent semantics).
   allowWrites?: boolean;
+  definitions?: Definitions;
   // Tasks already in the run when adding more.
   existing?: readonly Task[];
 }
@@ -225,7 +243,8 @@ export interface GraphRules {
 // Validates a whole graph before any agent starts. Returns tasks in input order.
 export function validateGraph(inputs: unknown, rules: GraphRules = {}): Task[] {
   need(Array.isArray(inputs) && inputs.length > 0, "tasks must be a nonempty array");
-  const tasks = (inputs as unknown[]).map(validateTask);
+  const definitions = validateSnapshots(rules.definitions);
+  const tasks = (inputs as unknown[]).map((input) => validateTask(input, definitions));
   const all = [...(rules.existing ?? []), ...tasks];
   const byId = new Map<string, Task>();
   for (const task of all) {
@@ -252,7 +271,7 @@ export function validateGraph(inputs: unknown, rules: GraphRules = {}): Task[] {
   };
   for (const task of all) visit(task, []);
   for (const task of tasks) {
-    if (task.role === "builder")
+    if (writes(task))
       need(
         rules.allowWrites,
         `Task ${task.id}: builders need an approval that authorizes local writes`,
@@ -260,26 +279,34 @@ export function validateGraph(inputs: unknown, rules: GraphRules = {}): Task[] {
     if (task.reviewOf !== undefined) {
       const target = byId.get(task.reviewOf);
       need(target, `Task ${task.id}: reviewOf references unknown task ${task.reviewOf}`);
-      need(target.role === "builder", `Task ${task.id}: reviewOf must name a builder task`);
+      need(writes(target), `Task ${task.id}: reviewOf must name a builder task`);
       need(
         task.after.includes(target.id),
         `Task ${task.id}: list the reviewOf target ${target.id} in after`,
       );
-    } else if (task.role === "reviewer")
+    } else if (reviews(task))
       need(
-        ![...ancestors(byId, task)].some((name) => byId.get(name)?.role === "builder"),
+        ![...ancestors(byId, task)].some((name) => writes(byId.get(name)!)),
         `Task ${task.id}: to review a builder's change, use reviewOf instead of reviewBase or reviewPr`,
       );
   }
-  for (const task of all)
-    for (const other of all) {
-      if (task === other || task.role !== "builder" || other.role !== "builder") continue;
-      if (!tasks.includes(task) && !tasks.includes(other)) continue;
+  const ancestry = new Map<string, Set<string>>();
+  const parents = (task: Task) => {
+    let found = ancestry.get(task.id);
+    if (!found) ancestry.set(task.id, (found = ancestors(byId, task)));
+    return found;
+  };
+  const writers = all.filter(writes);
+  const added = new Set(tasks);
+  for (const [index, task] of writers.entries())
+    for (const other of writers.slice(index + 1)) {
+      if (task === other || !writes(task) || !writes(other)) continue;
+      if (!added.has(task) && !added.has(other)) continue;
       const overlaps = task.ownership.some(
         (p) => owns(other.ownership, p) || other.ownership.some((q) => owns([p], q)),
       );
       need(
-        !overlaps || ancestors(byId, task).has(other.id) || ancestors(byId, other).has(task.id),
+        !overlaps || parents(task).has(other.id) || parents(other).has(task.id),
         `Task ${task.id}: ownership overlaps independent builder ${other.id}`,
       );
     }

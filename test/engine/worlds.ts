@@ -197,7 +197,12 @@ export async function processWorld(
   const run: World["run"] = async (tasks, opts = {}) => {
     const id = opts.id ?? randomUUID();
     const config = validateConfig({ setup: false, ...(opts as any).config }).config;
-    const prep = await prepareRun(repo, id, validateGraph(tasks, { allowWrites: true }), config);
+    const prep = await prepareRun(
+      repo,
+      id,
+      validateGraph(tasks, { allowWrites: true, definitions: opts.data?.definitions }),
+      config,
+    );
     const data = {
       models: Object.fromEntries(tasks.map((task) => [task.id, LOOPBACK])),
       instructions: [],

@@ -14,13 +14,13 @@
   "tasks": [
     {
       "id": "scout",
-      "role": "scout",
       "task": "Read greet.mjs and greet.test.mjs. Explain how greet handles surrounding whitespace and where to add a regression test. Do not edit files or execute commands.",
       "acceptance": [
         "Cite the function and existing test by file and line.",
         "Explain the current output for a name with surrounding spaces.",
         "Suggest the smallest regression test without claiming to have run it."
-      ]
+      ],
+      "agent": "scout"
     }
   ]
 }

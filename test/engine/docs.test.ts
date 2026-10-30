@@ -28,10 +28,10 @@ const files = async () => [
 
 // The subcommands /pinata and the pinata command accept.
 const SLASH = ["", "status", "runs", "open", "live", "watch", "mode", "rerun", "gc"];
-const CLI = ["view", "logs", "run", "resume", "gc", "help"];
+const CLI = ["view", "logs", "run", "resume", "gc", "agents", "help"];
 // Shell commands the test suite runs (by test/engine/*.test.ts, the smokes, or CI).
 const TESTED = [
-  /^pinata (view|logs|run|resume|gc)\b/,
+  /^pinata (view|logs|run|resume|gc|agents)\b/,
   /^npm (run check|test|run bench)\b/,
   /^node (test\/engine\/(pi|package)-smoke\.ts|bench\/viewer\.ts|--test )/,
 ];

@@ -67,7 +67,7 @@ export function piArgs(
   sessionDir?: string,
   mode: "rpc" | "json" | "tui" = "rpc",
 ): string[] {
-  const web = launch.task.role === "research" ? launch.webExtension : undefined;
+  const extensions = launch.extensions ?? (launch.webExtension ? [launch.webExtension] : []);
   return [
     // tui: an interactive Pi in a terminal pane (herdr-pi), in the regular (scrolling) mode.
     ...(mode === "tui" ? ["--tui-mode", "regular"] : ["--mode", mode]),
@@ -86,7 +86,7 @@ export function piArgs(
     "--tools",
     [...launch.tools, SUBMIT, ...(launch.codemode ? ["codemode"] : [])].join(","),
     ...(launch.codemode ? ["--extension", "builtin:codemode"] : []),
-    ...(web ? ["--extension", web] : []),
+    ...extensions.flatMap((file) => ["--extension", file]),
     "--extension",
     AGENT_EXTENSION,
     "--append-system-prompt",

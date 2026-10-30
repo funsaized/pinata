@@ -29,6 +29,9 @@ export interface CheckView {
 export interface AgentView {
   id: string;
   role: Role;
+  agent?: string;
+  definition?: string;
+  workspaceMode?: import("./definitions.ts").AgentWorkspace;
   status: "queued" | "running" | AgentStatus;
   backend?: BackendKind | "fake";
   model?: ModelRef;
@@ -66,10 +69,19 @@ export interface RunView {
   telemetry?: TelemetrySample;
 }
 
-function agentView(task: TaskSpec, at: number): AgentView {
+function agentView(
+  task: TaskSpec,
+  at: number,
+  definitions?: import("./definitions.ts").Definitions,
+): AgentView {
   return {
     id: task.id,
-    role: task.role,
+    role: task.agent ?? task.role ?? "",
+    ...(task.agent && { agent: task.agent }),
+    ...(task.definition && {
+      definition: task.definition,
+      workspaceMode: definitions?.[task.definition]?.workspace,
+    }),
     status: "queued",
     queuedAt: at,
     turns: 0,
@@ -138,7 +150,7 @@ function apply(view: RunView, e: AgentEvent): RunView {
   switch (e.t) {
     case "run_started": {
       const agents: Record<string, AgentView> = {};
-      for (const task of e.tasks) agents[task.id] = agentView(task, e.at);
+      for (const task of e.tasks) agents[task.id] = agentView(task, e.at, e.definitions);
       return {
         ...view,
         run: e.run,
@@ -172,7 +184,12 @@ function apply(view: RunView, e: AgentEvent): RunView {
         tasks: e.task ? view.tasks.map((t) => (t.id === id ? e.task! : t)) : view.tasks,
         agents: {
           ...view.agents,
-          [id]: { ...fresh, usage: existing.usage, steers: existing.steers },
+          [id]: {
+            ...fresh,
+            ...(existing.workspaceMode && { workspaceMode: existing.workspaceMode }),
+            usage: existing.usage,
+            steers: existing.steers,
+          },
         },
       };
     }

@@ -1,5 +1,28 @@
 # Changelog
 
+## 2.0.0-next.0 (2026-10-30)
+
+Pi stays small. Your subagent system should too.
+
+- Reusable Markdown agent definitions: personal and repository discovery, explicit tools
+  and workspace modes, model defaults, and bounded structured results. `pinata_agents` and
+  `pinata agents list|show|validate` expose what is available.
+- Ship scout, builder, and reviewer presets. The opinionated planner and source-linked
+  researcher are optional examples using the same definition loader. Engineering-management
+  guidance remains available as an opt-in skill.
+- Tasks use `agent`; `role` remains a deprecated compatibility alias. Planner/research jobs
+  must install their example definitions, and `research` becomes `researcher`. See the
+  v2 migration guide.
+- Save resolved definitions once per run by digest. Resume, repair, and rerun retain their
+  original instructions and capabilities. New launches validate required extension entry
+  hashes. Historical runs retain their existing semantics and evidence.
+- Custom names receive the same ownership, authorization, check, review-binding, handoff,
+  integration, and rollback protections as the presets. Compact results distinguish engine
+  checks, artifact reviews, and destination verification.
+- Fair dispatch across runs, bounded worktree preparation, paginated compact results,
+  bounded dependency summaries and viewer queues, and capped definition/context caches.
+  Add 1,000-task queue, dependency fan-in, and repeated-batch benchmark scenarios.
+
 ## 1.1.0 (2026-10-30)
 
 - The orchestrator owns integration into an evolving repository. `pinata_changes`

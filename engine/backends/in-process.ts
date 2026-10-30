@@ -63,6 +63,7 @@ export class ContextFileCache {
     // A worktree under <repo>/.git would otherwise also load the main checkout's copies.
     if (repoRoot && resolve(cwd) !== resolve(repoRoot) && inside(repoRoot, cwd))
       files = files.filter((f) => !inside(repoRoot, f.path) || inside(cwd, f.path));
+    if (this.entries.size >= 256) this.entries.delete(this.entries.keys().next().value!);
     this.entries.set(key, { files, stamps: files.map((f) => [f.path, mtime(f.path)]) });
     return files;
   }
@@ -180,7 +181,7 @@ export class InProcessBackend implements AgentBackend {
       launch.root ?? options.repoRoot,
     );
     const web = launch.webExtension ?? options.webExtension;
-    const research = launch.task.role === "research" && web;
+    const extensions = launch.extensions ?? (launch.task.role === "research" && web ? [web] : []);
     const loader = new DefaultResourceLoader({
       cwd: launch.cwd,
       agentDir: options.agentDir,
@@ -197,7 +198,7 @@ export class InProcessBackend implements AgentBackend {
         ),
         ...(launch.codemode ? [createCodemodeExtension()] : []),
       ],
-      ...(research && { additionalExtensionPaths: [web] }),
+      ...(extensions.length && { additionalExtensionPaths: extensions }),
       appendSystemPromptOverride: () => [launch.persona],
       agentsFilesOverride: () => ({ agentsFiles: contextFiles }),
     });
