@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.0.0-next.0 (2026-10-30)
+## 2.0.0 (2026-10-30)
 
 Pi stays small. Your subagent system should too.
 
@@ -22,6 +22,11 @@ Pi stays small. Your subagent system should too.
 - Fair dispatch across runs, bounded worktree preparation, paginated compact results,
   bounded dependency summaries and viewer queues, and capped definition/context caches.
   Add 1,000-task queue, dependency fan-in, and repeated-batch benchmark scenarios.
+
+## 2.0.0-next.0 (2026-10-30)
+
+- Preview of the v2 agent-definition refactor. Published to `next` and verified from
+  a fresh registry download before stable promotion.
 
 ## 1.1.0 (2026-10-30)
 
