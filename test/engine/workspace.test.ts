@@ -172,7 +172,7 @@ test(
     // The builder works while the capture index warms in the background (WARM_AFTER_MS).
     await new Promise((r) => setTimeout(r, 2500));
     // Windows: three git processes at tens of ms each set the floor; macOS CI runners vary
-    // (47-134 ms). See the plan's notes.
+    // (47-134 ms). This file runs separately from other Git-heavy tests.
     const limit =
       process.platform === "win32"
         ? 250
