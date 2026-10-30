@@ -370,3 +370,25 @@ test("a pull request whose head changed while fetching is refused and leaves no 
   );
   assert.equal(world.fixture.git("for-each-ref", "refs/pinata/"), "");
 });
+
+test("a reviewer cannot approve a worktree mutated after builder verification", async (t) => {
+  const world = await fauxWorld(
+    t,
+    async (turn) => {
+      if (turn.role === "reviewer")
+        await writeFile(
+          join(world.dir, "runs", "run-1", "worktrees", "build", "a.txt"),
+          "mutated during review",
+        );
+      return responder(turn);
+    },
+    { files: { "a.txt": "base" } },
+  );
+  const handle = await world.run(
+    [builder("build", { write: { "a.txt": "approved candidate" } }), reviewer("review", "build")],
+    { allowWrites: true },
+  );
+  const view = await handle.done;
+  assert.equal(view.agents.review.status, "failed");
+  assert.match(view.agents.review.reason!, /changed during review/);
+});

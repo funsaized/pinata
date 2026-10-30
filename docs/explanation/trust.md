@@ -13,7 +13,8 @@ pinata enforces workflow rules; it is **not an operating-system sandbox**.
 - **Approval.** A run with builders needs `approval`, the user's authorization for these
   local writes, recorded with the run.
 - **Verification.** Builders' checks run in the engine, not on the builder's word. Reviews
-  are bound to the exact change. Integration refuses secret-bearing files (`.env*`,
+  are bound to the exact change and original base. Destination checks record a separate
+  content tree and do not grant independent review of integration. Integration refuses secret-bearing files (`.env*`,
   `auth.json`, `.npmrc`, `.netrc`), symbolic links and submodules, and files you changed
   since the run started.
 - **No recursion.** Agents never get pinata's tools (`PINATA_AGENT=1`).

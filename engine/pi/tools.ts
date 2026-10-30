@@ -13,6 +13,13 @@ import { statusText } from "../ui/text.ts";
 import { compactRun, compactTask, type PinataHost, type RunParams } from "./host.ts";
 import { deliverWhenDone } from "./delivery.ts";
 import { integrate, rollback } from "../verify/integrate.ts";
+import { handoff } from "../verify/evidence.ts";
+import {
+  verifyDestination,
+  verificationStatus,
+  type VerificationOptions,
+} from "../verify/destination.ts";
+import { integrationStatus } from "./ui.ts";
 import { ValidationError } from "../core/validate.ts";
 
 const object = (fields: Record<string, TSchema>, options: Record<string, unknown> = {}) =>
@@ -160,6 +167,12 @@ export function schemas() {
       feedback: string("What to fix, from the review or failure."),
     }),
     integrate: object({ run }),
+    changes: object({ run }),
+    verify: object({
+      run,
+      checks: optional(Type.Array(check)),
+      noChecksReason: optional(string()),
+    }),
     rollback: object({ run, confirm: Type.Literal(true) }),
   };
 }
@@ -175,7 +188,11 @@ export const DESCRIPTIONS = {
   repair:
     "Re-run a builder in its worktree with feedback (from a rejected review or a failure), within limits.repairs. Its reviewers run again on the new change. Waits for the result.",
   integrate:
-    "Apply every approved builder change to the checkout and run the integrated checks. Needs every task succeeded and a current approving review per builder. Never stages or commits.",
+    "Optionally apply approved builder artifacts exactly and run destination checks. The orchestrator calls this; never automatic. HEAD may advance if affected files still match. Conflicts require pinata_changes and orchestrator reconciliation. Never stages or commits. Builder reviews remain scoped to their original bases.",
+  changes:
+    "Return verified builder artifacts, recorded bases, checks, reviews and immutable patches for orchestrator-owned integration. Does not change the destination checkout. Evidence is about the original artifacts, not the current destination.",
+  verify:
+    "Run checks on the current destination without applying builder changes. Uses the run's integratedChecks unless checks is supplied. Records the exact tree and whether it contains the approved outputs. Does not grant independent review or claim reconciliation is correct. No checks means not_run, not verified.",
   rollback:
     "Restore the checkout from the run's integration journal, where files still match what integration wrote. Needs confirm:true.",
 };
@@ -250,7 +267,12 @@ export async function statusTool(
   const { view, dir } = target;
   if (!params.task) {
     const results = target.handle?.results() ?? new Map();
-    return { ...compactRun(view, dir, results), text: statusText(view) };
+    return {
+      ...compactRun(view, dir, results),
+      integration: await integrationStatus(dir),
+      verification: await verificationStatus(dir),
+      text: statusText(view),
+    };
   }
   if (!view.agents[params.task]) throw new Error(`Unknown task ${params.task} in run ${view.run}`);
   const saved = (await host.readResult(dir, params.task)) as Record<string, any> | null;
@@ -384,6 +406,48 @@ export function registerTools(pi: ExtensionAPI, host: PinataHost): void {
     },
   });
   pi.registerTool({
+    name: "pinata_changes",
+    label: "Pinata changes",
+    description: DESCRIPTIONS.changes,
+    parameters: s.changes,
+    outputSchema: Type.Object({ result: Type.Unknown() }),
+    annotations: { readOnlyHint: true },
+    async execute(_id, input, _signal, _onUpdate, ctx) {
+      try {
+        const { dir, view } = await host.find((input as { run: string }).run, ctx.cwd);
+        if (view.status !== "succeeded")
+          throw new Error("Wait for every task and review to succeed before handoff");
+        return ok(await handoff(dir));
+      } catch (error) {
+        return fail(error);
+      }
+    },
+  });
+  pi.registerTool({
+    name: "pinata_verify",
+    label: "Pinata verify destination",
+    description: DESCRIPTIONS.verify,
+    parameters: s.verify,
+    outputSchema: Type.Object({ result: Type.Unknown() }),
+    annotations: { readOnlyHint: false },
+    async execute(_id, input, signal, _onUpdate, ctx) {
+      try {
+        const params = input as unknown as { run: string } & VerificationOptions;
+        const { id, dir, view } = await host.find(params.run, ctx.cwd);
+        if (view.status !== "succeeded")
+          throw new Error("Wait for every task and review to succeed before verification");
+        const result = await verifyDestination(dir, params, signal);
+        host.ui?.integrated(
+          id,
+          result.status === "verified" ? "destination_checked" : result.status,
+        );
+        return ok({ run: id, ...result });
+      } catch (error) {
+        return fail(error);
+      }
+    },
+  });
+  pi.registerTool({
     name: "pinata_integrate",
     label: "Pinata integrate",
     description: DESCRIPTIONS.integrate,
@@ -393,7 +457,9 @@ export function registerTools(pi: ExtensionAPI, host: PinataHost): void {
     async execute(_id, input, signal, _onUpdate, ctx) {
       const params = input as { run: string };
       try {
-        const { id, dir } = await host.find(params.run, ctx.cwd);
+        const { id, dir, view } = await host.find(params.run, ctx.cwd);
+        if (view.status !== "succeeded")
+          throw new Error("Wait for every task and review to succeed before integration");
         const result = await integrate(dir, signal);
         host.ui?.integrated(id, result.status);
         return ok({ run: id, ...result });

@@ -40,6 +40,11 @@ function step(context: any) {
   const assistants = (context.messages ?? []).filter((m: any) => m.role === "assistant").length;
   const child = /# Task ([a-z][a-z0-9-]*) \(([a-z]+)\)/.exec(joined);
   if (child) {
+    if (child[2] === "builder" && assistants === 0)
+      return fauxAssistantMessage(
+        [fauxToolCall("write", { path: "README.md", content: "# Integrated smoke\n" })],
+        { stopReason: "toolUse" },
+      );
     if (assistants === 0)
       return fauxAssistantMessage([fauxToolCall("read", { path: "README.md" })], {
         stopReason: "toolUse",
@@ -49,11 +54,14 @@ function step(context: any) {
         fauxToolCall("submit_result", {
           status: "succeeded",
           summary: `${child[1]} finished`,
-          changedFiles: [],
+          changedFiles: child[2] === "builder" ? ["README.md"] : [],
           checks: [{ name: "read README.md", status: "passed", detail: "read it" }],
           findings: [],
           blockers: [],
-          brief: `${child[1]}: README.md:1 is the title`,
+          ...(!["builder", "reviewer"].includes(child[2])
+            ? { brief: `${child[1]}: README.md:1 is the title` }
+            : {}),
+          ...(child[2] === "reviewer" ? { review: { verdict: "approve" } } : {}),
         }),
       ],
       { stopReason: "toolUse" },
@@ -64,6 +72,47 @@ function step(context: any) {
   const lastUser = messages.map((m: any) => m.role).lastIndexOf("user");
   const answered = messages.slice(lastUser + 1).some((m: any) => m.role === "assistant");
   const last = lastUser === -1 ? "" : all[lastUser];
+  if (last.includes("smoke-integration")) {
+    const results = messages.slice(lastUser + 1).filter((m: any) => m.role === "toolResult");
+    const call = (name: string, args: any) =>
+      fauxAssistantMessage([fauxToolCall(name, args)], { stopReason: "toolUse" });
+    if (!results.length)
+      return call("pinata_run", {
+        approval: "Smoke fixture authorizes local edits",
+        config: { setup: false },
+        tasks: [
+          {
+            id: "build",
+            role: "builder",
+            task: "Change README.md",
+            acceptance: ["Updated title"],
+            ownership: ["README.md"],
+            noChecksReason: "Destination smoke checks the title",
+          },
+          {
+            id: "review",
+            role: "reviewer",
+            task: "Review the title",
+            acceptance: ["Correct title"],
+            reviewOf: "build",
+            after: ["build"],
+          },
+        ],
+        integratedChecks: [
+          {
+            id: "title",
+            argv: [
+              "node",
+              "-e",
+              "if(require('fs').readFileSync('README.md','utf8')!=='# Integrated smoke\\n')process.exit(1)",
+            ],
+          },
+        ],
+      });
+    const run = JSON.parse(results[0].content.find((c: any) => c.type === "text").text).run;
+    const next = ["pinata_changes", "pinata_integrate", "pinata_verify"][results.length - 1];
+    return next ? call(next, { run }) : fauxAssistantMessage(fauxText("SMOKE-INTEGRATION-DONE"));
+  }
   if (!answered && last.includes("pinata run") && last.includes("settled"))
     return fauxAssistantMessage(fauxText("SMOKE-BACKGROUND-RECEIVED"));
   if (!answered && last.includes("smoke-foreground"))

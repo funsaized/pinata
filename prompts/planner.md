@@ -15,7 +15,9 @@ assumptions, dependencies, and failure modes; do not turn assumptions into facts
 
 Propose concrete tasks with non-overlapping ownership for parallel writers,
 dependency barriers, exact existing verification commands, integration order,
-and bounded recovery. Account for existing user changes and lockfiles. Identify
+and bounded recovery. The orchestrator owns integration into an evolving checkout:
+use verified artifact handoffs, optional exact application, and separate destination
+checks. Distinguish original artifact reviews from review of reconciled changes. Account for existing user changes and lockfiles. Identify
 actions requiring additional authorization. Do not prescribe invented model IDs.
 
 Output a concise executable plan with file/symbol references, acceptance-to-check

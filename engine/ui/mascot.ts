@@ -157,7 +157,11 @@ const LIMIT = /limit reached|budget exceeded|deadline exceeded/;
 export function mood(view: RunView | null | undefined, integration?: string | null): Mood {
   if (!view) return { kind: "idle", text: "Ready when you are." };
   const agents = view.order.map((id) => view.agents[id]);
-  if (integration === "verification_failed" || integration === "rolled_back")
+  if (
+    integration === "verification_failed" ||
+    integration === "rolled_back" ||
+    integration === "source_changed"
+  )
     return { kind: "attention", text: `Integration ${integration.replaceAll("_", " ")}.` };
   if (agents.some((a) => ["failed", "rejected", "uncertain", "blocked"].includes(a.status)))
     return { kind: "attention", text: "Something needs a closer look." };
@@ -168,13 +172,31 @@ export function mood(view: RunView | null | undefined, integration?: string | nu
     return { kind: "idle", text: "Taking a breather. Run cancelled." };
   }
   if (agents.length && agents.every((a) => a.status === "succeeded")) {
+    if (integration === "destination_checked")
+      return {
+        kind: "ready",
+        text: "Checks passed for the recorded destination. Integration review remains the coordinator's.",
+      };
+    if (integration === "historical")
+      return {
+        kind: "ready",
+        text: "Earlier destination evidence is historical. Reconcile and verify the current checkout.",
+      };
+    if (["applied_unverified", "not_run", "legacy_unverified"].includes(integration ?? ""))
+      return {
+        kind: "ready",
+        text: "No current destination verification. Ask the coordinator to run checks.",
+      };
     if (agents.some((a) => a.role === "builder") && integration !== "verified")
-      return { kind: "ready", text: "Reviews complete. Waiting for integration." };
+      return {
+        kind: "ready",
+        text: "Builder reviews complete. Ready for coordinator-owned integration.",
+      };
     return {
       kind: "success",
       text:
         integration === "verified"
-          ? "Checks passed. Changes integrated. ¡Fiesta!"
+          ? "Checks passed for the recorded integration. Builder reviews cover their original bases."
           : "All agents home. ¡Fiesta!",
     };
   }

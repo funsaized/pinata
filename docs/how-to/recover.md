@@ -44,7 +44,19 @@ run. Agents in their own processes are stopped with everything they started.
 ## Undo an integration
 
 Ask Pi to roll back (`pinata_rollback`). It restores the files from the integration
-journal only where they still match what was integrated.
+journal only where they still match what was integrated, and only while destination HEAD
+and index still match their application-time identities. After a commit or staging change,
+the orchestrator must reconcile explicitly; Pinata will not restore an older journal over it.
+
+A 1.0 integration journal lacks destination identity. It remains readable as
+`legacy_unverified` but cannot be replayed or rolled back automatically in 1.1. Obtain
+`pinata_changes` and reconcile its recorded before/after states yourself.
+
+Apply, verify and rollback share `pinata-integration.lock` in the destination's Git
+directory. A crash may leave it behind. Inspect its owner PID/time, confirm no destination
+operation is running, and inspect the journal before removing that specific lock. Then
+retry; affected paths must still match a journal before/after state. Never remove a live
+lock or reset the destination to force a retry.
 
 ## Clean up
 
