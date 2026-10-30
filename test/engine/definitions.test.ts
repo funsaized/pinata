@@ -20,6 +20,7 @@ import {
 import { tempDir, fakeEngine } from "./helpers.ts";
 import { fakeResult } from "../../engine/backends/fake.ts";
 import { Limiter } from "../../engine/core/limiter.ts";
+import { basicPipeline } from "../../engine/core/engine.ts";
 
 const definition = (name = "analyst", workspace = "live-readonly", tools = ["read"]) =>
   validateDefinition(
@@ -263,9 +264,24 @@ test("dependency fan-in stays bounded and points to complete evidence", () => {
 });
 
 test("dispatch is fair across runs with 1000 queued tasks", async (t) => {
-  const { backend, run } = await fakeEngine(t, () => ({ latencyMs: 2, result: fakeResult() }), {
-    limiter: new Limiter({ cap: 1, initial: 1 }),
+  let release!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    release = resolve;
   });
+  const pipeline = basicPipeline();
+  const { backend, run } = await fakeEngine(t, () => ({ result: fakeResult() }), {
+    limiter: new Limiter({ cap: 1, initial: 1 }),
+    pipeline: {
+      ...pipeline,
+      async prepare(context, task, signal, options) {
+        // Hold the first slot until both runs are registered. Filesystem startup
+        // time on a busy Windows runner is not scheduler starvation.
+        if (task.id === "task-0") await ready;
+        return pipeline.prepare(context, task, signal, options);
+      },
+    },
+  });
+  t.after(() => release());
   const large = await run(
     Array.from({ length: 1000 }, (_, i) => ({
       id: `task-${i}`,
@@ -277,6 +293,7 @@ test("dispatch is fair across runs with 1000 queued tasks", async (t) => {
   const small = await run([
     { id: "small", role: "scout", task: "Inspect", acceptance: ["Evidence"] },
   ]);
+  release();
   assert.equal((await small.done).status, "succeeded");
   assert(
     backend.starts.findIndex((s) => s.task === "small") < 5,
