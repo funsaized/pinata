@@ -35,7 +35,7 @@ PINATA_LIVE_SMOKE=1 PINATA_LIVE_CONFIG=examples/configs/luna.json PINATA_EVAL_TR
 ```
 
 `PINATA_LIVE_BACKEND=process|herdr-pi` runs the smoke on another backend. Record each run's
-cost in `ENGINE_PLAN.md`'s Results log.
+cost in the release pull request or validation report.
 
 On a platform you have no machine for, run the
 [live smoke workflow](../../.github/workflows/live-smoke.yml) by hand (Actions → "Live smoke

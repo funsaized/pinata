@@ -1,6 +1,6 @@
 {
   "name": "pi-pinata",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Fast, low-footprint Pi subagents: in-process agents, live-checkout readers, reviewed builder changes, and Herdr or external viewers when you want them.",
   "keywords": [
     "herdr",
@@ -51,8 +51,8 @@
     "check": "npm run format:check && npm run lint && npm run typecheck",
     "lint": "oxlint test scripts engine bench bin",
     "typecheck": "tsc -p tsconfig.json",
-    "format:check": "oxfmt --check package.json tsconfig.json test scripts .github examples README.md BACKLOG.md ENGINE_PLAN.md docs skills prompts engine bench bin",
-    "format": "oxfmt package.json tsconfig.json test scripts .github examples README.md BACKLOG.md ENGINE_PLAN.md docs skills prompts engine bench bin",
+    "format:check": "oxfmt --check package.json tsconfig.json test scripts .github examples README.md BACKLOG.md docs skills prompts engine bench bin",
+    "format": "oxfmt package.json tsconfig.json test scripts .github examples README.md BACKLOG.md docs skills prompts engine bench bin",
     "test:herdr": "node --test test/engine/herdr.test.ts"
   },
   "devDependencies": {

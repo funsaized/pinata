@@ -1,4 +1,4 @@
-// Engine contracts. ENGINE_PLAN.md "Contracts" sketches them; this file is the source of truth.
+// Engine contracts. This file is the source of truth.
 // Nothing under engine/core imports Pi.
 
 export const ROLES = ["scout", "research", "planner", "builder", "reviewer"] as const;

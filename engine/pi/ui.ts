@@ -12,6 +12,7 @@ import { AgentDetail, type DetailSource } from "../ui/detail.ts";
 import { LiveScene, type SceneRun } from "../ui/live.ts";
 import { footerLine } from "../ui/text.ts";
 import { PinataWidget, widgetLines } from "../ui/widget.ts";
+import { verificationStatus } from "../verify/destination.ts";
 
 export const WIDGET = "pinata";
 export const MOTION = "pinata-motion";
@@ -25,8 +26,22 @@ export type UIContext = Pick<ExtensionContext, "ui" | "hasUI" | "mode" | "cwd" |
 // The integration journal's status for a run directory, or null before integration.
 export async function integrationStatus(dir: string): Promise<string | null> {
   try {
-    const journal = JSON.parse(await readFile(join(dir, "integration", "journal.json"), "utf8"));
-    return typeof journal.status === "string" ? journal.status : null;
+    const journal = JSON.parse(
+      await readFile(join(dir, "integration", "journal.json"), "utf8").catch(() => "null"),
+    );
+    if (journal?.status === "rolled_back") return "rolled_back";
+    if (journal && journal.schemaVersion !== 2) return "legacy_unverified";
+    const verification = await verificationStatus(dir);
+    if (verification) {
+      if (verification.freshness !== "current") return "historical";
+      if (verification.status === "verified")
+        return journal?.status === "verified" &&
+          journal.verification?.receipt === verification.receipt
+          ? "verified"
+          : "destination_checked";
+      return verification.status;
+    }
+    return journal?.status ?? null;
   } catch {
     return null;
   }

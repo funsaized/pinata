@@ -43,9 +43,26 @@ With an approving review:
 Integrate the pinata run.
 ```
 
-`pinata_integrate` applies the approved changes to your checkout (never staged or
-committed) and runs the job's `integratedChecks`. It refuses if your checkout moved or the
-same files changed since the run started. Committing is up to you.
+The orchestrator decides when and how to integrate; neither subagents nor the engine
+integrate automatically. `pinata_changes` returns the reviewed artifacts, their actual
+base commits and trees, check logs, and patches without changing your checkout.
+
+For an exact application, the orchestrator can call `pinata_integrate`. It applies the
+approved changes without staging or committing and runs the job's `integratedChecks`.
+Unrelated commits may advance HEAD while a builder works. Each affected file must still
+match its recorded before-state; overlapping changes are refused before any file is written.
+
+When reconciliation is needed, the orchestrator uses the handoff and its normal repository
+tools to resolve it, then arranges fresh checks and independent review of the resulting
+change. `pinata_verify` runs destination checks without applying anything. It records the
+actual HEAD and content tree, and reports whether the approved output is present exactly
+or differs. Passing checks alone does not prove that the feature was integrated correctly.
+
+Builder checks and reviews always describe their original base and result. They do not
+become reviews of a new combined tree. No configured destination checks means
+`applied_unverified` for integration or `not_run` for verification, never a passing check.
+Later checkout changes make a previous verification historical. Committing remains the
+orchestrator's responsibility within your authorization.
 
 ## 4. Roll back
 
@@ -54,6 +71,7 @@ Roll back the latest pinata integration.
 ```
 
 `pinata_rollback` restores the files from the integration journal, as long as you have not
-edited them since.
+edited them, staged changes, or advanced HEAD since application. Otherwise the orchestrator
+must reconcile the journal explicitly.
 
 Next: [watching agents](watching-agents.md).

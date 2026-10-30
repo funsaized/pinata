@@ -60,6 +60,13 @@ export interface CompactTask {
   verdict?: string;
   checkoutChanged?: boolean;
   truncated?: boolean;
+  artifact?: {
+    scope: "builder-artifact";
+    baseCommit: string;
+    baseTree: string;
+    resultTree: string;
+    fingerprint: string;
+  };
 }
 
 export interface CompactRun {
@@ -72,6 +79,7 @@ export interface CompactRun {
   tasks: CompactTask[];
   notices?: string[];
   more: string;
+  handoff?: { tool: "pinata_changes"; scope: "builder-artifacts" };
 }
 
 const PROGRESS_MS = 250; // at most 4 updates per second
@@ -90,6 +98,15 @@ export function compactTask(id: string, view: RunView, settled: Settled | undefi
   if (r?.changedFiles?.length) out.changedFiles = r.changedFiles;
   if (r?.review) out.verdict = r.review.verdict;
   if (r?.checkoutChanged) out.checkoutChanged = true;
+  const b = settled?.data as unknown as import("../verify/stages.ts").BuilderData | undefined;
+  if (a.role === "builder" && settled?.status === "succeeded" && settled.fingerprint && b?.changes)
+    out.artifact = {
+      scope: "builder-artifact",
+      baseCommit: b.baseCommit,
+      baseTree: b.changes.base,
+      resultTree: b.changes.tree,
+      fingerprint: settled.fingerprint,
+    };
   return out;
 }
 
@@ -107,6 +124,9 @@ export function compactRun(
     tokens: view.usage.totalTokens,
     elapsedMs: (view.settledAt ?? Date.now()) - view.startedAt,
     tasks: view.order.map((id) => compactTask(id, view, results.get(id))),
+    ...(view.order.some((id) => view.agents[id].role === "builder") && {
+      handoff: { tool: "pinata_changes" as const, scope: "builder-artifacts" as const },
+    }),
     ...(notices.length && { notices }),
     more: `pinata_status { run: "${view.run}", task, detail: "result" | "transcript" } returns full results and transcripts`,
   };

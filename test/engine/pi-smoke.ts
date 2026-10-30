@@ -91,6 +91,28 @@ export function rpc(argv: string[], options: { cwd: string; env: NodeJS.ProcessE
   };
 }
 
+export async function integrationSmoke(pi: ReturnType<typeof rpc>): Promise<void> {
+  const from = pi.records.length;
+  pi.send({ type: "prompt", message: "smoke-integration: hand off, integrate and verify" });
+  for (const toolName of ["pinata_run", "pinata_changes", "pinata_integrate", "pinata_verify"]) {
+    const end = await pi.wait(
+      (r) => r.type === "tool_execution_end" && r.toolName === toolName,
+      120_000,
+      from,
+    );
+    const result = end.result?.details?.result;
+    assert(result, JSON.stringify(end));
+    if (toolName === "pinata_run") assert.equal(result.status, "succeeded", JSON.stringify(result));
+    else if (toolName === "pinata_changes") assert.equal(result.scope, "builder-artifacts");
+    else assert.equal(result.status, "verified", JSON.stringify(result));
+    if (toolName === "pinata_verify") {
+      assert.equal(result.application, "exact");
+      assert.equal(result.review, "builder-artifacts-only");
+    }
+  }
+  await pi.wait((r) => r.type === "agent_settled", 120_000, from);
+}
+
 async function main() {
   const dir = await mkdtemp(join(tmpdir(), "pinata-pi-smoke-"));
   const repo = join(dir, "repo");
@@ -231,6 +253,7 @@ async function main() {
     const logged = lines.map((l) => JSON.parse(l));
     assert.equal(logged[0].t, "run_started");
     assert.equal(logged.at(-1).t, "run_settled");
+    await integrationSmoke(pi);
     console.log(
       JSON.stringify({
         ok: true,

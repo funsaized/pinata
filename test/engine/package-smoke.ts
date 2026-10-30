@@ -8,7 +8,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { piCommand, rpc } from "./pi-smoke.ts";
+import { piCommand, rpc, integrationSmoke } from "./pi-smoke.ts";
 
 const ROOT = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
 const NPM = process.platform === "win32" ? "npm.cmd" : "npm";
@@ -139,6 +139,8 @@ async function main() {
       );
       const result = end.result?.details?.result;
       assert.equal(result?.status, "succeeded", JSON.stringify(end).slice(0, 2000));
+      await pi.wait((r) => r.type === "agent_settled");
+      await integrationSmoke(pi);
       console.log(JSON.stringify({ ok: true, files: files.length, commands: names.length }));
     } finally {
       await pi.close();

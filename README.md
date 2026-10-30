@@ -66,7 +66,9 @@ Pi picks the agents, writes their briefs, and decides who waits for whom. Start 
   you can steer it from there. `pinata view` follows a run from another terminal.
 - **Reviewed before it lands.** Each builder works in its own git worktree; its checks run
   after it finishes, and an independent reviewer must approve that exact change before
-  pinata applies it to your checkout (never staged or committed). You can roll it back.
+  the orchestrator integrates it. Pinata hands off the exact artifact, base, checks and review;
+  an optional helper applies it to your checkout without staging or committing. Unrelated
+  commits may advance while builders work. Destination checks remain separate evidence.
 - **Recoverable.** Runs are logged on disk. A run started with `survive: true` keeps going
   when Pi exits; the next Pi picks it up. `/pinata rerun` restarts tasks lost in a crash.
 - **Scriptable.** `pinata run job.json` runs a job without an interactive Pi, with plain or
