@@ -92,7 +92,7 @@ explicit and never count as passed. Receipt logs survive subsequent verification
 
 `pinata_agents {}` lists available definitions without injecting their complete prompts.
 `pinata_agents {"name":"scout"}` returns one definition, its tools, workspace, defaults,
-source, and digest. New tasks use `agent`; `role` remains a deprecated input alias.
+source, and digest. Tasks select a definition with `agent`.
 Simple read-only tasks may omit `acceptance`. Custom writers and reviewers follow the
 same authorization, ownership, and evidence rules as the corresponding presets.
 

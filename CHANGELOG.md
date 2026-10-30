@@ -10,12 +10,11 @@ Pi stays small. Your subagent system should too.
 - Ship scout, builder, and reviewer presets. The opinionated planner and source-linked
   researcher are optional examples using the same definition loader. Engineering-management
   guidance remains available as an opt-in skill.
-- Tasks use `agent`; `role` remains a deprecated compatibility alias. Planner/research jobs
-  must install their example definitions, and `research` becomes `researcher`. See the
-  v2 migration guide.
+- Tasks select a definition with `agent`. Install the planner or researcher example when
+  it fits your workflow.
 - Save resolved definitions once per run by digest. Resume, repair, and rerun retain their
   original instructions and capabilities. New launches validate required extension entry
-  hashes. Historical runs retain their existing semantics and evidence.
+  hashes.
 - Custom names receive the same ownership, authorization, check, review-binding, handoff,
   integration, and rollback protections as the presets. Compact results distinguish engine
   checks, artifact reviews, and destination verification.
