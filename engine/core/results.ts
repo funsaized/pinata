@@ -190,8 +190,12 @@ export function validateResult(input: AgentResult, ctx: ResultContext): AgentRes
       ? ctx.definition.output.require.includes("sources") || result.sources !== undefined
       : ctx.role === "research"
   ) {
-    if (!result.sources?.length) fail("A succeeded research result needs at least one source.");
-    for (const s of result.sources) {
+    if (
+      !result.sources?.length &&
+      (!ctx.definition || ctx.definition.output.require.includes("sources"))
+    )
+      fail("This succeeded result requires at least one source.");
+    for (const s of result.sources ?? []) {
       if (ctx.definition && s.path !== undefined) {
         if (s.url !== undefined) fail("A source must name either a URL or a local path");
         try {

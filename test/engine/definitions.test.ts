@@ -175,6 +175,22 @@ test("model precedence and local source output work for custom names", () => {
     { role: agent.name, definition: agent },
   );
   assert.equal(result.sources?.[0].path, "src/cache.ts");
+  assert.deepEqual(
+    validateResult(fakeResult({ sources: [] }), {
+      role: agent.name,
+      definition: agent,
+    }).sources,
+    [],
+    "optional sources may be empty",
+  );
+  assert.throws(
+    () =>
+      validateResult(fakeResult({ sources: [] }), {
+        role: agent.name,
+        definition: { ...agent, output: { require: ["sources"] } },
+      }),
+    /at least one source/,
+  );
   assert.throws(
     () =>
       validateResult(fakeResult({ data: { large: "x".repeat(128 * 1024) } }), {
