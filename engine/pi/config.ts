@@ -6,19 +6,18 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import {
   BACKENDS,
-  ROLES,
   type BackendKind,
   type Limits,
   type Mode,
   type ModelRef,
-  type Role,
 } from "../core/types.ts";
 import { checkedKeys, need, strings, validateLimits, validateModel } from "../core/validate.ts";
 
 export interface PinataConfig {
-  models: Partial<Record<Role | "default", ModelRef>>;
-  fallbacks: Partial<Record<Role, ModelRef[]>>;
+  models: Partial<Record<string, ModelRef>>;
+  fallbacks: Partial<Record<string, ModelRef[]>>;
   limits: Limits;
+  toolProviders: Record<string, { extension: string; tools: string[] }>;
   passEnv: string[];
   webExtension?: string;
   setup?: string | false;
@@ -39,6 +38,7 @@ export const RETIRED: Record<string, string> = {
 
 const KEYS = [
   "models",
+  "toolProviders",
   "fallbacks",
   "passEnv",
   "webExtension",
@@ -50,7 +50,7 @@ const KEYS = [
   "backend",
   ...Object.keys(RETIRED),
 ];
-const MERGED = ["models", "fallbacks", "limits"];
+const MERGED = ["models", "fallbacks", "limits", "toolProviders"];
 
 // 0.7.0 limits that no longer apply: a notice, and dropped before validation.
 const RETIRED_LIMITS: Record<string, string> = {
@@ -75,12 +75,21 @@ export function validateConfig(input: unknown = {}): { config: PinataConfig; not
   const notices = Object.keys(RETIRED)
     .filter((k) => v[k] !== undefined)
     .map((k) => RETIRED[k]);
-  checkedKeys(v.models ?? {}, ["default", ...ROLES], "models");
+  checkedKeys(v.models ?? {}, Object.keys(v.models ?? {}), "models");
   for (const m of Object.values(v.models ?? {})) validateModel(m);
-  checkedKeys(v.fallbacks ?? {}, ROLES, "fallbacks");
+  checkedKeys(v.fallbacks ?? {}, Object.keys(v.fallbacks ?? {}), "fallbacks");
   for (const list of Object.values(v.fallbacks ?? {})) {
     need(Array.isArray(list) && list.length <= 5, "Invalid fallback list");
     (list as unknown[]).forEach(validateModel);
+  }
+  checkedKeys(v.toolProviders ?? {}, Object.keys(v.toolProviders ?? {}), "toolProviders");
+  for (const provider of Object.values(v.toolProviders ?? {}) as any[]) {
+    checkedKeys(provider, ["extension", "tools"], "tool provider");
+    need(
+      typeof provider.extension === "string" && provider.extension.trim(),
+      "Tool provider requires an extension path",
+    );
+    strings(provider.tools, "provider tools");
   }
   strings(v.passEnv ?? [], "passEnv").forEach((key) =>
     need(
@@ -112,6 +121,7 @@ export function validateConfig(input: unknown = {}): { config: PinataConfig; not
   return {
     config: {
       models: v.models ?? {},
+      toolProviders: v.toolProviders ?? {},
       fallbacks: v.fallbacks ?? {},
       limits: validateLimits(currentLimits(v.limits, notices)),
       passEnv: v.passEnv ?? [],
@@ -183,21 +193,26 @@ export function layeredConfig(runConfig: unknown = {}, root?: string): Layered {
 // the default and the parent session's, then the role's fallbacks.
 export function modelCandidates(
   config: PinataConfig,
-  role: Role,
+  role: string,
   taskModel: ModelRef | undefined,
   session: ModelRef | undefined,
+  definition?: import("../core/definitions.ts").AgentDefinition,
 ): Array<{
   model: ModelRef | undefined;
-  origin: "task" | "role" | "default" | "session" | "fallback";
+  origin: "task" | "role" | "definition" | "default" | "session" | "fallback";
 }> {
   const preferred = [
     { model: taskModel, origin: "task" as const },
     { model: config.models[role], origin: "role" as const },
+    { model: definition?.model, origin: "definition" as const },
     { model: config.models.default, origin: "default" as const },
     { model: session, origin: "session" as const },
   ].find((c) => c.model);
   return [
     ...(preferred ? [preferred] : []),
-    ...(config.fallbacks[role] ?? []).map((model) => ({ model, origin: "fallback" as const })),
+    ...(config.fallbacks[role] ?? definition?.fallbacks ?? []).map((model) => ({
+      model,
+      origin: "fallback" as const,
+    })),
   ];
 }

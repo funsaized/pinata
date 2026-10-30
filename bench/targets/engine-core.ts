@@ -1,3 +1,5 @@
+import { fileURLToPath } from "node:url";
+import { discoverAgents, readDefinition, resolveTasks } from "../../engine/pi/definitions.ts";
 // Runs a scenario on the engine's in-process backend and records raw timings. Shared by the
 // Node host (bench/targets/engine.ts) and the pi-binary host (bench/pi-host.ts).
 import { join } from "node:path";
@@ -40,6 +42,7 @@ export interface EngineRaw {
   baselineRss: number;
   peakRss: number;
   maxRunning: number;
+  settledHeapDeltaMB: number;
   // Agents in their own processes: mean of each agent process's peak RSS (MB).
   childMemoryMB?: number;
   lagP99Ms: number | null;
@@ -198,7 +201,7 @@ export async function runEngineScenario(
   errors.length = 0;
   maxRunning = 0;
   running = 0;
-  const tasks: TaskSpec[] = scenario.tasks.map((t) => ({
+  let tasks: TaskSpec[] = scenario.tasks.map((t) => ({
     id: t.id,
     role: t.role,
     task: benchText(t),
@@ -210,15 +213,27 @@ export async function runEngineScenario(
       checks: [{ id: "noop", argv: ["git", "--version"], timeoutMs: 30_000 }],
     }),
   }));
+  let definitions = {};
+  if (!process.env.BENCH_LEGACY) {
+    const agents = discoverAgents(undefined, setup.agentDir);
+    agents.set(
+      "planner",
+      readDefinition(fileURLToPath(new URL("../../examples/agents/planner.md", import.meta.url))),
+    );
+    const resolved = resolveTasks(tasks, agents);
+    tasks = resolved.tasks;
+    definitions = resolved.definitions;
+  }
   const config = validateConfig({ setup: false, codemode: false }).config;
   const prep = await prepareRun(
     setup.repo,
     `bench-${scenario.name}`,
-    validateGraph(tasks, { allowWrites: true }),
+    validateGraph(tasks, { allowWrites: true, definitions }),
     config,
   );
   if (!process.env.BENCH_NO_GC) gc();
   const baselineRss = process.memoryUsage().rss;
+  const baselineHeap = process.memoryUsage().heapUsed;
   let peakRss = baselineRss;
   const sampler = setInterval(
     () => (peakRss = Math.max(peakRss, process.memoryUsage().rss)),
@@ -281,6 +296,7 @@ export async function runEngineScenario(
       codemode: false,
       backend: kind,
       config,
+      definitions,
       prep,
     },
   });
@@ -298,6 +314,8 @@ export async function runEngineScenario(
   } catch {
     lagP99Ms = null;
   }
+  gc();
+  const settledHeapDeltaMB = mb(process.memoryUsage().heapUsed - baselineHeap);
   const relative = Object.fromEntries(
     Object.entries(trace).map(([task, phases]) => [
       task,
@@ -315,6 +333,7 @@ export async function runEngineScenario(
     settledAt,
     statuses,
     baselineRss,
+    settledHeapDeltaMB,
     peakRss,
     maxRunning,
     ...(childPeak.size && {
@@ -384,6 +403,7 @@ export function summarize(
           ? mb((raw.peakRss - raw.baselineRss) / raw.maxRunning)
           : null,
     peakRssMB: mb(raw.peakRss),
+    settledHeapDeltaMB: raw.settledHeapDeltaMB,
     loopLagP99Ms: raw.lagP99Ms,
     cpuMs: raw.cpuMs,
     wallMs: Math.round(raw.wallMs),

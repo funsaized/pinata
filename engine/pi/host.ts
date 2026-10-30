@@ -1,3 +1,6 @@
+import { writes, taskSpec, taskTools, validateSnapshots } from "../core/definitions.ts";
+import { discoverAgents, resolveTasks } from "./definitions.ts";
+import { resolveToolExtensions } from "./tool-providers.ts";
 // One host per parent Pi session: the engine, the shared child model runtime, the session's
 // mode, and the run-level operations behind the model-facing tools and /pinata commands.
 import { spawn } from "node:child_process";
@@ -41,6 +44,7 @@ export interface RunParams {
   survive?: boolean;
   cwd?: string;
   approval?: string;
+  allowWrites?: boolean;
   instructions?: string[];
   config?: Record<string, unknown>;
   integratedChecks?: Check[];
@@ -49,15 +53,25 @@ export interface RunParams {
 
 export interface CompactTask {
   id: string;
-  role: string;
+  role: string; // legacy display alias
+  agent?: string;
   status: string;
   summary: string;
   reason?: string;
   brief?: string;
+  data?: Record<string, unknown>;
+  sources?: unknown[];
   findings?: unknown[];
   blockers?: string[];
   changedFiles?: string[];
   verdict?: string;
+  review?: {
+    verdict: string;
+    taskId: string | null;
+    fingerprint: string;
+    scope: "artifact" | "existing-change";
+  };
+  engineChecks?: { passed: number; failed: number; notRun: number; noChecksReason?: string };
   checkoutChanged?: boolean;
   truncated?: boolean;
   artifact?: {
@@ -77,6 +91,10 @@ export interface CompactRun {
   tokens: number;
   elapsedMs: number;
   tasks: CompactTask[];
+  taskCount: number;
+  taskOffset: number;
+  nextOffset?: number;
+  counts: Record<string, number>;
   notices?: string[];
   more: string;
   handoff?: { tool: "pinata_changes"; scope: "builder-artifacts" };
@@ -87,7 +105,16 @@ const PROGRESS_MS = 250; // at most 4 updates per second
 export function compactTask(id: string, view: RunView, settled: Settled | undefined): CompactTask {
   const a = view.agents[id];
   const r = settled?.result;
-  const out: CompactTask = { id, role: a.role, status: a.status, summary: a.summary ?? "" };
+  const out: CompactTask = {
+    id,
+    role: a.role,
+    agent: a.agent ?? a.role,
+    status: a.status,
+    summary: (a.summary ?? "").slice(0, 1600),
+  };
+  if ((a.summary?.length ?? 0) > 1600) out.truncated = true;
+  if (r?.data) out.data = r.data;
+  if (r?.sources) out.sources = r.sources;
   if (a.reason && a.reason !== a.summary) out.reason = a.reason;
   if (r?.brief !== undefined) {
     out.brief = r.brief.length > DEPENDENCY_CAP ? `${r.brief.slice(0, DEPENDENCY_CAP)}…` : r.brief;
@@ -96,10 +123,32 @@ export function compactTask(id: string, view: RunView, settled: Settled | undefi
   if (r?.findings?.length) out.findings = r.findings;
   if (r?.blockers?.length) out.blockers = r.blockers;
   if (r?.changedFiles?.length) out.changedFiles = r.changedFiles;
-  if (r?.review) out.verdict = r.review.verdict;
+  if (r?.review) {
+    out.verdict = r.review.verdict;
+    out.review = { ...r.review, scope: r.review.taskId === null ? "existing-change" : "artifact" };
+  }
   if (r?.checkoutChanged) out.checkoutChanged = true;
   const b = settled?.data as unknown as import("../verify/stages.ts").BuilderData | undefined;
-  if (a.role === "builder" && settled?.status === "succeeded" && settled.fingerprint && b?.changes)
+  const task = view.tasks.find((task) => task.id === id);
+  const planned = (task?.checks?.length ?? 0) + (task?.evidenceChecks?.length ?? 0);
+  // Missing evidence (for example an unavailable historical result) is not a failed
+  // or unexecuted check. Only summarize a recorded attempt.
+  if (settled && (b?.checks || planned || task?.noChecksReason)) {
+    const checks = b?.checks ?? [];
+    out.engineChecks = {
+      passed: checks.filter((check) => check.passed).length,
+      failed: checks.filter((check) => !check.passed).length,
+      notRun: Math.max(0, planned - checks.length),
+      ...(task?.noChecksReason && { noChecksReason: task.noChecksReason.slice(0, 512) }),
+    };
+  }
+  if (b?.changes) out.changedFiles = b.changes.changes.map((change) => change.path);
+  if (
+    (a.workspaceMode === "worktree" || (!a.workspaceMode && a.role === "builder")) &&
+    settled?.status === "succeeded" &&
+    settled.fingerprint &&
+    b?.changes
+  )
     out.artifact = {
       scope: "builder-artifact",
       baseCommit: b.baseCommit,
@@ -107,6 +156,23 @@ export function compactTask(id: string, view: RunView, settled: Settled | undefi
       resultTree: b.changes.tree,
       fingerprint: settled.fingerprint,
     };
+  for (const field of [
+    "data",
+    "brief",
+    "findings",
+    "sources",
+    "blockers",
+    "changedFiles",
+    "reason",
+  ] as const) {
+    if (Buffer.byteLength(JSON.stringify(out)) <= DEPENDENCY_CAP) break;
+    delete out[field];
+    out.truncated = true;
+  }
+  while (Buffer.byteLength(JSON.stringify(out)) > DEPENDENCY_CAP && out.summary.length) {
+    out.summary = out.summary.slice(0, Math.floor(out.summary.length / 2));
+    out.truncated = true;
+  }
   return out;
 }
 
@@ -115,7 +181,23 @@ export function compactRun(
   dir: string,
   results: ReadonlyMap<string, Settled>,
   notices: string[] = [],
+  page: { offset?: number; limit?: number } = {},
 ): CompactRun {
+  const offset = Math.max(0, Math.floor(page.offset ?? 0));
+  const limit = Math.max(1, Math.min(64, Math.floor(page.limit ?? 64)));
+  const tasks: CompactTask[] = [];
+  let bytes = 2;
+  for (const id of view.order.slice(offset, offset + limit)) {
+    const task = compactTask(id, view, results.get(id));
+    const size = Buffer.byteLength(JSON.stringify(task)) + 1;
+    if (tasks.length && bytes + size > 32 * 1024) break;
+    tasks.push(task);
+    bytes += size;
+  }
+  const counts: Record<string, number> = {};
+  for (const id of view.order)
+    counts[view.agents[id].status] = (counts[view.agents[id].status] ?? 0) + 1;
+  const nextOffset = offset + tasks.length < view.order.length ? offset + tasks.length : undefined;
   return {
     run: view.run,
     dir,
@@ -123,12 +205,20 @@ export function compactRun(
     costUsd: view.usage.cost,
     tokens: view.usage.totalTokens,
     elapsedMs: (view.settledAt ?? Date.now()) - view.startedAt,
-    tasks: view.order.map((id) => compactTask(id, view, results.get(id))),
-    ...(view.order.some((id) => view.agents[id].role === "builder") && {
+    tasks,
+    taskCount: view.order.length,
+    taskOffset: offset,
+    counts,
+    ...(nextOffset !== undefined && { nextOffset }),
+    ...(view.order.some(
+      (id) =>
+        view.agents[id].workspaceMode === "worktree" ||
+        (!view.agents[id].workspaceMode && view.agents[id].role === "builder"),
+    ) && {
       handoff: { tool: "pinata_changes" as const, scope: "builder-artifacts" as const },
     }),
     ...(notices.length && { notices }),
-    more: `pinata_status { run: "${view.run}", task, detail: "result" | "transcript" } returns full results and transcripts`,
+    more: `${nextOffset !== undefined ? `pinata_status { run: "${view.run}", offset: ${nextOffset} } returns the next page. ` : ""}pinata_status { run: "${view.run}", task, detail: "result" | "transcript" } returns full results and transcripts`,
   };
 }
 
@@ -277,21 +367,29 @@ export class PinataHost {
     const root = await repositoryRoot(params.cwd ?? ctx.cwd);
     const layered = layeredConfig(params.config ?? {}, root);
     const config = layered.config;
-    const tasks = validateGraph(params.tasks, { allowWrites: true });
-    const writes = tasks.some((t) => t.role === "builder");
-    if (writes && !(typeof params.approval === "string" && params.approval.trim()))
+    const resolved = resolveTasks(params.tasks, discoverAgents(root));
+    const tasks = validateGraph(resolved.tasks, {
+      allowWrites: params.allowWrites !== false,
+      definitions: resolved.definitions,
+    });
+    const hasWrites = tasks.some(writes);
+    if (hasWrites && !(typeof params.approval === "string" && params.approval.trim()))
       throw new ValidationError(
         "approval is required when the run has builders: record the user's authorization for these local writes",
       );
     validateChecks(params.integratedChecks ?? [], "integratedChecks");
-    if (tasks.some((t) => t.role === "research") && !this.webExtension(config))
-      throw new ValidationError(RESEARCH_UNAVAILABLE);
+    const toolExtensions = resolveToolExtensions(
+      tasks.flatMap(taskTools),
+      config,
+      this.webExtension(config),
+      root,
+    );
     const session = inherited(ctx.model, this.pi.getThinkingLevel?.() ?? ctx.thinkingLevel);
     const models: Record<string, PiRunData["models"][string]> = {};
     for (const task of tasks)
       models[task.id] = selectModel(
         ctx.modelRegistry,
-        modelCandidates(config, task.role, task.model, session),
+        modelCandidates(config, task.role, task.model, session, task.definition),
       ).model;
     const engine = this.engine(ctx);
     const id = randomUUID();
@@ -299,6 +397,8 @@ export class PinataHost {
     const prep = await prepareRun(root, id, tasks, config);
     const data: PiRunData & Record<string, unknown> = {
       prep,
+      definitions: resolved.definitions,
+      toolExtensions,
       models,
       instructions: params.instructions ?? [],
       codemode: config.codemode,
@@ -312,12 +412,12 @@ export class PinataHost {
     };
     // A JSON copy for run.json, before the pipeline adds runtime state to `data`.
     const saved = JSON.parse(JSON.stringify(data)) as Record<string, unknown>;
-    const handle = await engine.run(tasks as TaskSpec[], {
+    const handle = await engine.run(tasks.map(taskSpec), {
       id,
       cwd: root,
       mode: this.mode(config),
       limits: config.limits,
-      allowWrites: writes,
+      allowWrites: hasWrites,
       data,
     });
     this.handles.set(handle.id, handle);
@@ -331,8 +431,10 @@ export class PinataHost {
       id: handle.id,
       root,
       head: prep.base?.head ?? (await headCommit(root)),
-      tasks,
-      allowWrites: writes,
+      schemaVersion: 2,
+      definitions: resolved.definitions,
+      tasks: tasks.map(taskSpec),
+      allowWrites: hasWrites,
       integratedChecks: params.integratedChecks ?? [],
       noIntegratedChecksReason: params.noIntegratedChecksReason ?? null,
       passEnv: config.passEnv,
@@ -354,7 +456,7 @@ export class PinataHost {
           notify(`pinata ${handle.id.slice(0, 8)} ${view.status}`, progressLine(view)),
         )
         .catch(() => {});
-    return { handle, notices: layered.notices };
+    return { handle, notices: [...layered.notices, ...resolved.notices] };
   }
 
   // Starts (or returns) the run's socket server, for viewers.
@@ -541,6 +643,7 @@ export class PinataHost {
     reason: string,
   ): Promise<RunHandle> {
     const resume = record.resume!;
+    validateSnapshots(record.definitions);
     // Claim the run first, so another Pi starting now leaves it alone.
     await writeRunRecord(dir, { ...record, resume: { ...resume, owner: await this.owner() } });
     const handle = await this.engine(ctx).resume(dir, {

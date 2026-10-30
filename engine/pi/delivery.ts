@@ -5,7 +5,7 @@ import { Text } from "@earendil-works/pi-tui";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { RunHandle } from "../core/engine.ts";
 import { markDelivered } from "../core/store.ts";
-import { statusText } from "../ui/text.ts";
+import { statusText, progressLine } from "../ui/text.ts";
 import { compactRun, type CompactRun, type PinataHost } from "./host.ts";
 
 export const RESULT_TYPE = "pinata-result";
@@ -27,10 +27,13 @@ export async function deliver(
   const view = await handle.done;
   if (!(await markDelivered(handle.dir))) return false;
   const result = compactRun(view, handle.dir, handle.results(), notices);
-  pi.sendMessage(resultMessage(result, statusText(view)), {
-    triggerTurn: true,
-    deliverAs: "followUp",
-  });
+  pi.sendMessage(
+    resultMessage(result, view.order.length > 64 ? progressLine(view) : statusText(view)),
+    {
+      triggerTurn: true,
+      deliverAs: "followUp",
+    },
+  );
   return true;
 }
 
@@ -61,6 +64,8 @@ export function registerDelivery(pi: ExtensionAPI): void {
       lines.push(
         `  ${t.status.padEnd(9)} ${t.role.padEnd(8)} ${t.id} — ${(t.reason ?? t.summary).slice(0, 140)}`,
       );
+    if (r.nextOffset !== undefined)
+      lines.push(`  Showing ${r.tasks.length} of ${r.taskCount} tasks. ${r.more}`);
     return new Text(lines.join("\n"), 1, 0);
   });
 }

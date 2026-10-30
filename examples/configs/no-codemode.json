@@ -1,7 +1,13 @@
 {
   "models": {
-    "default": { "provider": "deepseek", "id": "deepseek-flash", "thinking": "max" }
+    "default": {
+      "provider": "deepseek",
+      "id": "deepseek-flash",
+      "thinking": "max"
+    }
   },
   "codemode": false,
-  "limits": { "maxTurns": 120 }
+  "limits": {
+    "maxTurns": 120
+  }
 }

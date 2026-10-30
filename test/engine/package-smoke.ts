@@ -4,7 +4,7 @@
 // the tools.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -31,10 +31,14 @@ async function main() {
       "engine/agent/extension.ts",
       "engine/core/engine.ts",
       "skills/subagents/SKILL.md",
-      "skills/engmgmt/SKILL.md",
+      "agents/scout.md",
+      "agents/builder.md",
+      "agents/reviewer.md",
+      "examples/agents/planner.md",
+      "examples/agents/researcher.md",
     ])
       assert(files.includes(need), `missing ${need}`);
-    assert.equal(files.filter((f) => f.startsWith("prompts/")).length, 7);
+    assert.equal(files.filter((f) => f.startsWith("prompts/")).length, 5);
     assert(
       !files.some((f) =>
         /^(test|bench|node_modules|\.github)\/|ENGINE_PLAN\.md|PLAN\.md|\.log$|\.env/.test(f),
@@ -121,10 +125,7 @@ async function main() {
       const names: string[] = response.data.commands.map((c: { name: string }) => c.name);
       for (const name of [
         "skill:subagents",
-        "skill:engmgmt",
         "scout",
-        "research",
-        "planner",
         "builder",
         "reviewer",
         "pinata-review",
@@ -132,6 +133,14 @@ async function main() {
         "pinata",
       ])
         assert(names.includes(name), `missing command ${name}: ${names.join(", ")}`);
+      for (const name of ["planner", "research", "researcher", "skill:engmgmt"])
+        assert(!names.includes(name), `${name} must be opt-in`);
+      await mkdir(join(agent, "pinata", "agents"), { recursive: true });
+      for (const name of ["planner", "researcher"])
+        await copyFile(
+          join(installed, "examples", "agents", `${name}.md`),
+          join(agent, "pinata", "agents", `${name}.md`),
+        );
       pi.send({ type: "prompt", message: "smoke-foreground: run pinata" });
       const end = await pi.wait(
         (r) => r.type === "tool_execution_end" && r.toolName === "pinata_run",

@@ -4,7 +4,7 @@
 // model turn. Run with `node test/engine/pi-smoke.ts` (PINATA_PI selects the binary).
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -118,7 +118,11 @@ async function main() {
   const repo = join(dir, "repo");
   const agent = join(dir, "agent");
   await mkdir(repo, { recursive: true });
-  await mkdir(agent, { recursive: true });
+  await mkdir(join(agent, "pinata", "agents"), { recursive: true });
+  await copyFile(
+    join(ROOT, "examples", "agents", "planner.md"),
+    join(agent, "pinata", "agents", "planner.md"),
+  );
   await writeFile(join(repo, "README.md"), "# Smoke fixture\n");
   const git = (...args: string[]) =>
     assert.equal(spawnSync("git", ["-C", repo, ...args]).status, 0);

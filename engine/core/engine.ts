@@ -1,3 +1,11 @@
+import {
+  writes,
+  reviews,
+  taskTools,
+  taskSpec,
+  taskDefinitions,
+  type Definitions,
+} from "./definitions.ts";
 // The engine facade: createEngine({ backends, pipeline, store, clock }) runs task graphs.
 // No Pi imports here: backends and the pipeline supply everything Pi-specific.
 import { randomUUID } from "node:crypto";
@@ -13,7 +21,6 @@ import { RunStore, readEvents, runsRoot } from "./store.ts";
 import { reduce, emptyView, replayView, type RunView } from "./view.ts";
 import { validateGraph, validateLimits } from "./validate.ts";
 import {
-  ROLE_TOOLS,
   ZERO_USAGE,
   addUsage,
   type AgentBackend,
@@ -240,7 +247,7 @@ export function basicPipeline(
           task,
           model: task.model ?? fallback,
           cwd: run.cwd,
-          tools: ROLE_TOOLS[task.role],
+          tools: taskTools(task),
           persona: "",
           brief: task.task,
           budgets: {
@@ -252,9 +259,10 @@ export function basicPipeline(
             run: run.id,
             task: task.id,
             role: task.role,
-            tools: ROLE_TOOLS[task.role],
+            definition: task.definition,
+            tools: taskTools(task),
             ownership: task.ownership,
-            readOnly: task.role !== "builder",
+            readOnly: !writes(task),
           },
           mode: run.mode,
           codemode: false,
@@ -382,8 +390,18 @@ export function createEngine(options: EngineOptions): Engine {
   }
 
   // Release a slot anywhere: other runs may be waiting on the same provider.
+  let dispatchCursor = 0;
   function pumpAll() {
-    for (const run of runs.values()) if (!run.finished) run.scheduler.pump();
+    const active = [...runs.values()].filter((run) => !run.finished);
+    if (!active.length) return;
+    // One start per run per round. Keep the cursor across slot releases.
+    let idle = 0;
+    while (idle < active.length) {
+      const run = active[dispatchCursor % active.length];
+      dispatchCursor = (dispatchCursor + 1) % active.length;
+      if (run.scheduler.pump(1)) idle = 0;
+      else idle++;
+    }
   }
 
   function onAgentEvent(run: RunState, id: string, state: AgentState, event: AgentEventInput) {
@@ -761,7 +779,10 @@ export function createEngine(options: EngineOptions): Engine {
   const engine: Engine = {
     limiter,
     async run(specs, opts = {}) {
-      const tasks = validateGraph(specs, { allowWrites: opts.allowWrites ?? false });
+      const tasks = validateGraph(specs, {
+        allowWrites: opts.allowWrites ?? false,
+        definitions: opts.data?.definitions as Definitions | undefined,
+      });
       const limits = validateLimits(opts.limits ?? {});
       const cwd = opts.cwd ?? process.cwd();
       const id = opts.id ?? randomUUID();
@@ -773,7 +794,12 @@ export function createEngine(options: EngineOptions): Engine {
       const handle = handleOf(run);
       // Listeners subscribe before the first event, so they see the whole run.
       for (const listener of runListeners) listener(handle);
-      emit(run, undefined, { t: "run_started", tasks: tasks as TaskSpec[], mode });
+      emit(run, undefined, {
+        t: "run_started",
+        tasks: tasks.map(taskSpec),
+        definitions: taskDefinitions(tasks),
+        mode,
+      });
       for (const task of tasks) emit(run, task.id, { t: "agent_queued" });
       if (mode === "observe") startTelemetry(run);
       startJobDeadline(run);
@@ -783,7 +809,7 @@ export function createEngine(options: EngineOptions): Engine {
         cancelRun(run, new StopSignal(`setup failed: ${(error as Error).message}`, "failed"));
         return handle;
       }
-      run.scheduler.pump();
+      pumpAll();
       return handle;
     },
     async resume(dir, opts = {}) {
@@ -800,7 +826,8 @@ export function createEngine(options: EngineOptions): Engine {
       for (const e of events)
         if (e.t === "agent_queued" && e.task && e.agent) specs.set(e.agent, e.task);
       const tasks = validateGraph([...specs.values()], {
-        allowWrites: opts.allowWrites ?? [...specs.values()].some((t) => t.role === "builder"),
+        allowWrites: opts.allowWrites ?? true,
+        definitions: first.definitions,
       });
       const store = await RunStore.open(dir, before.mode);
       const run = createRun({
@@ -838,7 +865,7 @@ export function createEngine(options: EngineOptions): Engine {
       emit(run, undefined, { t: "run_resumed", reason: opts.reason ?? "Pi restarted" });
       if (run.mode === "observe") startTelemetry(run);
       startJobDeadline(run);
-      run.scheduler.pump();
+      pumpAll();
       maybeFinish(run);
       return handle;
     },
@@ -873,10 +900,10 @@ export function createEngine(options: EngineOptions): Engine {
         s.handle = undefined;
         s.budget = undefined;
         run.settledResults.delete(name);
-        emit(run, name, { t: "agent_queued", task: s.task as TaskSpec });
+        emit(run, name, { t: "agent_queued", task: taskSpec(s.task) });
       }
       run.scheduler.resume();
-      run.scheduler.pump();
+      pumpAll();
       return reopened;
     },
     status(id?: string) {
@@ -930,7 +957,7 @@ export function createEngine(options: EngineOptions): Engine {
         if (d.status === "running")
           throw new Error(`Dependent ${d.task.id} is running; cancel it first`);
         const started = d.status !== "queued" && d.status !== "blocked" && d.status !== "cancelled";
-        if (started && d.task.role !== "reviewer")
+        if (started && !reviews(d.task))
           throw new Error(
             `Completed downstream work (${d.task.id}) needs a new run; it is not replayed silently`,
           );
@@ -938,7 +965,7 @@ export function createEngine(options: EngineOptions): Engine {
       const data = run.data as { feedback?: Record<string, string> };
       data.feedback = { ...data.feedback, [task]: feedback };
       for (const d of dependents)
-        if (d.task.role === "reviewer")
+        if (reviews(d.task))
           data.feedback[d.task.id] =
             "Re-review the repaired target independently; any prior approval is invalid.";
       const reopened = run.graph.reopen(task);
@@ -964,10 +991,10 @@ export function createEngine(options: EngineOptions): Engine {
         s.handle = undefined;
         s.budget = undefined;
         run.settledResults.delete(name);
-        emit(run, name, { t: "agent_queued", task: s.task as TaskSpec });
+        emit(run, name, { t: "agent_queued", task: taskSpec(s.task) });
       }
       run.scheduler.resume();
-      run.scheduler.pump();
+      pumpAll();
       return reopened;
     },
     subscribe(id, consumer) {
