@@ -44,4 +44,3 @@ things up, and explanation to understand.
 Commands in these docs are run by the test suite unless marked _manual_.
 
 - [Create agents](how-to/agents.md)
-- [Migrate to v2](how-to/migrate-v2.md)

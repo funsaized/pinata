@@ -36,15 +36,14 @@ for run-level events) and `at` (epoch milliseconds).
 Results are saved separately in `results/<task>.json`, transcripts in
 `transcripts/<task>.jsonl` (Pi messages), and the run's parameters in `run.json`.
 
-New runs store each resolved definition once in `run_started.definitions`, keyed by its
-SHA-256 digest. Tasks carry `agent` (the definition name), `definition` (its digest), and
-the compatibility `role` label. The snapshot includes the prompt, workspace mode, tool
+Runs store each resolved definition once in `run_started.definitions`, keyed by its
+SHA-256 digest. Tasks carry `agent` (the definition name) and `definition` (its digest).
+The snapshot includes the prompt, workspace mode, tool
 allowlist, output requirements, defaults, and source. Requeued tasks reuse the digest.
-The event schema remains version 1 with additive optional fields; historical events without
-definitions replay using legacy roles.
+The event schema is version 1.
 
-`run.json` uses schema version 2 for new runs and stores the same definition table plus
-resolved runtime configuration and extension entry identities. Old unversioned run records
-remain readable. Resume validates snapshot digests rather than rediscovering definitions.
+`run.json` uses schema version 2 and stores the same definition table plus
+resolved runtime configuration and extension entry identities. Resume validates snapshot
+digests rather than rediscovering definitions.
 Stored results keep engine checks and artifact fingerprints separate from agent-reported
 checks. Destination verification records remain separate from both.

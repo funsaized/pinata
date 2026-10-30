@@ -201,16 +201,20 @@ export function modelCandidates(
   model: ModelRef | undefined;
   origin: "task" | "role" | "definition" | "default" | "session" | "fallback";
 }> {
+  const configuredModel = Object.hasOwn(config.models, role) ? config.models[role] : undefined;
+  const configuredFallbacks = Object.hasOwn(config.fallbacks, role)
+    ? config.fallbacks[role]
+    : undefined;
   const preferred = [
     { model: taskModel, origin: "task" as const },
-    { model: config.models[role], origin: "role" as const },
+    { model: configuredModel, origin: "role" as const },
     { model: definition?.model, origin: "definition" as const },
     { model: config.models.default, origin: "default" as const },
     { model: session, origin: "session" as const },
   ].find((c) => c.model);
   return [
     ...(preferred ? [preferred] : []),
-    ...(config.fallbacks[role] ?? definition?.fallbacks ?? []).map((model) => ({
+    ...(configuredFallbacks ?? definition?.fallbacks ?? []).map((model) => ({
       model,
       origin: "fallback" as const,
     })),

@@ -37,7 +37,7 @@ codemode scripts. Tools outside the allowlist are refused. Workspace capabilitie
 whether a task reads the live checkout, writes an isolated worktree, or reviews a bound
 target. Names select definitions; they do not grant permissions. Siblings with the same
 definition and tool configuration get byte-identical system prompts; the brief carries
-the task. Historical runs without definitions retain their saved role semantics.
+the task.
 
 The shipped presets are scout, builder, and reviewer. Planner and researcher are ordinary
 definitions in `examples/agents`, activated by copying them into a discovery directory.
@@ -83,7 +83,7 @@ Everything lives in `<git common dir>/pinata/<run>`: `events.jsonl`, `run.json`,
 `integration/journal.json`, worktrees, and per-agent files for out-of-process agents.
 Directories are private (0700).
 
-New `run.json` records use schema version 2 and contain a table of agent definitions keyed
+The `run.json` record uses schema version 2 and contains a table of agent definitions keyed
 by digest. Tasks reference that table; `run_started` carries the same snapshots. Resume,
 repair, and rerun use saved definitions even if local files change or disappear. Required
 extension entry-file hashes are checked before new launches. This does not snapshot

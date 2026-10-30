@@ -156,6 +156,17 @@ test("model precedence and local source output work for custom names", () => {
   const agent = { ...definition(), model: model("profile") };
   const config = validateConfig({ models: { default: model("default") } }).config;
   assert.equal(
+    modelCandidates(
+      config,
+      "constructor",
+      undefined,
+      model("session"),
+      definition("constructor"),
+    )[0].model?.id,
+    "default",
+    "agent names must not select inherited object properties as models or fallbacks",
+  );
+  assert.equal(
     modelCandidates(config, "analyst", undefined, model("session"), agent)[0].model?.id,
     "profile",
   );

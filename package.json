@@ -1,6 +1,6 @@
 {
   "name": "pi-pinata",
-  "version": "2.0.0-next.0",
+  "version": "2.0.0",
   "description": "Pi stays small. Your subagent system should too. Fast, opinionated subagents with sharp defaults and your wiring.",
   "keywords": [
     "herdr",
