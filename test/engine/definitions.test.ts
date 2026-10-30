@@ -10,7 +10,13 @@ import { validateGraph } from "../../engine/core/validate.ts";
 import { validateResult } from "../../engine/core/results.ts";
 import { modelCandidates, validateConfig } from "../../engine/pi/config.ts";
 import { resolveToolExtensions, validateToolExtensions } from "../../engine/pi/tool-providers.ts";
-import { brief, DEPENDENCIES_CAP } from "../../engine/agent/brief.ts";
+import {
+  brief,
+  compactDependency,
+  contract,
+  DEPENDENCIES_CAP,
+  DEPENDENCY_CAP,
+} from "../../engine/agent/brief.ts";
 import { tempDir, fakeEngine } from "./helpers.ts";
 import { fakeResult } from "../../engine/backends/fake.ts";
 import { Limiter } from "../../engine/core/limiter.ts";
@@ -217,6 +223,26 @@ test("extension requirements fail before dispatch and detect changed entry files
 });
 
 test("dependency fan-in stays bounded and points to complete evidence", () => {
+  const dep = {
+    id: "analysis",
+    role: "analyst",
+    status: "succeeded",
+    summary: "Computed answer",
+    result: fakeResult({ data: { answer: 42 } }),
+    path: "/run/results/analysis.json",
+  };
+  assert.deepEqual(JSON.parse(compactDependency(dep)).data, { answer: 42 });
+  const large = compactDependency({
+    ...dep,
+    result: fakeResult({ data: { text: "x".repeat(64_000) } }),
+  });
+  assert(Buffer.byteLength(large) <= DEPENDENCY_CAP);
+  assert.equal(JSON.parse(large).full, dep.path);
+  assert.equal(JSON.parse(large).truncated, true);
+  assert.match(
+    contract({ ...definition(), output: { require: ["sources"] } }, [], false),
+    /succeeded result must include: sources/,
+  );
   const [task] = validateGraph([
     { id: "read", role: "scout", task: "Read", acceptance: ["Evidence"] },
   ]);

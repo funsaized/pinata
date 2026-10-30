@@ -41,6 +41,11 @@ export function contract(
       "",
       "Prefer one codemode script for independent reads, searches, and commands so they run in parallel and only filtered output returns. Do not call models.* from scripts.",
     );
+  if (typeof role !== "string" && role.output.require.length)
+    lines.push(
+      "",
+      `A succeeded result must include: ${role.output.require.join(", ")}. If required evidence is unavailable, report blocked or failed.`,
+    );
   lines.push(
     "",
     "Findings have severity (critical, high, medium, low, info), message, and evidence (file:line and a concrete scenario). An approval must have no unresolved critical, high or medium findings. " +
@@ -98,6 +103,7 @@ export function compactDependency(dep: DependencyBrief, cap = DEPENDENCY_CAP): s
     ...(r?.findings?.length && { findings: r.findings }),
     ...(r?.changedFiles?.length && { changedFiles: r.changedFiles }),
     ...(r?.sources?.length && { sources: r.sources }),
+    ...(r?.data && { data: r.data }),
     ...(r?.review && { verdict: r.review.verdict }),
     ...(r?.blockers?.length && { blockers: r.blockers }),
     full: dep.path,
@@ -105,7 +111,7 @@ export function compactDependency(dep: DependencyBrief, cap = DEPENDENCY_CAP): s
   let json = JSON.stringify(value);
   if (Buffer.byteLength(json) <= cap) return json;
   // Keep the structure; shrink the longest free text until it fits.
-  for (const key of ["brief", "findings", "sources", "changedFiles", "summary"]) {
+  for (const key of ["data", "brief", "findings", "sources", "changedFiles", "summary"]) {
     if (value[key] === undefined) continue;
     value.truncated = true;
     const original =
