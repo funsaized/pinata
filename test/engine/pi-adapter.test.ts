@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { copyFile, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { join, sep } from "node:path";
 import test, { type TestContext } from "node:test";
 import { fauxAssistantMessage, fauxText, fauxToolCall } from "@earendil-works/pi-ai";
 import pinata from "../../engine/pi/extension.ts";
@@ -640,7 +640,7 @@ test("orchestrator tools hand off artifacts, integrate after HEAD advancement, a
   assert.equal(result.status, "succeeded", JSON.stringify(run));
   const saved = JSON.parse(await readFile(join(result.dir, "run.json"), "utf8"));
   const path = saved.resume.data.prep.worktreePaths.build;
-  assert(path.startsWith(join(a.world.dir, "custom worktrees")));
+  assert(path.startsWith((await realpath(join(a.world.dir, "custom worktrees"))) + sep));
   assert.equal(await readFile(join(path, "README.md"), "utf8"), "# Implemented\n");
   assert.equal(result.handoff.tool, "pinata_changes");
   assert.equal(result.tasks[0].artifact.scope, "builder-artifact");

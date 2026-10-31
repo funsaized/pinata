@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { delimiter, join } from "node:path";
+import { mkdir, readFile, realpath, writeFile } from "node:fs/promises";
+import { delimiter, join, sep } from "node:path";
 import test from "node:test";
 import { fauxAssistantMessage, fauxText, fauxToolCall } from "@earendil-works/pi-ai";
 import type { AgentEvent, TaskSpec } from "../../engine/core/types.ts";
@@ -348,7 +348,11 @@ test("a pull request is fetched into a private ref and reviewed at its head", as
     view.agents.look.workspace!.path,
     (world.dataOf.get(handle.id)!.prep as any).worktreePaths["pr-7"],
   );
-  assert(view.agents.look.workspace!.path.startsWith(join(world.dir, "worktrees")));
+  assert(
+    view.agents.look.workspace!.path.startsWith(
+      (await realpath(join(world.dir, "worktrees"))) + sep,
+    ),
+  );
   assert.match(brief, /"kind":"pull-request"/);
   assert.match(brief, /Changed files: \[\{"status":"M","path":"b.txt"\}\]/);
   assert.equal(world.fixture.git("rev-parse", `refs/pinata/${handle.id}/pr-7`).trim(), pr.head);
