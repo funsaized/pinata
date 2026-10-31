@@ -9,7 +9,7 @@
       "id": "pinata",
       "image": "REPLACE_WITH_IMMUTABLE_IMAGE_DIGEST",
       "command": ["node", "/opt/arena/pinata-adapter.mjs"],
-      "version": "pi-pinata@2.0.0 plus patch; pin Pi parent version in image",
+      "version": "pi-pinata@2.0.1 plus patch; pin Pi parent version in image",
       "source": "Record patched source commit, prompts and definitions",
       "network": "none",
       "secrets": []

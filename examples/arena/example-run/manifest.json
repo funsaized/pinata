@@ -7,17 +7,17 @@
   "trials": 1,
   "task": {
     "id": "repair-ledger-v1",
-    "sha256": "4753a04162e658e64cfb1ff3c6c914389ea39ebdfd125adba1c9ced20c514b6d"
+    "sha256": "b90840341a54e93a3449415c0a7c00033e6809d33694e1cc7256a936527de6d4"
   },
-  "sourceCommit": "fcf32e7b3e1d4208463b4171532fc46ec5b7fe5e",
+  "sourceCommit": "81a9332169de5881bcd0390987926ce1a95d3d84",
   "sourceDirty": true,
   "sourceFilesSha256": {
     "runner.ts": "7f80ac60b18455849459269c0d3efa5140f23c7cb7929f3eee727b19326ff990",
     "protocol.ts": "31a751dff506005e5f524cb0427ee63be48dfbe0a07fae483d8ef201509bcaad",
     "task.ts": "14123131c20380d5b77412fc762c689f9928407d4368c6e2a246eb4fdba63ff3",
     "sandbox.ts": "82fda2564d91f2db6689b828c6347e6601a26f396db26072848db64fb880eea8",
-    "fixtures.ts": "61de6bff01efd0a3d53a685c1611a7d4e8b1a12a70428ec451bef76b7aa758af",
-    "manifest.json": "b9d898753960dda59728f2e9269676f367681e38144199ba6e556f87961ec1af"
+    "fixtures.ts": "2508c060928ef96b1d540ed6aa599bd865280a155f8ef868c32a81a1383dcf34",
+    "manifest.json": "27ddc248f28b4eee8bc36d88808c414a42b6b1ccb830048e0703439abc3ca947"
   },
   "node": "v24.19.0",
   "verifierImage": "sha256:daa74c183f7d8c1ba55ed79c76e912f50be8782ca9d2da640645f906dce474b8",
@@ -32,9 +32,9 @@
     {
       "id": "pinata",
       "name": "Piñata",
-      "version": "2.0.0",
+      "version": "2.0.1",
       "integration": "protocol-contract",
-      "source": "https://github.com/funsaized/pinata/tree/206f9683aec909c0fd7fe3abfe775a214837e221"
+      "source": "https://github.com/funsaized/pinata/tree/9047a3d0f9d55e84a492e515fa01049ccf273dd4"
     },
     {
       "id": "opencode",
