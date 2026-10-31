@@ -1,7 +1,5 @@
 {
   "cwd": "/absolute/path/to/pinata-playground",
-  "approval": "Replace with your approval for one read-only scout and the selected model's usage",
-  "allowWrites": false,
   "config": {
     "models": {
       "default": {

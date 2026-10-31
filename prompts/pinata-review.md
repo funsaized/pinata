@@ -3,7 +3,7 @@ description: Review your uncommitted changes, a branch, or a GitHub pull request
 argument-hint: "[nothing | base branch | PR number or URL] [focus]"
 ---
 
-Review existing changes with pinata reviewers. Request: ${@:-my current changes}.
+Review existing changes with pinata reviewers. Request: $@
 
 Pick the subject:
 

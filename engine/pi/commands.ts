@@ -13,7 +13,7 @@ export const USAGE = [
   "/pinata              status of the latest run",
   "/pinata runs         runs in this repository",
   "/pinata mode lean|observe   footprint mode for this session",
-  "/pinata live [run|demo]      the run workspace; select an agent with ↑↓ and Enter",
+  "/pinata live [run]      the run workspace; select an agent with ↑↓ and Enter",
   "/pinata open [run] <task>    the workspace focused on an agent (Enter steers)",
   "/pinata watch [run] [task]   start the run's socket for an external viewer",
   "/pinata rerun <run>          start again the tasks lost when Pi exited",
@@ -140,18 +140,7 @@ export function registerCommands(pi: ExtensionAPI, host: PinataHost): void {
   pi.registerCommand("pinata", {
     description: "pinata status, runs and mode (no model turn)",
     getArgumentCompletions: (prefix) =>
-      [
-        "status",
-        "runs",
-        "live",
-        "live demo",
-        "open",
-        "watch",
-        "rerun",
-        "gc",
-        "mode lean",
-        "mode observe",
-      ]
+      ["status", "runs", "live", "open", "watch", "rerun", "gc", "mode lean", "mode observe"]
         .filter((c) => c.startsWith(prefix))
         .map((value) => ({ value, label: value })),
     handler: async (args, ctx) => {

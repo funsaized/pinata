@@ -1,7 +1,6 @@
 {
   "cwd": "/absolute/path/to/monorepo",
   "approval": "Replace with your approval to change packages/api, run its tests, and integrate locally",
-  "allowWrites": true,
   "config": {
     "models": {
       "default": {

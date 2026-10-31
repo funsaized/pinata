@@ -7,7 +7,7 @@ import { initTheme } from "@earendil-works/pi-coding-agent";
 import type { DetailSource } from "../../engine/ui/detail.ts";
 import type { AgentEvent, TaskSpec } from "../../engine/core/types.ts";
 import { replayView, type RunView } from "../../engine/core/view.ts";
-import { LiveScene, demoRun, type SceneOptions, type SceneRun } from "../../engine/ui/live.ts";
+import { LiveScene, type SceneOptions, type SceneRun } from "../../engine/ui/live.ts";
 import { mascotFrame, mood } from "../../engine/ui/mascot.ts";
 import { footerLine } from "../../engine/ui/text.ts";
 import { PinataWidget, agentRow, widgetLines } from "../../engine/ui/widget.ts";
@@ -76,6 +76,56 @@ function sample(): RunView {
   );
 }
 
+// Synthetic run states for UI tests only.
+function sceneRun(step = 0): SceneRun {
+  const phase = ((step % 6) + 6) % 6;
+  const at = 1_000_000;
+  const tasks: TaskSpec[] = [
+    { id: "map", role: "scout", task: "Map the code", acceptance: ["a map"] },
+    { id: "build", role: "builder", task: "Build it", acceptance: ["it works"], after: ["map"] },
+    {
+      id: "review",
+      role: "reviewer",
+      task: "Review it",
+      acceptance: ["a verdict"],
+      reviewOf: "build",
+    },
+  ];
+  const status = {
+    map: phase === 0 ? "running" : "succeeded",
+    build: phase < 1 ? "queued" : phase === 1 ? "running" : "succeeded",
+    review: phase < 2 ? "queued" : phase === 2 ? "running" : phase === 5 ? "rejected" : "succeeded",
+  } as const;
+  const events: AgentEvent[] = [];
+  const push = (agent: string | undefined, body: Record<string, unknown>) =>
+    events.push({ v: 1, seq: events.length, run: "fixture", agent, at, ...body } as AgentEvent);
+  push(undefined, { t: "run_started", tasks, mode: "lean" });
+  const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: 0 };
+  for (const task of tasks) {
+    const s = status[task.id as keyof typeof status];
+    if (s === "queued") continue;
+    push(task.id, {
+      t: "agent_started",
+      backend: "in-process",
+      model: { provider: "fixture", id: "fixture" },
+      workspace: { kind: "live", path: "." },
+    });
+    if (s === "running") continue;
+    push(task.id, {
+      t: "agent_settled",
+      status: s,
+      summary: s === "rejected" ? "Fixture: a check needs attention." : "Fixture: done.",
+      ...(s === "rejected" && { reason: "Fixture: a check needs attention." }),
+      usage,
+      turns: 0,
+      toolCalls: 0,
+    });
+  }
+  if (phase >= 3)
+    push(undefined, { t: "run_settled", status: phase === 5 ? "failed" : "succeeded", usage });
+  return { view: replayView(events, "fixture"), integration: phase === 4 ? "verified" : null };
+}
+
 const NOW = 21_500;
 // oxlint-disable-next-line no-control-regex
 const strip = (lines: string[]) => lines.map((l) => l.replace(/\x1b\[[0-9;]*m/g, ""));
@@ -110,12 +160,12 @@ test("widget rows render the expected lines at several widths", () => {
 
 test("celebrations require every successful task and verified builder integration", () => {
   const kind = (run: SceneRun) => mood(run.view, run.integration).kind;
-  assert.equal(kind(demoRun(2)), "review");
-  assert.equal(kind(demoRun(3)), "ready");
-  assert.equal(kind(demoRun(4)), "success");
-  assert.equal(kind(demoRun(5)), "attention");
+  assert.equal(kind(sceneRun(2)), "review");
+  assert.equal(kind(sceneRun(3)), "ready");
+  assert.equal(kind(sceneRun(4)), "success");
+  assert.equal(kind(sceneRun(5)), "attention");
   for (const integration of ["verification_failed", "rolled_back"])
-    assert.equal(mood(demoRun(4).view, integration).kind, "attention");
+    assert.equal(mood(sceneRun(4).view, integration).kind, "attention");
   const cancelled = (reason: string) =>
     build(
       [spec("scout")],
@@ -171,7 +221,8 @@ function harness(options: Partial<SceneOptions> = {}) {
     theme,
     keys,
     done: () => closed++,
-    demo: true,
+    runs: ["fixture"],
+    readRun: () => sceneRun(),
     now: () => now,
     timers: {
       setInterval: (fn, ms) => {
@@ -203,15 +254,15 @@ test("live transitions celebrate once, historical success does not, and controls
   assert.equal(JSON.stringify(h.scene.run), initial);
   assert.match(h.scene.render(100).join("\n"), /Hey! I am supervising/);
   h.time(2500);
-  h.scene.update(demoRun(3));
+  h.scene.update(sceneRun(3));
   assert.equal(h.scene.cheerAt, null);
-  h.scene.update(demoRun(4));
+  h.scene.update(sceneRun(4));
   const celebration = h.scene.cheerAt;
   assert(celebration! > 0);
   h.time(3000);
-  h.scene.update(demoRun(4));
+  h.scene.update(sceneRun(4));
   assert.equal(h.scene.cheerAt, celebration);
-  const old = demoRun(4);
+  const old = sceneRun(4);
   h.scene.update({ ...old, view: { ...old.view, run: "old-run" } });
   assert.equal(h.scene.cheerAt, null);
   h.scene.handleInput("m");
@@ -228,8 +279,8 @@ test("live transitions celebrate once, historical success does not, and controls
 test("the scene animates only while an agent works or a bonk or cheer plays", async () => {
   const h = harness();
   await flush();
-  assert.equal(h.timers.size, 1, "the demo's first scene has a running scout");
-  h.scene.update(demoRun(3));
+  assert.equal(h.timers.size, 1, "the fixture's first scene has a running scout");
+  h.scene.update(sceneRun(3));
   h.time(1000);
   h.tick();
   assert.equal(h.timers.size, 0, "a finished run is still");
@@ -238,7 +289,7 @@ test("the scene animates only while an agent works or a bonk or cheer plays", as
   h.time(2100);
   h.tick();
   assert.equal(h.timers.size, 0, "and stops when it ends");
-  h.scene.update(demoRun(0));
+  h.scene.update(sceneRun(0));
   h.scene.handleInput("m");
   assert.equal(h.timers.size, 0, "motion off stops the timer");
   h.scene.dispose();
@@ -246,7 +297,7 @@ test("the scene animates only while an agent works or a bonk or cheer plays", as
 });
 
 test("empty views, small terminals, scrolling, and clicks keep status and controls usable", async () => {
-  const h = harness({ demo: false });
+  const h = harness({ runs: [] });
   await flush();
   assert.equal(h.scene.error, null);
   assert.match(h.scene.render(100).join("\n"), /No runs yet/);
@@ -302,19 +353,18 @@ test("stale and failed reads cannot replace the selected run or update a dispose
   let resolveFirst!: (run: SceneRun) => void;
   const named = (run: SceneRun, id: string) => ({ ...run, view: { ...run.view, run: id } });
   const h = harness({
-    demo: false,
     runs: ["first", "second"],
     readRun: (id) =>
       id === "first"
         ? new Promise<SceneRun>((resolve) => (resolveFirst = resolve))
-        : Promise.resolve(named(demoRun(1), "second")),
+        : Promise.resolve(named(sceneRun(1), "second")),
   });
   h.scene.handleInput("right");
-  resolveFirst(named(demoRun(4), "first"));
+  resolveFirst(named(sceneRun(4), "first"));
   await flush();
   assert.equal(h.scene.run!.view.run, "second");
   // A pushed update for a run that is not selected is ignored.
-  h.scene.offer(named(demoRun(4), "first"));
+  h.scene.offer(named(sceneRun(4), "first"));
   assert.equal(h.scene.run!.view.run, "second");
   h.scene.readRun = async () => {
     throw new Error("missing\x1b[2J manifest");
@@ -328,7 +378,7 @@ test("stale and failed reads cannot replace the selected run or update a dispose
   const pending = h.scene.refresh();
   const before = h.renders();
   h.scene.dispose();
-  resolveLate(demoRun(4));
+  resolveLate(sceneRun(4));
   await pending;
   assert.equal(h.renders(), before);
   assert.equal(h.timers.size, 0);
@@ -344,7 +394,7 @@ test("renderer is bounded, deterministic, and has distinct animated and bonked p
 });
 
 test("the workspace selects conversations, scrolls, steers, and preserves draft focus", async (t) => {
-  const run = demoRun(1);
+  const run = sceneRun(1);
   const sent: unknown[] = [];
   const subscriptions = new Set<string>();
   const source: DetailSource = {
@@ -366,7 +416,6 @@ test("the workspace selects conversations, scrolls, steers, and preserves draft 
     },
   };
   const h = harness({
-    demo: false,
     runs: [run.view.run],
     readRun: () => run,
     detailSource: () => source,
@@ -428,11 +477,10 @@ test("the workspace selects conversations, scrolls, steers, and preserves draft 
 });
 
 test("rapid selection during a transcript load never displays the previous agent's messages", async (t) => {
-  const run = demoRun(1);
+  const run = sceneRun(1);
   let release!: (value: { messages: unknown[] }) => void;
   const loads: string[] = [];
   const h = harness({
-    demo: false,
     runs: [run.view.run],
     readRun: () => run,
     agent: "map",
@@ -467,7 +515,7 @@ test("rapid selection during a transcript load never displays the previous agent
 test("a late conversation source cannot replace the selected run, and failed sources can retry", async (t) => {
   let release!: (source: DetailSource) => void;
   let fail = true;
-  const named = (id: string) => ({ ...demoRun(1), view: { ...demoRun(1).view, run: id } });
+  const named = (id: string) => ({ ...sceneRun(1), view: { ...sceneRun(1).view, run: id } });
   const source = (id: string): DetailSource => ({
     run: id,
     cwd: ".",
@@ -476,7 +524,6 @@ test("a late conversation source cannot replace the selected run, and failed sou
     load: async () => ({ messages: [{ role: "user", content: `Run ${id} history` }] }),
   });
   const h = harness({
-    demo: false,
     runs: ["first", "second"],
     readRun: named,
     detailSource: (id) => {
@@ -508,7 +555,7 @@ test("widget ears respect motion, run only while an agent works, and release the
     renders = 0,
     opened = 0,
     motion = true;
-  let views: RunView[] = [demoRun(1).view];
+  let views: RunView[] = [sceneRun(1).view];
   const widget = new PinataWidget({
     tui: { requestRender: () => renders++ },
     paint: theme,
@@ -538,13 +585,13 @@ test("widget ears respect motion, run only while an agent works, and release the
   motion = true;
   widget.update();
   assert(widget.animating);
-  views = [demoRun(3).view];
+  views = [sceneRun(3).view];
   widget.update();
   assert(!widget.animating, "nothing running, no timer");
   assert.equal(widget.handleMouse({ type: "click", button: "left", y: 0 })!.handled, true);
   assert.equal(opened, 1);
   assert(widget.render(30).every((line) => visibleWidth(line) <= 30));
-  views = [demoRun(1).view];
+  views = [sceneRun(1).view];
   widget.update();
   widget.dispose();
   assert(!widget.animating);
