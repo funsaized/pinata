@@ -17,6 +17,7 @@ import { provision, resolveSetup, SetupError, type Setup } from "../workspace/de
 import { git, line } from "../workspace/git.ts";
 import { copyIncluded } from "../workspace/include.ts";
 import { LiveWorkspace, liveFingerprint } from "../workspace/live.ts";
+import { worktreeRunRoot } from "../workspace/location.ts";
 import { caseInsensitive, owns } from "../workspace/paths.ts";
 import { dropRefs, snapshotBase, type Base } from "../workspace/snapshot.ts";
 import { Worktree, composeBase } from "../workspace/worktree.ts";
@@ -32,6 +33,8 @@ import {
 
 // What prepareRun adds to the run's data before any agent starts.
 export interface RunPrep {
+  // Absolute paths frozen at run creation. Absent only for legacy runs.
+  worktreePaths?: Record<string, string>;
   base?: Base;
   setup?: Setup;
   subjects: Record<string, Subject>;
@@ -51,7 +54,13 @@ type Data = { config: PinataConfig; prep: RunPrep; worktrees?: Map<string, Promi
 
 const data = (run: RunContext) => run.data as unknown as Data;
 
-export function worktreePath(run: Pick<RunContext, "dir">, name: string): string {
+export function worktreePath(run: Pick<RunContext, "dir" | "data">, name: string): string {
+  const paths = (run.data.prep as RunPrep | undefined)?.worktreePaths;
+  if (paths) {
+    if (!paths[name]) throw new Error(`No recorded worktree path for ${name}`);
+    return paths[name];
+  }
+  // Runs created before external worktrees retain their exact original location.
   return join(run.dir, "worktrees", name);
 }
 
@@ -80,7 +89,18 @@ async function resolveRun(
 ): Promise<RunPrep> {
   const builders = tasks.some((t) => writes(t));
   const reviews = tasks.filter((t) => t.reviewBase !== undefined || t.reviewPr !== undefined);
-  const prep: RunPrep = { subjects: {} };
+  const prep: RunPrep = { subjects: {}, worktreePaths: {} };
+  const names = [
+    ...new Set(
+      tasks.flatMap((task) =>
+        writes(task) ? [task.id] : task.reviewPr !== undefined ? [`pr-${task.reviewPr}`] : [],
+      ),
+    ),
+  ];
+  if (names.length) {
+    const directory = await worktreeRunRoot(root, runId, config.worktreeRoot);
+    prep.worktreePaths = Object.fromEntries(names.map((name) => [name, join(directory, name)]));
+  }
   if (builders) prep.base = await snapshotBase(root, runId, config.includeUncommitted);
   if (builders) prep.setup = await resolveSetup(config.setup, root, prep.base!.commit);
   const snapshot = reviews.some((t) => t.reviewBase !== undefined)

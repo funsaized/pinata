@@ -9,6 +9,10 @@ you. Agents with `live-readonly` or `review-target` workspaces never run setup.
 Use this guide to check builder setup, change it, or turn it off, and to give builders the
 local files they need.
 
+New worktrees live outside your checkout and `.git`, under the configurable
+[`worktreeRoot`](../reference/config.md#worktree-location). Each gets its own
+dependencies. Run metadata and setup logs still live under `<git common dir>/pinata/`.
+
 ## Check what pinata detected
 
 Ask Pi: “Show the builder setup command detected for this project before

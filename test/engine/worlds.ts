@@ -196,7 +196,11 @@ export async function processWorld(
   let n = 0;
   const run: World["run"] = async (tasks, opts = {}) => {
     const id = opts.id ?? randomUUID();
-    const config = validateConfig({ setup: false, ...(opts as any).config }).config;
+    const config = validateConfig({
+      setup: false,
+      worktreeRoot: join(dir, "worktrees"),
+      ...(opts as any).config,
+    }).config;
     const prep = await prepareRun(
       repo,
       id,

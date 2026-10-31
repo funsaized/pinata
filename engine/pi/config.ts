@@ -21,6 +21,7 @@ export interface PinataConfig {
   passEnv: string[];
   webExtension?: string;
   setup?: string | false;
+  worktreeRoot?: string;
   codemode: boolean;
   includeUncommitted: boolean;
   mode: Mode;
@@ -44,6 +45,7 @@ const KEYS = [
   "webExtension",
   "limits",
   "setup",
+  "worktreeRoot",
   "codemode",
   "includeUncommitted",
   "mode",
@@ -106,6 +108,11 @@ export function validateConfig(input: unknown = {}): { config: PinataConfig; not
       v.setup === false || (typeof v.setup === "string" && v.setup.trim()),
       "setup must be a nonempty shell command or false",
     );
+  if (v.worktreeRoot !== undefined)
+    need(
+      typeof v.worktreeRoot === "string" && v.worktreeRoot.trim() && !v.worktreeRoot.includes("\0"),
+      "worktreeRoot must be a nonempty path",
+    );
   need(typeof (v.codemode ?? true) === "boolean", "codemode must be a boolean");
   need(typeof (v.includeUncommitted ?? true) === "boolean", "includeUncommitted must be a boolean");
   need(
@@ -127,6 +134,7 @@ export function validateConfig(input: unknown = {}): { config: PinataConfig; not
       passEnv: v.passEnv ?? [],
       ...(v.webExtension && { webExtension: v.webExtension }),
       ...(v.setup !== undefined && { setup: v.setup }),
+      ...(v.worktreeRoot !== undefined && { worktreeRoot: v.worktreeRoot }),
       codemode: v.codemode ?? true,
       includeUncommitted: v.includeUncommitted ?? true,
       mode: v.mode ?? "lean",
