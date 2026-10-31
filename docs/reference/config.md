@@ -19,6 +19,17 @@ replace. Unknown keys are rejected.
 | `toolProviders`      | Named `{extension, tools}` records for custom agent tools; only required providers load                 |
 | `passEnv`            | Extra environment variable names for agents' checks and setup (never values)                            |
 
+For example, put this in `.pi/pinata.json` to limit each run in this repository
+to four agents at once and skip dependency setup for a project that needs none:
+
+```json
+{ "limits": { "concurrency": 4 }, "setup": false }
+```
+
+Use the same object inside `pinata_run`’s `config` for one run. Task ownership and
+checks do not belong here: `ownership`, `checks`, and `evidenceChecks` belong on
+tasks; `integratedChecks` belongs on the run.
+
 ## Models
 
 `thinking` is `off`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max`. A task uses the

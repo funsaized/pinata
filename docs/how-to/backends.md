@@ -19,7 +19,7 @@ Measured on the reference Linux machine for the 1.0 release.
   run up, and if Pi exits first a headless host finishes it.
 
 All backends give the same widget rows, detail view, steering, verification and results.
-An agent crash takes your Pi down only in process; use `process` for agents you expect to
+An agent crash takes your Pi down only with the `in-process` backend; use `process` for agents you expect to
 misbehave.
 
 `herdr-pi` needs Pi running inside Herdr; see [Herdr](herdr.md).

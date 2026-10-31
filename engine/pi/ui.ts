@@ -200,7 +200,7 @@ export class PinataUI {
     this.widget?.update();
   }
 
-  // /pinata live [run|demo]: the mascot overlay. Plain status outside the interactive TUI.
+  // /pinata live [run]: the run workspace. Plain status outside the interactive TUI.
   async openLive(
     arg: string,
     ctx: UIContext,
@@ -214,16 +214,10 @@ export class PinataUI {
     this.opening = true;
     const epoch = this.epoch;
     try {
-      const demo = arg === "demo";
-      let runs: string[] = [];
-      if (!demo) {
-        const all = source ? await source.runs(ctx) : [...this.followed.keys()].reverse();
-        runs = arg ? all.filter((r) => r.startsWith(arg)) : all;
-        if (arg && runs.length !== 1)
-          return runs.length
-            ? `Several runs start with ${arg}`
-            : `No pinata run starts with ${arg}`;
-      }
+      const all = source ? await source.runs(ctx) : [...this.followed.keys()].reverse();
+      const runs = arg ? all.filter((r) => r.startsWith(arg)) : all;
+      if (arg && runs.length !== 1)
+        return runs.length ? `Several runs start with ${arg}` : `No pinata run starts with ${arg}`;
       if (epoch !== this.epoch) return null;
       await ctx.ui.custom<void>(
         (tui, theme, keys, done) => {
@@ -251,7 +245,6 @@ export class PinataUI {
               throw new Error("No conversation source is available for this run");
             },
             agent,
-            demo,
             motion: this.motion,
             setMotion: (enabled) => this.setMotion(enabled),
           });

@@ -1,7 +1,6 @@
 {
   "cwd": "/absolute/path/to/repository",
   "approval": "User requested this bounded fix and local integration",
-  "allowWrites": true,
   "tasks": [
     {
       "id": "fix",

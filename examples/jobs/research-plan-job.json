@@ -1,7 +1,5 @@
 {
   "cwd": "/absolute/path/to/repository",
-  "approval": "Replace with your approval for read-only scouting, web research through pi-web-access, and a plan",
-  "allowWrites": false,
   "config": {
     "models": {
       "default": {

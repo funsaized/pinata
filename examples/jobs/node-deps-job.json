@@ -1,7 +1,6 @@
 {
   "cwd": "/absolute/path/to/node-project",
   "approval": "Replace with your approval to fix the failing unit test with Luna, run npm test, and integrate locally",
-  "allowWrites": true,
   "instructions": ["Follow the repository's AGENTS.md. Do not stage, commit, push, or publish."],
   "config": {
     "models": {

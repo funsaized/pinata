@@ -6,22 +6,26 @@ approves the exact change, and pinata applies it to your checkout. Then you roll
 ## 1. Ask for the change
 
 ```text
-/pinata-fix In src/duration.mjs, treat 0 seconds as a valid delay. Run npm test.
+/pinata-fix In src/duration.mjs, treat 0 seconds as a valid delay. Own that file
+and its existing test file. Add a regression test and run npm test. Have an
+independent reviewer check the patch. Stop after review; do not integrate yet.
 ```
 
 `/pinata-fix` prepares a builder task and a reviewer task (`reviewOf` the builder). Pi
-asks for your approval first: builders write files and run commands with your
-permissions, so the run records your authorization in `approval`.
+records the write scope you authorized in `approval`. Builders write files and run
+commands with your permissions. A separate confirmation is needed only when the
+required work goes beyond your existing authorization.
 
-The builder's task names its `ownership` (here `src/duration.mjs`) and its `checks`
-(`npm test`). It can only edit owned files, in a git worktree created from your checkout
-as it was when the run started.
+The builder's task names its `ownership` (`src/duration.mjs` and its test file)
+and its `checks` (`npm test`). The engine rejects changes outside those paths.
+The builder works in a Git worktree created from your checkout as it was when
+the run started.
 
 ## 2. Verification and review
 
 When the builder finishes, pinata captures exactly what changed, compares it with what the
-builder reported, refuses writes outside ownership, and runs the checks in the worktree. A
-failed check fails the builder, whatever it claimed.
+builder reported, fails the task for changes outside ownership, and runs the checks
+in the worktree. A failed check fails the builder, whatever it claimed.
 
 The reviewer then reads the diff of that exact change. An approval is bound to the change's
 fingerprint: if the change moves, the approval no longer counts.
@@ -40,7 +44,8 @@ reviewer reviews the new change.
 With an approving review:
 
 ```text
-Integrate the pinata run.
+Apply the reviewed changes locally and run npm test in this checkout.
+Do not stage, commit, or push.
 ```
 
 The orchestrator decides when and how to integrate; neither subagents nor the engine
