@@ -42,6 +42,9 @@ export interface AgentView {
   turns: number;
   toolCalls: number;
   usage: Usage;
+  // Completed attempts. Usage events and settlements describe only the current attempt;
+  // keep this baseline in snapshots so repairs and crash recovery never erase effort.
+  previous?: { usage: Usage; turns: number; toolCalls: number };
   // What the agent is doing now: "thinking", "writing", a tool with its args, or null.
   activity: string | null;
   streaming: { text: string; thinking: string } | null;
@@ -188,6 +191,13 @@ function apply(view: RunView, e: AgentEvent): RunView {
             ...fresh,
             ...(existing.workspaceMode && { workspaceMode: existing.workspaceMode }),
             usage: existing.usage,
+            turns: existing.turns,
+            toolCalls: existing.toolCalls,
+            previous: {
+              usage: existing.usage,
+              turns: existing.turns,
+              toolCalls: existing.toolCalls,
+            },
             steers: existing.steers,
           },
         },
@@ -206,7 +216,7 @@ function apply(view: RunView, e: AgentEvent): RunView {
     case "turn_start":
       return updateAgent(view, id!, (a) => ({
         ...a,
-        turns: Math.max(a.turns, e.turn),
+        turns: Math.max(a.turns, (a.previous?.turns ?? 0) + e.turn),
         activity: "thinking",
       }));
     case "text_delta":
@@ -227,10 +237,14 @@ function apply(view: RunView, e: AgentEvent): RunView {
           thinking: tail(a.streaming?.thinking ?? "", e.delta),
         },
       }));
-    case "message_end":
-      return e.role === "assistant"
-        ? updateAgent(view, id!, (a) => ({ ...a, streaming: null }))
-        : view;
+    case "message_end": {
+      const next = updateAgent(view, id!, (a) => ({
+        ...a,
+        ...(e.role === "assistant" && { streaming: null }),
+        usage: addUsage(a.usage, e.usage),
+      }));
+      return { ...next, usage: totalUsage(next.agents) };
+    }
     case "tool_start":
       return updateAgent(view, id!, (a) => {
         const tool: ToolRecord = { call: e.call, name: e.name, args: e.args };
@@ -291,7 +305,10 @@ function apply(view: RunView, e: AgentEvent): RunView {
     case "checkout_changed":
       return updateAgent(view, id!, (a) => ({ ...a, checkoutChanged: true }));
     case "usage": {
-      const next = updateAgent(view, id!, (a) => ({ ...a, usage: e.usage }));
+      const next = updateAgent(view, id!, (a) => ({
+        ...a,
+        usage: addUsage(a.previous?.usage ?? ZERO_USAGE, e.usage),
+      }));
       return { ...next, usage: totalUsage(next.agents) };
     }
     case "agent_settled": {
@@ -301,9 +318,9 @@ function apply(view: RunView, e: AgentEvent): RunView {
         settledAt: e.at,
         summary: e.summary,
         ...(e.reason !== undefined && { reason: e.reason }),
-        usage: e.usage,
-        turns: e.turns,
-        toolCalls: e.toolCalls,
+        usage: addUsage(a.previous?.usage ?? ZERO_USAGE, e.usage),
+        turns: (a.previous?.turns ?? 0) + e.turns,
+        toolCalls: (a.previous?.toolCalls ?? 0) + e.toolCalls,
         activity: null,
         streaming: null,
         toolsInFlight: [],
