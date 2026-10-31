@@ -1,0 +1,5 @@
+# Repository-only recorded evidence and local run directories.
+example-run/
+runs/
+viewer-preview.png
+VALIDATION.md

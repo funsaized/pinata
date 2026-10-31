@@ -1,0 +1,2 @@
+# Recorded arena evidence is immutable; formatting candidates would invalidate hashes.
+examples/arena/example-run/**

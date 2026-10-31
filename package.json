@@ -49,11 +49,15 @@
     "bench": "node --expose-gc bench/run.ts",
     "bench:loopback": "node --expose-gc bench/run.ts --provider loopback",
     "check": "npm run format:check && npm run lint && npm run typecheck",
-    "lint": "oxlint test scripts engine bench bin",
+    "lint": "oxlint test scripts engine bench bin examples/arena",
     "typecheck": "tsc -p tsconfig.json",
     "format:check": "oxfmt --check package.json tsconfig.json test scripts .github examples README.md docs skills prompts engine bench bin agents",
     "format": "oxfmt package.json tsconfig.json test scripts .github examples README.md docs skills prompts engine bench bin agents",
-    "test:herdr": "node --test test/engine/herdr.test.ts"
+    "test:herdr": "node --test test/engine/herdr.test.ts",
+    "arena:setup": "node examples/arena/cli.ts setup --pull",
+    "arena:demo": "node examples/arena/cli.ts demo",
+    "test:arena": "node --test test/arena/*.test.ts",
+    "test:arena:browser": "node scripts/arena-browser-smoke.mjs"
   },
   "devDependencies": {
     "@earendil-works/pi-ai": "1.1.0",

@@ -125,3 +125,10 @@ recipes. Startup, memory, context size, and dispatch costs are measured in the b
 The [documentation index](docs/README.md) lists everything, including maintainer docs.
 
 MIT licensed.
+
+### Coding arena rehearsal
+
+The [local coding arena](examples/arena/README.md) shows delegation, repaired-attempt
+receipts, frozen patches and independent grading in a replayable viewer. Its branded
+lanes use explicitly simulated fixtures; live stack integrations are unverified
+container adapter contracts, and no competitive benchmark results are included.

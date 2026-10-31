@@ -1,0 +1,7 @@
+{
+  "schema": 1,
+  "id": "repair-ledger-v1",
+  "entry": "solution.mjs",
+  "prompt": "requirements.md",
+  "publicFiles": ["solution.mjs", "requirements.md", "public-check.mjs"]
+}
