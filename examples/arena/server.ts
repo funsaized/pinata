@@ -30,6 +30,7 @@ export async function serveArena(dir: string, port = 4317) {
         "/": ["index.html", "text/html; charset=utf-8"],
         "/viewer.js": ["viewer.js", "text/javascript"],
         "/style.css": ["style.css", "text/css"],
+        "/summary.mjs": ["../summary.mjs", "text/javascript"],
       };
       if (files[path]) {
         const [file, type] = files[path];

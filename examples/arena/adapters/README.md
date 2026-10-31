@@ -12,7 +12,7 @@ scripted OpenAI-compatible HTTP provider. The mock audit verifies every request'
 usage against the attempt ledger, including parent, three children and OpenCode
 auxiliary requests. This is offline conformance, **not a live model evaluation or
 an invoice calibration**. The simpler `demo` still uses the same FakeBackend in
-all three lanes and is labelled separately.
+all three implementations and is labelled separately.
 
 Commands on this page are _manual_ operator walkthroughs. The mock path needs no
 provider credentials. Do not run the live command without authorization for spend.

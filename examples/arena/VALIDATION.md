@@ -1,5 +1,27 @@
 # Arena validation evidence
 
+## Review follow-up
+
+The current viewer and recovery changes were checked on Linux with Node 26.7.0:
+
+- `npm run check`: formatting, lint and TypeScript pass.
+- `npm test`: 250 passed, 10 skipped. New regressions cover repeated detached
+  replays in lean/observe modes, legacy logs, cost limits, named pipes and model
+  mismatch cohorts.
+- Chromium smokes pass for both recorded modes, including separate mismatch rows,
+  timed-out attempts, attempt selection, inline diffs, replay and mobile layout.
+  The two screenshots show the current viewer over the original recorded runs.
+- `npm pack --dry-run --ignore-scripts --json`: 131 files, no `examples/arena/`
+  content. Release validation rejects arena files in the published package.
+
+The original recorded runs below remain unchanged, including their generation-time
+source hashes. Current generated runs check their source hashes independently.
+Docker tests and the real-CLI mock audit were not rerun locally during this follow-up:
+the local Docker socket denies access and passwordless sudo is unavailable. The
+PR's Docker CI job must pass before merging. No live provider calls were made.
+
+## Original container validation
+
 Validation uses deterministic fixtures and local containers only. **All three
 actual pinned CLIs** also ran against an isolated scripted HTTP provider. No paid
 provider, real model comparison, or live provider billing calibration was run.

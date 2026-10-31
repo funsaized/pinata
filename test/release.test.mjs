@@ -30,6 +30,7 @@ test("release rejects mismatched refs, metadata, lockfiles and unexpected conten
     "media/demo.mp4",
     "lib/.env",
     "lib/node_modules/x",
+    "examples/arena/runner.ts",
   ]) {
     assert.throws(() =>
       validateRelease(tag, manifest, lock, { ...packed, files: [...packed.files, { path: file }] }),

@@ -8,6 +8,8 @@ import { FakeBackend, fakeResult } from "../../engine/backends/fake.ts";
 import { createEngine, basicPipeline } from "../../engine/core/engine.ts";
 import { ZERO_USAGE, type TaskSpec } from "../../engine/core/types.ts";
 import { Ledger, type ProtocolEvent, type Model, type Meters } from "./protocol.ts";
+import { aggregate } from "./summary.mjs";
+export { aggregate } from "./summary.mjs";
 import { fixtureSource, seededFixtures, type Fixture } from "./fixtures.ts";
 import { sandbox, localImage } from "./sandbox.ts";
 import { loadTask, freshWorkspace, freeze, verify, hash, type TaskPackage } from "./task.ts";
@@ -413,9 +415,15 @@ export async function runArena(options: RunOptions) {
   }
   const sourceFilesSha256 = Object.fromEntries(
     await Promise.all(
-      ["runner.ts", "protocol.ts", "task.ts", "sandbox.ts", "fixtures.ts", "manifest.json"].map(
-        async (file) => [file, hash(await readFile(join(root, file)))],
-      ),
+      [
+        "runner.ts",
+        "protocol.ts",
+        "summary.mjs",
+        "task.ts",
+        "sandbox.ts",
+        "fixtures.ts",
+        "manifest.json",
+      ].map(async (file) => [file, hash(await readFile(join(root, file)))]),
     ),
   );
   let sourceDirty: boolean | null = null;
@@ -676,27 +684,6 @@ export async function runArena(options: RunOptions) {
   journal.emit(null, "run-settled", summary.aggregates);
   await writeFile(join(out, "results.json"), JSON.stringify(summary, null, 2) + "\n");
   return summary;
-}
-export function aggregate(trials: Trial[]) {
-  return [...new Set(trials.map((r) => r.contestant))].map((id) => {
-    const rows = trials.filter((r) => r.contestant === id);
-    const successes = rows.filter((r) => r.status === "completed" && r.quality?.success).length;
-    const knownCostUsd =
-      Math.round(rows.reduce((n, r) => n + r.ledger.partial.costUsd, 0) * 1e9) / 1e9;
-    const costKnown = rows.every((r) => r.ledger.totals.costUsd !== null);
-    return {
-      contestant: id,
-      attempts: rows.length,
-      successes,
-      successRate: successes / rows.length,
-      costUsd: costKnown ? knownCostUsd : null,
-      knownCostUsd,
-      costPerSuccessUsd: costKnown && successes > 0 ? knownCostUsd / successes : null,
-      totalElapsedMs: rows.reduce((n, r) => n + r.elapsedMs, 0),
-      comparable: rows.every((r) => r.comparable),
-      simulated: rows.every((r) => r.mode !== "live"),
-    };
-  });
 }
 export async function replayArena(dir: string) {
   const raw = await readFile(join(dir, "events.jsonl"), "utf8");

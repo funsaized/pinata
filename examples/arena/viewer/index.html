@@ -3,57 +3,39 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Piñata · Coding Arena</title>
+    <title>Piñata · Coding arena</title>
     <link rel="stylesheet" href="/style.css" />
     <script type="module" src="/viewer.js"></script>
   </head>
   <body>
-    <div class="grain" aria-hidden="true"></div>
     <header>
-      <a class="brand" href="/" aria-label="Piñata Arena home"
-        ><span class="mark">✦</span> PIÑATA <span class="brand-sub">/ ARENA</span></a
-      ><span class="local"><i></i> LOCAL OBSERVATORY</span>
+      <a class="brand" href="/">piñata <span>/ coding arena</span></a>
+      <a href="/api/state">Run JSON ↗</a>
     </header>
     <main>
-      <section class="hero">
+      <section class="run-header" aria-label="Run configuration">
         <div>
-          <p class="eyebrow">ONE TASK. SAME STARTER. EVERY ATTEMPT COUNTED.</p>
-          <h1>Small agents.<br /><span>Big picture.</span></h1>
-          <p class="intro">
-            Watch the work unfold. Then judge the frozen code,<br />the whole bill, and the time it
-            took to get there.
-          </p>
+          <p class="eyebrow">Task</p>
+          <h1 id="task-name">Loading run…</h1>
         </div>
-        <div class="orbit" aria-hidden="true">
-          <div class="ring ring-one"></div>
-          <div class="ring ring-two"></div>
-          <span class="orbit-node n1">PLAN</span><span class="orbit-node n2">BUILD</span
-          ><span class="orbit-node n3">REVIEW</span>
-          <div class="orb">✦</div>
-          <span class="orbit-caption">THE WORK IS THE EVIDENCE.</span>
-        </div>
+        <dl id="run-meta"></dl>
       </section>
       <div class="notice" role="status">
-        <strong id="mode">CONNECTING</strong
-        ><span id="disclosure"
-          >Waiting for a run. No provider calls are started by this viewer.</span
-        >
+        <strong id="mode">CONNECTING</strong><span id="disclosure">Waiting for a run.</span>
       </div>
       <section class="control-bar" aria-label="Replay controls">
-        <div>
-          <span class="label">FLIGHT RECORDER</span
-          ><strong id="run-status">Waiting for events</strong>
-        </div>
+        <strong id="run-status">Waiting for events</strong>
         <div class="buttons">
-          <button id="replay">↺ Replay</button><button id="play" disabled>Pause</button
-          ><label
+          <button id="replay">Replay</button><button id="play" disabled>Pause</button>
+          <label
             >Speed
             <select id="speed">
               <option value="1">1×</option>
               <option value="3" selected>3×</option>
               <option value="10">10×</option>
             </select></label
-          ><button id="latest">Live / latest</button>
+          >
+          <button id="latest">Latest</button>
         </div>
         <label class="scrub"
           ><span class="sr-only">Replay event</span
@@ -62,103 +44,69 @@
           ></label
         >
       </section>
-      <section class="lanes" id="lanes" aria-label="Contestant lanes"></section>
-      <section class="evidence-grid">
-        <article class="panel">
-          <div class="panel-head">
-            <div>
-              <p class="eyebrow">OUTCOME, COST & TIME</p>
-              <h2>Let the receipts talk.</h2>
-            </div>
-            <span class="pill">NO COMPOSITE SCORE</span>
-          </div>
-          <p class="muted">
-            Every private check is required. Bubble size shows elapsed time.<br />Fixture positions
-            are demonstrations, never product rankings.
-          </p>
-          <svg
-            id="plot"
-            viewBox="0 0 620 290"
-            role="img"
-            aria-label="Quality versus total cost, bubble size represents elapsed time"
-          >
-            <path d="M65 25V235H580" class="axis" />
-            <path d="M65 75H580M65 155H580" class="gridline" />
-            <text x="10" y="30" class="axis-text">100%</text>
-            <text x="25" y="239" class="axis-text">0%</text>
-            <text x="72" y="274" class="axis-text">TOTAL RECORDED COST →</text>
-            <g id="bubbles"></g>
-          </svg>
-          <p id="cost-note" class="small muted"></p>
-        </article>
-        <article class="panel">
-          <div class="panel-head">
-            <div>
-              <p class="eyebrow">ATTEMPT LEDGER</p>
-              <h2>Failures stay on the bill.</h2>
-            </div>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Contestant</th>
-                  <th>Pass / tries</th>
-                  <th>Total cost</th>
-                  <th>Cost / pass</th>
-                </tr>
-              </thead>
-              <tbody id="results"></tbody>
-            </table>
-          </div>
-          <p class="small muted">
-            Cost per pass includes all failed, cancelled and timed-out attempts in the numerator.
-            Missing usage is unknown. Zero passes has no defined cost per pass.
-          </p>
-          <div class="boundary">
-            <span>◈</span>
-            <div>
-              <strong>Frozen code. Separate judge.</strong>
-              <p>
-                Candidate execution uses a restricted container. The private oracle and expected
-                answers remain outside it.
-              </p>
-            </div>
-          </div>
-        </article>
+      <section class="panel results-panel" aria-labelledby="results-title">
+        <div class="panel-head">
+          <h2 id="results-title">Results</h2>
+          <span id="attempt-count" class="muted"></span>
+        </div>
+        <div
+          class="table-wrap"
+          tabindex="0"
+          aria-label="Results table, scroll horizontally for all metrics"
+        >
+          <table>
+            <thead>
+              <tr>
+                <th>Implementation / version</th>
+                <th>Observed models</th>
+                <th>Cohort</th>
+                <th>Succeeded / attempts</th>
+                <th>Tokens</th>
+                <th>Retry messages</th>
+                <th>Total cost</th>
+                <th>Cost / success</th>
+                <th>Total time</th>
+              </tr>
+            </thead>
+            <tbody id="results"></tbody>
+          </table>
+        </div>
+        <p class="table-note">
+          Totals include failed, cancelled and timed-out attempts. Model mismatches are grouped
+          separately and excluded from the controlled comparison. Unknown usage stays unknown.
+        </p>
       </section>
-      <section class="detail-grid">
-        <article class="panel">
-          <div class="panel-head">
-            <div>
-              <p class="eyebrow">DELEGATION & HANDOFF</p>
-              <h2 id="selected-name">Select a lane</h2>
-            </div>
-            <span class="pill" id="selected-badge">EVIDENCE</span>
+      <section class="panel detail-panel" aria-labelledby="selected-name">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">Attempt details</p>
+            <h2 id="selected-name">Select an implementation</h2>
           </div>
-          <div id="sessions" class="sessions"></div>
-          <div id="patch" class="patch"></div>
-        </article>
-        <article class="panel timeline-panel">
-          <div class="panel-head">
-            <div>
-              <p class="eyebrow">EVENT TIMELINE</p>
-              <h2>Follow the signal.</h2>
+          <label
+            >Attempt
+            <select id="attempt"></select
+          ></label>
+        </div>
+        <p id="attempt-status" class="attempt-status"></p>
+        <div id="attempt-metrics" class="attempt-metrics"></div>
+        <div class="detail-grid">
+          <section aria-labelledby="sessions-title">
+            <h3 id="sessions-title">Sessions</h3>
+            <div id="sessions" class="sessions"></div>
+          </section>
+          <section aria-labelledby="events-title">
+            <div class="panel-head">
+              <h3 id="events-title">Events</h3>
+              <span id="timeline-count" class="muted">0 events</span>
             </div>
-            <span id="timeline-count" class="pill">0 EVENTS</span>
-          </div>
-          <ol id="timeline" class="timeline"></ol>
-        </article>
+            <ol id="timeline" class="timeline"></ol>
+          </section>
+        </div>
+        <div id="patch" class="patch"></div>
       </section>
       <footer>
-        <span>✦ PIÑATA ARENA</span>
-        <p>
-          Configured versions are claims until a live adapter is verified. Tracks keep model control
-          separate from practical defaults.<br /><span id="provenance"
-            >Loading pinned manifest…</span
-          >
-        </p>
-        <a href="/api/state">Inspect raw evidence ↗</a>
+        <span id="provenance">Loading provenance…</span
+        ><span>Local viewer · no external assets</span>
       </footer>
     </main>
   </body>

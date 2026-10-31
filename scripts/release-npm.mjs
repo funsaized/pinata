@@ -39,6 +39,7 @@ export function validateRelease(tag, manifest, lock, packed) {
     /^(?:package\.json|README\.md|LICENSE|(?:bin|engine|agents|skills|prompts|docs|examples)\/.+)$/;
   for (const { path: file } of packed.files) {
     assert(allowed.test(file), `Unexpected packed file: ${file}`);
+    assert(!file.startsWith("examples/arena/"), `Evaluation tooling in package: ${file}`);
     assert(!file.split("/").some((part) => part.startsWith(".") || part === "node_modules"));
   }
   for (const required of [
