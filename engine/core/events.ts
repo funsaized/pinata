@@ -82,7 +82,10 @@ const BODY: Record<EventType, (e: any) => boolean> = {
   check_start: (e) => isString(e.check, 64),
   check_end: (e) => isString(e.check, 64) && typeof e.passed === "boolean" && isCount(e.ms),
   checkout_changed: () => true,
-  usage: (e) => isUsage(e.usage),
+  usage: (e) =>
+    isUsage(e.usage) &&
+    (e.turns === undefined || isCount(e.turns)) &&
+    (e.toolCalls === undefined || isCount(e.toolCalls)),
   agent_settled: (e) =>
     AGENT_STATUSES.includes(e.status) &&
     isString(e.summary, 64_000) &&
@@ -114,6 +117,18 @@ export function validateEvent(value: unknown): AgentEvent {
   if (e.agent !== undefined && !(typeof e.agent === "string" && AGENT_ID.test(e.agent)))
     throw new Error("Invalid event agent");
   if (!isCount(e.at)) throw new Error("Event at must be a timestamp");
+  if (e.source !== undefined) {
+    const s = e.source as { id?: unknown; record?: unknown } | null;
+    if (
+      !s ||
+      !isString(s.id, 200) ||
+      !s.id ||
+      !Number.isSafeInteger(s.record) ||
+      typeof s.record !== "number" ||
+      s.record < 1
+    )
+      throw new Error("Invalid detached event source");
+  }
   const check = BODY[e.t as EventType];
   if (!check) throw new Error(`Unknown event type: ${String(e.t)}`);
   if (!check(e)) throw new Error(`Malformed ${String(e.t)} event`);
