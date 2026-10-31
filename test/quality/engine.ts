@@ -1,5 +1,5 @@
-// The live quality eval on the engine (port of test/quality/live.mjs, same fixtures, oracle and
-// scoring). Spends real tokens: needs PINATA_LIVE_SMOKE=1 and PINATA_LIVE_CONFIG.
+// The live quality eval on the engine. Spends real tokens: needs PINATA_LIVE_SMOKE=1
+// and PINATA_LIVE_CONFIG.
 // Agents run in process, as they do inside Pi, with the user's model credentials. Seeded
 // control builders use a faux provider and make no model calls; their reviewers are live.
 //   PINATA_LIVE_SMOKE=1 PINATA_LIVE_CONFIG=examples/configs/luna.json PINATA_EVAL_TRIALS=3 \
@@ -18,6 +18,7 @@ import { createEngine } from "../../engine/core/engine.ts";
 import type { ModelRef, TaskSpec } from "../../engine/core/types.ts";
 import { validateGraph } from "../../engine/core/validate.ts";
 import { validateConfig } from "../../engine/pi/config.ts";
+import { discoverAgents, resolveTasks } from "../../engine/pi/definitions.ts";
 import { piPipeline } from "../../engine/pi/pipeline.ts";
 import { RuntimeCache } from "../../engine/pi/runtime.ts";
 import { prepareRun, verificationStages } from "../../engine/verify/stages.ts";
@@ -160,7 +161,7 @@ async function repository(): Promise<string> {
 function reviewTask(id: string, build: string): TaskSpec {
   return {
     id,
-    role: "reviewer",
+    agent: "reviewer",
     model: modelFor("reviewer"),
     after: [build],
     reviewOf: build,
@@ -178,7 +179,9 @@ async function runCase(name: string, tasks: TaskSpec[], seeded = false) {
   const report: any = { name, seededBuilder: seeded, cwd, tasks: [] };
   try {
     const id = randomUUID();
-    const valid = validateGraph(tasks, { allowWrites: true });
+    const resolved = resolveTasks(tasks, discoverAgents(undefined, join(base, "agent")));
+    tasks = resolved.tasks;
+    const valid = validateGraph(tasks, { allowWrites: true, definitions: resolved.definitions });
     const prep = await prepareRun(cwd, id, valid, config);
     const handle = await engine.run(tasks, {
       id,
@@ -187,6 +190,7 @@ async function runCase(name: string, tasks: TaskSpec[], seeded = false) {
       limits: config.limits,
       allowWrites: true,
       data: {
+        definitions: resolved.definitions,
         models: Object.fromEntries(tasks.map((t) => [t.id, t.model!])),
         instructions: [],
         codemode: config.codemode,
@@ -257,7 +261,7 @@ for (let trial = 1; trial <= trials; trial++) {
   await runCase(`trial-${trial}-pipeline`, [
     ...["scout-a", "scout-b"].map((id) => ({
       id,
-      role: "scout" as const,
+      agent: "scout",
       model: modelFor("scout"),
       task: scoutTask,
       acceptance: [
@@ -266,7 +270,7 @@ for (let trial = 1; trial <= trials; trial++) {
     })),
     {
       id: "build",
-      role: "builder",
+      agent: "builder",
       model: modelFor("builder"),
       task: "Fix parseRetryAfter in parse.mjs to satisfy every README.md requirement. Add focused regression tests in parse.test.mjs. Change only these two files.",
       acceptance: [
@@ -287,7 +291,7 @@ for (let trial = 1; trial <= trials; trial++) {
           [
             {
               id: "build",
-              role: "builder",
+              agent: "builder",
               model: SEED,
               task: JSON.stringify({ write: { "parse.mjs": source } }),
               acceptance: [

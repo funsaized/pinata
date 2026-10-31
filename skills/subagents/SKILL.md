@@ -48,7 +48,7 @@ next Pi picks the run up, and if Pi exits first a headless host finishes it.
    `approval`: the user's authorization for these local writes. Writing a string
    does not create authorization. Ask only for material ambiguity, missing
    authorization, exhausted budgets, or blockers.
-3. Readers (scout, research, planner, reviewers of existing changes) read the
+3. Readers (scout, researcher, planner, reviewers of existing changes) read the
    live checkout, so they see uncommitted work. A reader whose checkout changed
    while it worked reports `checkoutChanged: true`; re-check its claims.
 4. Builders work in a git worktree created from the checkout as it was at the
@@ -57,10 +57,10 @@ next Pi picks the run up, and if Pi exits first a headless host finishes it.
    Exact application refuses affected files edited after the run started. Unrelated
    commits may advance HEAD; the orchestrator reconciles overlapping edits using
    `pinata_changes` without restarting unrelated verified work.
-5. Models: each task uses `task.model`, else the configured role or default model
-   (`~/.pi/agent/pinata.json`, then `<repo>/.pi/pinata.json`, then the run's
-   `config`), else this Pi's current model. Put in `config` only what the user
-   asked to change.
+5. Models: each task uses `task.model`, then the configured agent model, the
+   definition's model, the configured default, or this Pi's current model.
+   Config layers are `~/.pi/agent/pinata.json`, `<repo>/.pi/pinata.json`, and the
+   run's `config`. Put in `config` only what the user asked to change.
 6. The optional researcher needs pi-web-access loaded in this Pi (or `config.webExtension`).
 
 ## Make each task self-contained
@@ -81,7 +81,7 @@ predecessors' results into the dependent's first message.
 - `builder`: implement owned paths and verify with checks.
 - `reviewer`: independent adversarial review of an actual change.
 
-Use only the roles the job needs. For a well-specified fix with known files,
+Use only the agents the job needs. For a well-specified fix with known files,
 acceptance criteria and checks, use a builder and then an independent reviewer
 (`reviewOf` the builder, also in `after`). `/pinata-fix` prepares this.
 Independent builders need non-overlapping `ownership`. To review existing work,

@@ -20,7 +20,8 @@ node bench/viewer.ts
 ```
 
 The smokes run the engine inside the `pi` binary (`PINATA_PI` names another one). Benchmarks
-write JSON to `bench/results/`; `--ci` fails a result above twice its budget
+write ignored JSON reports to `bench/results/`; retain comparison evidence in
+`bench/baselines/`. `--ci` fails a result above twice its budget
 (`bench/budgets.json`). `BENCH_BACKEND=process` or `herdr-pi` measures those backends
 (loopback provider). `--host tui` needs `script` (Linux, macOS).
 
@@ -45,10 +46,8 @@ process backends; the runners have no Herdr.
 
 ## Definition and scale regression checks
 
-The normal benchmarks now use resolved definitions. Set `BENCH_LEGACY=1` for a
-comparison against legacy role dispatch on the same code and machine. Existing
-performance budgets and their 2× CI tolerance remain unchanged. Definition fixtures
-exercise custom writers/reviewers, local research sources, tool providers across
+Benchmarks use resolved definitions. Performance budgets allow a 2× CI tolerance.
+Definition fixtures exercise custom writers/reviewers, local research sources, tool providers across
 backends, snapshot recovery, pagination, and a 1,000-task queue.
 
 Additional scale benchmarks are opt-in (faux provider, no paid calls):

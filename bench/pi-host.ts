@@ -1,5 +1,5 @@
-// A bench extension that runs a scenario on the engine inside the real `pi` binary (Bun), as
-// the prototype did. The runner passes BENCH_SPEC (a JSON file) and sends `/pinata-bench`.
+// A bench extension that runs a scenario inside the real `pi` binary (Bun).
+// The runner passes BENCH_SPEC (a JSON file) and sends `/pinata-bench`.
 import { readFileSync, writeFileSync } from "node:fs";
 import * as ai from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";

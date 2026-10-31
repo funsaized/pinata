@@ -1,6 +1,5 @@
-// A localhost OpenAI-compatible chat-completions server, ported from 0.7.0's test/pi-smoke.mjs.
-// 0.7.0 workers (separate Pi processes) and the engine reach it over the same HTTP path, so
-// orchestration cost is compared on equal terms. Nothing leaves 127.0.0.1.
+// A localhost OpenAI-compatible chat-completions server shared by backend tests and
+// benchmarks. Every backend uses the same HTTP path. Nothing leaves 127.0.0.1.
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { once } from "node:events";
 import { mkdir, writeFile } from "node:fs/promises";

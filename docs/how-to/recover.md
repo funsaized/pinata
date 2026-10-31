@@ -49,7 +49,7 @@ and index still match their application-time identities. After a commit or stagi
 the orchestrator must reconcile explicitly; Pinata will not restore an older journal over it.
 
 A 1.0 integration journal lacks destination identity. It remains readable as
-`legacy_unverified` but cannot be replayed or rolled back automatically in 1.1. Obtain
+`legacy_unverified` but cannot be replayed or rolled back automatically. Obtain
 `pinata_changes` and reconcile its recorded before/after states yourself.
 
 Apply, verify and rollback share `pinata-integration.lock` in the destination's Git

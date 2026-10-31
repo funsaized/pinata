@@ -1,6 +1,6 @@
 # First run
 
-In this tutorial you run two read-only scouts and a planner in a repository, watch them in
+In this tutorial you run two read-only scouts in a repository, watch them in
 Pi, and read their results. Nothing is changed in your checkout.
 
 ## 1. Start Pi in a repository
@@ -11,20 +11,20 @@ Any Git repository works. Start Pi there (_manual_):
 pi
 ```
 
-## 2. Ask for scouts and a planner
+## 2. Ask for scouts
 
 ```text
 Send two scouts in parallel: one maps how errors are handled, one maps the tests.
-Then have a planner propose the three most useful tests to add.
+Bring back the relevant files and gaps in test coverage.
 ```
 
-Pi calls `pinata_run` with three tasks. The planner lists both scouts in `after`, so it
-starts when they have both settled, with their results in its brief.
+Pi calls `pinata_run` with two tasks using `agent: "scout"`. They run in parallel;
+Pi combines their findings when both finish.
 
 ## 3. Watch them
 
 Above the editor, the widget shows one row per agent: its state (`▸` running, `✓`
-succeeded), role, id, backend badge, time, turns, tool calls, tokens, cost and what it is
+succeeded), agent name, id, backend badge, time, turns, tool calls, tokens, cost and what it is
 doing now. The footer shows a one-line summary. Both disappear when the run settles.
 
 Open one agent's conversation while it works:
@@ -51,8 +51,8 @@ event log, each task's result and transcript.
 
 ## What you learned
 
-- Readers (scouts, research, planners) read your live checkout, uncommitted edits included.
-- Dependencies (`after`) pass results forward.
+- Scouts read your live checkout, uncommitted edits included.
+- Independent tasks can run in parallel.
 - Runs are visible while they work and inspectable afterwards.
 
 Next: [build and review a change](build-and-review.md).

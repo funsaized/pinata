@@ -5,6 +5,8 @@ or integrations. For everyday delegation, use the [chat assignments](README.md).
 
 Task objects belong in a job's `tasks` array; they are not complete jobs. See the
 [tool reference](../docs/reference/tools.md) and [configuration](../docs/reference/config.md).
+The planner and researcher tasks require installing the optional
+[agent examples](../docs/how-to/agents.md#planner-and-researcher-examples).
 
 ## Scout: find local evidence
 
@@ -13,7 +15,7 @@ This task fits a small greeting repository (`greet.mjs` and its test):
 ```json
 {
   "id": "scout",
-  "role": "scout",
+  "agent": "scout",
   "task": "Read greet.mjs and greet.test.mjs. Locate whitespace handling and the test that should cover it.",
   "acceptance": [
     "Cite the relevant function and test by file and line.",
@@ -30,7 +32,7 @@ report is not proof that a proposed test passes.
 ```json
 {
   "id": "research",
-  "role": "research",
+  "agent": "researcher",
   "task": "Fetch the official Node.js 22.19.0 test-runner documentation. Confirm whether node --test greet.test.mjs is the documented way to run one .mjs test file. Report any evidence gaps.",
   "acceptance": [
     "Cite an inspected official source and the command it supports.",
@@ -51,7 +53,7 @@ Include the `scout` task above in the same run before adding this task:
 ```json
 {
   "id": "plan",
-  "role": "planner",
+  "agent": "planner",
   "task": "Use the scout's evidence to plan trimming surrounding whitespace in greet. Name owned files, the regression check, review criteria, and integration order. Do not implement it.",
   "acceptance": [
     "Keep the change limited to greet.mjs and greet.test.mjs.",
@@ -74,7 +76,7 @@ explicit `noChecksReason` before submitting the task.
 ```json
 {
   "id": "build",
-  "role": "builder",
+  "agent": "builder",
   "task": "Trim surrounding whitespace in greet's string argument and add a regression test. Preserve internal spaces and the existing plain-name greeting.",
   "acceptance": [
     "greet(' Ada ') returns 'Hello, Ada!'.",
@@ -92,7 +94,7 @@ explicit `noChecksReason` before submitting the task.
 ```
 
 Expect a changed-file list matching the real delta and supervisor-run check
-evidence. The worker reports `commit: null`. A separate review is required for
+evidence. A separate review is required for
 integration, even if the builder says the patch is correct.
 
 ## Reviewer: challenge the actual result
@@ -102,7 +104,7 @@ Add this alongside or after the `build` task above:
 ```json
 {
   "id": "review",
-  "role": "reviewer",
+  "agent": "reviewer",
   "task": "Inspect the greeting builder's actual changes and check evidence. Check surrounding and internal whitespace behavior, scope, and regression coverage.",
   "acceptance": [
     "Cite evidence for any defect.",
@@ -112,10 +114,6 @@ Add this alongside or after the `build` task above:
   "reviewOf": "build"
 }
 ```
-
-To review the planner instead, use a distinct review ID, set `reviewOf` to
-`plan`, and set `after` to `["plan"]`. Include that plan in the run. Reviewers
-cannot review another reviewer.
 
 To review changes that already exist, replace `reviewOf` and `after` with
 `"reviewBase": "HEAD"` (your uncommitted changes), `"reviewBase": "main"` (your
@@ -181,8 +179,6 @@ the lockfile. Use the detected `npm ci` when they might not.
 | [job.json](job.json)                               | Generic builder/reviewer template; replace all assignment and path placeholders |
 | [configs/](configs/)                               | Model and behavior configs; see [Model configs](#model-configs)                 |
 | [jobs/](jobs/)                                     | Complete jobs for common shapes; see [Complete jobs](#complete-jobs)            |
-| [web-search.json](web-search.json)                 | Restrictive pi-web-access 0.35.0 policy to inspect before merging               |
-| [skill-evals.json](skill-evals.json)               | Manual evaluation cases, not an automated benchmark                             |
 
 `npm test` validates every config and job here against pinata's input contracts.
 

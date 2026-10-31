@@ -48,16 +48,14 @@
     "eval:live": "node test/quality/engine.ts",
     "bench": "node --expose-gc bench/run.ts",
     "bench:loopback": "node --expose-gc bench/run.ts --provider loopback",
-    "bench:live": "node bench/run.ts --provider live",
     "check": "npm run format:check && npm run lint && npm run typecheck",
     "lint": "oxlint test scripts engine bench bin",
     "typecheck": "tsc -p tsconfig.json",
-    "format:check": "oxfmt --check package.json tsconfig.json test scripts .github examples README.md BACKLOG.md docs skills prompts engine bench bin agents",
-    "format": "oxfmt package.json tsconfig.json test scripts .github examples README.md BACKLOG.md docs skills prompts engine bench bin agents",
+    "format:check": "oxfmt --check package.json tsconfig.json test scripts .github examples README.md docs skills prompts engine bench bin agents",
+    "format": "oxfmt package.json tsconfig.json test scripts .github examples README.md docs skills prompts engine bench bin agents",
     "test:herdr": "node --test test/engine/herdr.test.ts"
   },
   "devDependencies": {
-    "@earendil-works/pi-agent-core": "1.1.0",
     "@earendil-works/pi-ai": "1.1.0",
     "@earendil-works/pi-coding-agent": "1.1.0",
     "@earendil-works/pi-tui": "1.1.0",

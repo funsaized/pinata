@@ -1,12 +1,11 @@
 import { scaleScenarios } from "./scenarios/scale.ts";
-// Benchmark runner: comparable JSON for the engine. 0.7.0's numbers are recorded in
-// bench/baselines (its code was removed in E9.5).
+// Benchmark runner: comparable JSON for the engine against retained release baselines.
 //
 //   node bench/run.ts                              engine, faux provider, all scenarios
 //   node bench/run.ts --provider loopback          engine over the loopback provider
 //   node bench/run.ts --ci                         fail when a result exceeds 2x its budget
 //
-// Options: --provider faux|loopback|live,
+// Options: --provider faux|loopback,
 // --scenario <name> (repeatable), --host node|pi|tui, --token-delay <ms>, --out <file>.
 // --host tui runs interactive Pi under a pseudo-terminal (Linux and macOS; the UX benchmark).
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -38,8 +37,7 @@ export function scenarios(): Scenario[] {
 }
 
 interface Args {
-  targets: Array<"engine">;
-  provider: "faux" | "loopback" | "live";
+  provider: "faux" | "loopback";
   scenarios: string[];
   host: "node" | "pi" | "tui";
   tokenDelayMs: number;
@@ -49,7 +47,6 @@ interface Args {
 
 function parse(argv: string[]): Args {
   const args: Args = {
-    targets: [],
     provider: "faux",
     scenarios: [],
     host: "node",
@@ -71,8 +68,8 @@ function parse(argv: string[]): Args {
     else if (flag === "--ci") args.ci = true;
     else throw new Error(`Unknown option: ${flag}`);
   }
-  if (!args.targets.length) args.targets.push("engine");
-  args.targets = [...new Set(args.targets)];
+  if (!["faux", "loopback"].includes(args.provider))
+    throw new Error(`Unknown benchmark provider: ${args.provider}; use faux or loopback`);
   return args;
 }
 
@@ -81,11 +78,7 @@ function version(argv: string[]) {
   return r.status === 0 ? r.stdout.trim().split("\n")[0] : "unavailable";
 }
 
-async function runTarget(
-  _target: "engine",
-  scenario: Scenario,
-  args: Args,
-): Promise<ScenarioResult> {
+async function runScenario(scenario: Scenario, args: Args): Promise<ScenarioResult> {
   const { runEngine } = await import("./targets/engine.ts");
   return runEngine(scenario, {
     provider: args.provider,
@@ -127,35 +120,34 @@ async function main() {
   );
   if (!selected.length) throw new Error(`No scenario matches ${args.scenarios.join(", ")}`);
   const results: ScenarioResult[] = [];
-  for (const scenario of selected)
-    for (const target of args.targets) {
-      // A scenario that fails is recorded and the rest still run.
-      try {
-        const result = await runTarget(target, scenario, args);
-        results.push(result);
-        console.log(JSON.stringify(result));
-      } catch (error) {
-        console.error(`${target} ${scenario.name}: ${(error as Error).stack}`);
-        results.push({
-          scenario: scenario.name,
-          target,
-          provider: args.provider,
-          host: args.host,
-          agents: scenario.tasks.length,
-          statuses: {},
-          spawnMs: null,
-          toolCallMs: null,
-          dependentMs: null,
-          dependentRequestMs: null,
-          memoryPerAgentMB: null,
-          peakRssMB: null,
-          loopLagP99Ms: null,
-          cpuMs: null,
-          wallMs: 0,
-          notes: [`error: ${(error as Error).message}`],
-        });
-      }
+  for (const scenario of selected) {
+    // A scenario that fails is recorded and the rest still run.
+    try {
+      const result = await runScenario(scenario, args);
+      results.push(result);
+      console.log(JSON.stringify(result));
+    } catch (error) {
+      console.error(`${scenario.name}: ${(error as Error).stack}`);
+      results.push({
+        scenario: scenario.name,
+        target: "engine",
+        provider: args.provider,
+        host: args.host,
+        agents: scenario.tasks.length,
+        statuses: {},
+        spawnMs: null,
+        toolCallMs: null,
+        dependentMs: null,
+        dependentRequestMs: null,
+        memoryPerAgentMB: null,
+        peakRssMB: null,
+        loopLagP99Ms: null,
+        cpuMs: null,
+        wallMs: 0,
+        notes: [`error: ${(error as Error).message}`],
+      });
     }
+  }
   const date = new Date().toISOString().slice(0, 10);
   const report = {
     meta: {
@@ -189,7 +181,7 @@ async function main() {
       const scenario = selected.find((s) => s.name === result.scenario)!;
       const attempts = [overBudget([result], budgets, 2).join("; ")];
       for (let retry = 0; retry < 2; retry++) {
-        const again = await runTarget("engine", scenario, args).catch(() => null);
+        const again = await runScenario(scenario, args).catch(() => null);
         if (!again) continue;
         const over = overBudget([again], budgets, 2);
         attempts.push(over.join("; ") || "within budget");

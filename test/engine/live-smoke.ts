@@ -5,7 +5,7 @@
 // PINATA_LIVE_CONFIG (an approved pinata config, such as examples/configs/luna.json).
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -24,7 +24,11 @@ async function main() {
   assert(parent?.provider && parent?.id, "The config needs models.default");
   const dir = await mkdtemp(join(tmpdir(), "pinata-live-engine-"));
   const repo = join(dir, "repo");
-  await mkdir(join(repo, ".pi"), { recursive: true });
+  await mkdir(join(repo, ".pi", "pinata", "agents"), { recursive: true });
+  await copyFile(
+    join(ROOT, "examples", "agents", "planner.md"),
+    join(repo, ".pi", "pinata", "agents", "planner.md"),
+  );
   await writeFile(join(repo, ".pi", "pinata.json"), JSON.stringify({ models: config.models }));
   await writeFile(
     join(repo, "retry.mjs"),
@@ -53,36 +57,35 @@ async function main() {
   const tasks = [
     {
       id: "scout-status",
-      role: "scout",
+      agent: "scout",
       task: "Which HTTP statuses does retryable() in retry.mjs treat as retryable? Cite file:line.",
       acceptance: ["Exact statuses with file:line"],
     },
     {
       id: "scout-delay",
-      role: "scout",
+      agent: "scout",
       task: "What does delayFromHeader('0') return in retry.mjs, and why? Cite file:line.",
       acceptance: ["Exact value with file:line"],
     },
     {
       id: "scout-readme",
-      role: "scout",
+      agent: "scout",
       task: "Summarize README.md in one sentence.",
       acceptance: ["One sentence"],
     },
     {
       id: "plan",
-      role: "planner",
+      agent: "planner",
       after: ["scout-status", "scout-delay", "scout-readme"],
       task: "From the scouts' findings, list the two smallest fixes that would make retry.mjs treat 0 seconds as a valid delay and stop retrying 600-level statuses. Do not edit files.",
       acceptance: ["Two concrete fixes with file:line"],
     },
   ];
-  // Pin every task to the approved file's choice, so global pinata role settings cannot add
-  // other models to the smoke (as 0.7.0's quality eval does).
-  // PINATA_LIVE_BACKEND=process|herdr-pi runs every agent on that backend (Gate 2).
+  // Pin every task to the approved file's choice so global settings cannot add other models.
+  // PINATA_LIVE_BACKEND=process|herdr-pi runs every agent on that backend.
   const backend = process.env.PINATA_LIVE_BACKEND;
   for (const task of tasks as Array<Record<string, unknown>>) {
-    task.model = config.models[task.role as string] ?? config.models.default;
+    task.model = config.models[task.agent as string] ?? config.models.default;
     if (backend) task.backend = backend;
   }
   const env: NodeJS.ProcessEnv = { ...process.env, PI_SKIP_VERSION_CHECK: "1" };

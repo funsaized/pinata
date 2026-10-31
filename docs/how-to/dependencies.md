@@ -5,7 +5,7 @@ only the files Git tracks or would track. Ignored directories such as
 `node_modules` or `.venv` are missing, and so are ignored local files such as
 `.env`. Before a builder starts, pinata runs one
 setup command in its worktree. For most projects that command is detected for
-you. Scout, research, planner, and reviewer tasks read your live checkout and never run setup.
+you. Agents with `live-readonly` or `review-target` workspaces never run setup.
 Use this guide to check builder setup, change it, or turn it off, and to give builders the
 local files they need.
 
@@ -92,7 +92,7 @@ config/local.json
 ```
 
 When pinata creates a builder's worktree, it copies each ignored file that matches into
-it. (Other roles read your live checkout, where the files already are.) Claude Code uses the same file
+it. Claude Code uses the same file
 for its worktrees, so one list can serve both.
 
 A few rules keep the copies out of your results:
@@ -142,7 +142,7 @@ remove that directory while no run is going.
 
 ## What setup does not do
 
-- It runs only for builders.
+- It runs only for agents with a `worktree` workspace, including the builder preset.
 - It runs once per worktree and lockfile state; a repair skips it unless a lockfile
   changed.
 - Agents still cannot install packages. If a builder needs a new dependency, it reports a

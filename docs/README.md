@@ -5,7 +5,7 @@ things up, and explanation to understand.
 
 ## Tutorials
 
-- [First run](tutorials/first-run.md): a read-only scout and planner, and where to see them.
+- [First run](tutorials/first-run.md): two read-only scouts, and where to see them.
 - [Build and review](tutorials/build-and-review.md): a builder, an independent reviewer,
   integration and rollback.
 - [Watching agents](tutorials/watching-agents.md): the widget, the detail view, steering,
@@ -13,6 +13,7 @@ things up, and explanation to understand.
 
 ## How-to guides
 
+- [Create agents](how-to/agents.md)
 - [Choose a mode](how-to/modes.md): lean or observe.
 - [Choose a backend](how-to/backends.md): in-process, process or herdr-pi.
 - [Use pinata inside Herdr](how-to/herdr.md)
@@ -38,9 +39,8 @@ things up, and explanation to understand.
 ## Maintainers
 
 - [Testing](maintainers/testing.md)
+- [Performance evidence](maintainers/performance-v2.md)
 - [Publication](maintainers/publication.md)
 - [GitHub Packages](maintainers/github-packages.md)
 
 Commands in these docs are run by the test suite unless marked _manual_.
-
-- [Create agents](how-to/agents.md)
