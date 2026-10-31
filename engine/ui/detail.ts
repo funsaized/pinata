@@ -48,6 +48,8 @@ export interface DetailOptions {
   source: DetailSource;
   agent: string;
   now?: () => number;
+  // The workspace supplies navigation and close controls around this pane.
+  embedded?: boolean;
 }
 
 type Message = {
@@ -94,7 +96,7 @@ export class AgentDetail implements Component {
   private streaming: AssistantMessageComponent | null = null;
   private partial = { text: "", thinking: "" };
   private unsubscribe: (() => void) | null = null;
-  private syncing = false;
+  private syncing: Promise<void> | null = null;
   private dirty = false;
   private generation = 0;
   private lastHeight = 20;
@@ -122,6 +124,7 @@ export class AgentDetail implements Component {
     this.partial = { text: "", thinking: "" };
     this.offset = 0;
     this.notice = null;
+    this.input = null;
     this.unsubscribe = this.options.source.subscribe?.(agent, (e) => this.apply(e)) ?? null;
     this.ready = this.sync();
   }
@@ -198,21 +201,31 @@ export class AgentDetail implements Component {
   }
 
   // Loads the messages again and appends what is new. Concurrent requests share one load.
-  async sync(): Promise<void> {
+  sync(): Promise<void> {
     if (this.syncing) {
       this.dirty = true;
-      return;
+      return this.syncing;
     }
-    this.syncing = true;
-    const generation = this.generation;
+    this.syncing = this.loadMessages().finally(() => {
+      this.syncing = null;
+    });
+    return this.syncing;
+  }
+
+  private async loadMessages(): Promise<void> {
     try {
       do {
         this.dirty = false;
+        const generation = this.generation;
         const snapshot = await this.options.source.load(this.agent).catch((error: Error) => {
-          this.notice = clean(error.message);
+          if (!this.disposed && generation === this.generation) this.notice = clean(error.message);
           return null;
         });
-        if (this.disposed || generation !== this.generation) return;
+        if (this.disposed) return;
+        if (generation !== this.generation) {
+          this.dirty = true;
+          continue;
+        }
         if (!snapshot) continue;
         if (this.streaming) {
           this.chat.removeChild(this.streaming);
@@ -226,9 +239,8 @@ export class AgentDetail implements Component {
         this.showPartial();
       } while (this.dirty);
     } finally {
-      this.syncing = false;
+      if (!this.disposed) this.options.tui.requestRender();
     }
-    if (!this.disposed) this.options.tui.requestRender();
   }
 
   apply(event: AgentEvent): void {
@@ -285,6 +297,8 @@ export class AgentDetail implements Component {
     else if (key("tui.select.pageUp")) this.offset += Math.max(1, this.lastHeight - 1);
     else if (key("tui.select.pageDown"))
       this.offset = Math.max(0, this.offset - Math.max(1, this.lastHeight - 1));
+    else if (key("tui.editor.cursorLineEnd")) this.offset = 0;
+    else if (key("tui.editor.cursorLineStart")) this.offset = Number.MAX_SAFE_INTEGER;
     else if (key("tui.editor.cursorLeft")) this.switchAgent(-1);
     else if (key("tui.editor.cursorRight")) this.switchAgent(1);
     else if (key("app.tools.expand")) {
@@ -330,13 +344,16 @@ export class AgentDetail implements Component {
       if (!text) return;
       const as = this.inputAs;
       const agent = this.agent;
+      const generation = this.generation;
       this.notice = `Sending ${as === "steer" ? "steer" : "follow-up"}…`;
       void this.options.source.steer!(agent, text, as).then(
         () => {
+          if (this.disposed || generation !== this.generation) return;
           this.notice = as === "steer" ? "Steered." : "Follow-up queued.";
           this.options.tui.requestRender();
         },
         (error: Error) => {
+          if (this.disposed || generation !== this.generation) return;
           this.notice = clean(error.message);
           this.options.tui.requestRender();
         },
@@ -369,16 +386,31 @@ export class AgentDetail implements Component {
     );
   }
 
-  render(width: number): string[] {
+  render(width: number, maxRows?: number): string[] {
     const theme = this.options.theme;
     const rows = this.options.tui.terminal?.rows ?? 32;
-    const height = Math.max(3, Math.floor(rows * 0.9) - ROWS_RESERVED);
+    const total = maxRows ?? Math.floor(rows * 0.9);
+    const compact = total < 6;
+    const height = Math.max(0, total - (compact ? 2 : ROWS_RESERVED));
     this.lastHeight = height;
     const body = this.chat.render(width);
     const maxOffset = Math.max(0, body.length - height);
     this.offset = Math.min(this.offset, maxOffset);
     const end = body.length - this.offset;
     const visible = body.slice(Math.max(0, end - height), end);
+    if (!body.length && height > 0) {
+      const status = this.options.source.view(this.agent)?.status;
+      visible.push(
+        theme.fg(
+          "muted",
+          status === "queued"
+            ? "Waiting for this agent to start."
+            : status === "running"
+              ? "Waiting for agent output…"
+              : "No conversation was recorded for this agent.",
+        ),
+      );
+    }
     while (visible.length < height) visible.push("");
     const rule = theme.fg("border", "─".repeat(Math.max(1, width)));
     const scrolled = this.offset ? ` · ${this.offset} lines up` : "";
@@ -386,20 +418,33 @@ export class AgentDetail implements Component {
       ? (this.input.render(width)[0] ?? "")
       : this.notice
         ? theme.fg("warning", truncateToWidth(this.notice, width))
-        : truncateToWidth(
-            [
-              keyHint("tui.select.up", "scroll"),
-              keyHint("tui.editor.cursorRight", "agent"),
-              keyHint("tui.input.submit", "steer"),
-              keyHint("app.tools.expand", "tools"),
-              ...(this.hasPane() ? [theme.fg("dim", "o") + theme.fg("muted", " open pane")] : []),
-              keyHint("tui.select.cancel", "close"),
-            ].join("  ") + theme.fg("muted", scrolled),
-            width,
-          );
-    return [this.header(width), rule, ...visible, rule, footer].map((line) =>
-      visibleWidth(line) > width ? truncateToWidth(line, width) : line,
-    );
+        : this.options.embedded
+          ? theme.fg(
+              "muted",
+              truncateToWidth(
+                `${this.offset ? `Paused · ${this.offset} lines up · End to follow` : "Following latest output"} · ${this.expanded ? "tools expanded" : "tools collapsed"}${this.hasPane() ? " · O open Herdr pane" : ""}`,
+                width,
+              ),
+            )
+          : truncateToWidth(
+              [
+                keyHint("tui.select.up", "scroll"),
+                keyHint("tui.editor.cursorRight", "agent"),
+                keyHint("tui.input.submit", "steer"),
+                keyHint("app.tools.expand", "tools"),
+                ...(this.hasPane() ? [theme.fg("dim", "o") + theme.fg("muted", " open pane")] : []),
+                keyHint("tui.select.cancel", "close"),
+              ].join("  ") + theme.fg("muted", scrolled),
+              width,
+            );
+    const lines = (
+      compact
+        ? total <= 1
+          ? [footer]
+          : [this.header(width), ...visible, footer]
+        : [this.header(width), rule, ...visible, rule, footer]
+    ).map((line) => (visibleWidth(line) > width ? truncateToWidth(line, width) : line));
+    return maxRows === undefined ? lines : lines.slice(0, Math.max(0, maxRows));
   }
 
   invalidate(): void {

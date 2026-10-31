@@ -8,7 +8,7 @@ import type { Engine, RunHandle } from "../core/engine.ts";
 import { readJsonl } from "../core/store.ts";
 import { focusWorkspace, type PaneResource } from "../herdr/client.ts";
 import { coalesce, type RunView } from "../core/view.ts";
-import { AgentDetail, type DetailSource } from "../ui/detail.ts";
+import { type DetailSource } from "../ui/detail.ts";
 import { LiveScene, type SceneRun } from "../ui/live.ts";
 import { footerLine } from "../ui/text.ts";
 import { PinataWidget, widgetLines } from "../ui/widget.ts";
@@ -70,6 +70,7 @@ export interface RunSource {
   // Runs to offer in /pinata live, newest first: this session's, else the repository's.
   runs(ctx: UIContext): Promise<string[]>;
   read(run: string, ctx: UIContext): Promise<SceneRun>;
+  detail?(run: string, ctx: UIContext): Promise<DetailSource>;
 }
 
 export class PinataUI {
@@ -81,7 +82,9 @@ export class PinataUI {
   private installed = false;
   private shown = false;
   scene: LiveScene | null = null;
-  detail: AgentDetail | null = null;
+  get detail() {
+    return this.scene?.detail ?? null;
+  }
   private engine: Pick<Engine, "subscribe" | "snapshot" | "steer"> | undefined;
   private opening = false;
   private epoch = 0;
@@ -198,7 +201,12 @@ export class PinataUI {
   }
 
   // /pinata live [run|demo]: the mascot overlay. Plain status outside the interactive TUI.
-  async openLive(arg: string, ctx: UIContext, source?: RunSource): Promise<string | null> {
+  async openLive(
+    arg: string,
+    ctx: UIContext,
+    source?: RunSource,
+    agent?: string,
+  ): Promise<string | null> {
     this.bind(ctx);
     if (ctx.mode !== "tui")
       return "The animated view needs interactive Pi. Use /pinata for plain status.";
@@ -208,8 +216,8 @@ export class PinataUI {
     try {
       const demo = arg === "demo";
       let runs: string[] = [];
-      if (!demo && source) {
-        const all = await source.runs(ctx);
+      if (!demo) {
+        const all = source ? await source.runs(ctx) : [...this.followed.keys()].reverse();
         runs = arg ? all.filter((r) => r.startsWith(arg)) : all;
         if (arg && runs.length !== 1)
           return runs.length
@@ -236,13 +244,20 @@ export class PinataUI {
               if (!source) throw new Error(`Unknown run ${run}`);
               return source.read(run, ctx);
             },
+            detailSource: async (run) => {
+              const live = this.followed.get(run);
+              if (live) return this.detailSource(run, live.handle.dir, live.handle.view(), ctx.cwd);
+              if (source?.detail) return source.detail(run, ctx);
+              throw new Error("No conversation source is available for this run");
+            },
+            agent,
             demo,
             motion: this.motion,
             setMotion: (enabled) => this.setMotion(enabled),
           });
           return this.scene;
         },
-        { overlay: true, overlayOptions: { width: "94%", maxHeight: "95%", anchor: "center" } },
+        { overlay: true, overlayOptions: { width: "96%", maxHeight: "95%", anchor: "center" } },
       );
       return null;
     } finally {
@@ -287,41 +302,24 @@ export class PinataUI {
     };
   }
 
-  // /pinata open [run] <task>: the agent detail overlay.
+  // Both commands enter the same workspace; open starts with conversation focus.
   async openDetail(
     found: { id: string; dir: string; view: RunView },
     agent: string,
     ctx: UIContext,
   ): Promise<string | null> {
-    this.bind(ctx);
-    if (ctx.mode !== "tui") return "The detail view needs interactive Pi. Use pinata_status.";
     if (!found.view.agents[agent])
       return `Run ${found.id.slice(0, 8)} has no task ${agent} (tasks: ${found.view.order.join(", ")})`;
-    if (this.opening) return null;
-    this.opening = true;
-    try {
-      const source = this.detailSource(found.id, found.dir, found.view, ctx.cwd);
-      await ctx.ui.custom<void>(
-        (tui, theme, keys, done) => {
-          this.detail?.dispose();
-          this.detail = new AgentDetail({
-            tui,
-            theme,
-            keys,
-            done: () => done(undefined),
-            source,
-            agent,
-          });
-          return this.detail;
-        },
-        { overlay: true, overlayOptions: { width: "96%", maxHeight: "95%", anchor: "center" } },
-      );
-      return null;
-    } finally {
-      this.opening = false;
-      this.detail?.dispose();
-      this.detail = null;
-    }
+    return this.openLive(
+      found.id,
+      ctx,
+      {
+        runs: async () => [found.id],
+        read: async () => ({ view: found.view, integration: await integrationStatus(found.dir) }),
+        detail: async () => this.detailSource(found.id, found.dir, found.view, ctx.cwd),
+      },
+      agent,
+    );
   }
 
   // Session end: close the overlays, stop following, and clear the widget and footer.
@@ -329,8 +327,6 @@ export class PinataUI {
     this.epoch++;
     this.scene?.close();
     this.scene = null;
-    this.detail?.close();
-    this.detail = null;
     for (const f of this.followed.values()) f.stop();
     this.followed.clear();
     this.clear();

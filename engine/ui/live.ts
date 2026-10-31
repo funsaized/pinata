@@ -1,12 +1,13 @@
 // The live scene (port of 0.7.0's lib/live.mjs): the mascot overlay behind /pinata live. It
 // is fed RunViews pushed by the host instead of polling saved runs, and its animation timer
 // runs only while motion is on and an agent is working (or a bonk or cheer is playing).
-import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { AgentEvent, TaskSpec } from "../core/types.ts";
 import { replayView, type RunView } from "../core/view.ts";
 import { RIBBON_COLORS, colorize, mascotFrame, mood } from "./mascot.ts";
-import { GLYPHS, clean, duration, elapsed, money, short, tokens } from "./text.ts";
+import { GLYPHS, clean, duration, money, short, tokens } from "./text.ts";
 import type { Paint } from "./widget.ts";
+import { AgentDetail, type DetailSource } from "./detail.ts";
+import { pad, workspaceFrame } from "./frame.ts";
 
 // A run as the scene shows it: its view and, for builder runs, the integration journal status.
 export interface SceneRun {
@@ -88,15 +89,21 @@ export interface SceneOptions {
   theme: Paint;
   keys: Keys;
   done: () => void;
-  // Run ids to show, newest first. Live runs arrive through offer(); others are read once.
   runs?: string[];
   readRun?: (run: string) => Promise<SceneRun> | SceneRun;
+  detailSource?: (run: string) => Promise<DetailSource> | DetailSource;
+  // /pinata open enters the same workspace with this conversation focused.
+  agent?: string;
   demo?: boolean;
   motion?: boolean;
   setMotion?: (enabled: boolean) => void;
   now?: () => number;
   timers?: Timers;
 }
+
+type Bounds = { x: number; y: number; width: number; height: number };
+const contains = (b: Bounds | null, x: number, y: number) =>
+  !!b && x >= b.x && x < b.x + b.width && y >= b.y && y < b.y + b.height;
 
 export class LiveScene {
   readonly tui: SceneOptions["tui"];
@@ -110,11 +117,15 @@ export class LiveScene {
   readonly setMotion: (enabled: boolean) => void;
   readonly now: () => number;
   readonly timers: Timers;
+  readonly started: number;
   index = 0;
   scroll = 0;
+  focus: "agents" | "detail";
+  agent: string | null;
+  detail: AgentDetail | null = null;
   run: SceneRun | null = null;
   error: string | null = null;
-  readonly started: number;
+  detailError: string | null = null;
   bonkAt: number | null = null;
   cheerAt: number | null = null;
   twitchAt: number | null = null;
@@ -122,7 +133,14 @@ export class LiveScene {
   disposed = false;
   generation = 0;
   frameTimer: unknown = null;
-  artBounds: { x: number; y: number; width: number; height: number } | null = null;
+  artBounds: Bounds | null = null;
+  agentBounds: Array<Bounds & { agent: string }> = [];
+  detailBounds: Bounds | null = null;
+  ready: Promise<void> = Promise.resolve();
+  private detailSource?: SceneOptions["detailSource"];
+  private loadingRun: string | null = null;
+  private loading: Promise<void> = Promise.resolve();
+  private listSize = 5;
 
   constructor(options: SceneOptions) {
     this.tui = options.tui;
@@ -131,26 +149,28 @@ export class LiveScene {
     this.done = options.done;
     this.runs = options.runs ?? [];
     this.readRun = options.readRun ?? (() => Promise.reject(new Error("No run reader")));
+    this.detailSource = options.detailSource;
     this.demo = options.demo ?? false;
     this.motion = options.motion ?? true;
     this.setMotion = options.setMotion ?? (() => {});
     this.now = options.now ?? Date.now;
     this.timers = options.timers ?? globalThis;
     this.started = this.now();
-    void this.refresh();
+    this.agent = options.agent ?? null;
+    this.focus = options.agent ? "detail" : "agents";
+    this.ready = this.refresh();
   }
 
-  // The run being shown, or null in the demo.
   selected(): string | null {
     return this.demo ? null : (this.runs[this.index] ?? null);
   }
 
-  // A pushed update; ignored unless it is the selected run.
   offer(run: SceneRun): void {
     if (!this.disposed && run.view.run === this.selected()) this.update(run);
   }
 
   update(run: SceneRun | null): void {
+    if (this.disposed) return;
     const previous = this.run;
     if (previous && run && previous.view.run === run.view.run) {
       const was = mood(previous.view, previous.integration).kind;
@@ -162,9 +182,20 @@ export class LiveScene {
         this.twitchAt = this.now();
     } else {
       this.cheerAt = this.twitchAt = null;
+      this.clearDetail();
     }
     this.run = run;
     this.error = null;
+    if (!this.agent || !run?.view.agents[this.agent]) {
+      this.agent =
+        run?.view.order.find((id) => run.view.agents[id].status === "running") ??
+        run?.view.order.find((id) =>
+          ["failed", "rejected", "blocked"].includes(run.view.agents[id].status),
+        ) ??
+        run?.view.order[0] ??
+        null;
+    }
+    this.ready = this.ensureDetail();
     this.animate();
     this.tui.requestRender();
   }
@@ -175,7 +206,10 @@ export class LiveScene {
     try {
       const id = this.selected();
       const run = this.demo ? demoRun(this.demoStep) : id ? await this.readRun(id) : null;
-      if (!this.disposed && generation === this.generation) this.update(run);
+      if (!this.disposed && generation === this.generation) {
+        this.update(run);
+        await this.ready;
+      }
     } catch (error) {
       if (!this.disposed && generation === this.generation) {
         this.error = clean((error as Error).message);
@@ -184,7 +218,92 @@ export class LiveScene {
     }
   }
 
-  // Starts or stops the frame timer: it runs only while something on screen moves.
+  private clearDetail(): void {
+    this.generation++;
+    this.detail?.dispose();
+    this.detail = null;
+    this.loadingRun = null;
+    this.detailError = null;
+    this.scroll = 0;
+  }
+
+  private demoSource(): DetailSource {
+    const copy: Record<string, string> = {
+      map: "The home page lives in `src/routes/index.tsx`. The hero heading uses the existing Tailwind utilities.\n\nI found the route, its styles, and the checks the builder should run.",
+      build:
+        "Added `text-red-600` to the hero heading.\n\n- The eyebrow and social links are unchanged.\n- Formatting, type checking, and the build passed.\n\nThe change is ready for an independent review.",
+      review:
+        "Reviewed the heading change and its verification evidence.\n\nThe change stays within the assigned scope. This is a demo conversation; no files were changed.",
+    };
+    return {
+      run: "demo",
+      cwd: ".",
+      agents: () => this.run?.view.order ?? [],
+      view: (agent) => this.run?.view.agents[agent],
+      load: async (agent) => ({
+        messages: [
+          {
+            role: "assistant",
+            content: [{ type: "text", text: copy[agent] ?? "Demo conversation." }],
+          },
+        ],
+      }),
+    };
+  }
+
+  private ensureDetail(): Promise<void> {
+    const run = this.run?.view.run;
+    if (!run || !this.agent || (!this.detailSource && !this.demo)) return Promise.resolve();
+    if (this.detail) {
+      if (this.detail.agent !== this.agent) this.detail.select(this.agent);
+      return this.detail.ready;
+    }
+    if (this.loadingRun === run) return this.loading;
+    this.loadingRun = run;
+    const generation = this.generation;
+    this.loading = (async () => {
+      try {
+        const source = this.demo ? this.demoSource() : await this.detailSource!(run);
+        if (this.disposed || generation !== this.generation || !this.agent) return;
+        if (source.run !== run) throw new Error("Conversation source belongs to another run");
+        this.detail = new AgentDetail({
+          tui: this.tui,
+          theme: this.theme,
+          keys: this.keys,
+          done: () => this.close(),
+          source,
+          agent: this.agent,
+          now: this.now,
+          embedded: true,
+        });
+        this.detail.onSwitch = (agent) => {
+          this.agent = agent;
+        };
+        await this.detail.ready;
+      } catch (error) {
+        if (!this.disposed && generation === this.generation)
+          this.detailError = clean((error as Error).message);
+      }
+      if (!this.disposed && generation === this.generation) this.tui.requestRender();
+    })();
+    return this.loading;
+  }
+
+  selectAgent(agent: string, focus = false): void {
+    if (this.disposed || this.detail?.input || !this.run?.view.agents[agent]) return;
+    this.agent = agent;
+    if (focus) this.focus = "detail";
+    this.ready = this.ensureDetail();
+    this.tui.requestRender();
+  }
+
+  private moveAgent(step: number): void {
+    const agents = this.run?.view.order ?? [];
+    if (!agents.length) return;
+    const index = Math.max(0, agents.indexOf(this.agent ?? ""));
+    this.selectAgent(agents[Math.max(0, Math.min(agents.length - 1, index + step))]);
+  }
+
   animate(): void {
     const now = this.now();
     const moving =
@@ -206,12 +325,14 @@ export class LiveScene {
     }
   }
 
-  invalidate(): void {}
+  invalidate(): void {
+    this.detail?.invalidate();
+  }
 
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
-    this.generation++;
+    this.clearDetail();
     this.animate();
   }
 
@@ -228,148 +349,215 @@ export class LiveScene {
   }
 
   handleInput(data: string): void {
+    if (this.disposed) return;
     const key = (binding: string) => this.keys.matches(data, binding);
+    // While composing, every key belongs to the input (including m, q, Space and Tab).
+    if (this.detail?.input) return this.detail.handleInput(data);
     if (key("tui.select.cancel") || data === "q") return this.close();
-    if (data === " ") return this.bonk();
-    if (data === "m") {
+    if (key("tui.input.tab") || data === "\t") {
+      this.focus = this.focus === "agents" ? "detail" : "agents";
+    } else if (data === "m") {
       this.motion = !this.motion;
       this.setMotion(this.motion);
       this.animate();
-    } else if (data === "d" && this.demo) {
+    } else if (data === " ") this.bonk();
+    else if (data === "d" && this.demo) {
       this.demoStep++;
       this.update(demoRun(this.demoStep));
-    } else if (key("tui.editor.cursorLeft") || key("tui.editor.cursorRight")) {
-      if (!this.demo && this.runs.length > 1) {
-        const step = key("tui.editor.cursorLeft") ? this.runs.length - 1 : 1;
-        this.index = (this.index + step) % this.runs.length;
-        this.scroll = 0;
-        this.run = null;
-        this.error = null;
-        this.generation++;
-        this.animate();
-        void this.refresh();
+    } else if (data === "r" && (this.detailError || this.error)) {
+      this.loadingRun = null;
+      this.detailError = null;
+      this.ready = this.refresh();
+    } else if (this.focus === "agents") {
+      if (key("tui.select.up")) this.moveAgent(-1);
+      else if (key("tui.select.down")) this.moveAgent(1);
+      else if (key("tui.select.pageUp")) this.moveAgent(-this.listSize);
+      else if (key("tui.select.pageDown")) this.moveAgent(this.listSize);
+      else if (key("tui.input.submit") || key("tui.select.confirm")) this.focus = "detail";
+      else if (key("tui.editor.cursorLeft") || key("tui.editor.cursorRight")) {
+        if (!this.demo && this.runs.length > 1) {
+          const step = key("tui.editor.cursorLeft") ? this.runs.length - 1 : 1;
+          this.index = (this.index + step) % this.runs.length;
+          this.clearDetail();
+          this.agent = null;
+          this.run = null;
+          this.error = null;
+          this.animate();
+          this.ready = this.refresh();
+        }
       }
-    } else if (key("tui.select.up")) this.scroll = Math.max(0, this.scroll - 1);
-    else if (key("tui.select.down")) this.scroll++;
+    } else this.detail?.handleInput(data);
     this.tui.requestRender();
   }
 
   handleMouse(event: { type: string; button?: string; x: number; y: number }) {
-    const b = this.artBounds;
-    if (
-      event.type === "click" &&
-      event.button === "left" &&
-      b &&
-      event.x >= b.x &&
-      event.x < b.x + b.width &&
-      event.y >= b.y &&
-      event.y < b.y + b.height
-    ) {
+    if (this.disposed || event.type !== "click" || event.button !== "left") return undefined;
+    // Never discard a steering draft by clicking a different agent or pane.
+    if (this.detail?.input) return { handled: true, render: false };
+    if (contains(this.artBounds, event.x, event.y)) {
       this.bonk();
+      return { handled: true, render: true };
+    }
+    const row = this.agentBounds.find((b) => contains(b, event.x, event.y));
+    if (row) {
+      this.selectAgent(row.agent, true);
+      return { handled: true, render: true };
+    }
+    if (contains(this.detailBounds, event.x, event.y)) {
+      this.focus = "detail";
+      this.tui.requestRender();
       return { handled: true, render: true };
     }
     return undefined;
   }
 
+  private agentList(width: number, height: number, x: number, y: number): string[] {
+    if (height <= 0) return [];
+    const view = this.run?.view;
+    const agents = view?.order ?? [];
+    const selected = Math.max(0, agents.indexOf(this.agent ?? ""));
+    const rowHeight = height >= 5 ? 2 : 1;
+    this.listSize = Math.max(1, Math.floor((height - 1) / rowHeight));
+    this.scroll = Math.max(
+      0,
+      Math.min(this.scroll, selected, Math.max(0, agents.length - this.listSize)),
+    );
+    if (selected >= this.scroll + this.listSize) this.scroll = selected - this.listSize + 1;
+    const caption = `${this.focus === "agents" ? "▸ " : ""}AGENTS${agents.length ? `  ${selected + 1}/${agents.length}` : ""}`;
+    const rows = [this.theme.fg(this.focus === "agents" ? "accent" : "muted", caption)];
+    for (const [i, id] of agents.slice(this.scroll, this.scroll + this.listSize).entries()) {
+      const agent = view!.agents[id];
+      const active = id === this.agent;
+      const glyph = colorize(RIBBON_COLORS[(this.scroll + i) % 6], GLYPHS[agent.status]);
+      const name = `${active ? "›" : " "} ${glyph} ${clean(id)}`;
+      const label = this.theme.fg(active ? "accent" : "text", pad(name, width));
+      rows.push(active ? (this.theme.bg?.("selectedBg", label) ?? label) : label);
+      const status = `${agent.role} · ${agent.status}`;
+      const note = agent.reason && agent.status !== "succeeded" ? clean(agent.reason) : status;
+      if (rowHeight > 1)
+        rows.push(this.theme.fg(agent.reason ? "warning" : "muted", `    ${note}`));
+      this.agentBounds.push({ agent: id, x, y: y + 1 + i * rowHeight, width, height: rowHeight });
+    }
+    if (!agents.length) rows.push(this.theme.fg("muted", "No agents yet."));
+    return rows.slice(0, height);
+  }
+
   render(width: number): string[] {
     const fg = (color: Parameters<Paint["fg"]>[0], text: string) => this.theme.fg(color, text);
     const inner = Math.max(1, width - 4);
+    const terminalRows = Math.max(1, this.tui.terminal?.rows ?? 32);
+    const height = Math.min(terminalRows, Math.max(8, Math.floor(terminalRows * 0.92)));
+    const bodyHeight = Math.max(1, height - 6);
     const now = this.now();
     const view = this.run?.view;
     const state = this.error
       ? { kind: "attention" as const, text: "Status unavailable. Last known data below." }
       : mood(view, this.run?.integration);
-    const bonked = age(now, this.bonkAt) < BONK_S;
     const moodText =
-      bonked && !this.error && state.kind !== "attention"
+      age(now, this.bonkAt) < BONK_S && !this.error && state.kind !== "attention"
         ? "Hey! I am supervising here."
         : state.text;
-    const heading = this.demo
-      ? "pinata live · DEMO · no agents running"
-      : `pinata live${view ? ` · ${short(view.run)} · ${view.status}` : ""}`;
+    const done =
+      view?.order.filter((id) => !["running", "queued"].includes(view.agents[id].status)).length ??
+      0;
+    const title = this.demo
+      ? "PINATA · DEMO · no agents running"
+      : `PINATA${view ? ` · ${short(view.run)} · ${view.status} · ${done}/${view.order.length} done` : ""}`;
+    const facts = view
+      ? ` · ${duration((view.settledAt ?? now) - view.startedAt)} · ${tokens(view.usage.totalTokens)} tok · ${money(view.usage.cost)}`
+      : "";
     const top = [
-      fg("accent", heading),
-      fg(state.kind === "attention" ? "warning" : "muted", moodText),
+      fg("accent", this.theme.bold?.(title) ?? title),
+      fg(
+        this.error ? "error" : state.kind === "attention" ? "warning" : "muted",
+        this.error ? `Status unavailable · ${this.error} · R retry` : moodText + facts,
+      ),
     ];
-    if (this.error) top.push(fg("error", this.error));
-    const available = Math.max(
-      1,
-      Math.min(22, Math.floor((this.tui.terminal?.rows ?? 32) * 0.9) - top.length - 4),
-    );
-    const agents = view ? view.order.map((id) => view.agents[id]) : [];
-    const details: string[] = [];
-    if (view) {
-      details.push(
-        [
-          duration((view.settledAt ?? now) - view.startedAt),
-          view.usage.cost ? money(view.usage.cost) : "",
-          view.usage.totalTokens ? `${tokens(view.usage.totalTokens)} tok` : "",
-        ]
-          .filter(Boolean)
-          .join(" · "),
-      );
-      if (this.run?.integration) details.push(`integration: ${this.run.integration}`);
-      agents.forEach((agent, i) => {
-        const dot = colorize(RIBBON_COLORS[i % 6], GLYPHS[agent.status], !process.env.NO_COLOR);
-        details.push(`${dot} ${agent.id} · ${agent.role}`);
-        details.push(`  ${agent.status}  ${duration(elapsed(agent, now))}`);
-        const note = agent.status === "running" ? null : agent.reason;
-        if (note && agent.status !== "succeeded") details.push(fg("warning", `  ${clean(note)}`));
-      });
-    } else
-      details.push(
-        this.runs.length ? "Reading saved run state…" : "No runs yet. Start a pinata task",
-        "then open /pinata live.",
-        "",
-        "Try /pinata live demo for a preview.",
-      );
-    const tall = available >= 9 && inner >= 32;
-    const artWidth = tall ? Math.min(48, inner >= 72 ? Math.floor(inner * 0.53) : inner) : 0;
-    const sideBySide = tall && inner - artWidth >= 26;
-    const artHeight = tall ? Math.min(22, sideBySide ? available : Math.max(6, available - 5)) : 0;
-    const rows = mascotFrame({
-      width: artWidth || 1,
-      height: artHeight || 1,
-      seconds: this.motion ? (now - this.started) / 1000 : 0,
-      bonk: this.motion ? age(now, this.bonkAt) : Infinity,
-      cheer: this.motion && !this.error ? age(now, this.cheerAt) : Infinity,
-      twitch: this.motion ? age(now, this.twitchAt) : Infinity,
-      kind: state.kind,
-      tasks: agents,
-      colors: !process.env.NO_COLOR,
-    });
-    const detailHeight = sideBySide ? available : Math.max(1, available - artHeight);
-    const scrolling = details.length > detailHeight;
-    const contentHeight = Math.max(1, detailHeight - (scrolling && detailHeight > 1 ? 1 : 0));
-    this.scroll = Math.max(0, Math.min(this.scroll, Math.max(0, details.length - contentHeight)));
-    const visible = details.slice(this.scroll, this.scroll + contentHeight);
-    if (scrolling && detailHeight > 1)
-      visible.push(fg("muted", `↑↓ scroll · ${this.scroll + 1}/${details.length}`));
+    this.artBounds = this.detailBounds = null;
+    this.agentBounds = [];
+    const wide = inner >= 90;
+    const sidebarWidth = wide ? Math.min(34, Math.max(26, Math.floor(inner * 0.25))) : inner;
+    const showAgents = wide || this.focus === "agents";
     const body: string[] = [];
-    if (sideBySide) {
-      for (let i = 0; i < available; i++)
-        body.push(
-          (rows[i] ?? " ".repeat(artWidth)) +
-            "  " +
-            truncateToWidth(visible[i] ?? "", Math.max(0, inner - artWidth - 2)),
-        );
-    } else body.push(...(tall ? rows : []), ...visible);
-    this.artBounds = tall ? { x: 2, y: top.length + 1, width: artWidth, height: artHeight } : null;
-    const hint = `Space bonk · M motion ${this.motion ? "on" : "off"}${this.demo ? " · D next scene" : this.runs.length > 1 ? " · ←→ run" : ""} · Esc close`;
-    const border = fg("border", "─".repeat(Math.max(0, width - 2)));
-    const result = [fg("border", "╭") + border + fg("border", "╮")];
-    for (const line of [...top, ...body, fg("muted", hint)]) {
-      const value = truncateToWidth(line, inner);
-      result.push(
-        fg("border", "│") +
-          " " +
-          value +
-          " ".repeat(Math.max(0, inner - visibleWidth(value))) +
-          " " +
-          fg("border", "│"),
+    let sidebar: string[] = [];
+    if (showAgents) {
+      const artHeight =
+        bodyHeight >= 13 && sidebarWidth >= 24 ? Math.min(14, Math.floor(bodyHeight * 0.42)) : 0;
+      if (artHeight) {
+        sidebar = mascotFrame({
+          width: sidebarWidth,
+          height: artHeight,
+          seconds: this.motion ? (now - this.started) / 1000 : 0,
+          bonk: this.motion ? age(now, this.bonkAt) : Infinity,
+          cheer: this.motion && !this.error ? age(now, this.cheerAt) : Infinity,
+          twitch: this.motion ? age(now, this.twitchAt) : Infinity,
+          kind: state.kind,
+          tasks: view?.order.map((id) => view.agents[id]) ?? [],
+          colors: !process.env.NO_COLOR,
+        });
+        this.artBounds = { x: 2, y: 3, width: sidebarWidth, height: artHeight };
+        sidebar.push("");
+      }
+      sidebar.push(
+        ...this.agentList(sidebarWidth, bodyHeight - sidebar.length, 2, 3 + sidebar.length),
       );
     }
-    result.push(fg("border", "╰") + border + fg("border", "╯"));
-    return result.map((line) => truncateToWidth(line, Math.max(1, width)));
+    const paneWidth = wide ? inner - sidebarWidth - 3 : inner;
+    const caption = `${this.focus === "detail" ? "▸ " : ""}CONVERSATION${!wide ? " · Tab agents" : this.focus === "detail" ? " · focused" : " · Enter to focus"}`;
+    const conversation = [fg(this.focus === "detail" ? "accent" : "muted", caption)];
+    if (this.detail)
+      conversation.push(...this.detail.render(paneWidth, Math.max(1, bodyHeight - 1)));
+    else
+      conversation.push(
+        "",
+        fg(
+          this.detailError ? "error" : "muted",
+          this.detailError
+            ? `${this.detailError} · R retry`
+            : !view
+              ? this.runs.length
+                ? "Reading saved run state…"
+                : "No runs yet. Start a pinata task, or try /pinata live demo."
+              : this.agent
+                ? "Loading conversation…"
+                : "No agent selected.",
+        ),
+      );
+    if (wide || this.focus === "detail")
+      this.detailBounds = {
+        x: wide ? sidebarWidth + 5 : 2,
+        y: 3,
+        width: paneWidth,
+        height: bodyHeight,
+      };
+    for (let i = 0; i < bodyHeight; i++)
+      body.push(
+        wide
+          ? pad(sidebar[i] ?? "", sidebarWidth) +
+              fg("border", " │ ") +
+              pad(conversation[i] ?? "", paneWidth)
+          : pad((this.focus === "agents" ? sidebar : conversation)[i] ?? "", inner),
+      );
+    // Empty runs should explain how to begin even when the agent list owns focus.
+    if (!view && bodyHeight > 1 && !wide)
+      body[1] = pad(this.error ?? "No runs yet. Try /pinata live demo.", inner);
+    const input = !!this.detail?.input;
+    const primary = input
+      ? "Enter send steer · Alt+Enter follow-up · Esc cancel"
+      : this.focus === "agents"
+        ? "↑↓ select agent · Enter open · Tab conversation"
+        : "↑↓ scroll · PgUp/PgDn page · Enter steer · Ctrl+O tools · Tab agents";
+    const secondary = `Esc close · M motion ${this.motion ? "on" : "off"} · Space bonk${this.demo ? " · D next scene" : this.runs.length > 1 ? ` · ←→ run (${this.index + 1}/${this.runs.length}, agent list)` : ""}`;
+    const content = [
+      ...top,
+      ...body,
+      fg("muted", primary),
+      fg("dim", input ? "Steering " + this.agent : secondary),
+    ];
+    return workspaceFrame(
+      content.map((line) => " " + pad(line, inner) + " "),
+      width,
+      this.theme,
+    ).slice(0, height);
   }
 }

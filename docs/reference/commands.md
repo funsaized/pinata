@@ -8,8 +8,8 @@ None of these sends anything to the model.
 | ---------------------------- | ----------------------------------------------------------------------------- |
 | `/pinata`                    | Status of the latest run, and runs a previous Pi left unsettled               |
 | `/pinata runs`               | Runs in this repository                                                       |
-| `/pinata open [run] <task>`  | An agent's conversation, live; Enter steers                                   |
-| `/pinata live [run\|demo]`   | The mascot overlay                                                            |
+| `/pinata open [run] <task>`  | The run workspace with an agent's conversation focused; Enter steers          |
+| `/pinata live [run\|demo]`   | The same workspace with the agent list focused; ↑/↓ select, Enter opens       |
 | `/pinata watch [run] [task]` | Starts the run's socket for `pinata view` (inside Herdr, opens a viewer pane) |
 | `/pinata mode lean\|observe` | Footprint mode for this session                                               |
 | `/pinata rerun <run>`        | Starts again the tasks lost when a Pi exited, with their dependents           |

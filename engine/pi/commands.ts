@@ -13,8 +13,8 @@ export const USAGE = [
   "/pinata              status of the latest run",
   "/pinata runs         runs in this repository",
   "/pinata mode lean|observe   footprint mode for this session",
-  "/pinata live [run|demo]      the mascot overlay",
-  "/pinata open [run] <task>    an agent's conversation, live (Enter steers)",
+  "/pinata live [run|demo]      the run workspace; select an agent with ↑↓ and Enter",
+  "/pinata open [run] <task>    the workspace focused on an agent (Enter steers)",
   "/pinata watch [run] [task]   start the run's socket for an external viewer",
   "/pinata rerun <run>          start again the tasks lost when Pi exited",
   "/pinata gc [confirm]         retire 0.7.0 runs (preview; confirm acts) and close settled panes",
@@ -30,6 +30,10 @@ export function runSource(host: PinataHost): RunSource {
     async read(run, ctx) {
       const found = await host.find(run, ctx.cwd);
       return { view: found.view, integration: await integrationStatus(found.dir) };
+    },
+    async detail(run, ctx) {
+      const found = await host.find(run, ctx.cwd);
+      return host.ui!.detailSource(found.id, found.dir, found.view, ctx.cwd);
     },
   };
 }

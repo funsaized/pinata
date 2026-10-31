@@ -23,16 +23,29 @@ nothing changes. Clicking the first line opens `/pinata live`.
 /pinata open build
 ```
 
-The detail view renders the agent's messages and tool calls with Pi's own components and
-streams new text as it arrives. Keys: ↑/↓ and page keys scroll, ←/→ switch agents, Enter
-opens a steer input, Ctrl+O expands tool output, Esc closes. For a herdr-pi agent, `o`
-brings its Herdr pane to the front.
+`/pinata open` and `/pinata live` share one rainbow-framed workspace: the animated piñata
+and agent list on the left, the selected conversation on the right. `open build` starts
+with the builder's conversation focused. `live` starts with the agent list focused.
+The active pane has a `▸` marker, and the selected agent is highlighted.
+
+- **Agent list:** ↑/↓ select an agent and preview its conversation; Enter focuses it.
+  Clicking an agent also opens its conversation. ←/→ switch runs when more than one is available.
+- **Conversation:** ↑/↓ and page keys scroll; Home jumps to the beginning and End follows
+  the latest output. ←/→ switch agents. Enter opens a steer input, Ctrl+O expands tool
+  output, and `o` brings a herdr-pi agent's Herdr pane to the front.
+- **Either pane:** Tab switches focus; Esc closes the workspace. In a narrow terminal,
+  Tab switches between full-width agent and conversation panes.
+
+Messages and tool calls use Pi's own components and stream as they arrive. Saved runs
+open in the same workspace with read-only conversations.
 
 ## Steer
 
 In the detail view press Enter, type, and press Enter again: the message reaches the agent
 before its next model request. Alt+Enter queues it as a follow-up instead. Every steer is
 recorded, and the builder's reviewer is told about it.
+Esc cancels a draft before closing the workspace. While typing, keys such as M and Space
+belong to your message, and clicking another agent cannot redirect the draft.
 
 ## The live mascot
 
@@ -40,8 +53,10 @@ recorded, and the builder's reviewer is told about it.
 /pinata live demo
 ```
 
-A turning paper piñata with one ribbon per task. Space bonks it, M toggles motion, Esc
-returns to Pi; `/pinata live` shows your latest run. It animates only while an agent works.
+A turning paper piñata with one ribbon per task sits beside the conversations. Space
+bonks it, M toggles motion, and Esc returns to Pi. `/pinata live` shows your latest run;
+`demo` previews the workspace with sample conversations and no model calls. Press D to
+cycle demo scenes. Animation runs while an agent works or a brief reaction plays.
 
 ## A viewer in another terminal
 
