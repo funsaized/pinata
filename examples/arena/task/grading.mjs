@@ -98,7 +98,7 @@ export function prepare(seed) {
     try {
       return { ok: true, value: oracle(input), mutated: false };
     } catch {
-      return { ok: false };
+      return { ok: false, mutated: false };
     }
   });
   const driver = `import { readFileSync } from 'node:fs';
@@ -107,7 +107,7 @@ const inputs = JSON.parse(readFileSync(0, 'utf8'));
 const results = inputs.map(input => {
   const before = JSON.stringify(input);
   try { const value = settle(input); return { ok: true, value, mutated: JSON.stringify(input) !== before }; }
-  catch { return { ok: false }; }
+  catch { return { ok: false, mutated: JSON.stringify(input) !== before }; }
 });
 process.stdout.write(JSON.stringify(results));`;
   return { cases, expected, driver, rubric: "repair-ledger-v1/81-cases/all-required" };

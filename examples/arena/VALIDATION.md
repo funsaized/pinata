@@ -21,7 +21,7 @@ Recorded checks before the final draft:
 - Focused lifecycle run: repair accounting, builders, integration and survive suites
   passed all 38 tests before the two additional reattachment regressions were added.
 - `ARENA_DOCKER_TEST=1 npm run test:arena`: deterministic ledger, task/freeze,
-  Docker boundary, grader discrimination, timeout/cancellation/failure, replay,
+  Docker boundary, grader discrimination (including invalid-input mutation), timeout/cancellation/failure, replay,
   observed budget and offline generic-adapter checks pass: **15 passed, no skips**.
   The test does not contact a provider.
 - `node scripts/arena-browser-smoke.mjs --dir examples/arena/example-run`:
@@ -29,7 +29,7 @@ Recorded checks before the final draft:
   scrubbing, latest evidence, frozen patch link, mobile layout, no script exceptions
   and no remote assets. A screenshot is captured from the same real event log.
 - `npm_config_cache=/workspace/.npm python3 /tmp/pinata-test-subreaper.py npm test`:
-  **233 passed, 9 skipped** across the main engine/arena suite, scheduler, workspace
+  **237 passed, 9 skipped** across the main engine/arena suite, scheduler, workspace
   and release tests. Skips are four existing platform/environment checks and five
   opt-in Docker checks; the latter all pass in the explicit arena command above.
 - Pi 1.1.0 JavaScript CLI source and packed-package smoke use deterministic faux

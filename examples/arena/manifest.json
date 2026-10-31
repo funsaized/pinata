@@ -13,9 +13,9 @@
     {
       "id": "pinata",
       "name": "Pi\u00f1ata",
-      "version": "2.0.0",
+      "version": "2.0.1",
       "integration": "protocol-contract",
-      "source": "https://github.com/funsaized/pinata/tree/206f9683aec909c0fd7fe3abfe775a214837e221"
+      "source": "https://github.com/funsaized/pinata/tree/9047a3d0f9d55e84a492e515fa01049ccf273dd4"
     },
     {
       "id": "opencode",

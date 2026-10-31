@@ -85,7 +85,7 @@ test(
     const dir = await temp(t);
     const task = await loadTask(join(root, "task"));
     const image = await localImage(manifest.verifierImage);
-    for (const fixture of ["good", "bad", "escape", "timeout"] as const) {
+    for (const fixture of ["good", "bad", "mutating", "escape", "timeout"] as const) {
       const work = join(dir, fixture);
       await freshWorkspace(task, work);
       await writeFile(join(work, "solution.mjs"), fixtureSource(fixture));

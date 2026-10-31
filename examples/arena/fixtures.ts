@@ -1,6 +1,14 @@
 // Deterministic candidates are operator fixtures, never included in public contestant mounts.
 // They exercise the harness and grader; they are not outputs of the named live products.
-export type Fixture = "good" | "bad" | "failed" | "timeout" | "cancelled" | "unmetered" | "escape";
+export type Fixture =
+  | "good"
+  | "bad"
+  | "failed"
+  | "timeout"
+  | "cancelled"
+  | "unmetered"
+  | "escape"
+  | "mutating";
 function implementation(events: any) {
   if (!Array.isArray(events)) throw Error();
   const attempts = new Map();
@@ -51,6 +59,8 @@ export function fixtureSource(fixture: Fixture): string {
   if (fixture === "timeout") return "export function settle() { while (true) {} }\n";
   if (fixture === "escape")
     return `import fs from 'node:fs';\nexport function settle() { return {hostHome:fs.existsSync('/home/agent'), socket:fs.existsSync('/var/run/docker.sock'), oracle:fs.existsSync('/arena/grading.mjs'), host:fs.existsSync('/workspace')}; }\n`;
+  if (fixture === "mutating")
+    return `export ${implementation.toString()}\nexport function settle(events) { try { return implementation(events); } catch { if (Array.isArray(events)) events.length = 0; throw Error(); } }\n`;
   return `export ${implementation.toString()}\nexport const settle = implementation;\n`;
 }
 export function seededFixtures(seed: number, scenario: "clean" | "faults"): Fixture[] {

@@ -5,7 +5,7 @@ runs a contestant command on the host. `live` requires `--allow-provider-spend` 
 when the adapter claims its provider is free. This flag is operator consent, not a
 hard spending guarantee. No provider calls are part of the repository's tests.
 
-**Bundled status:** Piñata 2.0.0, OpenCode 2.2.5 native subagents, and Pi 1.4.0's
+**Bundled status:** Piñata 2.0.1, OpenCode 2.2.5 native subagents, and Pi 1.4.0's
 official subagent example are named, source-pinned integration targets, not verified
 live adapters. The executable generic protocol path is tested with an offline
 container fixture. Install/configure each real stack in an image, implement its
@@ -88,7 +88,7 @@ passed; only the independent verifier supplies the task's quality evidence.
 
 | Target     | Pin                                                                                                                                                               | Normalizer must capture                                                                                                                                                                                |
 | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Piñata     | [2.0.0 source](https://github.com/funsaized/pinata/tree/206f9683aec909c0fd7fe3abfe775a214837e221) plus the patched arena source digest                            | Parent Pi planning/verification/integration session and every child/repair/result-only attempt; evidence from checks, review and destination integration; all models. The parent owns the pipeline.    |
+| Piñata     | [2.0.1 source](https://github.com/funsaized/pinata/tree/9047a3d0f9d55e84a492e515fa01049ccf273dd4) plus the patched arena source digest                            | Parent Pi planning/verification/integration session and every child/repair/result-only attempt; evidence from checks, review and destination integration; all models. The parent owns the pipeline.    |
 | OpenCode   | [2.2.5 source](https://github.com/anomalyco/opencode/tree/9bbb8ce18c80f099e0e448775f59d965ead40a21)                                                               | Parent and native subagent sessions, retry/compaction messages and actual model settings. Use a fresh outer container; shared-location subagents do not create isolation.                              |
 | Pi example | [1.4.0 official extension](https://github.com/earendil-works/pi/tree/4a080252f06caf63a525d7873c5d94d3c23887e0/packages/coding-agent/examples/extensions/subagent) | Install the extension and its agent definitions/prompts from the pinned source; record definitions/config digest, parent and all child models and receipts. This example is an extension, not core Pi. |
 
