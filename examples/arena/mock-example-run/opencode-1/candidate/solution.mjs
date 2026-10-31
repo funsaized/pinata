@@ -1,0 +1,45 @@
+export function implementation(events     ) {
+  if (!Array.isArray(events)) throw Error();
+  const attempts = new Map();
+  const seen = new Map();
+  let tokens = 0;
+  let costMicros = 0;
+  for (const e of events) {
+    if (!e || typeof e.attempt !== "string" || !e.attempt) throw Error();
+    const a = attempts.get(e.attempt) ?? {
+      id: e.attempt,
+      tokens: 0,
+      costMicros: 0,
+      status: "running",
+    };
+    attempts.set(e.attempt, a);
+    if (e.type === "settled") {
+      if (!["succeeded", "failed", "cancelled"].includes(e.status)) throw Error();
+      a.status = e.status;
+    } else if (e.type === "usage") {
+      if (
+        typeof e.id !== "string" ||
+        !e.id ||
+        ![e.tokens, e.costMicros].every((n) => Number.isSafeInteger(n) && n >= 0)
+      )
+        throw Error();
+      const receipt = JSON.stringify([e.attempt, e.tokens, e.costMicros]);
+      if (seen.has(e.id)) {
+        if (seen.get(e.id) !== receipt) throw Error();
+        continue;
+      }
+      seen.set(e.id, receipt);
+      a.tokens += e.tokens;
+      a.costMicros += e.costMicros;
+      tokens += e.tokens;
+      costMicros += e.costMicros;
+      if (![tokens, costMicros, a.tokens, a.costMicros].every(Number.isSafeInteger)) throw Error();
+    } else throw Error();
+  }
+  return {
+    tokens,
+    costMicros,
+    attempts: [...attempts.keys()].sort().map((id) => attempts.get(id)),
+  };
+}
+export const settle = implementation;

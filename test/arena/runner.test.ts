@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import assert from "node:assert/strict";
 import { mkdtemp, mkdir, readFile, writeFile, symlink, rm, readdir } from "node:fs/promises";
+import { rootCertificates } from "node:tls";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -65,8 +66,14 @@ test("frozen patches apply exactly, including empty and unterminated candidates"
     const frozen = await freeze(task, work, join(dir, `candidate-${i}`));
     const patchFile = join(dir, `final-${i}.patch`);
     await writeFile(patchFile, frozen.patch);
-    execFileSync("git", ["apply", "--check", patchFile], { cwd: destination });
-    execFileSync("git", ["apply", patchFile], { cwd: destination });
+    execFileSync(
+      "git",
+      ["-c", "core.autocrlf=false", "-c", "core.eol=lf", "apply", "--check", patchFile],
+      { cwd: destination },
+    );
+    execFileSync("git", ["-c", "core.autocrlf=false", "-c", "core.eol=lf", "apply", patchFile], {
+      cwd: destination,
+    });
     assert.equal(await readFile(join(destination, task.entry), "utf8"), source);
   }
 });
@@ -306,4 +313,71 @@ test("recorded example replay and frozen candidates match their evidence", async
       trial.patch?.sha256,
     );
   }
+});
+
+test(
+  "generation can mount a public CA, rejecting private keys and malformed bundles",
+  { skip: !docker },
+  async (t) => {
+    const dir = await temp(t);
+    const image = await localImage(manifest.verifierImage);
+    const work = join(dir, "work"),
+      input = join(dir, "input"),
+      caFile = join(dir, "ca.pem");
+    await mkdir(work);
+    await mkdir(input);
+    await writeFile(caFile, rootCertificates[0]);
+    const request = {
+      image,
+      workspace: work,
+      inputDir: input,
+      caFile,
+      timeoutMs: 5000,
+      outputBytes: 65536,
+      command: [
+        "node",
+        "-e",
+        "const fs=require('node:fs'); const c=process.env.NODE_EXTRA_CA_CERTS;if(c!='/run/arena-ca.pem'||!fs.readFileSync(c,'utf8').includes('BEGIN CERTIFICATE'))process.exit(1);try{fs.writeFileSync(c,'bad');process.exit(2)}catch{}",
+      ],
+    };
+    const result = await sandbox(request);
+    assert.equal(result.code, 0, result.stderr);
+    await writeFile(
+      caFile,
+      rootCertificates[0] + "\n-----BEGIN PRIVATE KEY-----\nprivate\n-----END PRIVATE KEY-----",
+    );
+    await assert.rejects(sandbox(request), /Only public PEM/);
+    await writeFile(caFile, "-----BEGIN CERTIFICATE-----\ninvalid\n-----END CERTIFICATE-----");
+    await assert.rejects(sandbox(request));
+  },
+);
+
+test("recorded real CLI mock audit reconciles every request and replays complete outcomes", async () => {
+  const dir = join(root, "mock-example-run");
+  const replay = await replayArena(dir);
+  const audit = JSON.parse(await readFile(join(dir, "provider-audit.json"), "utf8")).audit;
+  assert.equal(replay.complete, true);
+  assert.equal(replay.manifest.mode, "mock");
+  assert.equal(replay.trials.length, 3);
+  for (const trial of replay.trials) {
+    const observed = audit.find((a: any) => a.contestant === trial.contestant);
+    assert(observed);
+    assert.equal(trial.status, "completed");
+    assert.equal(trial.quality?.success, true);
+    assert.equal(trial.quality?.passed, 81);
+    assert.equal(trial.ledger.complete, true);
+    assert.equal(trial.ledger.sessions.length, 4);
+    assert.equal(trial.ledger.totals.totalTokens, observed.providerTokens);
+    assert.equal(observed.providerTokens, observed.requests * 120);
+    assert.equal(observed.ledgerTokens, observed.providerTokens);
+    assert.equal(trial.ledger.synthetic, true);
+    assert(trial.ledger.sessions.every((s) => s.closed && s.status === "completed"));
+  }
+  const provenance = JSON.parse(replay.manifest.contestants[0].source);
+  for (const [file, digest] of Object.entries(provenance.sources))
+    assert.equal(
+      hash(await readFile(join(root, "adapters", file))),
+      digest,
+      `adapter source drift: ${file}`,
+    );
 });

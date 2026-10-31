@@ -115,8 +115,14 @@ try {
     "three rendered lanes",
   );
   const mode = await evaluate("document.querySelector('#mode').textContent");
-  assert.match(mode, /SIMULATED.*FIXTURES/);
-  assert.match(await evaluate("document.body.innerText"), /not competitive measurements/);
+  const expectedMode = JSON.parse(await readFile(join(values.dir, "manifest.json"), "utf8")).mode;
+  assert.match(mode, expectedMode === "mock" ? /MOCK PROVIDER.*REAL CLIS/ : /SIMULATED.*FIXTURES/);
+  assert.match(
+    await evaluate("document.body.innerText"),
+    expectedMode === "mock"
+      ? /validates adapters, not model quality/
+      : /not competitive measurements/,
+  );
   await evaluate("document.querySelectorAll('.lane')[1].click()");
   assert.match(await evaluate("document.querySelector('#selected-name').textContent"), /OpenCode/);
   await evaluate("document.querySelector('#replay').click()");

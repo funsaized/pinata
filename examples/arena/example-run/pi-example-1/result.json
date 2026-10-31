@@ -6,9 +6,9 @@
   "fixture": "good",
   "status": "completed",
   "reason": null,
-  "generationMs": 514.0502990000005,
-  "verificationMs": 1500.5813199999993,
-  "elapsedMs": 2014.674234,
+  "generationMs": 511.90117999999984,
+  "verificationMs": 2513.529484999999,
+  "elapsedMs": 3025.5251670000007,
   "comparable": true,
   "patch": {
     "sha256": "f8273792e8c19e5c6c1bc6c424b2ca1a4e407b851f9cc914c47acc96c50ba167",

@@ -57,7 +57,9 @@
     "arena:setup": "node examples/arena/cli.ts setup --pull",
     "arena:demo": "node examples/arena/cli.ts demo",
     "test:arena": "node --test test/arena/*.test.ts",
-    "test:arena:browser": "node scripts/arena-browser-smoke.mjs"
+    "test:arena:browser": "node scripts/arena-browser-smoke.mjs",
+    "arena:adapters:build": "node examples/arena/adapters/build.mjs",
+    "arena:mock": "node examples/arena/adapters/mock-run.mjs"
   },
   "devDependencies": {
     "@earendil-works/pi-ai": "1.1.0",
@@ -67,7 +69,8 @@
     "oxfmt": "0.71.0",
     "oxlint": "1.86.0",
     "typebox": "1.3.27",
-    "typescript": "7.0.2"
+    "typescript": "7.0.2",
+    "undici": "8.10.2"
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",

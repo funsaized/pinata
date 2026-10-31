@@ -1,0 +1,489 @@
+{
+  "id": "opencode-1",
+  "contestant": "opencode",
+  "repetition": 1,
+  "mode": "mock",
+  "status": "completed",
+  "reason": "Real opencode CLI and all observed child sessions ended; candidate exported",
+  "generationMs": 10225.277198000003,
+  "verificationMs": 1663.1044649999967,
+  "elapsedMs": 11888.450738,
+  "comparable": true,
+  "patch": {
+    "sha256": "f8273792e8c19e5c6c1bc6c424b2ca1a4e407b851f9cc914c47acc96c50ba167",
+    "artifact": "opencode-1/final.patch"
+  },
+  "quality": {
+    "passed": 81,
+    "total": 81,
+    "success": true,
+    "rubric": "repair-ledger-v1/81-cases/all-required",
+    "reason": null
+  },
+  "ledger": {
+    "complete": true,
+    "totals": {
+      "input": 1400,
+      "output": 280,
+      "cacheRead": 0,
+      "cacheWrite": 0,
+      "totalTokens": 1680,
+      "turns": 13,
+      "toolCalls": 9,
+      "costUsd": 0.00168
+    },
+    "partial": {
+      "input": 1400,
+      "output": 280,
+      "cacheRead": 0,
+      "cacheWrite": 0,
+      "totalTokens": 1680,
+      "turns": 13,
+      "toolCalls": 9,
+      "costUsd": 0.00168
+    },
+    "sessions": [
+      {
+        "type": "session-open",
+        "id": "ses_e6c5e5d4bffe36ticm6s9S1VOz",
+        "parent": null,
+        "role": "parent",
+        "model": {
+          "provider": "arena",
+          "id": "arena-model",
+          "variant": "default"
+        },
+        "closed": true,
+        "usageComplete": true,
+        "status": "completed",
+        "reason": "succeeded"
+      },
+      {
+        "type": "session-open",
+        "id": "ses_e6c5e5a9fffeDY5cmvGcosQcLz",
+        "parent": "ses_e6c5e5d4bffe36ticm6s9S1VOz",
+        "role": "explore",
+        "model": {
+          "provider": "arena",
+          "id": "arena-model",
+          "variant": "default"
+        },
+        "closed": true,
+        "usageComplete": true,
+        "status": "completed",
+        "reason": "succeeded"
+      },
+      {
+        "type": "session-open",
+        "id": "ses_e6c5e5915ffeZ0AvmBDyYj1T2Z",
+        "parent": "ses_e6c5e5d4bffe36ticm6s9S1VOz",
+        "role": "general",
+        "model": {
+          "provider": "arena",
+          "id": "arena-model",
+          "variant": "default"
+        },
+        "closed": true,
+        "usageComplete": true,
+        "status": "completed",
+        "reason": "succeeded"
+      },
+      {
+        "type": "session-open",
+        "id": "ses_e6c5e578cffeKM2bXjnlGQ4607",
+        "parent": "ses_e6c5e5d4bffe36ticm6s9S1VOz",
+        "role": "general",
+        "model": {
+          "provider": "arena",
+          "id": "arena-model",
+          "variant": "default"
+        },
+        "closed": true,
+        "usageComplete": true,
+        "status": "completed",
+        "reason": "succeeded"
+      }
+    ],
+    "receipts": [
+      {
+        "type": "usage",
+        "id": "ses_e6c5e5d4bffe36ticm6s9S1VOz/msg_193a1a4f3001UbAOYct0fMbj5i",
+        "session": "ses_e6c5e5d4bffe36ticm6s9S1VOz",
+        "model": {
+          "provider": "arena",
+          "id": "arena-model",
+          "variant": "default"
+        },
+        "kind": "message",
+        "meters": {
+          "input": 100,
+          "output": 20,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 120,
+          "turns": 1,
+          "toolCalls": 1,
+          "costUsd": 0.00012,
+          "reasoning": 0
+        },
+        "pricing": {
+          "source": "fixture",
+          "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+          "at": "2026-10-31T00:00:00Z"
+        }
+      },
+      {
+        "type": "usage",
+        "id": "ses_e6c5e5a9fffeDY5cmvGcosQcLz/msg_193a1a5af001MxhzsATlLGMEAP",
+        "session": "ses_e6c5e5a9fffeDY5cmvGcosQcLz",
+        "model": {
+          "provider": "arena",
+          "id": "arena-model",
+          "variant": "default"
+        },
+        "kind": "message",
+        "meters": {
+          "input": 100,
+          "output": 20,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 120,
+          "turns": 1,
+          "toolCalls": 1,
+          "costUsd": 0.00012,
+          "reasoning": 0
+        },
+        "pricing": {
+          "source": "fixture",
+          "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+          "at": "2026-10-31T00:00:00Z"
+        }
+      },
+      {
+        "type": "usage",
+        "id": "ses_e6c5e5a9fffeDY5cmvGcosQcLz/msg_193a1a611001y3yr9xgp2LfCGu",
+        "session": "ses_e6c5e5a9fffeDY5cmvGcosQcLz",
+        "model": {
+          "provider": "arena",
+          "id": "arena-model",
+          "variant": "default"
+        },
+        "kind": "message",
+        "meters": {
+          "input": 100,
+          "output": 20,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 120,
+          "turns": 1,
+          "toolCalls": 0,
+          "costUsd": 0.00012,
+          "reasoning": 0
+        },
+        "pricing": {
+          "source": "fixture",
+          "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+          "at": "2026-10-31T00:00:00Z"
+        }
+      },
+      {
+        "type": "usage",
+        "id": "ses_e6c5e5915ffeZ0AvmBDyYj1T2Z/msg_193a1a6f80013Jw5JNRTFa9TeA",
+        "session": "ses_e6c5e5915ffeZ0AvmBDyYj1T2Z",
+        "model": {
+          "provider": "arena",
+          "id": "arena-model",
+          "variant": "default"
+        },
+        "kind": "message",
+        "meters": {
+          "input": 100,
+          "output": 20,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 120,
+          "turns": 1,
+          "toolCalls": 1,
+          "costUsd": 0.00012,
+          "reasoning": 0
+        },
+        "pricing": {
+          "source": "fixture",
+          "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+          "at": "2026-10-31T00:00:00Z"
+        }
+      },
+      {
+        "type": "usage",
+        "id": "ses_e6c5e5915ffeZ0AvmBDyYj1T2Z/msg_193a1a74300174olBXITwApOGJ",
+        "session": "ses_e6c5e5915ffeZ0AvmBDyYj1T2Z",
+        "model": {
+          "provider": "arena",
+          "id": "arena-model",
+          "variant": "default"
+        },
+        "kind": "message",
+        "meters": {
+          "input": 100,
+          "output": 20,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 120,
+          "turns": 1,
+          "toolCalls": 1,
+          "costUsd": 0.00012,
+          "reasoning": 0
+        },
+        "pricing": {
+          "source": "fixture",
+          "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+          "at": "2026-10-31T00:00:00Z"
+        }
+      },
+      {
+        "type": "usage",
+        "id": "ses_e6c5e5d4bffe36ticm6s9S1VOz/msg_193a1a676001MDBH2hKs7U5kK6",
+        "session": "ses_e6c5e5d4bffe36ticm6s9S1VOz",
+        "model": {
+          "provider": "arena",
+          "id": "arena-model",
+          "variant": "default"
+        },
+        "kind": "message",
+        "meters": {
+          "input": 100,
+          "output": 20,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 120,
+          "turns": 1,
+          "toolCalls": 1,
+          "costUsd": 0.00012,
+          "reasoning": 0
+        },
+        "pricing": {
+          "source": "fixture",
+          "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+          "at": "2026-10-31T00:00:00Z"
+        }
+      },
+      {
+        "type": "usage",
+        "id": "ses_e6c5e5915ffeZ0AvmBDyYj1T2Z/msg_193a1a7a0001520kc45PbDU3us",
+        "session": "ses_e6c5e5915ffeZ0AvmBDyYj1T2Z",
+        "model": {
+          "provider": "arena",
+          "id": "arena-model",
+          "variant": "default"
+        },
+        "kind": "message",
+        "meters": {
+          "input": 100,
+          "output": 20,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 120,
+          "turns": 1,
+          "toolCalls": 1,
+          "costUsd": 0.00012,
+          "reasoning": 0
+        },
+        "pricing": {
+          "source": "fixture",
+          "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+          "at": "2026-10-31T00:00:00Z"
+        }
+      },
+      {
+        "type": "usage",
+        "id": "ses_e6c5e5915ffeZ0AvmBDyYj1T2Z/msg_193a1a8120017LHfIqSqzsYRZ2",
+        "session": "ses_e6c5e5915ffeZ0AvmBDyYj1T2Z",
+        "model": {
+          "provider": "arena",
+          "id": "arena-model",
+          "variant": "default"
+        },
+        "kind": "message",
+        "meters": {
+          "input": 100,
+          "output": 20,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 120,
+          "turns": 1,
+          "toolCalls": 0,
+          "costUsd": 0.00012,
+          "reasoning": 0
+        },
+        "pricing": {
+          "source": "fixture",
+          "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+          "at": "2026-10-31T00:00:00Z"
+        }
+      },
+      {
+        "type": "usage",
+        "id": "ses_e6c5e578cffeKM2bXjnlGQ4607/msg_193a1a88000182q0t5f3TZvB5U",
+        "session": "ses_e6c5e578cffeKM2bXjnlGQ4607",
+        "model": {
+          "provider": "arena",
+          "id": "arena-model",
+          "variant": "default"
+        },
+        "kind": "message",
+        "meters": {
+          "input": 100,
+          "output": 20,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 120,
+          "turns": 1,
+          "toolCalls": 1,
+          "costUsd": 0.00012,
+          "reasoning": 0
+        },
+        "pricing": {
+          "source": "fixture",
+          "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+          "at": "2026-10-31T00:00:00Z"
+        }
+      },
+      {
+        "type": "usage",
+        "id": "ses_e6c5e578cffeKM2bXjnlGQ4607/msg_193a1a8df001y1uNTZ753pHxwR",
+        "session": "ses_e6c5e578cffeKM2bXjnlGQ4607",
+        "model": {
+          "provider": "arena",
+          "id": "arena-model",
+          "variant": "default"
+        },
+        "kind": "message",
+        "meters": {
+          "input": 100,
+          "output": 20,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 120,
+          "turns": 1,
+          "toolCalls": 1,
+          "costUsd": 0.00012,
+          "reasoning": 0
+        },
+        "pricing": {
+          "source": "fixture",
+          "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+          "at": "2026-10-31T00:00:00Z"
+        }
+      },
+      {
+        "type": "usage",
+        "id": "ses_e6c5e5d4bffe36ticm6s9S1VOz/msg_193a1a862001d2nOLTS4J6zE6A",
+        "session": "ses_e6c5e5d4bffe36ticm6s9S1VOz",
+        "model": {
+          "provider": "arena",
+          "id": "arena-model",
+          "variant": "default"
+        },
+        "kind": "message",
+        "meters": {
+          "input": 100,
+          "output": 20,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 120,
+          "turns": 1,
+          "toolCalls": 1,
+          "costUsd": 0.00012,
+          "reasoning": 0
+        },
+        "pricing": {
+          "source": "fixture",
+          "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+          "at": "2026-10-31T00:00:00Z"
+        }
+      },
+      {
+        "type": "usage",
+        "id": "ses_e6c5e5d4bffe36ticm6s9S1VOz/msg_193a1a9bb0019V6LTfj02Ts9mk",
+        "session": "ses_e6c5e5d4bffe36ticm6s9S1VOz",
+        "model": {
+          "provider": "arena",
+          "id": "arena-model",
+          "variant": "default"
+        },
+        "kind": "message",
+        "meters": {
+          "input": 100,
+          "output": 20,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 120,
+          "turns": 1,
+          "toolCalls": 0,
+          "costUsd": 0.00012,
+          "reasoning": 0
+        },
+        "pricing": {
+          "source": "fixture",
+          "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+          "at": "2026-10-31T00:00:00Z"
+        }
+      },
+      {
+        "type": "usage",
+        "id": "ses_e6c5e578cffeKM2bXjnlGQ4607/msg_193a1a990001OZLdY74X5kZCo7",
+        "session": "ses_e6c5e578cffeKM2bXjnlGQ4607",
+        "model": {
+          "provider": "arena",
+          "id": "arena-model",
+          "variant": "default"
+        },
+        "kind": "message",
+        "meters": {
+          "input": 100,
+          "output": 20,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 120,
+          "turns": 1,
+          "toolCalls": 0,
+          "costUsd": 0.00012,
+          "reasoning": 0
+        },
+        "pricing": {
+          "source": "fixture",
+          "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+          "at": "2026-10-31T00:00:00Z"
+        }
+      },
+      {
+        "type": "usage",
+        "id": "http/14",
+        "session": "ses_e6c5e5d4bffe36ticm6s9S1VOz",
+        "model": {
+          "provider": "arena",
+          "id": "arena-model"
+        },
+        "kind": "overhead",
+        "meters": {
+          "input": 100,
+          "output": 20,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 120,
+          "turns": 0,
+          "toolCalls": 0,
+          "costUsd": 0.00012,
+          "reasoning": 0
+        },
+        "pricing": {
+          "source": "fixture",
+          "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+          "at": "2026-10-31T00:00:00Z"
+        }
+      }
+    ],
+    "estimated": false,
+    "synthetic": true
+  }
+}

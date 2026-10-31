@@ -3,16 +3,83 @@
 The runner executes a pinned local container image and an argument array. It never
 runs a contestant command on the host. `live` requires `--allow-provider-spend` even
 when the adapter claims its provider is free. This flag is operator consent, not a
-hard spending guarantee. No provider calls are part of the repository's tests.
+hard spending guarantee. Only the isolated mock provider is called by tests.
 
-**Bundled status:** Piñata 2.0.1, OpenCode 2.2.5 native subagents, and Pi 1.4.0's
-official subagent example are named, source-pinned integration targets, not verified
-live adapters. The executable generic protocol path is tested with an offline
-container fixture. Install/configure each real stack in an image, implement its
-normalizer, audit its telemetry, and pin that image before using it for a study.
-The demo's three labels all use the same Piñata FakeBackend script.
+**Bundled status:** executable wrappers for patched Piñata 2.0.1 + Pi 1.4.0,
+OpenCode 2.2.5 native subagents, and Pi 1.4.0's **official subagent example
+extension**. All three are exercised using their actual CLIs and a separate
+scripted OpenAI-compatible HTTP provider. The mock audit verifies every request's
+usage against the attempt ledger, including parent, three children and OpenCode
+auxiliary requests. This is offline conformance, **not a live model evaluation or
+an invoice calibration**. The simpler `demo` still uses the same FakeBackend in
+all three lanes and is labelled separately.
 
-Commands on this page are _manual_ and require a configured, authorized live adapter.
+Commands on this page are _manual_ operator walkthroughs. The mock path needs no
+provider credentials. Do not run the live command without authorization for spend.
+
+## Build and rehearse
+
+Prerequisites: Node >=22.19, local Linux x64 Docker daemon at
+`/var/run/docker.sock`, network access for setup, and disk space for the image.
+The setup currently supports Linux x64 only. It uses the immutable verifier base,
+a locked npm dependency graph, and the official OpenCode release with SHA-256 in
+[versions.json](versions.json). It never runs an install script from a contestant.
+OS packages are resolved at build time; the resulting immutable image id, actual
+Piñata source hashes and adapter hashes are recorded in the build artifact.
+
+```sh
+npm run arena:setup
+node examples/arena/adapters/build.mjs --out /tmp/arena-image.json
+# Optional verified local release cache: --archive /path/opencode-linux-x64.tar.gz
+node examples/arena/adapters/mock-run.mjs --image-file /tmp/arena-image.json \
+  --out /tmp/arena-cli-rehearsal
+node examples/arena/cli.ts serve --dir /tmp/arena-cli-rehearsal
+```
+
+The mock network is internal, with no route to external providers and no credentials.
+Only its provider container has canned tool responses; the contestant image has no
+fixtures, private grader or expected answers. A smoke check rejects those paths.
+The generation container sees a private starter Git repository, completes its
+children, verifies protected files, then exports only the allowed candidate.
+Its process/session metadata lives outside the exported source tree.
+
+## Metering and supported configurations
+
+`run.mjs` supports the standard **OpenAI-compatible chat-completions API**. It is
+not a universal adapter for every native provider/authentication scheme. The same
+explicit model is configured in all three CLIs, with thinking off, 32K context and
+8K output limits. Pi's retry and automatic compaction are disabled for this initial
+controlled setup. Piñata uses its real process backend and isolated builder worktree;
+OpenCode uses native subagents sharing its private outer checkout; the Pi example
+uses the shipped scout/worker/reviewer definitions. The parent must integrate and
+verify before finishing. These prompts/configurations are part of the contestant.
+
+For `controlled-same-model`, the official example's `model:` frontmatter is removed
+so children inherit the explicit selected model. In `practical-defaults` it is
+preserved; the stock child models require their own supported credentials and
+pricing. That mode must be configured and calibrated separately; one custom
+endpoint cannot automatically supply every stock provider. Any observed model
+mismatch is recorded, and no missing child cost is treated as zero.
+
+Pi parent JSON events, Piñata per-attempt journals, the example's telemetry extension,
+and authenticated OpenCode session exports capture model ids, turns, tools and
+outcomes. A local proxy observes usage metadata from **every request to the configured
+endpoint**, including calls missing from session exports. Exact token/cache/model
+matching prevents double counting; unmatched residual requests become parent
+overhead. Missing usage, interrupted calls or inconsistent snapshots make the
+aggregate unknown. Prompts, answers, credentials and HTTP headers are not retained
+by that proxy. It preserves the environment's HTTP proxy/CA configuration. Requests
+to another provider endpoint are outside that reconciliation boundary; unsupported
+native billing/compaction formats must remain unknown. The pure normalizer tests
+exercise retries, conflicts and missing metadata; no claim is made that live
+provider compaction has been calibrated.
+
+A price is an estimate from an operator-supplied dated rate card, not the SDK's
+often-zero default cost. Optional `pricing` has nonnegative USD-per-million
+`input`, `output`, `cacheRead`, `cacheWrite`, plus `reference` and ISO `at`; optional
+`prices` maps actual `provider/model` ids to such objects. Unknown child rates stay
+null. Reasoning tokens are included in output and recorded separately when supplied.
+Mock prices are always marked synthetic.
 
 ## Inputs and lifecycle
 
@@ -101,18 +168,34 @@ small authorized calibration run. No built-in config claims that calibration.
 
 ## Configuring a real run
 
-Copy [live.example.json](live.example.json), replace image placeholders with local
-immutable image digests, point commands at your audited normalizers, set a private
-task package, and configure only the credentials needed for the selected provider.
-Use `network: "none"` for local inference or `"bridge"` for an explicitly authorized
-provider run. Docker's inherited proxy configuration remains in effect; the harness
-does not install an unrestricted egress proxy. Restrict egress externally for live
-work. The verifier always uses `network: "none"` and gets no provider credentials.
+Generate a config from the image artifact; this writes a private, reviewable file
+and does not start a model. Use a private task outside the contestant image.
 
 ```sh
+node examples/arena/adapters/configure.mjs --image-file /tmp/arena-image.json \
+  --out /private/arena.json --task /private/fresh-task \
+  --base-url https://your-authorized-provider.example/v1 \
+  --provider study --model exact-model-id --api-key-env STUDY_API_KEY
+# Optional: --pricing /private/dated-rates.json --ca-file /path/public-ca.pem
+# Inspect /private/arena.json and set provider account limits before running.
 node examples/arena/cli.ts live --config /private/arena.json \
   --out /private/results-001 --allow-provider-spend
 ```
 
-The example deliberately fails validation until all immutable images are supplied.
-The command never silently installs a product or pulls a live adapter image.
+The named credential must already exist in the operator environment. Its value is
+not copied into the run manifest. Never put credentials in URLs, config settings,
+logs or shared artifacts. Public CA bundles are validated as certificates and mounted
+read-only only in generation; the verifier receives neither CA nor credentials.
+The immutable image must already exist locally; live execution never silently
+installs a product or pulls an adapter image.
+
+[live.example.json](live.example.json) also documents the generic protocol contract
+for other products. Its image placeholders deliberately fail validation. `network:
+"bridge"` permits provider access but does **not** restrict egress to that provider;
+use an external egress policy and dedicated VM for hostile code. `network: "none"`
+can serve offline protocol adapters but cannot reach host-local inference without
+an explicitly implemented network design. Platform proxy/CA policy stays in effect.
+The independent verifier always uses no network and receives no credentials.
+
+No live provider run has been performed in this PR. An authorized small calibration
+against real provider receipts remains necessary before a comparative paid study.

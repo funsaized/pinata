@@ -33,12 +33,18 @@ function render() {
   const all = state.events;
   const manifest = state.manifest;
   const simulated = manifest.mode === "simulated";
+  const mock = manifest.mode === "mock";
+  const synthetic = simulated || mock;
   const contestants = manifest.contestants;
   selected ??= contestants[0]?.id;
-  $("#mode").textContent = simulated ? "SIMULATED · FIXTURES" : "LIVE · SELF-REPORTED ADAPTERS";
-  $("#disclosure").textContent = simulated
+  $("#mode").textContent = simulated
+    ? "SIMULATED · FIXTURES"
+    : mock
+      ? "MOCK PROVIDER · REAL CLIS"
+      : "LIVE · SELF-REPORTED ADAPTERS";
+  $("#disclosure").textContent = synthetic
     ? manifest.simulatedNotice
-    : "Real configured containers. Stack adapters remain unverified until independently audited. Missing billing data is unknown; observed limits are not hard billing caps.";
+    : "Real configured containers. Live provider billing has not been independently calibrated. Missing billing data is unknown; observed limits are not hard billing caps.";
   $("#run-status").textContent =
     `${manifest.track.replaceAll("-", " ")} · ${manifest.task.id} · ${cursor === Infinity ? (state.complete ? "complete" : "recording") : "replay"}`;
   $("#event-count").textContent = `${events.length} / ${all.length} events`;
@@ -58,7 +64,7 @@ function render() {
     const rows = results.filter((r) => r.contestant === c.id);
     const button = node("button", `lane${selected === c.id ? " selected" : ""}`);
     button.style.setProperty("--lane-color", colors[index % colors.length]);
-    button.setAttribute("aria-label", `Inspect ${c.name} evidence`);
+    button.setAttribute("aria-label", `Inspect ${c.name ?? c.id} evidence`);
     button.setAttribute("aria-pressed", String(selected === c.id));
     button.onclick = () => {
       selected = c.id;
@@ -70,14 +76,18 @@ function render() {
       node(
         "span",
         "badge",
-        simulated ? `fixture · ${start?.data.fixture ?? "queued"}` : "live · contract",
+        simulated
+          ? `fixture · ${start?.data.fixture ?? "queued"}`
+          : mock
+            ? "mock · real CLI"
+            : "live · adapter",
       ),
     );
     const title = node("h2", "", c.name ?? c.id);
     const version = node(
       "p",
       "version",
-      `v${c.version} configured · ${simulated ? "scripted FakeBackend" : "pinned container"}`,
+      `v${c.version} configured · ${simulated ? "scripted FakeBackend" : mock ? "real CLI · mock provider" : "pinned container"}`,
     );
     const status = result
       ? result.quality?.success && result.status === "completed"
@@ -107,7 +117,7 @@ function render() {
     const ms = result?.elapsedMs ?? (start ? (events.at(-1)?.at ?? start.at) - start.at : 0);
     for (const [label, text] of [
       ["QUALITY", result?.quality ? `${result.quality.passed}/${result.quality.total}` : "pending"],
-      [simulated ? "FAKE COST" : "TOTAL COST", cost],
+      [synthetic ? "SYNTHETIC COST" : "TOTAL COST", cost],
       ["ELAPSED", start ? seconds(ms) : "—"],
     ]) {
       const m = node("div", "metric");
@@ -170,7 +180,7 @@ function render() {
     }))
       circle.setAttribute(key, String(value));
     const title = document.createElementNS(ns, "title");
-    title.textContent = `${c.name ?? c.id}: ${(quality * 100).toFixed(0)}% checks, ${money(cost)}, ${simulated ? "synthetic fixture" : "recorded"}`;
+    title.textContent = `${c.name ?? c.id}: ${(quality * 100).toFixed(0)}% checks, ${money(cost)}, ${synthetic ? "synthetic provider fixture" : "recorded"}`;
     circle.append(title);
     bubbles.push(circle);
     const text = document.createElementNS(ns, "text");
@@ -182,10 +192,14 @@ function render() {
   }
   replace($("#bubbles"), bubbles);
   $("#cost-note").textContent =
-    `${simulated ? "Synthetic fixture cost; elapsed time measures this rehearsal only. " : "Recorded/estimated cost; see receipt pricing provenance. "}Unknown-cost attempts are omitted from the chart. Coincident marks are offset slightly for visibility.`;
+    `${synthetic ? "Synthetic provider/fixture cost; elapsed time measures this rehearsal only. " : "Recorded/estimated cost; see receipt pricing provenance. "}Unknown-cost attempts are omitted from the chart. Coincident marks are offset slightly for visibility.`;
   const contestant = contestants.find((c) => c.id === selected);
   $("#selected-name").textContent = contestant?.name ?? selected;
-  $("#selected-badge").textContent = simulated ? "SCRIPTED DELEGATION" : "ADAPTER-REPORTED";
+  $("#selected-badge").textContent = simulated
+    ? "SCRIPTED DELEGATION"
+    : mock
+      ? "ACTUAL CLI · MOCK MODEL"
+      : "ADAPTER-REPORTED";
   const trial = latest(selected)?.trial;
   const result = trial && trialResult(events, trial);
   const activity = events.filter((e) => e.trial === trial && e.type === "protocol");

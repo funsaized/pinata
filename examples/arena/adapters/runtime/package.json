@@ -1,0 +1,10 @@
+{
+  "name": "pinata-arena-adapter-runtime",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "1.4.0",
+    "undici": "8.10.2"
+  }
+}

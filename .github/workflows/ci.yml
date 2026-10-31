@@ -53,7 +53,7 @@ jobs:
 
   arena:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -68,3 +68,9 @@ jobs:
         env:
           ARENA_DOCKER_TEST: "1"
       - run: npm run test:arena:browser -- --dir examples/arena/example-run --chrome google-chrome
+      - name: Build pinned real CLI adapters (no model calls)
+        run: node examples/arena/adapters/build.mjs --out /tmp/arena-adapter-image.json
+      - name: Real CLI session and provider ledger conformance
+        run: node examples/arena/adapters/mock-run.mjs --image-file /tmp/arena-adapter-image.json --out /tmp/arena-real-cli-smoke
+      - name: Real CLI mock viewer disclosure and replay
+        run: npm run test:arena:browser -- --dir /tmp/arena-real-cli-smoke --chrome google-chrome

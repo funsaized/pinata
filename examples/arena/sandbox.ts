@@ -1,6 +1,9 @@
 import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
-import { realpath } from "node:fs/promises";
+import { X509Certificate, randomUUID } from "node:crypto";
+import { realpath, readFile, stat, mkdtemp, chmod, writeFile, rm } from "node:fs/promises";
+
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 // Always select the local daemon. Never inherit a remote DOCKER_HOST/context.
 const dockerEnv = () => {
@@ -21,11 +24,13 @@ export type SandboxRequest = {
   workspace: string;
   inputDir: string;
   writable?: boolean;
+  memoryMb?: number;
+  caFile?: string;
   stdin?: string;
   timeoutMs: number;
   outputBytes: number;
   signal?: AbortSignal;
-  network?: "none" | "bridge";
+  network?: string;
   secrets?: string[];
   onLine?: (line: string) => void;
 };
@@ -87,16 +92,60 @@ export async function localImage(image: string): Promise<string> {
 export async function sandbox(request: SandboxRequest): Promise<ProcessResult> {
   if (!/^sha256:[a-f0-9]{64}$/.test(request.image))
     throw new Error("Sandbox requires a resolved immutable local image id");
+  if (
+    request.memoryMb !== undefined &&
+    (!Number.isInteger(request.memoryMb) || request.memoryMb < 256 || request.memoryMb > 2048)
+  )
+    throw new Error("Invalid container memory limit");
+  if (request.network && !["none", "bridge"].includes(request.network)) {
+    if (
+      !/^pinata-arena-mock-[a-f0-9-]+$/.test(request.network) ||
+      (await dockerCommand([
+        "network",
+        "inspect",
+        "--format",
+        "{{.Internal}}",
+        request.network,
+      ])) !== "true"
+    )
+      throw new Error("Custom networks must be isolated arena mock networks");
+  }
   const work = await realpath(request.workspace);
   const input = await realpath(request.inputDir);
   if ([work, input].some((p) => p.includes(",") || p.includes("\n")))
     throw new Error("Unsupported mount path");
+  let caFile: string | undefined;
+  let caContents: string | undefined;
+  let caDir: string | undefined;
+  if (request.caFile) {
+    caFile = await realpath(request.caFile);
+    if (caFile.includes(",") || caFile.includes("\n") || (await stat(caFile)).size > 1048576)
+      throw new Error("Invalid CA bundle");
+    const pem = await readFile(caFile, "utf8");
+    const blocks = pem.match(/-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g) ?? [];
+    if (
+      !blocks.length ||
+      pem.replace(/-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g, "").trim()
+    )
+      throw new Error("Only public PEM certificates may be mounted");
+    for (const block of blocks) new X509Certificate(block);
+    caContents = pem;
+  }
   const name = `pinata-arena-${randomUUID()}`;
   const env = dockerEnv();
   const secrets = request.secrets ?? [];
   for (const name of secrets)
     if (!/^[A-Z][A-Z0-9_]*$/.test(name) || env[name] === undefined)
       throw new Error(`Missing or invalid credential variable ${name}`);
+  if (caContents) {
+    // A certificate can be public while its source file is mode 0600. Stage only
+    // the validated PEM so the unprivileged contestant never needs host uid access.
+    caDir = await mkdtemp(join(tmpdir(), "pinata-arena-ca-"));
+    await chmod(caDir, 0o755);
+    caFile = join(caDir, "ca.pem");
+    await writeFile(caFile, caContents, { mode: 0o444 });
+    await chmod(caFile, 0o444);
+  }
   const args = [
     "run",
     "--rm",
@@ -111,13 +160,15 @@ export async function sandbox(request: SandboxRequest): Promise<ProcessResult> {
     "--cap-drop=ALL",
     "--security-opt=no-new-privileges",
     "--pids-limit=64",
-    "--memory=256m",
-    "--memory-swap=256m",
+    `--memory=${request.memoryMb ?? 256}m`,
+    `--memory-swap=${request.memoryMb ?? 256}m`,
     "--cpus=1",
     "--ulimit",
     "nofile=256:256",
     "--tmpfs",
     "/tmp:rw,noexec,nosuid,size=64m,mode=1777",
+    "--tmpfs",
+    "/runtime:rw,nosuid,nodev,size=256m,mode=1777",
     "--mount",
     `type=bind,src=${work},dst=/work${request.writable ? "" : ",readonly"}`,
     "--mount",
@@ -126,6 +177,14 @@ export async function sandbox(request: SandboxRequest): Promise<ProcessResult> {
     "/work",
     "-e",
     "HOME=/tmp",
+    ...(caFile
+      ? [
+          "--mount",
+          `type=bind,src=${caFile},dst=/run/arena-ca.pem,readonly`,
+          "-e",
+          "NODE_EXTRA_CA_CERTS=/run/arena-ca.pem",
+        ]
+      : []),
     ...secrets.flatMap((key) => ["-e", key]),
     "-i",
     request.image,
@@ -198,6 +257,7 @@ export async function sandbox(request: SandboxRequest): Promise<ProcessResult> {
       "--format",
       "{{.ID}}",
     ]);
+    if (caDir) await rm(caDir, { recursive: true, force: true });
     // eslint-disable-next-line no-unsafe-finally -- refusing an uncertain freeze is intentional.
     if (remains) throw new Error(`Container cleanup uncertain: ${name}; refusing final freeze`);
   }

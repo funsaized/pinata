@@ -1,0 +1,405 @@
+{
+  "id": "pinata-1",
+  "contestant": "pinata",
+  "repetition": 1,
+  "mode": "mock",
+  "status": "completed",
+  "reason": "Real pinata CLI and all observed child sessions ended; candidate exported",
+  "generationMs": 12435.686287000002,
+  "verificationMs": 2647.955582999999,
+  "elapsedMs": 15083.769922000001,
+  "comparable": true,
+  "patch": {
+    "sha256": "f8273792e8c19e5c6c1bc6c424b2ca1a4e407b851f9cc914c47acc96c50ba167",
+    "artifact": "pinata-1/final.patch"
+  },
+  "quality": {
+    "passed": 81,
+    "total": 81,
+    "success": true,
+    "rubric": "repair-ledger-v1/81-cases/all-required",
+    "reason": null
+  },
+  "ledger": {
+    "complete": true,
+    "totals": {
+      "input": 800,
+      "output": 160,
+      "cacheRead": 0,
+      "cacheWrite": 0,
+      "totalTokens": 960,
+      "turns": 8,
+      "toolCalls": 7,
+      "costUsd": 0.00096
+    },
+    "partial": {
+      "input": 800,
+      "output": 160,
+      "cacheRead": 0,
+      "cacheWrite": 0,
+      "totalTokens": 960,
+      "turns": 8,
+      "toolCalls": 7,
+      "costUsd": 0.00096
+    },
+    "sessions": [
+      {
+        "type": "session-open",
+        "id": "parent",
+        "parent": null,
+        "role": "parent",
+        "model": {
+          "provider": "arena",
+          "id": "arena-model"
+        },
+        "closed": true,
+        "usageComplete": true,
+        "status": "completed",
+        "reason": ""
+      },
+      {
+        "type": "session-open",
+        "id": "pinata-b07fc977-662f-4c25-9f7a-199ca66aa66a-scout-1",
+        "parent": "parent",
+        "role": "scout",
+        "model": {
+          "provider": "arena",
+          "id": "arena-model",
+          "thinking": "off"
+        },
+        "closed": true,
+        "usageComplete": true,
+        "status": "completed",
+        "reason": "Offline mock fixture finished"
+      },
+      {
+        "type": "session-open",
+        "id": "pinata-b07fc977-662f-4c25-9f7a-199ca66aa66a-build-1",
+        "parent": "parent",
+        "role": "build",
+        "model": {
+          "provider": "arena",
+          "id": "arena-model",
+          "thinking": "off"
+        },
+        "closed": true,
+        "usageComplete": true,
+        "status": "completed",
+        "reason": "Offline mock fixture finished"
+      },
+      {
+        "type": "session-open",
+        "id": "pinata-b07fc977-662f-4c25-9f7a-199ca66aa66a-review-1",
+        "parent": "parent",
+        "role": "review",
+        "model": {
+          "provider": "arena",
+          "id": "arena-model",
+          "thinking": "off"
+        },
+        "closed": true,
+        "usageComplete": true,
+        "status": "completed",
+        "reason": "Offline mock fixture finished"
+      }
+    ],
+    "receipts": [
+      {
+        "type": "usage",
+        "id": "parent/1",
+        "session": "parent",
+        "model": {
+          "provider": "arena",
+          "id": "arena-model",
+          "thinking": "off"
+        },
+        "kind": "message",
+        "meters": {
+          "input": 100,
+          "output": 20,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 120,
+          "turns": 1,
+          "toolCalls": 1,
+          "costUsd": 0.00012,
+          "reasoning": 0
+        },
+        "pricing": {
+          "source": "fixture",
+          "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+          "at": "2026-10-31T00:00:00Z"
+        }
+      },
+      {
+        "type": "usage",
+        "id": "pinata-b07fc977-662f-4c25-9f7a-199ca66aa66a-scout-1/event-7",
+        "session": "pinata-b07fc977-662f-4c25-9f7a-199ca66aa66a-scout-1",
+        "model": {
+          "provider": "arena",
+          "id": "arena-model",
+          "thinking": "off"
+        },
+        "kind": "message",
+        "meters": {
+          "input": 100,
+          "output": 20,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 120,
+          "turns": 1,
+          "toolCalls": 0,
+          "costUsd": 0.00012,
+          "reasoning": 0
+        },
+        "pricing": {
+          "source": "fixture",
+          "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+          "at": "2026-10-31T00:00:00Z"
+        }
+      },
+      {
+        "type": "usage",
+        "id": "pinata-b07fc977-662f-4c25-9f7a-199ca66aa66a-scout-1/event-13",
+        "session": "pinata-b07fc977-662f-4c25-9f7a-199ca66aa66a-scout-1",
+        "model": {
+          "provider": "arena",
+          "id": "arena-model",
+          "thinking": "off"
+        },
+        "kind": "message",
+        "meters": {
+          "input": 100,
+          "output": 20,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 120,
+          "turns": 1,
+          "toolCalls": 1,
+          "costUsd": 0.00012,
+          "reasoning": 0
+        },
+        "pricing": {
+          "source": "fixture",
+          "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+          "at": "2026-10-31T00:00:00Z"
+        }
+      },
+      {
+        "type": "usage",
+        "id": "pinata-b07fc977-662f-4c25-9f7a-199ca66aa66a-scout-1/counters",
+        "session": "pinata-b07fc977-662f-4c25-9f7a-199ca66aa66a-scout-1",
+        "model": {
+          "provider": "arena",
+          "id": "arena-model",
+          "thinking": "off"
+        },
+        "kind": "overhead",
+        "meters": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "turns": 0,
+          "toolCalls": 1,
+          "costUsd": 0
+        },
+        "pricing": {
+          "source": "fixture",
+          "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+          "at": "2026-10-31T00:00:00Z"
+        }
+      },
+      {
+        "type": "usage",
+        "id": "pinata-b07fc977-662f-4c25-9f7a-199ca66aa66a-build-1/event-21",
+        "session": "pinata-b07fc977-662f-4c25-9f7a-199ca66aa66a-build-1",
+        "model": {
+          "provider": "arena",
+          "id": "arena-model",
+          "thinking": "off"
+        },
+        "kind": "message",
+        "meters": {
+          "input": 100,
+          "output": 20,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 120,
+          "turns": 1,
+          "toolCalls": 0,
+          "costUsd": 0.00012,
+          "reasoning": 0
+        },
+        "pricing": {
+          "source": "fixture",
+          "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+          "at": "2026-10-31T00:00:00Z"
+        }
+      },
+      {
+        "type": "usage",
+        "id": "pinata-b07fc977-662f-4c25-9f7a-199ca66aa66a-build-1/event-27",
+        "session": "pinata-b07fc977-662f-4c25-9f7a-199ca66aa66a-build-1",
+        "model": {
+          "provider": "arena",
+          "id": "arena-model",
+          "thinking": "off"
+        },
+        "kind": "message",
+        "meters": {
+          "input": 100,
+          "output": 20,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 120,
+          "turns": 1,
+          "toolCalls": 1,
+          "costUsd": 0.00012,
+          "reasoning": 0
+        },
+        "pricing": {
+          "source": "fixture",
+          "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+          "at": "2026-10-31T00:00:00Z"
+        }
+      },
+      {
+        "type": "usage",
+        "id": "pinata-b07fc977-662f-4c25-9f7a-199ca66aa66a-build-1/counters",
+        "session": "pinata-b07fc977-662f-4c25-9f7a-199ca66aa66a-build-1",
+        "model": {
+          "provider": "arena",
+          "id": "arena-model",
+          "thinking": "off"
+        },
+        "kind": "overhead",
+        "meters": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "turns": 0,
+          "toolCalls": 1,
+          "costUsd": 0
+        },
+        "pricing": {
+          "source": "fixture",
+          "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+          "at": "2026-10-31T00:00:00Z"
+        }
+      },
+      {
+        "type": "usage",
+        "id": "parent/2",
+        "session": "parent",
+        "model": {
+          "provider": "arena",
+          "id": "arena-model",
+          "thinking": "off"
+        },
+        "kind": "message",
+        "meters": {
+          "input": 100,
+          "output": 20,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 120,
+          "turns": 1,
+          "toolCalls": 1,
+          "costUsd": 0.00012,
+          "reasoning": 0
+        },
+        "pricing": {
+          "source": "fixture",
+          "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+          "at": "2026-10-31T00:00:00Z"
+        }
+      },
+      {
+        "type": "usage",
+        "id": "pinata-b07fc977-662f-4c25-9f7a-199ca66aa66a-review-1/event-37",
+        "session": "pinata-b07fc977-662f-4c25-9f7a-199ca66aa66a-review-1",
+        "model": {
+          "provider": "arena",
+          "id": "arena-model",
+          "thinking": "off"
+        },
+        "kind": "message",
+        "meters": {
+          "input": 100,
+          "output": 20,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 120,
+          "turns": 1,
+          "toolCalls": 0,
+          "costUsd": 0.00012,
+          "reasoning": 0
+        },
+        "pricing": {
+          "source": "fixture",
+          "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+          "at": "2026-10-31T00:00:00Z"
+        }
+      },
+      {
+        "type": "usage",
+        "id": "pinata-b07fc977-662f-4c25-9f7a-199ca66aa66a-review-1/counters",
+        "session": "pinata-b07fc977-662f-4c25-9f7a-199ca66aa66a-review-1",
+        "model": {
+          "provider": "arena",
+          "id": "arena-model",
+          "thinking": "off"
+        },
+        "kind": "overhead",
+        "meters": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "turns": 0,
+          "toolCalls": 1,
+          "costUsd": 0
+        },
+        "pricing": {
+          "source": "fixture",
+          "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+          "at": "2026-10-31T00:00:00Z"
+        }
+      },
+      {
+        "type": "usage",
+        "id": "parent/3",
+        "session": "parent",
+        "model": {
+          "provider": "arena",
+          "id": "arena-model",
+          "thinking": "off"
+        },
+        "kind": "message",
+        "meters": {
+          "input": 100,
+          "output": 20,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 120,
+          "turns": 1,
+          "toolCalls": 0,
+          "costUsd": 0.00012,
+          "reasoning": 0
+        },
+        "pricing": {
+          "source": "fixture",
+          "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+          "at": "2026-10-31T00:00:00Z"
+        }
+      }
+    ],
+    "estimated": false,
+    "synthetic": true
+  }
+}

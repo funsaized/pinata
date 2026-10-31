@@ -1,0 +1,1559 @@
+{
+  "manifest": {
+    "schema": 1,
+    "id": "pinata-arena-v1",
+    "mode": "mock",
+    "track": "controlled-same-model",
+    "seed": 7,
+    "trials": 1,
+    "task": {
+      "id": "repair-ledger-v1",
+      "sha256": "b90840341a54e93a3449415c0a7c00033e6809d33694e1cc7256a936527de6d4"
+    },
+    "sourceCommit": "27156467565e31d2080a8cc9f200bb789eaca6a1",
+    "sourceDirty": true,
+    "sourceFilesSha256": {
+      "runner.ts": "2c48f203204895091b0a38076b7103d3c6a571274d91c0c540615268005cada1",
+      "protocol.ts": "d2eee3d4d199be862b860509e8705076c62f787393aaef45d022b03029ca1a51",
+      "task.ts": "14123131c20380d5b77412fc762c689f9928407d4368c6e2a246eb4fdba63ff3",
+      "sandbox.ts": "a35185d0c036c21f6f99321c55d66ad24cc9fafbac2887f9de2d0438b64f6f43",
+      "fixtures.ts": "2508c060928ef96b1d540ed6aa599bd865280a155f8ef868c32a81a1383dcf34",
+      "manifest.json": "171ee62be1710992c97688750c388f3f555a479793795f4e4f1726b1fa31cb2b"
+    },
+    "node": "v24.19.0",
+    "verifierImage": "sha256:daa74c183f7d8c1ba55ed79c76e912f50be8782ca9d2da640645f906dce474b8",
+    "verifierImagePin": "node:22.19.0-bookworm-slim@sha256:4a4884e8a44826194dff92ba316264f392056cbe243dcc9fd3551e71cea02b90",
+    "limits": {
+      "generationMs": 120000,
+      "verificationMs": 10000,
+      "costUsd": 1,
+      "outputBytes": 1048576
+    },
+    "contestants": [
+      {
+        "id": "pinata",
+        "name": "Piñata",
+        "image": "sha256:575f57cfcbcde6e2a14b2e54109cdb89a22cc783b7c2d6f071024b167d25da1b",
+        "command": [
+          "node",
+          "/opt/arena-adapters/run.mjs",
+          "pinata"
+        ],
+        "version": "patched Piñata 2.0.1 + Pi 1.4.0",
+        "source": "{\"pins\":{\"schema\":1,\"pi\":\"1.4.0\",\"officialExample\":{\"commit\":\"4a080252f06caf63a525d7873c5d94d3c23887e0\",\"path\":\"packages/coding-agent/examples/extensions/subagent\"},\"opencode\":{\"version\":\"2.2.5\",\"url\":\"https://github.com/anomalyco/opencode/releases/download/v2.2.5/opencode-linux-x64.tar.gz\",\"sha256\":\"09f44302c10fd036912f59c81fd1aef5df45dd06f649197f9dfc9bbe2a79614e\",\"platform\":\"linux-x64\"}},\"sources\":{\"run.mjs\":\"d1c0edbe43c604d9a2c1bdb32bfcda831fbddc6b58cc88e69381c9cad070780a\",\"normalize.mjs\":\"dfe16e24418554138b6a3121dac8af32f0e971d14a406bc89f0f621c39bed539\",\"provider-proxy.mjs\":\"ae4de73804c228d184e8ae38190fadf8adde71268c5e749063ff5e678024799f\",\"telemetry.mjs\":\"d937f9c8e8dbbc6c99d8f91bae9056e5289bcf922aaec1bb93fe6b2c92689d1c\",\"Dockerfile\":\"a9c9a90a8fcf810c5e3f9c90325784cfb57124fea331bdcfcffcc40f3735b658\",\"versions.json\":\"3fa119be2200e006da32f7b662b42f27f98ab12c25e1d2f0fa9b47efb0f34e16\",\"runtime/package-lock.json\":\"36da47daedff3d0943b872e89e07095a32a2bf6132fb4426e68317934f9bf14d\"},\"pinataSources\":{\"LICENSE\":\"5abbdacb16228bf68cc2f3ea4744ff5fa86a87ef1932c58e592595bd343a4c43\",\"README.md\":\"a25daadf21f0cd806db733836b2021cc9563b86ff993e5cc5471ffe5fe2b3c35\",\"agents/builder.md\":\"f266ad84bb750938b195713d79cb4c6e98daa2232f749e0978728c7d9947db3c\",\"agents/reviewer.md\":\"18a581a7efc3a2392327fbe23accf86da416ed853dca9c22734d5bff9ea57b84\",\"agents/scout.md\":\"40100208c7e37315586d315adfb9ca854200aa6b24e1663d4eb6dbce9e9f3d5f\",\"engine/agent/brief.ts\":\"9bff84d48dcb9024df4e86e53667971c2c1e71fcce52578b0673fc9095978bf5\",\"engine/agent/detached.ts\":\"83d9efd46f1376a20e6b2fa7b71d4da886b8383e92c448c5f3015097f0886fc5\",\"engine/agent/extension.ts\":\"c864d1014f1dba19a78acb6f2a36ff90f1da9bbeddd36a97ebae937988f2712f\",\"engine/agent/legacy/planner.md\":\"c5a216afc11923dedb91d355392b302a8bedbfcb2bfe435988053d0ae78f9a47\",\"engine/agent/legacy/research.md\":\"819a98dda61d34647c95ed80b0e598ea6ac7b04095a14eff388c2d4890f8ac0f\",\"engine/agent/personas.ts\":\"7a842a9ce8823a999e7be8e1c9e67f60d99a581e21e8225495ed50f4fa37176f\",\"engine/agent/reporter.ts\":\"61f796cac500d10561f4bd6372f12efed86b48d11eea72b993721c8c9bfa24bd\",\"engine/backends/fake.ts\":\"7ded3f4948830a209a4b090d4fa5c546e72466fced413f400f41ae63adb4d9f3\",\"engine/backends/herdr-pi.ts\":\"c8f5486e7ebb625d29700fc733b056e1934f63072d118ca161e7ef774fbc926e\",\"engine/backends/in-process.ts\":\"8021453e06d1c718216d2f9ec63435f093a9cf1f96a954b07a3aa165e4d88b6c\",\"engine/backends/pi-command.ts\":\"94f4be9addb2885de8ac0b23307912edcd95c6a331faf13907d4a0c61deda86d\",\"engine/backends/process.ts\":\"518a3213f22cf07b89a5badf33f8ff0a2939c62443ef9025f0ba1229ad69e77b\",\"engine/backends/supervise.ts\":\"e20beb9697c829c6f168c498b1ae757a33040744f0fda6ece733506a4d2e1401\",\"engine/backends/types.ts\":\"e12c5641ddf9b39bbe64dafcd0d5bccb08efe9ef33c72dc99f477d05cccd6ebf\",\"engine/core/budgets.ts\":\"7dd359128d9a5586e106d241ef6497d3423b28b2abf921e4d1adc9d131b0a477\",\"engine/core/definitions.ts\":\"4fa3958490b6e87516bf0c35e9defe0511ace00b592a4619851ac6a5c9e6fab5\",\"engine/core/engine.ts\":\"b7184c2ee65028b3c4ec2e22d643d8e8fc6f4ed11c0525380c04736ec90343d3\",\"engine/core/events.ts\":\"a3d8f9e0f74781f41359ccecf980cb6c9c0e8cdc52087964b2f6eb0c81576a98\",\"engine/core/graph.ts\":\"eb58dd5caf59440d6d3b053a467d11c2ac2c6ad8c97fad498d887211e97bce58\",\"engine/core/limiter.ts\":\"cc98636a8065b7ac06fe7952d5328107872c7c145a3a1ed747495a3b1de3197a\",\"engine/core/results.ts\":\"e602c486ca9b0f3ff0627291fc9fb2c88fa7947457a090bc0bea9340b1713a9d\",\"engine/core/scheduler.ts\":\"e04fe3b7a9c9ad58e40b4cf2e7122e076be7a1f57b7c376c670bf8bde9b1ab4c\",\"engine/core/store.ts\":\"fa988fa5d37ef3658e3b3ff8f723c9dfb1468a75dc893081770c723572673fc0\",\"engine/core/telemetry.ts\":\"0575bd7e9a9cfeed2cbd7091dc1e7ed82a4be237cd0bd253dfaf50abe38ac152\",\"engine/core/types.ts\":\"9fda349c0222675a52d9b6adad14ffc96262d2963035b5f64cb51d80222f3d6c\",\"engine/core/validate.ts\":\"ad9a0b28a7da639ced153bd46e18669f319ee84a6d8c1dbbdfab082b6821b40f\",\"engine/core/view.ts\":\"979387a102dbc2b2ca144f87673bdceda150b91b61ebf0c4075fd611aa22d31c\",\"engine/headless/main.ts\":\"7959391495b979ed2a880747466f1f271f9832d88a511c8aa3e70a2fb7ae5546\",\"engine/headless/reporters.ts\":\"89a36124f61d409cb1f9aeb3298ba7fa37cc22d65ffe557f1bed0a3cab19ade1\",\"engine/herdr/client.ts\":\"e2d156ea40f2d942565b81a03d4d0c1d146b2a13316a33ace3f171ae69c4471d\",\"engine/herdr/panes.ts\":\"d3669c71a904796ac82091f6d009fb41fb339cd0ba060dd375e3f829365fcaac\",\"engine/ipc/client.ts\":\"fad761851399b706d33b21161c2d60e1cb378b8b42236d74b50410c5c5295892\",\"engine/ipc/protocol.ts\":\"3cfe1813d60039e4042ef1971df6d7e09f4aa5b271028b3198c628fd04b6062e\",\"engine/ipc/server.ts\":\"19f419bc993fcf001235dbec1ecfeb84bb16a0da079d0bcc886214a34cb88448\",\"engine/migrate/legacy.ts\":\"860d75a6414fecd70fb8fee8af91e758282e49284e534a8b5c60b8154983ed14\",\"engine/pi/commands.ts\":\"bb699ceea488db4be26b6317ae53d6be63b700a92f2bab36424b72316ac6b284\",\"engine/pi/config.ts\":\"b69d844b48453125a805d4187e77b00512e21331fda01d081f2ac32b568266c2\",\"engine/pi/definitions.ts\":\"bdcf8b5d0f33f31e9178a98530603ce54b0af5b0531793e7ec1892788dd9a1d7\",\"engine/pi/delivery.ts\":\"872d099df3b04f600319580e521343ec304df3e88cbd31d37cbd5b10a9de218c\",\"engine/pi/extension.ts\":\"d71386dfb052a114e56ea50b98e187ecb087c6665c0ca77c3f421c2fe665f690\",\"engine/pi/host.ts\":\"dc7f5b21427a1dff029cd53d0cd022df8dd07f7c80a3cfd1cb94ee531a7d1533\",\"engine/pi/pipeline.ts\":\"18df89f3c21766c9794c132a0ff83deb39562343d4523c396c30cd4d94f99122\",\"engine/pi/runtime.ts\":\"32afe833dcabc9569ab16a31b3bd663d7bc0d007593986321407bbfe5146658e\",\"engine/pi/tool-providers.ts\":\"61fcd1e2c4349a8f590d9b257aa99be1c9f884a695a42c4696fda4f18fe9f3fe\",\"engine/pi/tools.ts\":\"b341dd41695d5729bde338ed69216444806243825b2fca7c70963df5c1a7516a\",\"engine/pi/ui.ts\":\"03948041b4c8aa822730623e2f6e446822b4f98a864201bf0c5f60da28ca1d4c\",\"engine/sources/jsonl.ts\":\"bee3782cebed5a0269809433b6b901bd54aa8085cba6df446bf60038cf0c278b\",\"engine/sources/log.ts\":\"31a658ea199198c932dd0fdebfd9ba7b884819a212ddd55668eb85a713583bbe\",\"engine/sources/session.ts\":\"fe36a7bc26ba4d9abd040a24dfb72b9810def7d13411ddedfe134af025251780\",\"engine/ui/detail.ts\":\"5cdc38326e4e6fe4e015a65c03aebb3b147b6056ac083cf3cc28eb40e24ae1e9\",\"engine/ui/frame.ts\":\"e7d828f1464306f32132f554e302a3d8da6465e15146a6d2a984d7dfccaf932b\",\"engine/ui/live.ts\":\"2651786f6dd3494875e61c18e1023dd56fb0a3f5bf2c6335404e09e18d3878e2\",\"engine/ui/mascot.ts\":\"79372bc1030e5485a47380616e58ab49c6ea1cf6ca443992154a82342752e5f1\",\"engine/ui/text.ts\":\"173e3826dc2be99abf853a7659fe301514c7f9bac2f5ee6f27e00b474c40d0d9\",\"engine/ui/widget.ts\":\"9c3958cebbf5ae6b9671e784b95cc99c86e23c113c7d063b28d3bd68a6cfd8ca\",\"engine/verify/checks.ts\":\"4252e3ba168ee8eb8af29994943c73c187edb79ae9be08e76c0c063ee9c2f42c\",\"engine/verify/destination.ts\":\"7d6f5973d4bd8890105ab98ad573f73ff1c787123b783c2e807b90aa2a927e26\",\"engine/verify/evidence.ts\":\"8fd5a48d8925ee756a22c42bc9698d682c4b12de7e2ce366d494552f78d65786\",\"engine/verify/integrate.ts\":\"75ac7a569b97186d88f481442442a5a79518b6e25c2d6410f7682b756f55ebf1\",\"engine/verify/record.ts\":\"e12e7327af011a7e5bcbe985044669d8f258abdf8f8cbbd399fbfedf02179936\",\"engine/verify/stages.ts\":\"981e67253620044d096152f433daf5a5a7ff3c73d2b9da9219b9c26f621052c4\",\"engine/verify/subject.ts\":\"be1b7f17bd5a18230751e154ad62ca78055cb318e69f771a5ed9d8fda0ed047d\",\"engine/viewer/main.ts\":\"be11a64d2188c11cf2b1cce8f5ae381f031b33d2c7e17c0a55608a56c74520a1\",\"engine/viewer/screen.ts\":\"01ae2fd9768912eeca3420b9c9d3557d4bcae7e4b134e71b41b10248cdb03dc5\",\"engine/workspace/changes.ts\":\"471718c73e84b1c34484646dd328098b1d2b9caebf648778d843f5898947c3d3\",\"engine/workspace/dependencies.ts\":\"846def48b36dbb623e7314b8b200528982df073c1cedd9c9047cca3a22273ff4\",\"engine/workspace/git.ts\":\"0e1fcb6a82e20518e78e522125486657d26226fa2c26657f9f07467986b82733\",\"engine/workspace/include.ts\":\"2acaa2836ba8b5ac7f6fd26c0fb03fc34be4e876faa53d03ec99bc747d368eef\",\"engine/workspace/live.ts\":\"aa56eee67c579b38c4d7f303db61f842367b95e106ce4a6fe65053d76b06cfe9\",\"engine/workspace/location.ts\":\"0e1a0866318ad64b19266160c0a04c15dae014d4a3abbb1ff1bf230c989efad9\",\"engine/workspace/paths.ts\":\"86936b1226f1fab360fb7fb27ff41bafdb3c1c3a71b3189b634b9ffeea99547d\",\"engine/workspace/preparation.ts\":\"50e2b63d1d427b70d33068cdc92fe3aac6fcf68afc1cf96f6dad7f265de1bcdd\",\"engine/workspace/snapshot.ts\":\"1fbfeec0b2511deca953ee3226baffeabfc8aaa8ee78c094b47eafe441888379\",\"engine/workspace/worktree.ts\":\"58d89e294044d8ee647a12d21aeb2e7d5d4bd813bbc9840dbebcc107ebed9a95\",\"package.json\":\"82f82b6d7304cdb1ecbba5f296e208ebe098563596b15894c23cbf5b8346f371\",\"prompts/builder.md\":\"ff07dfb9677392590339905aa228db1430ce4033f25d5539a858333d24242503\",\"prompts/pinata-fix.md\":\"a264dd55a6d79dd0c0f8d7d55e4757a97e4971ca17ebef5f0c0d71cf49f0f867\",\"prompts/pinata-review.md\":\"f57cff2e9bac22429adfa404d02b5214f8ec2553b2b1c01709fdaa9747665c32\",\"prompts/reviewer.md\":\"3f391957f3fbcb2ec66dfa4172d5bbd93781cd290de45d1d434622e628dfa67f\",\"prompts/scout.md\":\"e69cb5f813ed7762980827170b72238652ed11df08da0960c6106442379140f4\",\"skills/engmgmt/SKILL.md\":\"451208a2b28e773301c43ce1d4f904932dbfc7d6b62d4b474e1aa3728ea733b0\",\"skills/subagents/SKILL.md\":\"bdae531248bcedc853aedc753d6236a666486a7e0d47978c2788f2dc46c7ffd4\",\"skills/subagents/reference.md\":\"907e368234eeda527cb74e0eaf6e93b582b450559228cd0368b684b3fd1de5c2\"},\"sourceCommit\":\"27156467565e31d2080a8cc9f200bb789eaca6a1\",\"sourceDirty\":true}",
+        "network": "pinata-arena-mock-27b1768b-5b44-4143-8f89-bec8fa5207b7",
+        "secrets": [],
+        "settings": {
+          "mock": true,
+          "baseUrl": "http://mock-provider:8080/pinata/v1",
+          "thinking": "off",
+          "memoryMb": 1024,
+          "pricing": {
+            "input": 1,
+            "output": 1,
+            "cacheRead": 1,
+            "cacheWrite": 1,
+            "reference": "Synthetic offline fixture rates",
+            "at": "2026-10-31T00:00:00Z"
+          }
+        }
+      },
+      {
+        "id": "opencode",
+        "name": "OpenCode · native subagent",
+        "image": "sha256:575f57cfcbcde6e2a14b2e54109cdb89a22cc783b7c2d6f071024b167d25da1b",
+        "command": [
+          "node",
+          "/opt/arena-adapters/run.mjs",
+          "opencode"
+        ],
+        "version": "OpenCode 2.2.5",
+        "source": "{\"pins\":{\"schema\":1,\"pi\":\"1.4.0\",\"officialExample\":{\"commit\":\"4a080252f06caf63a525d7873c5d94d3c23887e0\",\"path\":\"packages/coding-agent/examples/extensions/subagent\"},\"opencode\":{\"version\":\"2.2.5\",\"url\":\"https://github.com/anomalyco/opencode/releases/download/v2.2.5/opencode-linux-x64.tar.gz\",\"sha256\":\"09f44302c10fd036912f59c81fd1aef5df45dd06f649197f9dfc9bbe2a79614e\",\"platform\":\"linux-x64\"}},\"sources\":{\"run.mjs\":\"d1c0edbe43c604d9a2c1bdb32bfcda831fbddc6b58cc88e69381c9cad070780a\",\"normalize.mjs\":\"dfe16e24418554138b6a3121dac8af32f0e971d14a406bc89f0f621c39bed539\",\"provider-proxy.mjs\":\"ae4de73804c228d184e8ae38190fadf8adde71268c5e749063ff5e678024799f\",\"telemetry.mjs\":\"d937f9c8e8dbbc6c99d8f91bae9056e5289bcf922aaec1bb93fe6b2c92689d1c\",\"Dockerfile\":\"a9c9a90a8fcf810c5e3f9c90325784cfb57124fea331bdcfcffcc40f3735b658\",\"versions.json\":\"3fa119be2200e006da32f7b662b42f27f98ab12c25e1d2f0fa9b47efb0f34e16\",\"runtime/package-lock.json\":\"36da47daedff3d0943b872e89e07095a32a2bf6132fb4426e68317934f9bf14d\"},\"pinataSources\":{\"LICENSE\":\"5abbdacb16228bf68cc2f3ea4744ff5fa86a87ef1932c58e592595bd343a4c43\",\"README.md\":\"a25daadf21f0cd806db733836b2021cc9563b86ff993e5cc5471ffe5fe2b3c35\",\"agents/builder.md\":\"f266ad84bb750938b195713d79cb4c6e98daa2232f749e0978728c7d9947db3c\",\"agents/reviewer.md\":\"18a581a7efc3a2392327fbe23accf86da416ed853dca9c22734d5bff9ea57b84\",\"agents/scout.md\":\"40100208c7e37315586d315adfb9ca854200aa6b24e1663d4eb6dbce9e9f3d5f\",\"engine/agent/brief.ts\":\"9bff84d48dcb9024df4e86e53667971c2c1e71fcce52578b0673fc9095978bf5\",\"engine/agent/detached.ts\":\"83d9efd46f1376a20e6b2fa7b71d4da886b8383e92c448c5f3015097f0886fc5\",\"engine/agent/extension.ts\":\"c864d1014f1dba19a78acb6f2a36ff90f1da9bbeddd36a97ebae937988f2712f\",\"engine/agent/legacy/planner.md\":\"c5a216afc11923dedb91d355392b302a8bedbfcb2bfe435988053d0ae78f9a47\",\"engine/agent/legacy/research.md\":\"819a98dda61d34647c95ed80b0e598ea6ac7b04095a14eff388c2d4890f8ac0f\",\"engine/agent/personas.ts\":\"7a842a9ce8823a999e7be8e1c9e67f60d99a581e21e8225495ed50f4fa37176f\",\"engine/agent/reporter.ts\":\"61f796cac500d10561f4bd6372f12efed86b48d11eea72b993721c8c9bfa24bd\",\"engine/backends/fake.ts\":\"7ded3f4948830a209a4b090d4fa5c546e72466fced413f400f41ae63adb4d9f3\",\"engine/backends/herdr-pi.ts\":\"c8f5486e7ebb625d29700fc733b056e1934f63072d118ca161e7ef774fbc926e\",\"engine/backends/in-process.ts\":\"8021453e06d1c718216d2f9ec63435f093a9cf1f96a954b07a3aa165e4d88b6c\",\"engine/backends/pi-command.ts\":\"94f4be9addb2885de8ac0b23307912edcd95c6a331faf13907d4a0c61deda86d\",\"engine/backends/process.ts\":\"518a3213f22cf07b89a5badf33f8ff0a2939c62443ef9025f0ba1229ad69e77b\",\"engine/backends/supervise.ts\":\"e20beb9697c829c6f168c498b1ae757a33040744f0fda6ece733506a4d2e1401\",\"engine/backends/types.ts\":\"e12c5641ddf9b39bbe64dafcd0d5bccb08efe9ef33c72dc99f477d05cccd6ebf\",\"engine/core/budgets.ts\":\"7dd359128d9a5586e106d241ef6497d3423b28b2abf921e4d1adc9d131b0a477\",\"engine/core/definitions.ts\":\"4fa3958490b6e87516bf0c35e9defe0511ace00b592a4619851ac6a5c9e6fab5\",\"engine/core/engine.ts\":\"b7184c2ee65028b3c4ec2e22d643d8e8fc6f4ed11c0525380c04736ec90343d3\",\"engine/core/events.ts\":\"a3d8f9e0f74781f41359ccecf980cb6c9c0e8cdc52087964b2f6eb0c81576a98\",\"engine/core/graph.ts\":\"eb58dd5caf59440d6d3b053a467d11c2ac2c6ad8c97fad498d887211e97bce58\",\"engine/core/limiter.ts\":\"cc98636a8065b7ac06fe7952d5328107872c7c145a3a1ed747495a3b1de3197a\",\"engine/core/results.ts\":\"e602c486ca9b0f3ff0627291fc9fb2c88fa7947457a090bc0bea9340b1713a9d\",\"engine/core/scheduler.ts\":\"e04fe3b7a9c9ad58e40b4cf2e7122e076be7a1f57b7c376c670bf8bde9b1ab4c\",\"engine/core/store.ts\":\"fa988fa5d37ef3658e3b3ff8f723c9dfb1468a75dc893081770c723572673fc0\",\"engine/core/telemetry.ts\":\"0575bd7e9a9cfeed2cbd7091dc1e7ed82a4be237cd0bd253dfaf50abe38ac152\",\"engine/core/types.ts\":\"9fda349c0222675a52d9b6adad14ffc96262d2963035b5f64cb51d80222f3d6c\",\"engine/core/validate.ts\":\"ad9a0b28a7da639ced153bd46e18669f319ee84a6d8c1dbbdfab082b6821b40f\",\"engine/core/view.ts\":\"979387a102dbc2b2ca144f87673bdceda150b91b61ebf0c4075fd611aa22d31c\",\"engine/headless/main.ts\":\"7959391495b979ed2a880747466f1f271f9832d88a511c8aa3e70a2fb7ae5546\",\"engine/headless/reporters.ts\":\"89a36124f61d409cb1f9aeb3298ba7fa37cc22d65ffe557f1bed0a3cab19ade1\",\"engine/herdr/client.ts\":\"e2d156ea40f2d942565b81a03d4d0c1d146b2a13316a33ace3f171ae69c4471d\",\"engine/herdr/panes.ts\":\"d3669c71a904796ac82091f6d009fb41fb339cd0ba060dd375e3f829365fcaac\",\"engine/ipc/client.ts\":\"fad761851399b706d33b21161c2d60e1cb378b8b42236d74b50410c5c5295892\",\"engine/ipc/protocol.ts\":\"3cfe1813d60039e4042ef1971df6d7e09f4aa5b271028b3198c628fd04b6062e\",\"engine/ipc/server.ts\":\"19f419bc993fcf001235dbec1ecfeb84bb16a0da079d0bcc886214a34cb88448\",\"engine/migrate/legacy.ts\":\"860d75a6414fecd70fb8fee8af91e758282e49284e534a8b5c60b8154983ed14\",\"engine/pi/commands.ts\":\"bb699ceea488db4be26b6317ae53d6be63b700a92f2bab36424b72316ac6b284\",\"engine/pi/config.ts\":\"b69d844b48453125a805d4187e77b00512e21331fda01d081f2ac32b568266c2\",\"engine/pi/definitions.ts\":\"bdcf8b5d0f33f31e9178a98530603ce54b0af5b0531793e7ec1892788dd9a1d7\",\"engine/pi/delivery.ts\":\"872d099df3b04f600319580e521343ec304df3e88cbd31d37cbd5b10a9de218c\",\"engine/pi/extension.ts\":\"d71386dfb052a114e56ea50b98e187ecb087c6665c0ca77c3f421c2fe665f690\",\"engine/pi/host.ts\":\"dc7f5b21427a1dff029cd53d0cd022df8dd07f7c80a3cfd1cb94ee531a7d1533\",\"engine/pi/pipeline.ts\":\"18df89f3c21766c9794c132a0ff83deb39562343d4523c396c30cd4d94f99122\",\"engine/pi/runtime.ts\":\"32afe833dcabc9569ab16a31b3bd663d7bc0d007593986321407bbfe5146658e\",\"engine/pi/tool-providers.ts\":\"61fcd1e2c4349a8f590d9b257aa99be1c9f884a695a42c4696fda4f18fe9f3fe\",\"engine/pi/tools.ts\":\"b341dd41695d5729bde338ed69216444806243825b2fca7c70963df5c1a7516a\",\"engine/pi/ui.ts\":\"03948041b4c8aa822730623e2f6e446822b4f98a864201bf0c5f60da28ca1d4c\",\"engine/sources/jsonl.ts\":\"bee3782cebed5a0269809433b6b901bd54aa8085cba6df446bf60038cf0c278b\",\"engine/sources/log.ts\":\"31a658ea199198c932dd0fdebfd9ba7b884819a212ddd55668eb85a713583bbe\",\"engine/sources/session.ts\":\"fe36a7bc26ba4d9abd040a24dfb72b9810def7d13411ddedfe134af025251780\",\"engine/ui/detail.ts\":\"5cdc38326e4e6fe4e015a65c03aebb3b147b6056ac083cf3cc28eb40e24ae1e9\",\"engine/ui/frame.ts\":\"e7d828f1464306f32132f554e302a3d8da6465e15146a6d2a984d7dfccaf932b\",\"engine/ui/live.ts\":\"2651786f6dd3494875e61c18e1023dd56fb0a3f5bf2c6335404e09e18d3878e2\",\"engine/ui/mascot.ts\":\"79372bc1030e5485a47380616e58ab49c6ea1cf6ca443992154a82342752e5f1\",\"engine/ui/text.ts\":\"173e3826dc2be99abf853a7659fe301514c7f9bac2f5ee6f27e00b474c40d0d9\",\"engine/ui/widget.ts\":\"9c3958cebbf5ae6b9671e784b95cc99c86e23c113c7d063b28d3bd68a6cfd8ca\",\"engine/verify/checks.ts\":\"4252e3ba168ee8eb8af29994943c73c187edb79ae9be08e76c0c063ee9c2f42c\",\"engine/verify/destination.ts\":\"7d6f5973d4bd8890105ab98ad573f73ff1c787123b783c2e807b90aa2a927e26\",\"engine/verify/evidence.ts\":\"8fd5a48d8925ee756a22c42bc9698d682c4b12de7e2ce366d494552f78d65786\",\"engine/verify/integrate.ts\":\"75ac7a569b97186d88f481442442a5a79518b6e25c2d6410f7682b756f55ebf1\",\"engine/verify/record.ts\":\"e12e7327af011a7e5bcbe985044669d8f258abdf8f8cbbd399fbfedf02179936\",\"engine/verify/stages.ts\":\"981e67253620044d096152f433daf5a5a7ff3c73d2b9da9219b9c26f621052c4\",\"engine/verify/subject.ts\":\"be1b7f17bd5a18230751e154ad62ca78055cb318e69f771a5ed9d8fda0ed047d\",\"engine/viewer/main.ts\":\"be11a64d2188c11cf2b1cce8f5ae381f031b33d2c7e17c0a55608a56c74520a1\",\"engine/viewer/screen.ts\":\"01ae2fd9768912eeca3420b9c9d3557d4bcae7e4b134e71b41b10248cdb03dc5\",\"engine/workspace/changes.ts\":\"471718c73e84b1c34484646dd328098b1d2b9caebf648778d843f5898947c3d3\",\"engine/workspace/dependencies.ts\":\"846def48b36dbb623e7314b8b200528982df073c1cedd9c9047cca3a22273ff4\",\"engine/workspace/git.ts\":\"0e1fcb6a82e20518e78e522125486657d26226fa2c26657f9f07467986b82733\",\"engine/workspace/include.ts\":\"2acaa2836ba8b5ac7f6fd26c0fb03fc34be4e876faa53d03ec99bc747d368eef\",\"engine/workspace/live.ts\":\"aa56eee67c579b38c4d7f303db61f842367b95e106ce4a6fe65053d76b06cfe9\",\"engine/workspace/location.ts\":\"0e1a0866318ad64b19266160c0a04c15dae014d4a3abbb1ff1bf230c989efad9\",\"engine/workspace/paths.ts\":\"86936b1226f1fab360fb7fb27ff41bafdb3c1c3a71b3189b634b9ffeea99547d\",\"engine/workspace/preparation.ts\":\"50e2b63d1d427b70d33068cdc92fe3aac6fcf68afc1cf96f6dad7f265de1bcdd\",\"engine/workspace/snapshot.ts\":\"1fbfeec0b2511deca953ee3226baffeabfc8aaa8ee78c094b47eafe441888379\",\"engine/workspace/worktree.ts\":\"58d89e294044d8ee647a12d21aeb2e7d5d4bd813bbc9840dbebcc107ebed9a95\",\"package.json\":\"82f82b6d7304cdb1ecbba5f296e208ebe098563596b15894c23cbf5b8346f371\",\"prompts/builder.md\":\"ff07dfb9677392590339905aa228db1430ce4033f25d5539a858333d24242503\",\"prompts/pinata-fix.md\":\"a264dd55a6d79dd0c0f8d7d55e4757a97e4971ca17ebef5f0c0d71cf49f0f867\",\"prompts/pinata-review.md\":\"f57cff2e9bac22429adfa404d02b5214f8ec2553b2b1c01709fdaa9747665c32\",\"prompts/reviewer.md\":\"3f391957f3fbcb2ec66dfa4172d5bbd93781cd290de45d1d434622e628dfa67f\",\"prompts/scout.md\":\"e69cb5f813ed7762980827170b72238652ed11df08da0960c6106442379140f4\",\"skills/engmgmt/SKILL.md\":\"451208a2b28e773301c43ce1d4f904932dbfc7d6b62d4b474e1aa3728ea733b0\",\"skills/subagents/SKILL.md\":\"bdae531248bcedc853aedc753d6236a666486a7e0d47978c2788f2dc46c7ffd4\",\"skills/subagents/reference.md\":\"907e368234eeda527cb74e0eaf6e93b582b450559228cd0368b684b3fd1de5c2\"},\"sourceCommit\":\"27156467565e31d2080a8cc9f200bb789eaca6a1\",\"sourceDirty\":true}",
+        "network": "pinata-arena-mock-27b1768b-5b44-4143-8f89-bec8fa5207b7",
+        "secrets": [],
+        "settings": {
+          "mock": true,
+          "baseUrl": "http://mock-provider:8080/opencode/v1",
+          "thinking": "off",
+          "memoryMb": 1024,
+          "pricing": {
+            "input": 1,
+            "output": 1,
+            "cacheRead": 1,
+            "cacheWrite": 1,
+            "reference": "Synthetic offline fixture rates",
+            "at": "2026-10-31T00:00:00Z"
+          }
+        }
+      },
+      {
+        "id": "pi-example",
+        "name": "Pi · official subagent example",
+        "image": "sha256:575f57cfcbcde6e2a14b2e54109cdb89a22cc783b7c2d6f071024b167d25da1b",
+        "command": [
+          "node",
+          "/opt/arena-adapters/run.mjs",
+          "pi-example"
+        ],
+        "version": "Pi 1.4.0 official subagent example",
+        "source": "{\"pins\":{\"schema\":1,\"pi\":\"1.4.0\",\"officialExample\":{\"commit\":\"4a080252f06caf63a525d7873c5d94d3c23887e0\",\"path\":\"packages/coding-agent/examples/extensions/subagent\"},\"opencode\":{\"version\":\"2.2.5\",\"url\":\"https://github.com/anomalyco/opencode/releases/download/v2.2.5/opencode-linux-x64.tar.gz\",\"sha256\":\"09f44302c10fd036912f59c81fd1aef5df45dd06f649197f9dfc9bbe2a79614e\",\"platform\":\"linux-x64\"}},\"sources\":{\"run.mjs\":\"d1c0edbe43c604d9a2c1bdb32bfcda831fbddc6b58cc88e69381c9cad070780a\",\"normalize.mjs\":\"dfe16e24418554138b6a3121dac8af32f0e971d14a406bc89f0f621c39bed539\",\"provider-proxy.mjs\":\"ae4de73804c228d184e8ae38190fadf8adde71268c5e749063ff5e678024799f\",\"telemetry.mjs\":\"d937f9c8e8dbbc6c99d8f91bae9056e5289bcf922aaec1bb93fe6b2c92689d1c\",\"Dockerfile\":\"a9c9a90a8fcf810c5e3f9c90325784cfb57124fea331bdcfcffcc40f3735b658\",\"versions.json\":\"3fa119be2200e006da32f7b662b42f27f98ab12c25e1d2f0fa9b47efb0f34e16\",\"runtime/package-lock.json\":\"36da47daedff3d0943b872e89e07095a32a2bf6132fb4426e68317934f9bf14d\"},\"pinataSources\":{\"LICENSE\":\"5abbdacb16228bf68cc2f3ea4744ff5fa86a87ef1932c58e592595bd343a4c43\",\"README.md\":\"a25daadf21f0cd806db733836b2021cc9563b86ff993e5cc5471ffe5fe2b3c35\",\"agents/builder.md\":\"f266ad84bb750938b195713d79cb4c6e98daa2232f749e0978728c7d9947db3c\",\"agents/reviewer.md\":\"18a581a7efc3a2392327fbe23accf86da416ed853dca9c22734d5bff9ea57b84\",\"agents/scout.md\":\"40100208c7e37315586d315adfb9ca854200aa6b24e1663d4eb6dbce9e9f3d5f\",\"engine/agent/brief.ts\":\"9bff84d48dcb9024df4e86e53667971c2c1e71fcce52578b0673fc9095978bf5\",\"engine/agent/detached.ts\":\"83d9efd46f1376a20e6b2fa7b71d4da886b8383e92c448c5f3015097f0886fc5\",\"engine/agent/extension.ts\":\"c864d1014f1dba19a78acb6f2a36ff90f1da9bbeddd36a97ebae937988f2712f\",\"engine/agent/legacy/planner.md\":\"c5a216afc11923dedb91d355392b302a8bedbfcb2bfe435988053d0ae78f9a47\",\"engine/agent/legacy/research.md\":\"819a98dda61d34647c95ed80b0e598ea6ac7b04095a14eff388c2d4890f8ac0f\",\"engine/agent/personas.ts\":\"7a842a9ce8823a999e7be8e1c9e67f60d99a581e21e8225495ed50f4fa37176f\",\"engine/agent/reporter.ts\":\"61f796cac500d10561f4bd6372f12efed86b48d11eea72b993721c8c9bfa24bd\",\"engine/backends/fake.ts\":\"7ded3f4948830a209a4b090d4fa5c546e72466fced413f400f41ae63adb4d9f3\",\"engine/backends/herdr-pi.ts\":\"c8f5486e7ebb625d29700fc733b056e1934f63072d118ca161e7ef774fbc926e\",\"engine/backends/in-process.ts\":\"8021453e06d1c718216d2f9ec63435f093a9cf1f96a954b07a3aa165e4d88b6c\",\"engine/backends/pi-command.ts\":\"94f4be9addb2885de8ac0b23307912edcd95c6a331faf13907d4a0c61deda86d\",\"engine/backends/process.ts\":\"518a3213f22cf07b89a5badf33f8ff0a2939c62443ef9025f0ba1229ad69e77b\",\"engine/backends/supervise.ts\":\"e20beb9697c829c6f168c498b1ae757a33040744f0fda6ece733506a4d2e1401\",\"engine/backends/types.ts\":\"e12c5641ddf9b39bbe64dafcd0d5bccb08efe9ef33c72dc99f477d05cccd6ebf\",\"engine/core/budgets.ts\":\"7dd359128d9a5586e106d241ef6497d3423b28b2abf921e4d1adc9d131b0a477\",\"engine/core/definitions.ts\":\"4fa3958490b6e87516bf0c35e9defe0511ace00b592a4619851ac6a5c9e6fab5\",\"engine/core/engine.ts\":\"b7184c2ee65028b3c4ec2e22d643d8e8fc6f4ed11c0525380c04736ec90343d3\",\"engine/core/events.ts\":\"a3d8f9e0f74781f41359ccecf980cb6c9c0e8cdc52087964b2f6eb0c81576a98\",\"engine/core/graph.ts\":\"eb58dd5caf59440d6d3b053a467d11c2ac2c6ad8c97fad498d887211e97bce58\",\"engine/core/limiter.ts\":\"cc98636a8065b7ac06fe7952d5328107872c7c145a3a1ed747495a3b1de3197a\",\"engine/core/results.ts\":\"e602c486ca9b0f3ff0627291fc9fb2c88fa7947457a090bc0bea9340b1713a9d\",\"engine/core/scheduler.ts\":\"e04fe3b7a9c9ad58e40b4cf2e7122e076be7a1f57b7c376c670bf8bde9b1ab4c\",\"engine/core/store.ts\":\"fa988fa5d37ef3658e3b3ff8f723c9dfb1468a75dc893081770c723572673fc0\",\"engine/core/telemetry.ts\":\"0575bd7e9a9cfeed2cbd7091dc1e7ed82a4be237cd0bd253dfaf50abe38ac152\",\"engine/core/types.ts\":\"9fda349c0222675a52d9b6adad14ffc96262d2963035b5f64cb51d80222f3d6c\",\"engine/core/validate.ts\":\"ad9a0b28a7da639ced153bd46e18669f319ee84a6d8c1dbbdfab082b6821b40f\",\"engine/core/view.ts\":\"979387a102dbc2b2ca144f87673bdceda150b91b61ebf0c4075fd611aa22d31c\",\"engine/headless/main.ts\":\"7959391495b979ed2a880747466f1f271f9832d88a511c8aa3e70a2fb7ae5546\",\"engine/headless/reporters.ts\":\"89a36124f61d409cb1f9aeb3298ba7fa37cc22d65ffe557f1bed0a3cab19ade1\",\"engine/herdr/client.ts\":\"e2d156ea40f2d942565b81a03d4d0c1d146b2a13316a33ace3f171ae69c4471d\",\"engine/herdr/panes.ts\":\"d3669c71a904796ac82091f6d009fb41fb339cd0ba060dd375e3f829365fcaac\",\"engine/ipc/client.ts\":\"fad761851399b706d33b21161c2d60e1cb378b8b42236d74b50410c5c5295892\",\"engine/ipc/protocol.ts\":\"3cfe1813d60039e4042ef1971df6d7e09f4aa5b271028b3198c628fd04b6062e\",\"engine/ipc/server.ts\":\"19f419bc993fcf001235dbec1ecfeb84bb16a0da079d0bcc886214a34cb88448\",\"engine/migrate/legacy.ts\":\"860d75a6414fecd70fb8fee8af91e758282e49284e534a8b5c60b8154983ed14\",\"engine/pi/commands.ts\":\"bb699ceea488db4be26b6317ae53d6be63b700a92f2bab36424b72316ac6b284\",\"engine/pi/config.ts\":\"b69d844b48453125a805d4187e77b00512e21331fda01d081f2ac32b568266c2\",\"engine/pi/definitions.ts\":\"bdcf8b5d0f33f31e9178a98530603ce54b0af5b0531793e7ec1892788dd9a1d7\",\"engine/pi/delivery.ts\":\"872d099df3b04f600319580e521343ec304df3e88cbd31d37cbd5b10a9de218c\",\"engine/pi/extension.ts\":\"d71386dfb052a114e56ea50b98e187ecb087c6665c0ca77c3f421c2fe665f690\",\"engine/pi/host.ts\":\"dc7f5b21427a1dff029cd53d0cd022df8dd07f7c80a3cfd1cb94ee531a7d1533\",\"engine/pi/pipeline.ts\":\"18df89f3c21766c9794c132a0ff83deb39562343d4523c396c30cd4d94f99122\",\"engine/pi/runtime.ts\":\"32afe833dcabc9569ab16a31b3bd663d7bc0d007593986321407bbfe5146658e\",\"engine/pi/tool-providers.ts\":\"61fcd1e2c4349a8f590d9b257aa99be1c9f884a695a42c4696fda4f18fe9f3fe\",\"engine/pi/tools.ts\":\"b341dd41695d5729bde338ed69216444806243825b2fca7c70963df5c1a7516a\",\"engine/pi/ui.ts\":\"03948041b4c8aa822730623e2f6e446822b4f98a864201bf0c5f60da28ca1d4c\",\"engine/sources/jsonl.ts\":\"bee3782cebed5a0269809433b6b901bd54aa8085cba6df446bf60038cf0c278b\",\"engine/sources/log.ts\":\"31a658ea199198c932dd0fdebfd9ba7b884819a212ddd55668eb85a713583bbe\",\"engine/sources/session.ts\":\"fe36a7bc26ba4d9abd040a24dfb72b9810def7d13411ddedfe134af025251780\",\"engine/ui/detail.ts\":\"5cdc38326e4e6fe4e015a65c03aebb3b147b6056ac083cf3cc28eb40e24ae1e9\",\"engine/ui/frame.ts\":\"e7d828f1464306f32132f554e302a3d8da6465e15146a6d2a984d7dfccaf932b\",\"engine/ui/live.ts\":\"2651786f6dd3494875e61c18e1023dd56fb0a3f5bf2c6335404e09e18d3878e2\",\"engine/ui/mascot.ts\":\"79372bc1030e5485a47380616e58ab49c6ea1cf6ca443992154a82342752e5f1\",\"engine/ui/text.ts\":\"173e3826dc2be99abf853a7659fe301514c7f9bac2f5ee6f27e00b474c40d0d9\",\"engine/ui/widget.ts\":\"9c3958cebbf5ae6b9671e784b95cc99c86e23c113c7d063b28d3bd68a6cfd8ca\",\"engine/verify/checks.ts\":\"4252e3ba168ee8eb8af29994943c73c187edb79ae9be08e76c0c063ee9c2f42c\",\"engine/verify/destination.ts\":\"7d6f5973d4bd8890105ab98ad573f73ff1c787123b783c2e807b90aa2a927e26\",\"engine/verify/evidence.ts\":\"8fd5a48d8925ee756a22c42bc9698d682c4b12de7e2ce366d494552f78d65786\",\"engine/verify/integrate.ts\":\"75ac7a569b97186d88f481442442a5a79518b6e25c2d6410f7682b756f55ebf1\",\"engine/verify/record.ts\":\"e12e7327af011a7e5bcbe985044669d8f258abdf8f8cbbd399fbfedf02179936\",\"engine/verify/stages.ts\":\"981e67253620044d096152f433daf5a5a7ff3c73d2b9da9219b9c26f621052c4\",\"engine/verify/subject.ts\":\"be1b7f17bd5a18230751e154ad62ca78055cb318e69f771a5ed9d8fda0ed047d\",\"engine/viewer/main.ts\":\"be11a64d2188c11cf2b1cce8f5ae381f031b33d2c7e17c0a55608a56c74520a1\",\"engine/viewer/screen.ts\":\"01ae2fd9768912eeca3420b9c9d3557d4bcae7e4b134e71b41b10248cdb03dc5\",\"engine/workspace/changes.ts\":\"471718c73e84b1c34484646dd328098b1d2b9caebf648778d843f5898947c3d3\",\"engine/workspace/dependencies.ts\":\"846def48b36dbb623e7314b8b200528982df073c1cedd9c9047cca3a22273ff4\",\"engine/workspace/git.ts\":\"0e1fcb6a82e20518e78e522125486657d26226fa2c26657f9f07467986b82733\",\"engine/workspace/include.ts\":\"2acaa2836ba8b5ac7f6fd26c0fb03fc34be4e876faa53d03ec99bc747d368eef\",\"engine/workspace/live.ts\":\"aa56eee67c579b38c4d7f303db61f842367b95e106ce4a6fe65053d76b06cfe9\",\"engine/workspace/location.ts\":\"0e1a0866318ad64b19266160c0a04c15dae014d4a3abbb1ff1bf230c989efad9\",\"engine/workspace/paths.ts\":\"86936b1226f1fab360fb7fb27ff41bafdb3c1c3a71b3189b634b9ffeea99547d\",\"engine/workspace/preparation.ts\":\"50e2b63d1d427b70d33068cdc92fe3aac6fcf68afc1cf96f6dad7f265de1bcdd\",\"engine/workspace/snapshot.ts\":\"1fbfeec0b2511deca953ee3226baffeabfc8aaa8ee78c094b47eafe441888379\",\"engine/workspace/worktree.ts\":\"58d89e294044d8ee647a12d21aeb2e7d5d4bd813bbc9840dbebcc107ebed9a95\",\"package.json\":\"82f82b6d7304cdb1ecbba5f296e208ebe098563596b15894c23cbf5b8346f371\",\"prompts/builder.md\":\"ff07dfb9677392590339905aa228db1430ce4033f25d5539a858333d24242503\",\"prompts/pinata-fix.md\":\"a264dd55a6d79dd0c0f8d7d55e4757a97e4971ca17ebef5f0c0d71cf49f0f867\",\"prompts/pinata-review.md\":\"f57cff2e9bac22429adfa404d02b5214f8ec2553b2b1c01709fdaa9747665c32\",\"prompts/reviewer.md\":\"3f391957f3fbcb2ec66dfa4172d5bbd93781cd290de45d1d434622e628dfa67f\",\"prompts/scout.md\":\"e69cb5f813ed7762980827170b72238652ed11df08da0960c6106442379140f4\",\"skills/engmgmt/SKILL.md\":\"451208a2b28e773301c43ce1d4f904932dbfc7d6b62d4b474e1aa3728ea733b0\",\"skills/subagents/SKILL.md\":\"bdae531248bcedc853aedc753d6236a666486a7e0d47978c2788f2dc46c7ffd4\",\"skills/subagents/reference.md\":\"907e368234eeda527cb74e0eaf6e93b582b450559228cd0368b684b3fd1de5c2\"},\"sourceCommit\":\"27156467565e31d2080a8cc9f200bb789eaca6a1\",\"sourceDirty\":true}",
+        "network": "pinata-arena-mock-27b1768b-5b44-4143-8f89-bec8fa5207b7",
+        "secrets": [],
+        "settings": {
+          "mock": true,
+          "baseUrl": "http://mock-provider:8080/pi-example/v1",
+          "thinking": "off",
+          "memoryMb": 1024,
+          "pricing": {
+            "input": 1,
+            "output": 1,
+            "cacheRead": 1,
+            "cacheWrite": 1,
+            "reference": "Synthetic offline fixture rates",
+            "at": "2026-10-31T00:00:00Z"
+          }
+        }
+      }
+    ],
+    "configured": {
+      "track": "controlled-same-model",
+      "model": {
+        "provider": "arena",
+        "id": "arena-model"
+      },
+      "task": "/workspace/pinata-repair/examples/arena/task",
+      "trials": 1,
+      "seed": 7,
+      "contestants": [
+        {
+          "id": "pinata",
+          "name": "Piñata",
+          "image": "sha256:575f57cfcbcde6e2a14b2e54109cdb89a22cc783b7c2d6f071024b167d25da1b",
+          "command": [
+            "node",
+            "/opt/arena-adapters/run.mjs",
+            "pinata"
+          ],
+          "version": "patched Piñata 2.0.1 + Pi 1.4.0",
+          "source": "{\"pins\":{\"schema\":1,\"pi\":\"1.4.0\",\"officialExample\":{\"commit\":\"4a080252f06caf63a525d7873c5d94d3c23887e0\",\"path\":\"packages/coding-agent/examples/extensions/subagent\"},\"opencode\":{\"version\":\"2.2.5\",\"url\":\"https://github.com/anomalyco/opencode/releases/download/v2.2.5/opencode-linux-x64.tar.gz\",\"sha256\":\"09f44302c10fd036912f59c81fd1aef5df45dd06f649197f9dfc9bbe2a79614e\",\"platform\":\"linux-x64\"}},\"sources\":{\"run.mjs\":\"d1c0edbe43c604d9a2c1bdb32bfcda831fbddc6b58cc88e69381c9cad070780a\",\"normalize.mjs\":\"dfe16e24418554138b6a3121dac8af32f0e971d14a406bc89f0f621c39bed539\",\"provider-proxy.mjs\":\"ae4de73804c228d184e8ae38190fadf8adde71268c5e749063ff5e678024799f\",\"telemetry.mjs\":\"d937f9c8e8dbbc6c99d8f91bae9056e5289bcf922aaec1bb93fe6b2c92689d1c\",\"Dockerfile\":\"a9c9a90a8fcf810c5e3f9c90325784cfb57124fea331bdcfcffcc40f3735b658\",\"versions.json\":\"3fa119be2200e006da32f7b662b42f27f98ab12c25e1d2f0fa9b47efb0f34e16\",\"runtime/package-lock.json\":\"36da47daedff3d0943b872e89e07095a32a2bf6132fb4426e68317934f9bf14d\"},\"pinataSources\":{\"LICENSE\":\"5abbdacb16228bf68cc2f3ea4744ff5fa86a87ef1932c58e592595bd343a4c43\",\"README.md\":\"a25daadf21f0cd806db733836b2021cc9563b86ff993e5cc5471ffe5fe2b3c35\",\"agents/builder.md\":\"f266ad84bb750938b195713d79cb4c6e98daa2232f749e0978728c7d9947db3c\",\"agents/reviewer.md\":\"18a581a7efc3a2392327fbe23accf86da416ed853dca9c22734d5bff9ea57b84\",\"agents/scout.md\":\"40100208c7e37315586d315adfb9ca854200aa6b24e1663d4eb6dbce9e9f3d5f\",\"engine/agent/brief.ts\":\"9bff84d48dcb9024df4e86e53667971c2c1e71fcce52578b0673fc9095978bf5\",\"engine/agent/detached.ts\":\"83d9efd46f1376a20e6b2fa7b71d4da886b8383e92c448c5f3015097f0886fc5\",\"engine/agent/extension.ts\":\"c864d1014f1dba19a78acb6f2a36ff90f1da9bbeddd36a97ebae937988f2712f\",\"engine/agent/legacy/planner.md\":\"c5a216afc11923dedb91d355392b302a8bedbfcb2bfe435988053d0ae78f9a47\",\"engine/agent/legacy/research.md\":\"819a98dda61d34647c95ed80b0e598ea6ac7b04095a14eff388c2d4890f8ac0f\",\"engine/agent/personas.ts\":\"7a842a9ce8823a999e7be8e1c9e67f60d99a581e21e8225495ed50f4fa37176f\",\"engine/agent/reporter.ts\":\"61f796cac500d10561f4bd6372f12efed86b48d11eea72b993721c8c9bfa24bd\",\"engine/backends/fake.ts\":\"7ded3f4948830a209a4b090d4fa5c546e72466fced413f400f41ae63adb4d9f3\",\"engine/backends/herdr-pi.ts\":\"c8f5486e7ebb625d29700fc733b056e1934f63072d118ca161e7ef774fbc926e\",\"engine/backends/in-process.ts\":\"8021453e06d1c718216d2f9ec63435f093a9cf1f96a954b07a3aa165e4d88b6c\",\"engine/backends/pi-command.ts\":\"94f4be9addb2885de8ac0b23307912edcd95c6a331faf13907d4a0c61deda86d\",\"engine/backends/process.ts\":\"518a3213f22cf07b89a5badf33f8ff0a2939c62443ef9025f0ba1229ad69e77b\",\"engine/backends/supervise.ts\":\"e20beb9697c829c6f168c498b1ae757a33040744f0fda6ece733506a4d2e1401\",\"engine/backends/types.ts\":\"e12c5641ddf9b39bbe64dafcd0d5bccb08efe9ef33c72dc99f477d05cccd6ebf\",\"engine/core/budgets.ts\":\"7dd359128d9a5586e106d241ef6497d3423b28b2abf921e4d1adc9d131b0a477\",\"engine/core/definitions.ts\":\"4fa3958490b6e87516bf0c35e9defe0511ace00b592a4619851ac6a5c9e6fab5\",\"engine/core/engine.ts\":\"b7184c2ee65028b3c4ec2e22d643d8e8fc6f4ed11c0525380c04736ec90343d3\",\"engine/core/events.ts\":\"a3d8f9e0f74781f41359ccecf980cb6c9c0e8cdc52087964b2f6eb0c81576a98\",\"engine/core/graph.ts\":\"eb58dd5caf59440d6d3b053a467d11c2ac2c6ad8c97fad498d887211e97bce58\",\"engine/core/limiter.ts\":\"cc98636a8065b7ac06fe7952d5328107872c7c145a3a1ed747495a3b1de3197a\",\"engine/core/results.ts\":\"e602c486ca9b0f3ff0627291fc9fb2c88fa7947457a090bc0bea9340b1713a9d\",\"engine/core/scheduler.ts\":\"e04fe3b7a9c9ad58e40b4cf2e7122e076be7a1f57b7c376c670bf8bde9b1ab4c\",\"engine/core/store.ts\":\"fa988fa5d37ef3658e3b3ff8f723c9dfb1468a75dc893081770c723572673fc0\",\"engine/core/telemetry.ts\":\"0575bd7e9a9cfeed2cbd7091dc1e7ed82a4be237cd0bd253dfaf50abe38ac152\",\"engine/core/types.ts\":\"9fda349c0222675a52d9b6adad14ffc96262d2963035b5f64cb51d80222f3d6c\",\"engine/core/validate.ts\":\"ad9a0b28a7da639ced153bd46e18669f319ee84a6d8c1dbbdfab082b6821b40f\",\"engine/core/view.ts\":\"979387a102dbc2b2ca144f87673bdceda150b91b61ebf0c4075fd611aa22d31c\",\"engine/headless/main.ts\":\"7959391495b979ed2a880747466f1f271f9832d88a511c8aa3e70a2fb7ae5546\",\"engine/headless/reporters.ts\":\"89a36124f61d409cb1f9aeb3298ba7fa37cc22d65ffe557f1bed0a3cab19ade1\",\"engine/herdr/client.ts\":\"e2d156ea40f2d942565b81a03d4d0c1d146b2a13316a33ace3f171ae69c4471d\",\"engine/herdr/panes.ts\":\"d3669c71a904796ac82091f6d009fb41fb339cd0ba060dd375e3f829365fcaac\",\"engine/ipc/client.ts\":\"fad761851399b706d33b21161c2d60e1cb378b8b42236d74b50410c5c5295892\",\"engine/ipc/protocol.ts\":\"3cfe1813d60039e4042ef1971df6d7e09f4aa5b271028b3198c628fd04b6062e\",\"engine/ipc/server.ts\":\"19f419bc993fcf001235dbec1ecfeb84bb16a0da079d0bcc886214a34cb88448\",\"engine/migrate/legacy.ts\":\"860d75a6414fecd70fb8fee8af91e758282e49284e534a8b5c60b8154983ed14\",\"engine/pi/commands.ts\":\"bb699ceea488db4be26b6317ae53d6be63b700a92f2bab36424b72316ac6b284\",\"engine/pi/config.ts\":\"b69d844b48453125a805d4187e77b00512e21331fda01d081f2ac32b568266c2\",\"engine/pi/definitions.ts\":\"bdcf8b5d0f33f31e9178a98530603ce54b0af5b0531793e7ec1892788dd9a1d7\",\"engine/pi/delivery.ts\":\"872d099df3b04f600319580e521343ec304df3e88cbd31d37cbd5b10a9de218c\",\"engine/pi/extension.ts\":\"d71386dfb052a114e56ea50b98e187ecb087c6665c0ca77c3f421c2fe665f690\",\"engine/pi/host.ts\":\"dc7f5b21427a1dff029cd53d0cd022df8dd07f7c80a3cfd1cb94ee531a7d1533\",\"engine/pi/pipeline.ts\":\"18df89f3c21766c9794c132a0ff83deb39562343d4523c396c30cd4d94f99122\",\"engine/pi/runtime.ts\":\"32afe833dcabc9569ab16a31b3bd663d7bc0d007593986321407bbfe5146658e\",\"engine/pi/tool-providers.ts\":\"61fcd1e2c4349a8f590d9b257aa99be1c9f884a695a42c4696fda4f18fe9f3fe\",\"engine/pi/tools.ts\":\"b341dd41695d5729bde338ed69216444806243825b2fca7c70963df5c1a7516a\",\"engine/pi/ui.ts\":\"03948041b4c8aa822730623e2f6e446822b4f98a864201bf0c5f60da28ca1d4c\",\"engine/sources/jsonl.ts\":\"bee3782cebed5a0269809433b6b901bd54aa8085cba6df446bf60038cf0c278b\",\"engine/sources/log.ts\":\"31a658ea199198c932dd0fdebfd9ba7b884819a212ddd55668eb85a713583bbe\",\"engine/sources/session.ts\":\"fe36a7bc26ba4d9abd040a24dfb72b9810def7d13411ddedfe134af025251780\",\"engine/ui/detail.ts\":\"5cdc38326e4e6fe4e015a65c03aebb3b147b6056ac083cf3cc28eb40e24ae1e9\",\"engine/ui/frame.ts\":\"e7d828f1464306f32132f554e302a3d8da6465e15146a6d2a984d7dfccaf932b\",\"engine/ui/live.ts\":\"2651786f6dd3494875e61c18e1023dd56fb0a3f5bf2c6335404e09e18d3878e2\",\"engine/ui/mascot.ts\":\"79372bc1030e5485a47380616e58ab49c6ea1cf6ca443992154a82342752e5f1\",\"engine/ui/text.ts\":\"173e3826dc2be99abf853a7659fe301514c7f9bac2f5ee6f27e00b474c40d0d9\",\"engine/ui/widget.ts\":\"9c3958cebbf5ae6b9671e784b95cc99c86e23c113c7d063b28d3bd68a6cfd8ca\",\"engine/verify/checks.ts\":\"4252e3ba168ee8eb8af29994943c73c187edb79ae9be08e76c0c063ee9c2f42c\",\"engine/verify/destination.ts\":\"7d6f5973d4bd8890105ab98ad573f73ff1c787123b783c2e807b90aa2a927e26\",\"engine/verify/evidence.ts\":\"8fd5a48d8925ee756a22c42bc9698d682c4b12de7e2ce366d494552f78d65786\",\"engine/verify/integrate.ts\":\"75ac7a569b97186d88f481442442a5a79518b6e25c2d6410f7682b756f55ebf1\",\"engine/verify/record.ts\":\"e12e7327af011a7e5bcbe985044669d8f258abdf8f8cbbd399fbfedf02179936\",\"engine/verify/stages.ts\":\"981e67253620044d096152f433daf5a5a7ff3c73d2b9da9219b9c26f621052c4\",\"engine/verify/subject.ts\":\"be1b7f17bd5a18230751e154ad62ca78055cb318e69f771a5ed9d8fda0ed047d\",\"engine/viewer/main.ts\":\"be11a64d2188c11cf2b1cce8f5ae381f031b33d2c7e17c0a55608a56c74520a1\",\"engine/viewer/screen.ts\":\"01ae2fd9768912eeca3420b9c9d3557d4bcae7e4b134e71b41b10248cdb03dc5\",\"engine/workspace/changes.ts\":\"471718c73e84b1c34484646dd328098b1d2b9caebf648778d843f5898947c3d3\",\"engine/workspace/dependencies.ts\":\"846def48b36dbb623e7314b8b200528982df073c1cedd9c9047cca3a22273ff4\",\"engine/workspace/git.ts\":\"0e1fcb6a82e20518e78e522125486657d26226fa2c26657f9f07467986b82733\",\"engine/workspace/include.ts\":\"2acaa2836ba8b5ac7f6fd26c0fb03fc34be4e876faa53d03ec99bc747d368eef\",\"engine/workspace/live.ts\":\"aa56eee67c579b38c4d7f303db61f842367b95e106ce4a6fe65053d76b06cfe9\",\"engine/workspace/location.ts\":\"0e1a0866318ad64b19266160c0a04c15dae014d4a3abbb1ff1bf230c989efad9\",\"engine/workspace/paths.ts\":\"86936b1226f1fab360fb7fb27ff41bafdb3c1c3a71b3189b634b9ffeea99547d\",\"engine/workspace/preparation.ts\":\"50e2b63d1d427b70d33068cdc92fe3aac6fcf68afc1cf96f6dad7f265de1bcdd\",\"engine/workspace/snapshot.ts\":\"1fbfeec0b2511deca953ee3226baffeabfc8aaa8ee78c094b47eafe441888379\",\"engine/workspace/worktree.ts\":\"58d89e294044d8ee647a12d21aeb2e7d5d4bd813bbc9840dbebcc107ebed9a95\",\"package.json\":\"82f82b6d7304cdb1ecbba5f296e208ebe098563596b15894c23cbf5b8346f371\",\"prompts/builder.md\":\"ff07dfb9677392590339905aa228db1430ce4033f25d5539a858333d24242503\",\"prompts/pinata-fix.md\":\"a264dd55a6d79dd0c0f8d7d55e4757a97e4971ca17ebef5f0c0d71cf49f0f867\",\"prompts/pinata-review.md\":\"f57cff2e9bac22429adfa404d02b5214f8ec2553b2b1c01709fdaa9747665c32\",\"prompts/reviewer.md\":\"3f391957f3fbcb2ec66dfa4172d5bbd93781cd290de45d1d434622e628dfa67f\",\"prompts/scout.md\":\"e69cb5f813ed7762980827170b72238652ed11df08da0960c6106442379140f4\",\"skills/engmgmt/SKILL.md\":\"451208a2b28e773301c43ce1d4f904932dbfc7d6b62d4b474e1aa3728ea733b0\",\"skills/subagents/SKILL.md\":\"bdae531248bcedc853aedc753d6236a666486a7e0d47978c2788f2dc46c7ffd4\",\"skills/subagents/reference.md\":\"907e368234eeda527cb74e0eaf6e93b582b450559228cd0368b684b3fd1de5c2\"},\"sourceCommit\":\"27156467565e31d2080a8cc9f200bb789eaca6a1\",\"sourceDirty\":true}",
+          "network": "pinata-arena-mock-27b1768b-5b44-4143-8f89-bec8fa5207b7",
+          "secrets": [],
+          "settings": {
+            "mock": true,
+            "baseUrl": "http://mock-provider:8080/pinata/v1",
+            "thinking": "off",
+            "memoryMb": 1024,
+            "pricing": {
+              "input": 1,
+              "output": 1,
+              "cacheRead": 1,
+              "cacheWrite": 1,
+              "reference": "Synthetic offline fixture rates",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          }
+        },
+        {
+          "id": "opencode",
+          "name": "OpenCode · native subagent",
+          "image": "sha256:575f57cfcbcde6e2a14b2e54109cdb89a22cc783b7c2d6f071024b167d25da1b",
+          "command": [
+            "node",
+            "/opt/arena-adapters/run.mjs",
+            "opencode"
+          ],
+          "version": "OpenCode 2.2.5",
+          "source": "{\"pins\":{\"schema\":1,\"pi\":\"1.4.0\",\"officialExample\":{\"commit\":\"4a080252f06caf63a525d7873c5d94d3c23887e0\",\"path\":\"packages/coding-agent/examples/extensions/subagent\"},\"opencode\":{\"version\":\"2.2.5\",\"url\":\"https://github.com/anomalyco/opencode/releases/download/v2.2.5/opencode-linux-x64.tar.gz\",\"sha256\":\"09f44302c10fd036912f59c81fd1aef5df45dd06f649197f9dfc9bbe2a79614e\",\"platform\":\"linux-x64\"}},\"sources\":{\"run.mjs\":\"d1c0edbe43c604d9a2c1bdb32bfcda831fbddc6b58cc88e69381c9cad070780a\",\"normalize.mjs\":\"dfe16e24418554138b6a3121dac8af32f0e971d14a406bc89f0f621c39bed539\",\"provider-proxy.mjs\":\"ae4de73804c228d184e8ae38190fadf8adde71268c5e749063ff5e678024799f\",\"telemetry.mjs\":\"d937f9c8e8dbbc6c99d8f91bae9056e5289bcf922aaec1bb93fe6b2c92689d1c\",\"Dockerfile\":\"a9c9a90a8fcf810c5e3f9c90325784cfb57124fea331bdcfcffcc40f3735b658\",\"versions.json\":\"3fa119be2200e006da32f7b662b42f27f98ab12c25e1d2f0fa9b47efb0f34e16\",\"runtime/package-lock.json\":\"36da47daedff3d0943b872e89e07095a32a2bf6132fb4426e68317934f9bf14d\"},\"pinataSources\":{\"LICENSE\":\"5abbdacb16228bf68cc2f3ea4744ff5fa86a87ef1932c58e592595bd343a4c43\",\"README.md\":\"a25daadf21f0cd806db733836b2021cc9563b86ff993e5cc5471ffe5fe2b3c35\",\"agents/builder.md\":\"f266ad84bb750938b195713d79cb4c6e98daa2232f749e0978728c7d9947db3c\",\"agents/reviewer.md\":\"18a581a7efc3a2392327fbe23accf86da416ed853dca9c22734d5bff9ea57b84\",\"agents/scout.md\":\"40100208c7e37315586d315adfb9ca854200aa6b24e1663d4eb6dbce9e9f3d5f\",\"engine/agent/brief.ts\":\"9bff84d48dcb9024df4e86e53667971c2c1e71fcce52578b0673fc9095978bf5\",\"engine/agent/detached.ts\":\"83d9efd46f1376a20e6b2fa7b71d4da886b8383e92c448c5f3015097f0886fc5\",\"engine/agent/extension.ts\":\"c864d1014f1dba19a78acb6f2a36ff90f1da9bbeddd36a97ebae937988f2712f\",\"engine/agent/legacy/planner.md\":\"c5a216afc11923dedb91d355392b302a8bedbfcb2bfe435988053d0ae78f9a47\",\"engine/agent/legacy/research.md\":\"819a98dda61d34647c95ed80b0e598ea6ac7b04095a14eff388c2d4890f8ac0f\",\"engine/agent/personas.ts\":\"7a842a9ce8823a999e7be8e1c9e67f60d99a581e21e8225495ed50f4fa37176f\",\"engine/agent/reporter.ts\":\"61f796cac500d10561f4bd6372f12efed86b48d11eea72b993721c8c9bfa24bd\",\"engine/backends/fake.ts\":\"7ded3f4948830a209a4b090d4fa5c546e72466fced413f400f41ae63adb4d9f3\",\"engine/backends/herdr-pi.ts\":\"c8f5486e7ebb625d29700fc733b056e1934f63072d118ca161e7ef774fbc926e\",\"engine/backends/in-process.ts\":\"8021453e06d1c718216d2f9ec63435f093a9cf1f96a954b07a3aa165e4d88b6c\",\"engine/backends/pi-command.ts\":\"94f4be9addb2885de8ac0b23307912edcd95c6a331faf13907d4a0c61deda86d\",\"engine/backends/process.ts\":\"518a3213f22cf07b89a5badf33f8ff0a2939c62443ef9025f0ba1229ad69e77b\",\"engine/backends/supervise.ts\":\"e20beb9697c829c6f168c498b1ae757a33040744f0fda6ece733506a4d2e1401\",\"engine/backends/types.ts\":\"e12c5641ddf9b39bbe64dafcd0d5bccb08efe9ef33c72dc99f477d05cccd6ebf\",\"engine/core/budgets.ts\":\"7dd359128d9a5586e106d241ef6497d3423b28b2abf921e4d1adc9d131b0a477\",\"engine/core/definitions.ts\":\"4fa3958490b6e87516bf0c35e9defe0511ace00b592a4619851ac6a5c9e6fab5\",\"engine/core/engine.ts\":\"b7184c2ee65028b3c4ec2e22d643d8e8fc6f4ed11c0525380c04736ec90343d3\",\"engine/core/events.ts\":\"a3d8f9e0f74781f41359ccecf980cb6c9c0e8cdc52087964b2f6eb0c81576a98\",\"engine/core/graph.ts\":\"eb58dd5caf59440d6d3b053a467d11c2ac2c6ad8c97fad498d887211e97bce58\",\"engine/core/limiter.ts\":\"cc98636a8065b7ac06fe7952d5328107872c7c145a3a1ed747495a3b1de3197a\",\"engine/core/results.ts\":\"e602c486ca9b0f3ff0627291fc9fb2c88fa7947457a090bc0bea9340b1713a9d\",\"engine/core/scheduler.ts\":\"e04fe3b7a9c9ad58e40b4cf2e7122e076be7a1f57b7c376c670bf8bde9b1ab4c\",\"engine/core/store.ts\":\"fa988fa5d37ef3658e3b3ff8f723c9dfb1468a75dc893081770c723572673fc0\",\"engine/core/telemetry.ts\":\"0575bd7e9a9cfeed2cbd7091dc1e7ed82a4be237cd0bd253dfaf50abe38ac152\",\"engine/core/types.ts\":\"9fda349c0222675a52d9b6adad14ffc96262d2963035b5f64cb51d80222f3d6c\",\"engine/core/validate.ts\":\"ad9a0b28a7da639ced153bd46e18669f319ee84a6d8c1dbbdfab082b6821b40f\",\"engine/core/view.ts\":\"979387a102dbc2b2ca144f87673bdceda150b91b61ebf0c4075fd611aa22d31c\",\"engine/headless/main.ts\":\"7959391495b979ed2a880747466f1f271f9832d88a511c8aa3e70a2fb7ae5546\",\"engine/headless/reporters.ts\":\"89a36124f61d409cb1f9aeb3298ba7fa37cc22d65ffe557f1bed0a3cab19ade1\",\"engine/herdr/client.ts\":\"e2d156ea40f2d942565b81a03d4d0c1d146b2a13316a33ace3f171ae69c4471d\",\"engine/herdr/panes.ts\":\"d3669c71a904796ac82091f6d009fb41fb339cd0ba060dd375e3f829365fcaac\",\"engine/ipc/client.ts\":\"fad761851399b706d33b21161c2d60e1cb378b8b42236d74b50410c5c5295892\",\"engine/ipc/protocol.ts\":\"3cfe1813d60039e4042ef1971df6d7e09f4aa5b271028b3198c628fd04b6062e\",\"engine/ipc/server.ts\":\"19f419bc993fcf001235dbec1ecfeb84bb16a0da079d0bcc886214a34cb88448\",\"engine/migrate/legacy.ts\":\"860d75a6414fecd70fb8fee8af91e758282e49284e534a8b5c60b8154983ed14\",\"engine/pi/commands.ts\":\"bb699ceea488db4be26b6317ae53d6be63b700a92f2bab36424b72316ac6b284\",\"engine/pi/config.ts\":\"b69d844b48453125a805d4187e77b00512e21331fda01d081f2ac32b568266c2\",\"engine/pi/definitions.ts\":\"bdcf8b5d0f33f31e9178a98530603ce54b0af5b0531793e7ec1892788dd9a1d7\",\"engine/pi/delivery.ts\":\"872d099df3b04f600319580e521343ec304df3e88cbd31d37cbd5b10a9de218c\",\"engine/pi/extension.ts\":\"d71386dfb052a114e56ea50b98e187ecb087c6665c0ca77c3f421c2fe665f690\",\"engine/pi/host.ts\":\"dc7f5b21427a1dff029cd53d0cd022df8dd07f7c80a3cfd1cb94ee531a7d1533\",\"engine/pi/pipeline.ts\":\"18df89f3c21766c9794c132a0ff83deb39562343d4523c396c30cd4d94f99122\",\"engine/pi/runtime.ts\":\"32afe833dcabc9569ab16a31b3bd663d7bc0d007593986321407bbfe5146658e\",\"engine/pi/tool-providers.ts\":\"61fcd1e2c4349a8f590d9b257aa99be1c9f884a695a42c4696fda4f18fe9f3fe\",\"engine/pi/tools.ts\":\"b341dd41695d5729bde338ed69216444806243825b2fca7c70963df5c1a7516a\",\"engine/pi/ui.ts\":\"03948041b4c8aa822730623e2f6e446822b4f98a864201bf0c5f60da28ca1d4c\",\"engine/sources/jsonl.ts\":\"bee3782cebed5a0269809433b6b901bd54aa8085cba6df446bf60038cf0c278b\",\"engine/sources/log.ts\":\"31a658ea199198c932dd0fdebfd9ba7b884819a212ddd55668eb85a713583bbe\",\"engine/sources/session.ts\":\"fe36a7bc26ba4d9abd040a24dfb72b9810def7d13411ddedfe134af025251780\",\"engine/ui/detail.ts\":\"5cdc38326e4e6fe4e015a65c03aebb3b147b6056ac083cf3cc28eb40e24ae1e9\",\"engine/ui/frame.ts\":\"e7d828f1464306f32132f554e302a3d8da6465e15146a6d2a984d7dfccaf932b\",\"engine/ui/live.ts\":\"2651786f6dd3494875e61c18e1023dd56fb0a3f5bf2c6335404e09e18d3878e2\",\"engine/ui/mascot.ts\":\"79372bc1030e5485a47380616e58ab49c6ea1cf6ca443992154a82342752e5f1\",\"engine/ui/text.ts\":\"173e3826dc2be99abf853a7659fe301514c7f9bac2f5ee6f27e00b474c40d0d9\",\"engine/ui/widget.ts\":\"9c3958cebbf5ae6b9671e784b95cc99c86e23c113c7d063b28d3bd68a6cfd8ca\",\"engine/verify/checks.ts\":\"4252e3ba168ee8eb8af29994943c73c187edb79ae9be08e76c0c063ee9c2f42c\",\"engine/verify/destination.ts\":\"7d6f5973d4bd8890105ab98ad573f73ff1c787123b783c2e807b90aa2a927e26\",\"engine/verify/evidence.ts\":\"8fd5a48d8925ee756a22c42bc9698d682c4b12de7e2ce366d494552f78d65786\",\"engine/verify/integrate.ts\":\"75ac7a569b97186d88f481442442a5a79518b6e25c2d6410f7682b756f55ebf1\",\"engine/verify/record.ts\":\"e12e7327af011a7e5bcbe985044669d8f258abdf8f8cbbd399fbfedf02179936\",\"engine/verify/stages.ts\":\"981e67253620044d096152f433daf5a5a7ff3c73d2b9da9219b9c26f621052c4\",\"engine/verify/subject.ts\":\"be1b7f17bd5a18230751e154ad62ca78055cb318e69f771a5ed9d8fda0ed047d\",\"engine/viewer/main.ts\":\"be11a64d2188c11cf2b1cce8f5ae381f031b33d2c7e17c0a55608a56c74520a1\",\"engine/viewer/screen.ts\":\"01ae2fd9768912eeca3420b9c9d3557d4bcae7e4b134e71b41b10248cdb03dc5\",\"engine/workspace/changes.ts\":\"471718c73e84b1c34484646dd328098b1d2b9caebf648778d843f5898947c3d3\",\"engine/workspace/dependencies.ts\":\"846def48b36dbb623e7314b8b200528982df073c1cedd9c9047cca3a22273ff4\",\"engine/workspace/git.ts\":\"0e1fcb6a82e20518e78e522125486657d26226fa2c26657f9f07467986b82733\",\"engine/workspace/include.ts\":\"2acaa2836ba8b5ac7f6fd26c0fb03fc34be4e876faa53d03ec99bc747d368eef\",\"engine/workspace/live.ts\":\"aa56eee67c579b38c4d7f303db61f842367b95e106ce4a6fe65053d76b06cfe9\",\"engine/workspace/location.ts\":\"0e1a0866318ad64b19266160c0a04c15dae014d4a3abbb1ff1bf230c989efad9\",\"engine/workspace/paths.ts\":\"86936b1226f1fab360fb7fb27ff41bafdb3c1c3a71b3189b634b9ffeea99547d\",\"engine/workspace/preparation.ts\":\"50e2b63d1d427b70d33068cdc92fe3aac6fcf68afc1cf96f6dad7f265de1bcdd\",\"engine/workspace/snapshot.ts\":\"1fbfeec0b2511deca953ee3226baffeabfc8aaa8ee78c094b47eafe441888379\",\"engine/workspace/worktree.ts\":\"58d89e294044d8ee647a12d21aeb2e7d5d4bd813bbc9840dbebcc107ebed9a95\",\"package.json\":\"82f82b6d7304cdb1ecbba5f296e208ebe098563596b15894c23cbf5b8346f371\",\"prompts/builder.md\":\"ff07dfb9677392590339905aa228db1430ce4033f25d5539a858333d24242503\",\"prompts/pinata-fix.md\":\"a264dd55a6d79dd0c0f8d7d55e4757a97e4971ca17ebef5f0c0d71cf49f0f867\",\"prompts/pinata-review.md\":\"f57cff2e9bac22429adfa404d02b5214f8ec2553b2b1c01709fdaa9747665c32\",\"prompts/reviewer.md\":\"3f391957f3fbcb2ec66dfa4172d5bbd93781cd290de45d1d434622e628dfa67f\",\"prompts/scout.md\":\"e69cb5f813ed7762980827170b72238652ed11df08da0960c6106442379140f4\",\"skills/engmgmt/SKILL.md\":\"451208a2b28e773301c43ce1d4f904932dbfc7d6b62d4b474e1aa3728ea733b0\",\"skills/subagents/SKILL.md\":\"bdae531248bcedc853aedc753d6236a666486a7e0d47978c2788f2dc46c7ffd4\",\"skills/subagents/reference.md\":\"907e368234eeda527cb74e0eaf6e93b582b450559228cd0368b684b3fd1de5c2\"},\"sourceCommit\":\"27156467565e31d2080a8cc9f200bb789eaca6a1\",\"sourceDirty\":true}",
+          "network": "pinata-arena-mock-27b1768b-5b44-4143-8f89-bec8fa5207b7",
+          "secrets": [],
+          "settings": {
+            "mock": true,
+            "baseUrl": "http://mock-provider:8080/opencode/v1",
+            "thinking": "off",
+            "memoryMb": 1024,
+            "pricing": {
+              "input": 1,
+              "output": 1,
+              "cacheRead": 1,
+              "cacheWrite": 1,
+              "reference": "Synthetic offline fixture rates",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          }
+        },
+        {
+          "id": "pi-example",
+          "name": "Pi · official subagent example",
+          "image": "sha256:575f57cfcbcde6e2a14b2e54109cdb89a22cc783b7c2d6f071024b167d25da1b",
+          "command": [
+            "node",
+            "/opt/arena-adapters/run.mjs",
+            "pi-example"
+          ],
+          "version": "Pi 1.4.0 official subagent example",
+          "source": "{\"pins\":{\"schema\":1,\"pi\":\"1.4.0\",\"officialExample\":{\"commit\":\"4a080252f06caf63a525d7873c5d94d3c23887e0\",\"path\":\"packages/coding-agent/examples/extensions/subagent\"},\"opencode\":{\"version\":\"2.2.5\",\"url\":\"https://github.com/anomalyco/opencode/releases/download/v2.2.5/opencode-linux-x64.tar.gz\",\"sha256\":\"09f44302c10fd036912f59c81fd1aef5df45dd06f649197f9dfc9bbe2a79614e\",\"platform\":\"linux-x64\"}},\"sources\":{\"run.mjs\":\"d1c0edbe43c604d9a2c1bdb32bfcda831fbddc6b58cc88e69381c9cad070780a\",\"normalize.mjs\":\"dfe16e24418554138b6a3121dac8af32f0e971d14a406bc89f0f621c39bed539\",\"provider-proxy.mjs\":\"ae4de73804c228d184e8ae38190fadf8adde71268c5e749063ff5e678024799f\",\"telemetry.mjs\":\"d937f9c8e8dbbc6c99d8f91bae9056e5289bcf922aaec1bb93fe6b2c92689d1c\",\"Dockerfile\":\"a9c9a90a8fcf810c5e3f9c90325784cfb57124fea331bdcfcffcc40f3735b658\",\"versions.json\":\"3fa119be2200e006da32f7b662b42f27f98ab12c25e1d2f0fa9b47efb0f34e16\",\"runtime/package-lock.json\":\"36da47daedff3d0943b872e89e07095a32a2bf6132fb4426e68317934f9bf14d\"},\"pinataSources\":{\"LICENSE\":\"5abbdacb16228bf68cc2f3ea4744ff5fa86a87ef1932c58e592595bd343a4c43\",\"README.md\":\"a25daadf21f0cd806db733836b2021cc9563b86ff993e5cc5471ffe5fe2b3c35\",\"agents/builder.md\":\"f266ad84bb750938b195713d79cb4c6e98daa2232f749e0978728c7d9947db3c\",\"agents/reviewer.md\":\"18a581a7efc3a2392327fbe23accf86da416ed853dca9c22734d5bff9ea57b84\",\"agents/scout.md\":\"40100208c7e37315586d315adfb9ca854200aa6b24e1663d4eb6dbce9e9f3d5f\",\"engine/agent/brief.ts\":\"9bff84d48dcb9024df4e86e53667971c2c1e71fcce52578b0673fc9095978bf5\",\"engine/agent/detached.ts\":\"83d9efd46f1376a20e6b2fa7b71d4da886b8383e92c448c5f3015097f0886fc5\",\"engine/agent/extension.ts\":\"c864d1014f1dba19a78acb6f2a36ff90f1da9bbeddd36a97ebae937988f2712f\",\"engine/agent/legacy/planner.md\":\"c5a216afc11923dedb91d355392b302a8bedbfcb2bfe435988053d0ae78f9a47\",\"engine/agent/legacy/research.md\":\"819a98dda61d34647c95ed80b0e598ea6ac7b04095a14eff388c2d4890f8ac0f\",\"engine/agent/personas.ts\":\"7a842a9ce8823a999e7be8e1c9e67f60d99a581e21e8225495ed50f4fa37176f\",\"engine/agent/reporter.ts\":\"61f796cac500d10561f4bd6372f12efed86b48d11eea72b993721c8c9bfa24bd\",\"engine/backends/fake.ts\":\"7ded3f4948830a209a4b090d4fa5c546e72466fced413f400f41ae63adb4d9f3\",\"engine/backends/herdr-pi.ts\":\"c8f5486e7ebb625d29700fc733b056e1934f63072d118ca161e7ef774fbc926e\",\"engine/backends/in-process.ts\":\"8021453e06d1c718216d2f9ec63435f093a9cf1f96a954b07a3aa165e4d88b6c\",\"engine/backends/pi-command.ts\":\"94f4be9addb2885de8ac0b23307912edcd95c6a331faf13907d4a0c61deda86d\",\"engine/backends/process.ts\":\"518a3213f22cf07b89a5badf33f8ff0a2939c62443ef9025f0ba1229ad69e77b\",\"engine/backends/supervise.ts\":\"e20beb9697c829c6f168c498b1ae757a33040744f0fda6ece733506a4d2e1401\",\"engine/backends/types.ts\":\"e12c5641ddf9b39bbe64dafcd0d5bccb08efe9ef33c72dc99f477d05cccd6ebf\",\"engine/core/budgets.ts\":\"7dd359128d9a5586e106d241ef6497d3423b28b2abf921e4d1adc9d131b0a477\",\"engine/core/definitions.ts\":\"4fa3958490b6e87516bf0c35e9defe0511ace00b592a4619851ac6a5c9e6fab5\",\"engine/core/engine.ts\":\"b7184c2ee65028b3c4ec2e22d643d8e8fc6f4ed11c0525380c04736ec90343d3\",\"engine/core/events.ts\":\"a3d8f9e0f74781f41359ccecf980cb6c9c0e8cdc52087964b2f6eb0c81576a98\",\"engine/core/graph.ts\":\"eb58dd5caf59440d6d3b053a467d11c2ac2c6ad8c97fad498d887211e97bce58\",\"engine/core/limiter.ts\":\"cc98636a8065b7ac06fe7952d5328107872c7c145a3a1ed747495a3b1de3197a\",\"engine/core/results.ts\":\"e602c486ca9b0f3ff0627291fc9fb2c88fa7947457a090bc0bea9340b1713a9d\",\"engine/core/scheduler.ts\":\"e04fe3b7a9c9ad58e40b4cf2e7122e076be7a1f57b7c376c670bf8bde9b1ab4c\",\"engine/core/store.ts\":\"fa988fa5d37ef3658e3b3ff8f723c9dfb1468a75dc893081770c723572673fc0\",\"engine/core/telemetry.ts\":\"0575bd7e9a9cfeed2cbd7091dc1e7ed82a4be237cd0bd253dfaf50abe38ac152\",\"engine/core/types.ts\":\"9fda349c0222675a52d9b6adad14ffc96262d2963035b5f64cb51d80222f3d6c\",\"engine/core/validate.ts\":\"ad9a0b28a7da639ced153bd46e18669f319ee84a6d8c1dbbdfab082b6821b40f\",\"engine/core/view.ts\":\"979387a102dbc2b2ca144f87673bdceda150b91b61ebf0c4075fd611aa22d31c\",\"engine/headless/main.ts\":\"7959391495b979ed2a880747466f1f271f9832d88a511c8aa3e70a2fb7ae5546\",\"engine/headless/reporters.ts\":\"89a36124f61d409cb1f9aeb3298ba7fa37cc22d65ffe557f1bed0a3cab19ade1\",\"engine/herdr/client.ts\":\"e2d156ea40f2d942565b81a03d4d0c1d146b2a13316a33ace3f171ae69c4471d\",\"engine/herdr/panes.ts\":\"d3669c71a904796ac82091f6d009fb41fb339cd0ba060dd375e3f829365fcaac\",\"engine/ipc/client.ts\":\"fad761851399b706d33b21161c2d60e1cb378b8b42236d74b50410c5c5295892\",\"engine/ipc/protocol.ts\":\"3cfe1813d60039e4042ef1971df6d7e09f4aa5b271028b3198c628fd04b6062e\",\"engine/ipc/server.ts\":\"19f419bc993fcf001235dbec1ecfeb84bb16a0da079d0bcc886214a34cb88448\",\"engine/migrate/legacy.ts\":\"860d75a6414fecd70fb8fee8af91e758282e49284e534a8b5c60b8154983ed14\",\"engine/pi/commands.ts\":\"bb699ceea488db4be26b6317ae53d6be63b700a92f2bab36424b72316ac6b284\",\"engine/pi/config.ts\":\"b69d844b48453125a805d4187e77b00512e21331fda01d081f2ac32b568266c2\",\"engine/pi/definitions.ts\":\"bdcf8b5d0f33f31e9178a98530603ce54b0af5b0531793e7ec1892788dd9a1d7\",\"engine/pi/delivery.ts\":\"872d099df3b04f600319580e521343ec304df3e88cbd31d37cbd5b10a9de218c\",\"engine/pi/extension.ts\":\"d71386dfb052a114e56ea50b98e187ecb087c6665c0ca77c3f421c2fe665f690\",\"engine/pi/host.ts\":\"dc7f5b21427a1dff029cd53d0cd022df8dd07f7c80a3cfd1cb94ee531a7d1533\",\"engine/pi/pipeline.ts\":\"18df89f3c21766c9794c132a0ff83deb39562343d4523c396c30cd4d94f99122\",\"engine/pi/runtime.ts\":\"32afe833dcabc9569ab16a31b3bd663d7bc0d007593986321407bbfe5146658e\",\"engine/pi/tool-providers.ts\":\"61fcd1e2c4349a8f590d9b257aa99be1c9f884a695a42c4696fda4f18fe9f3fe\",\"engine/pi/tools.ts\":\"b341dd41695d5729bde338ed69216444806243825b2fca7c70963df5c1a7516a\",\"engine/pi/ui.ts\":\"03948041b4c8aa822730623e2f6e446822b4f98a864201bf0c5f60da28ca1d4c\",\"engine/sources/jsonl.ts\":\"bee3782cebed5a0269809433b6b901bd54aa8085cba6df446bf60038cf0c278b\",\"engine/sources/log.ts\":\"31a658ea199198c932dd0fdebfd9ba7b884819a212ddd55668eb85a713583bbe\",\"engine/sources/session.ts\":\"fe36a7bc26ba4d9abd040a24dfb72b9810def7d13411ddedfe134af025251780\",\"engine/ui/detail.ts\":\"5cdc38326e4e6fe4e015a65c03aebb3b147b6056ac083cf3cc28eb40e24ae1e9\",\"engine/ui/frame.ts\":\"e7d828f1464306f32132f554e302a3d8da6465e15146a6d2a984d7dfccaf932b\",\"engine/ui/live.ts\":\"2651786f6dd3494875e61c18e1023dd56fb0a3f5bf2c6335404e09e18d3878e2\",\"engine/ui/mascot.ts\":\"79372bc1030e5485a47380616e58ab49c6ea1cf6ca443992154a82342752e5f1\",\"engine/ui/text.ts\":\"173e3826dc2be99abf853a7659fe301514c7f9bac2f5ee6f27e00b474c40d0d9\",\"engine/ui/widget.ts\":\"9c3958cebbf5ae6b9671e784b95cc99c86e23c113c7d063b28d3bd68a6cfd8ca\",\"engine/verify/checks.ts\":\"4252e3ba168ee8eb8af29994943c73c187edb79ae9be08e76c0c063ee9c2f42c\",\"engine/verify/destination.ts\":\"7d6f5973d4bd8890105ab98ad573f73ff1c787123b783c2e807b90aa2a927e26\",\"engine/verify/evidence.ts\":\"8fd5a48d8925ee756a22c42bc9698d682c4b12de7e2ce366d494552f78d65786\",\"engine/verify/integrate.ts\":\"75ac7a569b97186d88f481442442a5a79518b6e25c2d6410f7682b756f55ebf1\",\"engine/verify/record.ts\":\"e12e7327af011a7e5bcbe985044669d8f258abdf8f8cbbd399fbfedf02179936\",\"engine/verify/stages.ts\":\"981e67253620044d096152f433daf5a5a7ff3c73d2b9da9219b9c26f621052c4\",\"engine/verify/subject.ts\":\"be1b7f17bd5a18230751e154ad62ca78055cb318e69f771a5ed9d8fda0ed047d\",\"engine/viewer/main.ts\":\"be11a64d2188c11cf2b1cce8f5ae381f031b33d2c7e17c0a55608a56c74520a1\",\"engine/viewer/screen.ts\":\"01ae2fd9768912eeca3420b9c9d3557d4bcae7e4b134e71b41b10248cdb03dc5\",\"engine/workspace/changes.ts\":\"471718c73e84b1c34484646dd328098b1d2b9caebf648778d843f5898947c3d3\",\"engine/workspace/dependencies.ts\":\"846def48b36dbb623e7314b8b200528982df073c1cedd9c9047cca3a22273ff4\",\"engine/workspace/git.ts\":\"0e1fcb6a82e20518e78e522125486657d26226fa2c26657f9f07467986b82733\",\"engine/workspace/include.ts\":\"2acaa2836ba8b5ac7f6fd26c0fb03fc34be4e876faa53d03ec99bc747d368eef\",\"engine/workspace/live.ts\":\"aa56eee67c579b38c4d7f303db61f842367b95e106ce4a6fe65053d76b06cfe9\",\"engine/workspace/location.ts\":\"0e1a0866318ad64b19266160c0a04c15dae014d4a3abbb1ff1bf230c989efad9\",\"engine/workspace/paths.ts\":\"86936b1226f1fab360fb7fb27ff41bafdb3c1c3a71b3189b634b9ffeea99547d\",\"engine/workspace/preparation.ts\":\"50e2b63d1d427b70d33068cdc92fe3aac6fcf68afc1cf96f6dad7f265de1bcdd\",\"engine/workspace/snapshot.ts\":\"1fbfeec0b2511deca953ee3226baffeabfc8aaa8ee78c094b47eafe441888379\",\"engine/workspace/worktree.ts\":\"58d89e294044d8ee647a12d21aeb2e7d5d4bd813bbc9840dbebcc107ebed9a95\",\"package.json\":\"82f82b6d7304cdb1ecbba5f296e208ebe098563596b15894c23cbf5b8346f371\",\"prompts/builder.md\":\"ff07dfb9677392590339905aa228db1430ce4033f25d5539a858333d24242503\",\"prompts/pinata-fix.md\":\"a264dd55a6d79dd0c0f8d7d55e4757a97e4971ca17ebef5f0c0d71cf49f0f867\",\"prompts/pinata-review.md\":\"f57cff2e9bac22429adfa404d02b5214f8ec2553b2b1c01709fdaa9747665c32\",\"prompts/reviewer.md\":\"3f391957f3fbcb2ec66dfa4172d5bbd93781cd290de45d1d434622e628dfa67f\",\"prompts/scout.md\":\"e69cb5f813ed7762980827170b72238652ed11df08da0960c6106442379140f4\",\"skills/engmgmt/SKILL.md\":\"451208a2b28e773301c43ce1d4f904932dbfc7d6b62d4b474e1aa3728ea733b0\",\"skills/subagents/SKILL.md\":\"bdae531248bcedc853aedc753d6236a666486a7e0d47978c2788f2dc46c7ffd4\",\"skills/subagents/reference.md\":\"907e368234eeda527cb74e0eaf6e93b582b450559228cd0368b684b3fd1de5c2\"},\"sourceCommit\":\"27156467565e31d2080a8cc9f200bb789eaca6a1\",\"sourceDirty\":true}",
+          "network": "pinata-arena-mock-27b1768b-5b44-4143-8f89-bec8fa5207b7",
+          "secrets": [],
+          "settings": {
+            "mock": true,
+            "baseUrl": "http://mock-provider:8080/pi-example/v1",
+            "thinking": "off",
+            "memoryMb": 1024,
+            "pricing": {
+              "input": 1,
+              "output": 1,
+              "cacheRead": 1,
+              "cacheWrite": 1,
+              "reference": "Synthetic offline fixture rates",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          }
+        }
+      ]
+    },
+    "simulatedNotice": "Real installed CLIs against a scripted isolated mock provider. This validates adapters, not model quality, provider performance or real pricing.",
+    "budgetPolicy": "Observed receipts trigger cancellation after the threshold. Missing/unreported usage and in-flight calls can exceed it; this is not a provider billing cap."
+  },
+  "trials": [
+    {
+      "id": "pinata-1",
+      "contestant": "pinata",
+      "repetition": 1,
+      "mode": "mock",
+      "status": "completed",
+      "reason": "Real pinata CLI and all observed child sessions ended; candidate exported",
+      "generationMs": 12435.686287000002,
+      "verificationMs": 2647.955582999999,
+      "elapsedMs": 15083.769922000001,
+      "comparable": true,
+      "patch": {
+        "sha256": "f8273792e8c19e5c6c1bc6c424b2ca1a4e407b851f9cc914c47acc96c50ba167",
+        "artifact": "pinata-1/final.patch"
+      },
+      "quality": {
+        "passed": 81,
+        "total": 81,
+        "success": true,
+        "rubric": "repair-ledger-v1/81-cases/all-required",
+        "reason": null
+      },
+      "ledger": {
+        "complete": true,
+        "totals": {
+          "input": 800,
+          "output": 160,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 960,
+          "turns": 8,
+          "toolCalls": 7,
+          "costUsd": 0.00096
+        },
+        "partial": {
+          "input": 800,
+          "output": 160,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 960,
+          "turns": 8,
+          "toolCalls": 7,
+          "costUsd": 0.00096
+        },
+        "sessions": [
+          {
+            "type": "session-open",
+            "id": "parent",
+            "parent": null,
+            "role": "parent",
+            "model": {
+              "provider": "arena",
+              "id": "arena-model"
+            },
+            "closed": true,
+            "usageComplete": true,
+            "status": "completed",
+            "reason": ""
+          },
+          {
+            "type": "session-open",
+            "id": "pinata-b07fc977-662f-4c25-9f7a-199ca66aa66a-scout-1",
+            "parent": "parent",
+            "role": "scout",
+            "model": {
+              "provider": "arena",
+              "id": "arena-model",
+              "thinking": "off"
+            },
+            "closed": true,
+            "usageComplete": true,
+            "status": "completed",
+            "reason": "Offline mock fixture finished"
+          },
+          {
+            "type": "session-open",
+            "id": "pinata-b07fc977-662f-4c25-9f7a-199ca66aa66a-build-1",
+            "parent": "parent",
+            "role": "build",
+            "model": {
+              "provider": "arena",
+              "id": "arena-model",
+              "thinking": "off"
+            },
+            "closed": true,
+            "usageComplete": true,
+            "status": "completed",
+            "reason": "Offline mock fixture finished"
+          },
+          {
+            "type": "session-open",
+            "id": "pinata-b07fc977-662f-4c25-9f7a-199ca66aa66a-review-1",
+            "parent": "parent",
+            "role": "review",
+            "model": {
+              "provider": "arena",
+              "id": "arena-model",
+              "thinking": "off"
+            },
+            "closed": true,
+            "usageComplete": true,
+            "status": "completed",
+            "reason": "Offline mock fixture finished"
+          }
+        ],
+        "receipts": [
+          {
+            "type": "usage",
+            "id": "parent/1",
+            "session": "parent",
+            "model": {
+              "provider": "arena",
+              "id": "arena-model",
+              "thinking": "off"
+            },
+            "kind": "message",
+            "meters": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 120,
+              "turns": 1,
+              "toolCalls": 1,
+              "costUsd": 0.00012,
+              "reasoning": 0
+            },
+            "pricing": {
+              "source": "fixture",
+              "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          },
+          {
+            "type": "usage",
+            "id": "pinata-b07fc977-662f-4c25-9f7a-199ca66aa66a-scout-1/event-7",
+            "session": "pinata-b07fc977-662f-4c25-9f7a-199ca66aa66a-scout-1",
+            "model": {
+              "provider": "arena",
+              "id": "arena-model",
+              "thinking": "off"
+            },
+            "kind": "message",
+            "meters": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 120,
+              "turns": 1,
+              "toolCalls": 0,
+              "costUsd": 0.00012,
+              "reasoning": 0
+            },
+            "pricing": {
+              "source": "fixture",
+              "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          },
+          {
+            "type": "usage",
+            "id": "pinata-b07fc977-662f-4c25-9f7a-199ca66aa66a-scout-1/event-13",
+            "session": "pinata-b07fc977-662f-4c25-9f7a-199ca66aa66a-scout-1",
+            "model": {
+              "provider": "arena",
+              "id": "arena-model",
+              "thinking": "off"
+            },
+            "kind": "message",
+            "meters": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 120,
+              "turns": 1,
+              "toolCalls": 1,
+              "costUsd": 0.00012,
+              "reasoning": 0
+            },
+            "pricing": {
+              "source": "fixture",
+              "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          },
+          {
+            "type": "usage",
+            "id": "pinata-b07fc977-662f-4c25-9f7a-199ca66aa66a-scout-1/counters",
+            "session": "pinata-b07fc977-662f-4c25-9f7a-199ca66aa66a-scout-1",
+            "model": {
+              "provider": "arena",
+              "id": "arena-model",
+              "thinking": "off"
+            },
+            "kind": "overhead",
+            "meters": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "turns": 0,
+              "toolCalls": 1,
+              "costUsd": 0
+            },
+            "pricing": {
+              "source": "fixture",
+              "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          },
+          {
+            "type": "usage",
+            "id": "pinata-b07fc977-662f-4c25-9f7a-199ca66aa66a-build-1/event-21",
+            "session": "pinata-b07fc977-662f-4c25-9f7a-199ca66aa66a-build-1",
+            "model": {
+              "provider": "arena",
+              "id": "arena-model",
+              "thinking": "off"
+            },
+            "kind": "message",
+            "meters": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 120,
+              "turns": 1,
+              "toolCalls": 0,
+              "costUsd": 0.00012,
+              "reasoning": 0
+            },
+            "pricing": {
+              "source": "fixture",
+              "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          },
+          {
+            "type": "usage",
+            "id": "pinata-b07fc977-662f-4c25-9f7a-199ca66aa66a-build-1/event-27",
+            "session": "pinata-b07fc977-662f-4c25-9f7a-199ca66aa66a-build-1",
+            "model": {
+              "provider": "arena",
+              "id": "arena-model",
+              "thinking": "off"
+            },
+            "kind": "message",
+            "meters": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 120,
+              "turns": 1,
+              "toolCalls": 1,
+              "costUsd": 0.00012,
+              "reasoning": 0
+            },
+            "pricing": {
+              "source": "fixture",
+              "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          },
+          {
+            "type": "usage",
+            "id": "pinata-b07fc977-662f-4c25-9f7a-199ca66aa66a-build-1/counters",
+            "session": "pinata-b07fc977-662f-4c25-9f7a-199ca66aa66a-build-1",
+            "model": {
+              "provider": "arena",
+              "id": "arena-model",
+              "thinking": "off"
+            },
+            "kind": "overhead",
+            "meters": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "turns": 0,
+              "toolCalls": 1,
+              "costUsd": 0
+            },
+            "pricing": {
+              "source": "fixture",
+              "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          },
+          {
+            "type": "usage",
+            "id": "parent/2",
+            "session": "parent",
+            "model": {
+              "provider": "arena",
+              "id": "arena-model",
+              "thinking": "off"
+            },
+            "kind": "message",
+            "meters": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 120,
+              "turns": 1,
+              "toolCalls": 1,
+              "costUsd": 0.00012,
+              "reasoning": 0
+            },
+            "pricing": {
+              "source": "fixture",
+              "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          },
+          {
+            "type": "usage",
+            "id": "pinata-b07fc977-662f-4c25-9f7a-199ca66aa66a-review-1/event-37",
+            "session": "pinata-b07fc977-662f-4c25-9f7a-199ca66aa66a-review-1",
+            "model": {
+              "provider": "arena",
+              "id": "arena-model",
+              "thinking": "off"
+            },
+            "kind": "message",
+            "meters": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 120,
+              "turns": 1,
+              "toolCalls": 0,
+              "costUsd": 0.00012,
+              "reasoning": 0
+            },
+            "pricing": {
+              "source": "fixture",
+              "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          },
+          {
+            "type": "usage",
+            "id": "pinata-b07fc977-662f-4c25-9f7a-199ca66aa66a-review-1/counters",
+            "session": "pinata-b07fc977-662f-4c25-9f7a-199ca66aa66a-review-1",
+            "model": {
+              "provider": "arena",
+              "id": "arena-model",
+              "thinking": "off"
+            },
+            "kind": "overhead",
+            "meters": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "turns": 0,
+              "toolCalls": 1,
+              "costUsd": 0
+            },
+            "pricing": {
+              "source": "fixture",
+              "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          },
+          {
+            "type": "usage",
+            "id": "parent/3",
+            "session": "parent",
+            "model": {
+              "provider": "arena",
+              "id": "arena-model",
+              "thinking": "off"
+            },
+            "kind": "message",
+            "meters": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 120,
+              "turns": 1,
+              "toolCalls": 0,
+              "costUsd": 0.00012,
+              "reasoning": 0
+            },
+            "pricing": {
+              "source": "fixture",
+              "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          }
+        ],
+        "estimated": false,
+        "synthetic": true
+      }
+    },
+    {
+      "id": "opencode-1",
+      "contestant": "opencode",
+      "repetition": 1,
+      "mode": "mock",
+      "status": "completed",
+      "reason": "Real opencode CLI and all observed child sessions ended; candidate exported",
+      "generationMs": 10225.277198000003,
+      "verificationMs": 1663.1044649999967,
+      "elapsedMs": 11888.450738,
+      "comparable": true,
+      "patch": {
+        "sha256": "f8273792e8c19e5c6c1bc6c424b2ca1a4e407b851f9cc914c47acc96c50ba167",
+        "artifact": "opencode-1/final.patch"
+      },
+      "quality": {
+        "passed": 81,
+        "total": 81,
+        "success": true,
+        "rubric": "repair-ledger-v1/81-cases/all-required",
+        "reason": null
+      },
+      "ledger": {
+        "complete": true,
+        "totals": {
+          "input": 1400,
+          "output": 280,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 1680,
+          "turns": 13,
+          "toolCalls": 9,
+          "costUsd": 0.00168
+        },
+        "partial": {
+          "input": 1400,
+          "output": 280,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 1680,
+          "turns": 13,
+          "toolCalls": 9,
+          "costUsd": 0.00168
+        },
+        "sessions": [
+          {
+            "type": "session-open",
+            "id": "ses_e6c5e5d4bffe36ticm6s9S1VOz",
+            "parent": null,
+            "role": "parent",
+            "model": {
+              "provider": "arena",
+              "id": "arena-model",
+              "variant": "default"
+            },
+            "closed": true,
+            "usageComplete": true,
+            "status": "completed",
+            "reason": "succeeded"
+          },
+          {
+            "type": "session-open",
+            "id": "ses_e6c5e5a9fffeDY5cmvGcosQcLz",
+            "parent": "ses_e6c5e5d4bffe36ticm6s9S1VOz",
+            "role": "explore",
+            "model": {
+              "provider": "arena",
+              "id": "arena-model",
+              "variant": "default"
+            },
+            "closed": true,
+            "usageComplete": true,
+            "status": "completed",
+            "reason": "succeeded"
+          },
+          {
+            "type": "session-open",
+            "id": "ses_e6c5e5915ffeZ0AvmBDyYj1T2Z",
+            "parent": "ses_e6c5e5d4bffe36ticm6s9S1VOz",
+            "role": "general",
+            "model": {
+              "provider": "arena",
+              "id": "arena-model",
+              "variant": "default"
+            },
+            "closed": true,
+            "usageComplete": true,
+            "status": "completed",
+            "reason": "succeeded"
+          },
+          {
+            "type": "session-open",
+            "id": "ses_e6c5e578cffeKM2bXjnlGQ4607",
+            "parent": "ses_e6c5e5d4bffe36ticm6s9S1VOz",
+            "role": "general",
+            "model": {
+              "provider": "arena",
+              "id": "arena-model",
+              "variant": "default"
+            },
+            "closed": true,
+            "usageComplete": true,
+            "status": "completed",
+            "reason": "succeeded"
+          }
+        ],
+        "receipts": [
+          {
+            "type": "usage",
+            "id": "ses_e6c5e5d4bffe36ticm6s9S1VOz/msg_193a1a4f3001UbAOYct0fMbj5i",
+            "session": "ses_e6c5e5d4bffe36ticm6s9S1VOz",
+            "model": {
+              "provider": "arena",
+              "id": "arena-model",
+              "variant": "default"
+            },
+            "kind": "message",
+            "meters": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 120,
+              "turns": 1,
+              "toolCalls": 1,
+              "costUsd": 0.00012,
+              "reasoning": 0
+            },
+            "pricing": {
+              "source": "fixture",
+              "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          },
+          {
+            "type": "usage",
+            "id": "ses_e6c5e5a9fffeDY5cmvGcosQcLz/msg_193a1a5af001MxhzsATlLGMEAP",
+            "session": "ses_e6c5e5a9fffeDY5cmvGcosQcLz",
+            "model": {
+              "provider": "arena",
+              "id": "arena-model",
+              "variant": "default"
+            },
+            "kind": "message",
+            "meters": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 120,
+              "turns": 1,
+              "toolCalls": 1,
+              "costUsd": 0.00012,
+              "reasoning": 0
+            },
+            "pricing": {
+              "source": "fixture",
+              "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          },
+          {
+            "type": "usage",
+            "id": "ses_e6c5e5a9fffeDY5cmvGcosQcLz/msg_193a1a611001y3yr9xgp2LfCGu",
+            "session": "ses_e6c5e5a9fffeDY5cmvGcosQcLz",
+            "model": {
+              "provider": "arena",
+              "id": "arena-model",
+              "variant": "default"
+            },
+            "kind": "message",
+            "meters": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 120,
+              "turns": 1,
+              "toolCalls": 0,
+              "costUsd": 0.00012,
+              "reasoning": 0
+            },
+            "pricing": {
+              "source": "fixture",
+              "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          },
+          {
+            "type": "usage",
+            "id": "ses_e6c5e5915ffeZ0AvmBDyYj1T2Z/msg_193a1a6f80013Jw5JNRTFa9TeA",
+            "session": "ses_e6c5e5915ffeZ0AvmBDyYj1T2Z",
+            "model": {
+              "provider": "arena",
+              "id": "arena-model",
+              "variant": "default"
+            },
+            "kind": "message",
+            "meters": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 120,
+              "turns": 1,
+              "toolCalls": 1,
+              "costUsd": 0.00012,
+              "reasoning": 0
+            },
+            "pricing": {
+              "source": "fixture",
+              "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          },
+          {
+            "type": "usage",
+            "id": "ses_e6c5e5915ffeZ0AvmBDyYj1T2Z/msg_193a1a74300174olBXITwApOGJ",
+            "session": "ses_e6c5e5915ffeZ0AvmBDyYj1T2Z",
+            "model": {
+              "provider": "arena",
+              "id": "arena-model",
+              "variant": "default"
+            },
+            "kind": "message",
+            "meters": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 120,
+              "turns": 1,
+              "toolCalls": 1,
+              "costUsd": 0.00012,
+              "reasoning": 0
+            },
+            "pricing": {
+              "source": "fixture",
+              "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          },
+          {
+            "type": "usage",
+            "id": "ses_e6c5e5d4bffe36ticm6s9S1VOz/msg_193a1a676001MDBH2hKs7U5kK6",
+            "session": "ses_e6c5e5d4bffe36ticm6s9S1VOz",
+            "model": {
+              "provider": "arena",
+              "id": "arena-model",
+              "variant": "default"
+            },
+            "kind": "message",
+            "meters": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 120,
+              "turns": 1,
+              "toolCalls": 1,
+              "costUsd": 0.00012,
+              "reasoning": 0
+            },
+            "pricing": {
+              "source": "fixture",
+              "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          },
+          {
+            "type": "usage",
+            "id": "ses_e6c5e5915ffeZ0AvmBDyYj1T2Z/msg_193a1a7a0001520kc45PbDU3us",
+            "session": "ses_e6c5e5915ffeZ0AvmBDyYj1T2Z",
+            "model": {
+              "provider": "arena",
+              "id": "arena-model",
+              "variant": "default"
+            },
+            "kind": "message",
+            "meters": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 120,
+              "turns": 1,
+              "toolCalls": 1,
+              "costUsd": 0.00012,
+              "reasoning": 0
+            },
+            "pricing": {
+              "source": "fixture",
+              "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          },
+          {
+            "type": "usage",
+            "id": "ses_e6c5e5915ffeZ0AvmBDyYj1T2Z/msg_193a1a8120017LHfIqSqzsYRZ2",
+            "session": "ses_e6c5e5915ffeZ0AvmBDyYj1T2Z",
+            "model": {
+              "provider": "arena",
+              "id": "arena-model",
+              "variant": "default"
+            },
+            "kind": "message",
+            "meters": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 120,
+              "turns": 1,
+              "toolCalls": 0,
+              "costUsd": 0.00012,
+              "reasoning": 0
+            },
+            "pricing": {
+              "source": "fixture",
+              "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          },
+          {
+            "type": "usage",
+            "id": "ses_e6c5e578cffeKM2bXjnlGQ4607/msg_193a1a88000182q0t5f3TZvB5U",
+            "session": "ses_e6c5e578cffeKM2bXjnlGQ4607",
+            "model": {
+              "provider": "arena",
+              "id": "arena-model",
+              "variant": "default"
+            },
+            "kind": "message",
+            "meters": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 120,
+              "turns": 1,
+              "toolCalls": 1,
+              "costUsd": 0.00012,
+              "reasoning": 0
+            },
+            "pricing": {
+              "source": "fixture",
+              "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          },
+          {
+            "type": "usage",
+            "id": "ses_e6c5e578cffeKM2bXjnlGQ4607/msg_193a1a8df001y1uNTZ753pHxwR",
+            "session": "ses_e6c5e578cffeKM2bXjnlGQ4607",
+            "model": {
+              "provider": "arena",
+              "id": "arena-model",
+              "variant": "default"
+            },
+            "kind": "message",
+            "meters": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 120,
+              "turns": 1,
+              "toolCalls": 1,
+              "costUsd": 0.00012,
+              "reasoning": 0
+            },
+            "pricing": {
+              "source": "fixture",
+              "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          },
+          {
+            "type": "usage",
+            "id": "ses_e6c5e5d4bffe36ticm6s9S1VOz/msg_193a1a862001d2nOLTS4J6zE6A",
+            "session": "ses_e6c5e5d4bffe36ticm6s9S1VOz",
+            "model": {
+              "provider": "arena",
+              "id": "arena-model",
+              "variant": "default"
+            },
+            "kind": "message",
+            "meters": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 120,
+              "turns": 1,
+              "toolCalls": 1,
+              "costUsd": 0.00012,
+              "reasoning": 0
+            },
+            "pricing": {
+              "source": "fixture",
+              "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          },
+          {
+            "type": "usage",
+            "id": "ses_e6c5e5d4bffe36ticm6s9S1VOz/msg_193a1a9bb0019V6LTfj02Ts9mk",
+            "session": "ses_e6c5e5d4bffe36ticm6s9S1VOz",
+            "model": {
+              "provider": "arena",
+              "id": "arena-model",
+              "variant": "default"
+            },
+            "kind": "message",
+            "meters": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 120,
+              "turns": 1,
+              "toolCalls": 0,
+              "costUsd": 0.00012,
+              "reasoning": 0
+            },
+            "pricing": {
+              "source": "fixture",
+              "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          },
+          {
+            "type": "usage",
+            "id": "ses_e6c5e578cffeKM2bXjnlGQ4607/msg_193a1a990001OZLdY74X5kZCo7",
+            "session": "ses_e6c5e578cffeKM2bXjnlGQ4607",
+            "model": {
+              "provider": "arena",
+              "id": "arena-model",
+              "variant": "default"
+            },
+            "kind": "message",
+            "meters": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 120,
+              "turns": 1,
+              "toolCalls": 0,
+              "costUsd": 0.00012,
+              "reasoning": 0
+            },
+            "pricing": {
+              "source": "fixture",
+              "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          },
+          {
+            "type": "usage",
+            "id": "http/14",
+            "session": "ses_e6c5e5d4bffe36ticm6s9S1VOz",
+            "model": {
+              "provider": "arena",
+              "id": "arena-model"
+            },
+            "kind": "overhead",
+            "meters": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 120,
+              "turns": 0,
+              "toolCalls": 0,
+              "costUsd": 0.00012,
+              "reasoning": 0
+            },
+            "pricing": {
+              "source": "fixture",
+              "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          }
+        ],
+        "estimated": false,
+        "synthetic": true
+      }
+    },
+    {
+      "id": "pi-example-1",
+      "contestant": "pi-example",
+      "repetition": 1,
+      "mode": "mock",
+      "status": "completed",
+      "reason": "Real pi-example CLI and all observed child sessions ended; candidate exported",
+      "generationMs": 10769.099029000005,
+      "verificationMs": 1329.0598959999988,
+      "elapsedMs": 12098.203633000005,
+      "comparable": true,
+      "patch": {
+        "sha256": "f8273792e8c19e5c6c1bc6c424b2ca1a4e407b851f9cc914c47acc96c50ba167",
+        "artifact": "pi-example-1/final.patch"
+      },
+      "quality": {
+        "passed": 81,
+        "total": 81,
+        "success": true,
+        "rubric": "repair-ledger-v1/81-cases/all-required",
+        "reason": null
+      },
+      "ledger": {
+        "complete": true,
+        "totals": {
+          "input": 1100,
+          "output": 220,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 1320,
+          "turns": 11,
+          "toolCalls": 7,
+          "costUsd": 0.00132
+        },
+        "partial": {
+          "input": 1100,
+          "output": 220,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 1320,
+          "turns": 11,
+          "toolCalls": 7,
+          "costUsd": 0.00132
+        },
+        "sessions": [
+          {
+            "type": "session-open",
+            "id": "parent",
+            "parent": null,
+            "role": "parent",
+            "model": {
+              "provider": "arena",
+              "id": "arena-model"
+            },
+            "closed": true,
+            "usageComplete": true,
+            "status": "completed",
+            "reason": ""
+          },
+          {
+            "type": "session-open",
+            "id": "pi-33",
+            "parent": "parent",
+            "role": "scout",
+            "model": {
+              "provider": "arena",
+              "id": "arena-model",
+              "thinking": "off"
+            },
+            "closed": true,
+            "usageComplete": true,
+            "status": "completed",
+            "reason": ""
+          },
+          {
+            "type": "session-open",
+            "id": "pi-44",
+            "parent": "parent",
+            "role": "worker",
+            "model": {
+              "provider": "arena",
+              "id": "arena-model",
+              "thinking": "off"
+            },
+            "closed": true,
+            "usageComplete": true,
+            "status": "completed",
+            "reason": ""
+          },
+          {
+            "type": "session-open",
+            "id": "pi-62",
+            "parent": "parent",
+            "role": "reviewer",
+            "model": {
+              "provider": "arena",
+              "id": "arena-model",
+              "thinking": "off"
+            },
+            "closed": true,
+            "usageComplete": true,
+            "status": "completed",
+            "reason": ""
+          }
+        ],
+        "receipts": [
+          {
+            "type": "usage",
+            "id": "parent/1",
+            "session": "parent",
+            "model": {
+              "provider": "arena",
+              "id": "arena-model",
+              "thinking": "off"
+            },
+            "kind": "message",
+            "meters": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 120,
+              "turns": 1,
+              "toolCalls": 1,
+              "costUsd": 0.00012,
+              "reasoning": 0
+            },
+            "pricing": {
+              "source": "fixture",
+              "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          },
+          {
+            "type": "usage",
+            "id": "pi-33/1",
+            "session": "pi-33",
+            "model": {
+              "provider": "arena",
+              "id": "arena-model",
+              "thinking": "off"
+            },
+            "kind": "message",
+            "meters": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 120,
+              "turns": 1,
+              "toolCalls": 1,
+              "costUsd": 0.00012,
+              "reasoning": 0
+            },
+            "pricing": {
+              "source": "fixture",
+              "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          },
+          {
+            "type": "usage",
+            "id": "pi-33/2",
+            "session": "pi-33",
+            "model": {
+              "provider": "arena",
+              "id": "arena-model",
+              "thinking": "off"
+            },
+            "kind": "message",
+            "meters": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 120,
+              "turns": 1,
+              "toolCalls": 0,
+              "costUsd": 0.00012,
+              "reasoning": 0
+            },
+            "pricing": {
+              "source": "fixture",
+              "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          },
+          {
+            "type": "usage",
+            "id": "pi-44/1",
+            "session": "pi-44",
+            "model": {
+              "provider": "arena",
+              "id": "arena-model",
+              "thinking": "off"
+            },
+            "kind": "message",
+            "meters": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 120,
+              "turns": 1,
+              "toolCalls": 1,
+              "costUsd": 0.00012,
+              "reasoning": 0
+            },
+            "pricing": {
+              "source": "fixture",
+              "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          },
+          {
+            "type": "usage",
+            "id": "pi-44/2",
+            "session": "pi-44",
+            "model": {
+              "provider": "arena",
+              "id": "arena-model",
+              "thinking": "off"
+            },
+            "kind": "message",
+            "meters": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 120,
+              "turns": 1,
+              "toolCalls": 1,
+              "costUsd": 0.00012,
+              "reasoning": 0
+            },
+            "pricing": {
+              "source": "fixture",
+              "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          },
+          {
+            "type": "usage",
+            "id": "pi-44/3",
+            "session": "pi-44",
+            "model": {
+              "provider": "arena",
+              "id": "arena-model",
+              "thinking": "off"
+            },
+            "kind": "message",
+            "meters": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 120,
+              "turns": 1,
+              "toolCalls": 1,
+              "costUsd": 0.00012,
+              "reasoning": 0
+            },
+            "pricing": {
+              "source": "fixture",
+              "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          },
+          {
+            "type": "usage",
+            "id": "pi-44/4",
+            "session": "pi-44",
+            "model": {
+              "provider": "arena",
+              "id": "arena-model",
+              "thinking": "off"
+            },
+            "kind": "message",
+            "meters": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 120,
+              "turns": 1,
+              "toolCalls": 0,
+              "costUsd": 0.00012,
+              "reasoning": 0
+            },
+            "pricing": {
+              "source": "fixture",
+              "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          },
+          {
+            "type": "usage",
+            "id": "pi-62/1",
+            "session": "pi-62",
+            "model": {
+              "provider": "arena",
+              "id": "arena-model",
+              "thinking": "off"
+            },
+            "kind": "message",
+            "meters": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 120,
+              "turns": 1,
+              "toolCalls": 1,
+              "costUsd": 0.00012,
+              "reasoning": 0
+            },
+            "pricing": {
+              "source": "fixture",
+              "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          },
+          {
+            "type": "usage",
+            "id": "pi-62/2",
+            "session": "pi-62",
+            "model": {
+              "provider": "arena",
+              "id": "arena-model",
+              "thinking": "off"
+            },
+            "kind": "message",
+            "meters": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 120,
+              "turns": 1,
+              "toolCalls": 1,
+              "costUsd": 0.00012,
+              "reasoning": 0
+            },
+            "pricing": {
+              "source": "fixture",
+              "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          },
+          {
+            "type": "usage",
+            "id": "parent/2",
+            "session": "parent",
+            "model": {
+              "provider": "arena",
+              "id": "arena-model",
+              "thinking": "off"
+            },
+            "kind": "message",
+            "meters": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 120,
+              "turns": 1,
+              "toolCalls": 0,
+              "costUsd": 0.00012,
+              "reasoning": 0
+            },
+            "pricing": {
+              "source": "fixture",
+              "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          },
+          {
+            "type": "usage",
+            "id": "pi-62/3",
+            "session": "pi-62",
+            "model": {
+              "provider": "arena",
+              "id": "arena-model",
+              "thinking": "off"
+            },
+            "kind": "message",
+            "meters": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 120,
+              "turns": 1,
+              "toolCalls": 0,
+              "costUsd": 0.00012,
+              "reasoning": 0
+            },
+            "pricing": {
+              "source": "fixture",
+              "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          }
+        ],
+        "estimated": false,
+        "synthetic": true
+      }
+    }
+  ],
+  "aggregates": [
+    {
+      "contestant": "pinata",
+      "attempts": 1,
+      "successes": 1,
+      "successRate": 1,
+      "costUsd": 0.00096,
+      "knownCostUsd": 0.00096,
+      "costPerSuccessUsd": 0.00096,
+      "totalElapsedMs": 15083.769922000001,
+      "comparable": true,
+      "simulated": true
+    },
+    {
+      "contestant": "opencode",
+      "attempts": 1,
+      "successes": 1,
+      "successRate": 1,
+      "costUsd": 0.00168,
+      "knownCostUsd": 0.00168,
+      "costPerSuccessUsd": 0.00168,
+      "totalElapsedMs": 11888.450738,
+      "comparable": true,
+      "simulated": true
+    },
+    {
+      "contestant": "pi-example",
+      "attempts": 1,
+      "successes": 1,
+      "successRate": 1,
+      "costUsd": 0.00132,
+      "knownCostUsd": 0.00132,
+      "costPerSuccessUsd": 0.00132,
+      "totalElapsedMs": 12098.203633000005,
+      "comparable": true,
+      "simulated": true
+    }
+  ]
+}
