@@ -5,8 +5,11 @@ patch, independent checks, total recorded spend and elapsed time. The visual dem
 is runnable without a provider account. **It contains no competitive measurements
 or product quality claims.** All three branded lanes use the same scripted Piñata
 FakeBackend, the same starter, and synthetic receipts. Every lane is visibly marked
-as a fixture. The generic container adapter path is runnable; integrations with the
-three real products remain unverified [contracts](adapters/README.md).
+as a fixture. A separate mode runs the **actual pinned Piñata, OpenCode and Pi
+example CLIs** against an isolated scripted provider; its receipts reconcile to
+HTTP request usage. The [bundled adapters](adapters/README.md) can also target an
+explicit OpenAI-compatible provider after operator authorization. No paid/live
+model comparison or provider billing calibration has been run.
 
 Commands on this page are _manual_ operator walkthroughs; the deterministic paths
 are also exercised by the automated tests.
@@ -60,6 +63,35 @@ Run it without Docker using `serve --dir examples/arena/example-run`; generating
 or regrading a candidate requires Docker. [Validation evidence](VALIDATION.md)
 records the actual checks and remaining limitations.
 
+## Exercise the real CLIs without model spend
+
+On Linux x64, build the adapter image and run its separate mock provider. Setup
+fetches the checksum-pinned OpenCode 2.2.5 binary and locked Pi 1.4.0 dependencies;
+it does not use provider credentials. Docker generation containers can reach only
+the internal mock network. The mock's canned tool responses are outside the
+contestant image, and the grader remains outside both.
+
+```sh
+npm run arena:adapters:build
+npm run arena:mock -- --out /tmp/arena-real-clis
+node examples/arena/cli.ts serve --dir /tmp/arena-real-clis
+```
+
+This runs Piñata's process backend, OpenCode's native subagents, and the Pi 1.4.0
+**official subagent example extension**. Each performs a real scout/build/review
+workflow, exports a final patch and passes through the same independent verifier.
+The viewer says **MOCK PROVIDER · REAL CLIS**, with synthetic cost. OpenCode's
+auxiliary requests are recorded as provider overhead when absent from session
+exports. [Recorded mock evidence](mock-example-run/provider-audit.json) compares
+all HTTP requests to the ledger. Scripted outcomes prove integration and metering,
+not model quality, speed or product superiority. Recorded samples replay without
+installing these products: `serve --dir examples/arena/mock-example-run`.
+
+![Actual pinned CLIs using a scripted mock provider](mock-viewer-preview.png)
+
+Live configuration, public CA mounting, dated price estimates and supported model
+limitations are documented in the [adapter walkthrough](adapters/README.md).
+
 ## What is executed and measured
 
 Each outer attempt starts with a copy of only `task/public`. The fixture engine
@@ -99,8 +131,8 @@ quality score. Nonzero exits, missing/late terminals, bad receipts, deadline,
 cancellation, freeze violations and infrastructure failures remain explicit.
 
 Cost is the sum of distinct incremental receipts across the entire attempt. Unknown
-fields stay null; known partial sums remain visible. Session completeness is an
-adapter attestation, not an invoice audit. Failed, cancelled and timed-out attempts
+fields stay null; known partial sums remain visible. The bundled adapters reconcile configured HTTP requests with session receipts;
+missing or mismatched usage makes totals unknown. This is not a provider invoice audit. Failed, cancelled and timed-out attempts
 remain in the success-denominator cost. Zero successes has an undefined cost per
 success; any missing cost makes that metric unknown. Provider receipts, dated
 estimates and synthetic prices have distinct provenance.

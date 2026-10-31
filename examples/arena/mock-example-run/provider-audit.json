@@ -1,0 +1,602 @@
+{
+  "notice": "Test-only mock request counts, not real model performance or provider billing",
+  "audit": [
+    {
+      "contestant": "pinata",
+      "requests": 8,
+      "providerTokens": 960,
+      "ledgerTokens": 960,
+      "quality": true,
+      "status": "completed",
+      "sessions": [
+        {
+          "role": "parent",
+          "model": {
+            "provider": "arena",
+            "id": "arena-model"
+          },
+          "status": "completed",
+          "complete": true
+        },
+        {
+          "role": "scout",
+          "model": {
+            "provider": "arena",
+            "id": "arena-model",
+            "thinking": "off"
+          },
+          "status": "completed",
+          "complete": true
+        },
+        {
+          "role": "build",
+          "model": {
+            "provider": "arena",
+            "id": "arena-model",
+            "thinking": "off"
+          },
+          "status": "completed",
+          "complete": true
+        },
+        {
+          "role": "review",
+          "model": {
+            "provider": "arena",
+            "id": "arena-model",
+            "thinking": "off"
+          },
+          "status": "completed",
+          "complete": true
+        }
+      ]
+    },
+    {
+      "contestant": "opencode",
+      "requests": 14,
+      "providerTokens": 1680,
+      "ledgerTokens": 1680,
+      "quality": true,
+      "status": "completed",
+      "sessions": [
+        {
+          "role": "parent",
+          "model": {
+            "provider": "arena",
+            "id": "arena-model",
+            "variant": "default"
+          },
+          "status": "completed",
+          "complete": true
+        },
+        {
+          "role": "explore",
+          "model": {
+            "provider": "arena",
+            "id": "arena-model",
+            "variant": "default"
+          },
+          "status": "completed",
+          "complete": true
+        },
+        {
+          "role": "general",
+          "model": {
+            "provider": "arena",
+            "id": "arena-model",
+            "variant": "default"
+          },
+          "status": "completed",
+          "complete": true
+        },
+        {
+          "role": "general",
+          "model": {
+            "provider": "arena",
+            "id": "arena-model",
+            "variant": "default"
+          },
+          "status": "completed",
+          "complete": true
+        }
+      ]
+    },
+    {
+      "contestant": "pi-example",
+      "requests": 11,
+      "providerTokens": 1320,
+      "ledgerTokens": 1320,
+      "quality": true,
+      "status": "completed",
+      "sessions": [
+        {
+          "role": "parent",
+          "model": {
+            "provider": "arena",
+            "id": "arena-model"
+          },
+          "status": "completed",
+          "complete": true
+        },
+        {
+          "role": "scout",
+          "model": {
+            "provider": "arena",
+            "id": "arena-model",
+            "thinking": "off"
+          },
+          "status": "completed",
+          "complete": true
+        },
+        {
+          "role": "worker",
+          "model": {
+            "provider": "arena",
+            "id": "arena-model",
+            "thinking": "off"
+          },
+          "status": "completed",
+          "complete": true
+        },
+        {
+          "role": "reviewer",
+          "model": {
+            "provider": "arena",
+            "id": "arena-model",
+            "thinking": "off"
+          },
+          "status": "completed",
+          "complete": true
+        }
+      ]
+    }
+  ],
+  "stats": [
+    {
+      "stack": "pinata",
+      "model": "arena-model",
+      "tools": [
+        "read",
+        "bash",
+        "edit",
+        "write",
+        "pinata_agents",
+        "pinata_run",
+        "pinata_status",
+        "pinata_steer",
+        "pinata_repair",
+        "pinata_changes",
+        "pinata_verify",
+        "pinata_integrate",
+        "pinata_rollback",
+        "pinata_cancel"
+      ]
+    },
+    {
+      "stack": "pinata",
+      "model": "arena-model",
+      "tools": [
+        "read",
+        "grep",
+        "find",
+        "ls",
+        "submit_result"
+      ]
+    },
+    {
+      "stack": "pinata",
+      "model": "arena-model",
+      "tools": [
+        "read",
+        "grep",
+        "find",
+        "ls",
+        "submit_result"
+      ]
+    },
+    {
+      "stack": "pinata",
+      "model": "arena-model",
+      "tools": [
+        "read",
+        "bash",
+        "edit",
+        "write",
+        "submit_result"
+      ]
+    },
+    {
+      "stack": "pinata",
+      "model": "arena-model",
+      "tools": [
+        "read",
+        "bash",
+        "edit",
+        "write",
+        "submit_result"
+      ]
+    },
+    {
+      "stack": "pinata",
+      "model": "arena-model",
+      "tools": [
+        "read",
+        "grep",
+        "find",
+        "ls",
+        "submit_result"
+      ]
+    },
+    {
+      "stack": "pinata",
+      "model": "arena-model",
+      "tools": [
+        "read",
+        "bash",
+        "edit",
+        "write",
+        "pinata_agents",
+        "pinata_run",
+        "pinata_status",
+        "pinata_steer",
+        "pinata_repair",
+        "pinata_changes",
+        "pinata_verify",
+        "pinata_integrate",
+        "pinata_rollback",
+        "pinata_cancel"
+      ]
+    },
+    {
+      "stack": "pinata",
+      "model": "arena-model",
+      "tools": [
+        "read",
+        "bash",
+        "edit",
+        "write",
+        "pinata_agents",
+        "pinata_run",
+        "pinata_status",
+        "pinata_steer",
+        "pinata_repair",
+        "pinata_changes",
+        "pinata_verify",
+        "pinata_integrate",
+        "pinata_rollback",
+        "pinata_cancel"
+      ]
+    },
+    {
+      "stack": "opencode",
+      "model": "arena-model",
+      "tools": []
+    },
+    {
+      "stack": "opencode",
+      "model": "arena-model",
+      "tools": [
+        "edit",
+        "glob",
+        "grep",
+        "question",
+        "read",
+        "shell",
+        "skill",
+        "subagent",
+        "webfetch",
+        "websearch",
+        "write",
+        "execute"
+      ]
+    },
+    {
+      "stack": "opencode",
+      "model": "arena-model",
+      "tools": [
+        "glob",
+        "grep",
+        "read",
+        "shell",
+        "skill",
+        "webfetch",
+        "websearch"
+      ]
+    },
+    {
+      "stack": "opencode",
+      "model": "arena-model",
+      "tools": [
+        "glob",
+        "grep",
+        "read",
+        "shell",
+        "skill",
+        "webfetch",
+        "websearch"
+      ]
+    },
+    {
+      "stack": "opencode",
+      "model": "arena-model",
+      "tools": [
+        "edit",
+        "glob",
+        "grep",
+        "question",
+        "read",
+        "shell",
+        "skill",
+        "subagent",
+        "webfetch",
+        "websearch",
+        "write",
+        "execute"
+      ]
+    },
+    {
+      "stack": "opencode",
+      "model": "arena-model",
+      "tools": [
+        "edit",
+        "glob",
+        "grep",
+        "read",
+        "shell",
+        "skill",
+        "webfetch",
+        "websearch",
+        "write",
+        "execute"
+      ]
+    },
+    {
+      "stack": "opencode",
+      "model": "arena-model",
+      "tools": [
+        "edit",
+        "glob",
+        "grep",
+        "read",
+        "shell",
+        "skill",
+        "webfetch",
+        "websearch",
+        "write",
+        "execute"
+      ]
+    },
+    {
+      "stack": "opencode",
+      "model": "arena-model",
+      "tools": [
+        "edit",
+        "glob",
+        "grep",
+        "read",
+        "shell",
+        "skill",
+        "webfetch",
+        "websearch",
+        "write",
+        "execute"
+      ]
+    },
+    {
+      "stack": "opencode",
+      "model": "arena-model",
+      "tools": [
+        "edit",
+        "glob",
+        "grep",
+        "read",
+        "shell",
+        "skill",
+        "webfetch",
+        "websearch",
+        "write",
+        "execute"
+      ]
+    },
+    {
+      "stack": "opencode",
+      "model": "arena-model",
+      "tools": [
+        "edit",
+        "glob",
+        "grep",
+        "question",
+        "read",
+        "shell",
+        "skill",
+        "subagent",
+        "webfetch",
+        "websearch",
+        "write",
+        "execute"
+      ]
+    },
+    {
+      "stack": "opencode",
+      "model": "arena-model",
+      "tools": [
+        "edit",
+        "glob",
+        "grep",
+        "read",
+        "shell",
+        "skill",
+        "webfetch",
+        "websearch",
+        "write",
+        "execute"
+      ]
+    },
+    {
+      "stack": "opencode",
+      "model": "arena-model",
+      "tools": [
+        "edit",
+        "glob",
+        "grep",
+        "read",
+        "shell",
+        "skill",
+        "webfetch",
+        "websearch",
+        "write",
+        "execute"
+      ]
+    },
+    {
+      "stack": "opencode",
+      "model": "arena-model",
+      "tools": [
+        "edit",
+        "glob",
+        "grep",
+        "read",
+        "shell",
+        "skill",
+        "webfetch",
+        "websearch",
+        "write",
+        "execute"
+      ]
+    },
+    {
+      "stack": "opencode",
+      "model": "arena-model",
+      "tools": [
+        "edit",
+        "glob",
+        "grep",
+        "question",
+        "read",
+        "shell",
+        "skill",
+        "subagent",
+        "webfetch",
+        "websearch",
+        "write",
+        "execute"
+      ]
+    },
+    {
+      "stack": "pi-example",
+      "model": "arena-model",
+      "tools": [
+        "read",
+        "bash",
+        "edit",
+        "write",
+        "subagent"
+      ]
+    },
+    {
+      "stack": "pi-example",
+      "model": "arena-model",
+      "tools": [
+        "read",
+        "grep",
+        "find",
+        "ls",
+        "bash"
+      ]
+    },
+    {
+      "stack": "pi-example",
+      "model": "arena-model",
+      "tools": [
+        "read",
+        "grep",
+        "find",
+        "ls",
+        "bash"
+      ]
+    },
+    {
+      "stack": "pi-example",
+      "model": "arena-model",
+      "tools": [
+        "read",
+        "bash",
+        "edit",
+        "write"
+      ]
+    },
+    {
+      "stack": "pi-example",
+      "model": "arena-model",
+      "tools": [
+        "read",
+        "bash",
+        "edit",
+        "write"
+      ]
+    },
+    {
+      "stack": "pi-example",
+      "model": "arena-model",
+      "tools": [
+        "read",
+        "bash",
+        "edit",
+        "write"
+      ]
+    },
+    {
+      "stack": "pi-example",
+      "model": "arena-model",
+      "tools": [
+        "read",
+        "bash",
+        "edit",
+        "write"
+      ]
+    },
+    {
+      "stack": "pi-example",
+      "model": "arena-model",
+      "tools": [
+        "read",
+        "grep",
+        "find",
+        "ls",
+        "bash"
+      ]
+    },
+    {
+      "stack": "pi-example",
+      "model": "arena-model",
+      "tools": [
+        "read",
+        "grep",
+        "find",
+        "ls",
+        "bash"
+      ]
+    },
+    {
+      "stack": "pi-example",
+      "model": "arena-model",
+      "tools": [
+        "read",
+        "grep",
+        "find",
+        "ls",
+        "bash"
+      ]
+    },
+    {
+      "stack": "pi-example",
+      "model": "arena-model",
+      "tools": [
+        "read",
+        "bash",
+        "edit",
+        "write",
+        "subagent"
+      ]
+    }
+  ]
+}

@@ -30,7 +30,13 @@ export type ProtocolEvent =
         at: string;
       };
     }
-  | { type: "session-close"; id: string; usageComplete: boolean }
+  | {
+      type: "session-close";
+      id: string;
+      usageComplete: boolean;
+      status?: "completed" | "failed" | "cancelled";
+      reason?: string;
+    }
   | {
       type: "phase";
       session: string;
@@ -42,6 +48,8 @@ export type Receipt = Extract<ProtocolEvent, { type: "usage" }>;
 export type Session = Extract<ProtocolEvent, { type: "session-open" }> & {
   closed: boolean;
   usageComplete: boolean;
+  status?: "completed" | "failed" | "cancelled";
+  reason?: string;
 };
 export const unknownMeters = (): Meters =>
   Object.fromEntries(fields.map((key) => [key, null])) as Meters;
@@ -61,7 +69,11 @@ export function validateProtocol(value: unknown): ProtocolEvent {
         model(e.model);
       break;
     case "session-close":
-      valid = text(e.id, 200) && typeof e.usageComplete === "boolean";
+      valid =
+        text(e.id, 200) &&
+        typeof e.usageComplete === "boolean" &&
+        (e.status === undefined || ["completed", "failed", "cancelled"].includes(e.status)) &&
+        (e.reason === undefined || (typeof e.reason === "string" && e.reason.length <= 2000));
       break;
     case "usage":
       valid =
@@ -126,6 +138,8 @@ export class Ledger {
         if (!s || s.closed) throw new Error("Missing or already closed session");
         s.closed = true;
         s.usageComplete = e.usageComplete;
+        if (e.status !== undefined) s.status = e.status;
+        if (e.reason !== undefined) s.reason = e.reason;
         break;
       }
       case "usage": {

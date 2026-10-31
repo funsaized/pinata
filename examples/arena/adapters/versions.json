@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "pi": "1.4.0",
+  "officialExample": {
+    "commit": "4a080252f06caf63a525d7873c5d94d3c23887e0",
+    "path": "packages/coding-agent/examples/extensions/subagent"
+  },
+  "opencode": {
+    "version": "2.2.5",
+    "url": "https://github.com/anomalyco/opencode/releases/download/v2.2.5/opencode-linux-x64.tar.gz",
+    "sha256": "09f44302c10fd036912f59c81fd1aef5df45dd06f649197f9dfc9bbe2a79614e",
+    "platform": "linux-x64"
+  }
+}

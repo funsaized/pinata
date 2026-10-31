@@ -1,8 +1,23 @@
 # Arena validation evidence
 
-Validation uses deterministic fixtures and local containers only. No paid providers
-or real competitive stack trials were run. Product adapters remain unverified
-contracts; the generic JSONL container protocol has an offline conformance test.
+Validation uses deterministic fixtures and local containers only. **All three
+actual pinned CLIs** also ran against an isolated scripted HTTP provider. No paid
+provider, real model comparison, or live provider billing calibration was run.
+
+The [recorded mock request audit](mock-example-run/provider-audit.json) reports:
+
+| Actual CLI                         | HTTP requests | Provider tokens | Ledger tokens | Final checks |
+| ---------------------------------- | ------------: | --------------: | ------------: | -----------: |
+| Piñata 2.0.1 + Pi 1.4.0            |             8 |             960 |           960 |        81/81 |
+| OpenCode 2.2.5 native subagents    |            14 |           1,680 |         1,680 |        81/81 |
+| Pi 1.4.0 official subagent example |            11 |           1,320 |         1,320 |        81/81 |
+
+Every run includes a completed parent and three completed child sessions.
+OpenCode issues an auxiliary request absent from its session export; the provider
+proxy records that request as overhead without counting session receipts twice.
+The correct OpenCode v2 `write` tool argument is `path`. The separate mock provider
+uses that actual schema. These counts measure scripted conformance, not model
+quality, comparative speed, actual prices, or a competitive win.
 
 Local environment: Linux, Node 24.19.0, Docker 28.4.0, Chromium. The verifier uses
 the immutable Node 22.19.0 image pinned in `manifest.json`. The repository's complete
@@ -22,22 +37,37 @@ Recorded checks before the final draft:
   passed all 38 tests before the two additional reattachment regressions were added.
 - `ARENA_DOCKER_TEST=1 npm run test:arena`: deterministic ledger, task/freeze,
   Docker boundary, grader discrimination (including invalid-input mutation), timeout/cancellation/failure, replay,
-  observed budget and offline generic-adapter checks pass: **15 passed, no skips**.
-  The test does not contact a provider.
+  observed budget and offline generic-adapter checks pass: **24 passed, no skips**.
+  Tests call only a local scripted provider; Docker grading has no network.
 - `node scripts/arena-browser-smoke.mjs --dir examples/arena/example-run`:
   Chromium checks three lanes, fixture disclosure, lane selection, replay, pause,
   scrubbing, latest evidence, frozen patch link, mobile layout, no script exceptions
-  and no remote assets. A screenshot is captured from the same real event log.
+  and no remote assets. Both the simulated and actual-CLI mock replay pass these assertions, with distinct
+  disclosure badges. Screenshots are captured from their actual event logs.
 - `npm_config_cache=/workspace/.npm python3 /tmp/pinata-test-subreaper.py npm test`:
-  **237 passed, 9 skipped** across the main engine/arena suite, scheduler, workspace
-  and release tests. Skips are four existing platform/environment checks and five
+  **245 passed, 10 skipped** across the main engine/arena suite, scheduler, workspace
+  and release tests. Skips are four existing platform/environment checks and six
   opt-in Docker checks; the latter all pass in the explicit arena command above.
+- `node examples/arena/adapters/build.mjs --archive /tmp/arena-opencode-2.2.5.tar.gz
+--out /tmp/arena-final-image.json` and `node examples/arena/adapters/mock-run.mjs
+--image-file /tmp/arena-final-image.json --out /tmp/arena-final-three-v2`: pass.
+  Built image: `sha256:575f57cfcbcde6e2a14b2e54109cdb89a22cc783b7c2d6f071024b167d25da1b`.
+  Setup verifies the binary SHA and records SDK lockfile, runtime image id, actual
+  Piñata source hashes and adapter hashes. The image smoke rejects fixture/grader
+  paths in the contestant image. Only the separate mock provider has canned tool
+  responses; neither generation nor mock provider receives the hidden oracle.
+- Normalizer tests cover incremental file tailing, repeated snapshots, conflicts,
+  recovered child failure, overhead reconciliation, missing usage and child-model
+  price gaps. Proxy tests check split SSE frames, exact forwarding, omitted/error
+  usage and absence of response text in receipts. CA tests check public certificates
+  mounted read-only and reject private keys/malformed bundles. Configuration setup
+  was executed without starting a provider; URL credentials are rejected.
 - Pi 1.1.0 JavaScript CLI source and packed-package smoke use deterministic faux
   providers. Source smoke passes (`ok: true`, two foreground/background runs), as
   does packed-package smoke (`ok: true`, seven commands). The binary/OS matrix
   remains a separate remote CI gate. Recorded runs and the screenshot are kept in
   the repository, excluded from the npm artifact by the arena's `.npmignore`.
-- Final patch coverage uses `git apply --check`, applies the patch to a fresh
+- Final patch coverage pins `core.autocrlf=false` and `core.eol=lf` for `git apply --check`, applies the patch to a fresh
   starter, and compares bytes for multiline, unterminated and empty candidates.
 
 This managed environment's PID 1 does not reap orphaned grandchildren. Direct
@@ -53,8 +83,13 @@ Remaining scope limits:
 
 - One public single-file rehearsal task; unpublished multi-task studies and
   multi-file application grading are future work.
-- No verified live Piñata/OpenCode/Pi example adapters, provider invoice audit,
-  hard aggregate billing cap or live performance/quality claims.
+- Real CLI adapters are verified only with a scripted OpenAI-compatible provider,
+  not paid/live models or invoices. Other native APIs/authentication are outside
+  this initial adapter scope. Linux x64 is the supported image build platform.
+- Controlled configuration disables Pi auto-compaction/retries and inherits the
+  same selected child model. Practical-default child providers need separate
+  credentials/calibration. Unknown or unreconciled usage stays unknown; no hard
+  aggregate billing cap or live performance/quality claim is provided.
 - Docker isolation shares a host kernel. The local operator controls a privileged
   Docker socket. Live network egress and provider account limits need external
   controls. No host fallback runs if Docker is unavailable.

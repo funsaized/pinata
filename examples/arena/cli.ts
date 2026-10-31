@@ -32,8 +32,8 @@ node examples/arena/cli.ts replay --dir PATH
 node examples/arena/cli.ts serve --dir PATH [--port 4317]
 
 Demo uses scripted FakeBackend fixtures, synthetic prices, and real isolated grading.
-Live adapters implement the documented container protocol; bundled stack integrations
-are unverified contracts. No live calls happen without --allow-provider-spend.
+Bundled real CLI adapters have isolated mock-provider conformance checks.
+Real provider runs require --allow-provider-spend and configured credentials.
 Output must be a fresh directory. The server listens only on 127.0.0.1.
 `;
 try {
@@ -43,10 +43,10 @@ try {
     await dockerCommand(["info", "--format", "{{.ServerVersion}}"]);
     if (values.pull) await dockerCommand(["pull", manifest.verifierImage], 300000);
     console.log(`Ready: ${await localImage(manifest.verifierImage)}`);
-  } else if (command === "demo" || command === "live") {
+  } else if (command === "demo" || command === "mock" || command === "live") {
     if (!values.out) throw new Error("--out PATH is required");
     const live =
-      command === "live"
+      command !== "demo"
         ? validateLiveConfig(JSON.parse(await readFile(values.config ?? "", "utf8")))
         : undefined;
     const controller = new AbortController();
@@ -54,7 +54,7 @@ try {
     process.once("SIGTERM", () => controller.abort("cancelled by SIGTERM"));
     const result = await runArena({
       out: values.out,
-      mode: command === "demo" ? "simulated" : "live",
+      mode: command === "demo" ? "simulated" : command === "mock" ? "mock" : "live",
       live,
       allowProviderSpend: values["allow-provider-spend"],
       signal: controller.signal,

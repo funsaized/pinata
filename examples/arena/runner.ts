@@ -34,13 +34,17 @@ export type LiveConfig = {
   task: string;
   trials: number;
   seed: number;
+  limits?: Partial<typeof manifest.limits>;
   contestants: Array<{
     id: string;
+    caFile?: string;
+    name?: string;
     image: string;
     command: string[];
     version: string;
     source: string;
-    network: "none" | "bridge";
+    network: string;
+    settings?: Record<string, any>;
     secrets: string[];
   }>;
 };
@@ -56,7 +60,7 @@ export type Trial = {
   id: string;
   contestant: string;
   repetition: number;
-  mode: "simulated" | "live";
+  mode: "simulated" | "mock" | "live";
   fixture?: Fixture;
   status: "completed" | "failed" | "cancelled" | "timeout" | "invalid";
   reason: string | null;
@@ -70,7 +74,7 @@ export type Trial = {
 };
 export type RunOptions = {
   out: string;
-  mode: "simulated" | "live";
+  mode: "simulated" | "mock" | "live";
   seed?: number;
   trials?: number;
   scenario?: "clean" | "faults";
@@ -331,9 +335,13 @@ export function validateLiveConfig(value: any): LiveConfig {
       !Array.isArray(c.command) ||
       !c.command.length ||
       c.command.some((v: unknown) => typeof v !== "string" || v.length > 10000) ||
-      !["none", "bridge"].includes(c.network) ||
+      (!["none", "bridge"].includes(c.network) &&
+        !/^pinata-arena-mock-[a-f0-9-]+$/.test(c.network)) ||
       !Array.isArray(c.secrets) ||
       !c.secrets.every((s: unknown) => typeof s === "string" && /^[A-Z][A-Z0-9_]*$/.test(s)) ||
+      (c.caFile !== undefined && typeof c.caFile !== "string") ||
+      (c.settings !== undefined &&
+        (!c.settings || typeof c.settings !== "object" || Array.isArray(c.settings))) ||
       typeof c.version !== "string" ||
       !c.version ||
       typeof c.source !== "string" ||
@@ -350,7 +358,9 @@ export async function runArena(options: RunOptions) {
       "Live execution requires a configured adapter and explicit --allow-provider-spend",
     );
   const live = options.live && validateLiveConfig(options.live);
-  const limits = limitsFor(options.limits);
+  if (options.mode !== "simulated" && !live)
+    throw new Error("Container runs require a configured adapter");
+  const limits = limitsFor(options.limits ?? live?.limits);
   if (
     options.stepMs !== undefined &&
     (!Number.isInteger(options.stepMs) || options.stepMs < 0 || options.stepMs > 1000)
@@ -371,10 +381,23 @@ export async function runArena(options: RunOptions) {
   if (options.mode === "simulated" && task.id !== manifest.task)
     throw new Error("Fixtures are defined only for the shipped rehearsal task");
   const image = await localImage(manifest.verifierImage);
-  const contestants = options.mode === "live" ? live!.contestants : manifest.contestants;
+  const contestants = options.mode !== "simulated" ? live!.contestants : manifest.contestants;
   const images = new Map<string, string>();
-  if (options.mode === "live")
+  if (options.mode !== "simulated")
     for (const c of live!.contestants) images.set(c.id, await localImage(c.image));
+  if (
+    options.mode === "mock" &&
+    (!live ||
+      live.contestants.some(
+        (c) =>
+          !/^pinata-arena-mock-[a-f0-9-]+$/.test(c.network) ||
+          c.secrets.length ||
+          c.settings?.mock !== true,
+      ))
+  )
+    throw new Error(
+      "Mock runs require isolated internal networks, mock settings and no credentials",
+    );
   const out = resolve(options.out);
   await mkdir(out, { recursive: false, mode: 0o700 });
   const journal = new Journal(out);
@@ -436,7 +459,9 @@ export async function runArena(options: RunOptions) {
     simulatedNotice:
       options.mode === "simulated"
         ? "All lanes use the Piñata FakeBackend with scripted candidates and synthetic receipts. These are harness demonstrations, not competitive measurements."
-        : null,
+        : options.mode === "mock"
+          ? "Real installed CLIs against a scripted isolated mock provider. This validates adapters, not model quality, provider performance or real pricing."
+          : null,
     budgetPolicy:
       "Observed receipts trigger cancellation after the threshold. Missing/unreported usage and in-flight calls can exceed it; this is not a provider billing cap.",
   };
@@ -471,6 +496,7 @@ export async function runArena(options: RunOptions) {
         track,
         model: live?.model ?? { provider: "fixture", id: "deterministic-v1" },
         limits,
+        adapter: live?.contestants.find((c) => c.id === contestant.id)?.settings ?? {},
         requiredUsage:
           "Report parent, child, retry, compaction and overhead receipts; missing values must be null",
       };
@@ -536,6 +562,8 @@ export async function runArena(options: RunOptions) {
             workspace,
             inputDir,
             writable: true,
+            caFile: c.caFile,
+            memoryMb: typeof c.settings?.memoryMb === "number" ? c.settings.memoryMb : 256,
             timeoutMs: limits.generationMs,
             outputBytes: limits.outputBytes,
             signal: controller.signal,
@@ -666,7 +694,7 @@ export function aggregate(trials: Trial[]) {
       costPerSuccessUsd: costKnown && successes > 0 ? knownCostUsd / successes : null,
       totalElapsedMs: rows.reduce((n, r) => n + r.elapsedMs, 0),
       comparable: rows.every((r) => r.comparable),
-      simulated: rows.every((r) => r.mode === "simulated"),
+      simulated: rows.every((r) => r.mode !== "live"),
     };
   });
 }
