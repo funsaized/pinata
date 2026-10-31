@@ -6,7 +6,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { fixtureSource, seededFixtures } from "../../examples/arena/fixtures.ts";
-import { loadTask, freshWorkspace, freeze, verify, hash } from "../../examples/arena/task.ts";
+import {
+  boundedFile,
+  loadTask,
+  freshWorkspace,
+  freeze,
+  verify,
+  hash,
+} from "../../examples/arena/task.ts";
 import { root, manifest, runArena, replayArena } from "../../examples/arena/runner.ts";
 import { localImage, sandbox } from "../../examples/arena/sandbox.ts";
 import { serveArena } from "../../examples/arena/server.ts";
@@ -16,6 +23,24 @@ const temp = async (t: any) => {
   return dir;
 };
 const docker = process.env.ARENA_DOCKER_TEST === "1";
+
+test(
+  "freeze rejects named pipes in entry and protected files without opening them",
+  { skip: process.platform === "win32", timeout: 5000 },
+  async (t) => {
+    const dir = await temp(t);
+    const task = await loadTask(join(root, "task"));
+    for (const file of [task.entry, task.prompt]) {
+      const work = join(dir, file);
+      await freshWorkspace(task, work);
+      const path = join(work, file);
+      await rm(path);
+      execFileSync("mkfifo", [path]);
+      await assert.rejects(boundedFile(path), /regular file/);
+      await assert.rejects(freeze(task, work, join(dir, `candidate-${file}`)), /regular file/);
+    }
+  },
+);
 
 test("fixtures rotate fault assignments instead of assigning a branded winner", () => {
   assert.deepEqual(seededFixtures(1, "clean"), ["good", "good", "good"]);
@@ -194,6 +219,12 @@ test(
     assert.equal(result.trials[0].ledger.totals.costUsd, 0.11);
     assert.equal(result.trials[2].ledger.totals.costUsd, null);
     const replay = await replayArena(out);
+    for (const [file, digest] of Object.entries(result.manifest.sourceFilesSha256))
+      assert.equal(
+        hash(await readFile(join(root, file))),
+        digest,
+        `generated source digest: ${file}`,
+      );
     assert.equal(replay.complete, true);
     assert.deepEqual(replay.trials, result.trials);
     assert.deepEqual(replay.aggregates, result.aggregates);
@@ -291,9 +322,10 @@ test("recorded example replay and frozen candidates match their evidence", async
   assert.equal(replay.complete, true);
   assert.deepEqual(replay.trials, saved.trials);
   assert.deepEqual(replay.aggregates, saved.aggregates);
-  for (const [file, digest] of Object.entries(replay.manifest.sourceFilesSha256)) {
-    assert.equal(hash(await readFile(join(root, file))), digest, `recorded source drift: ${file}`);
-  }
+  // Historical evidence records the source used at generation time. Updating the
+  // viewer or runner must not rewrite those hashes to describe a different build.
+  for (const digest of Object.values(replay.manifest.sourceFilesSha256))
+    assert.match(String(digest), /^[a-f0-9]{64}$/);
   assert.equal((await loadTask(join(root, "task"))).digest, replay.manifest.task.sha256);
   for (const trial of replay.trials) {
     assert.equal(trial.mode, "simulated");

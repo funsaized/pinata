@@ -126,9 +126,10 @@ The [documentation index](docs/README.md) lists everything, including maintainer
 
 MIT licensed.
 
-### Coding arena rehearsal
+### Coding arena
 
-The [local coding arena](examples/arena/README.md) shows delegation, repaired-attempt
-receipts, frozen patches and independent grading in a replayable viewer. Its branded
-lanes use explicitly simulated fixtures; live stack integrations are unverified
-container adapter contracts, and no competitive benchmark results are included.
+The [coding arena](https://github.com/funsaized/pinata/tree/master/examples/arena)
+is repository-only evaluation tooling. It records subagent sessions, usage, patches
+and independent checks in a local viewer. Scripted demos and real-CLI mock runs test
+the harness; they are not comparative model results. The arena is excluded from the
+npm package and has its own setup and test commands.

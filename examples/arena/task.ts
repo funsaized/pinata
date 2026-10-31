@@ -17,11 +17,26 @@ export type TaskPackage = {
   prepare: (seed: number) => Grading;
 };
 export async function boundedFile(path: string, maxBytes = 262144): Promise<Buffer> {
-  const h = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+  // Reject FIFOs/devices before open, then validate the descriptor too. NONBLOCK
+  // covers a regular-file-to-FIFO replacement between the two checks on POSIX.
+  if (!(await lstat(path)).isFile())
+    throw new Error("Candidate must be a regular file (no symlinks)");
+  const h = await open(
+    path,
+    constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0),
+  );
   try {
     const st = await h.stat();
     if (!st.isFile() || st.size > maxBytes) throw new Error("Invalid or oversized candidate file");
-    return await h.readFile();
+    const bytes = Buffer.alloc(maxBytes + 1);
+    let length = 0;
+    while (length < bytes.length) {
+      const read = await h.read(bytes, length, bytes.length - length, length);
+      if (!read.bytesRead) break;
+      length += read.bytesRead;
+    }
+    if (length > maxBytes) throw new Error("Invalid or oversized candidate file");
+    return bytes.subarray(0, length);
   } finally {
     await h.close();
   }

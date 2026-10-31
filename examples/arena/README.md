@@ -1,20 +1,20 @@
 # Piñata coding arena
 
-A local observatory for the whole coding attempt: delegation, repairs, a frozen final
-patch, independent checks, total recorded spend and elapsed time. The visual demo
-is runnable without a provider account. **It contains no competitive measurements
-or product quality claims.** All three branded lanes use the same scripted Piñata
-FakeBackend, the same starter, and synthetic receipts. Every lane is visibly marked
-as a fixture. A separate mode runs the **actual pinned Piñata, OpenCode and Pi
-example CLIs** against an isolated scripted provider; its receipts reconcile to
-HTTP request usage. The [bundled adapters](adapters/README.md) can also target an
-explicit OpenAI-compatible provider after operator authorization. No paid/live
-model comparison or provider billing calibration has been run.
+Repository-only tooling for inspecting coding attempts: subagent sessions, retries,
+usage, generated patches and independent checks. It is excluded from the npm package.
+
+Two deterministic modes run without provider credentials. The simulated demo uses
+Piñata's FakeBackend for every implementation. The mock mode runs the pinned Piñata,
+OpenCode and Pi example CLIs against a scripted HTTP provider and reconciles their
+usage. Both modes are labelled in the viewer. Neither measures model quality or
+competitive performance. The [adapters](adapters/README.md) also support explicitly
+authorized runs against an OpenAI-compatible provider; no live comparison or billing
+calibration has been performed.
 
 Commands on this page are _manual_ operator walkthroughs; the deterministic paths
 are also exercised by the automated tests.
 
-![Recorded simulated arena with three lanes and receipt evidence](viewer-preview.png)
+![Simulated run with results, sessions and attempt details](viewer-preview.png)
 
 ## Run the demo
 
@@ -32,13 +32,17 @@ npm run arena:demo -- --out /tmp/arena-clean --seed 7 --step-ms 35
 node examples/arena/cli.ts serve --dir /tmp/arena-clean
 ```
 
-Open `http://127.0.0.1:4317`. Select a lane to inspect parent/child/repair receipts,
-actual recorded model ids, the event timeline, frozen patch hash and grading result.
-Replay, pause, scrub and speed controls use the same event log as the live view.
-The viewer is read-only and cannot start agents, install software or make paid calls.
-For live polling during generation, start `serve --dir` in a second terminal after
-the runner has created that directory. Execution is sequential to limit resource
-contention; the viewer shows all lanes but does not imply concurrent wall clocks.
+Open `http://127.0.0.1:4317`. The results table includes all settled attempts,
+including failures, in its token, cost and elapsed-time totals. Model mismatches
+have separate rows and do not contribute to the controlled comparison. A successful
+attempt must finish generation and pass every check. Missing usage remains unknown;
+zero successes leaves cost per success undefined.
+
+Select an implementation, then an attempt, to inspect sessions, failures, checks,
+the candidate SHA-256 and the inline diff. Replay, pause, scrub and speed controls
+read the same event log. The viewer cannot start agents or make provider calls.
+For live polling, start `serve --dir` after the runner has created the directory.
+Attempts execute sequentially to limit resource contention.
 
 The clean run should grade every seeded solution at 81/81 and record `$0.110` of
 **synthetic** effort per attempt: parent planning/integration plus scout, builder,

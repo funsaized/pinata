@@ -126,4 +126,17 @@ test("success-denominator cost includes failed trials and stays unknown if any c
   totals = aggregate([base, { ...base, ledger: new Ledger().summary() }])[0];
   assert.equal(totals.costUsd, null);
   assert.equal(totals.knownCostUsd, 0.2);
+  const cohorts = aggregate([
+    base,
+    { ...base, comparable: false },
+    { ...base, status: "timeout", quality: undefined },
+  ]);
+  assert.equal(cohorts.length, 2);
+  assert.equal(cohorts[0].comparable, true);
+  assert.equal(cohorts[0].attempts, 2);
+  assert.equal(cohorts[0].successRate, 0.5);
+  assert.equal(cohorts[0].costPerSuccessUsd, 0.4);
+  assert.equal(cohorts[1].comparable, false);
+  assert.equal(cohorts[1].attempts, 1);
+  assert.equal(cohorts[1].costUsd, 0.2);
 });
