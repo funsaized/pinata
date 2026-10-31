@@ -3,11 +3,13 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
 import { FakeBackend, fakeResult } from "../../engine/backends/fake.ts";
+import { agentFiles, followDetached } from "../../engine/backends/process.ts";
+import type { AgentBackend } from "../../engine/backends/types.ts";
 import { createEngine } from "../../engine/core/engine.ts";
 import { fromSnapshot, reduce, replayView } from "../../engine/core/view.ts";
 import { readEvents, replay } from "../../engine/core/store.ts";
 import { addUsage, ZERO_USAGE, type AgentEvent, type Usage } from "../../engine/core/types.ts";
-import { fakeEngine, spec } from "./helpers.ts";
+import { fakeEngine, spec, tempDir } from "./helpers.ts";
 
 const usage: Usage = {
   input: 100,
@@ -22,6 +24,110 @@ const sum = (events: AgentEvent[]) =>
     (total, e) => (e.t === "agent_settled" ? addUsage(total, e.usage) : total),
     ZERO_USAGE,
   );
+
+for (const mode of ["lean", "observe"] as const) {
+  for (const legacy of [false, true]) {
+    test(`${mode}: detached outbox replay survives repeated crashes${legacy ? " with legacy logs" : ""}`, async (t) => {
+      const dir = await tempDir(t);
+      const message = {
+        type: "message_end",
+        message: {
+          role: "assistant",
+          content: [],
+          provider: "fake",
+          model: "fake",
+          stopReason: "stop",
+          usage: { ...usage, cost: { total: usage.cost } },
+        },
+      };
+      const raw = [
+        { type: "turn_start" },
+        message,
+        { type: "tool_execution_start", toolCallId: "result", toolName: "submit_result", args: {} },
+        {
+          type: "tool_execution_end",
+          toolCallId: "result",
+          toolName: "submit_result",
+          result: { details: { pinataResult: fakeResult() } },
+          isError: false,
+        },
+        { type: "agent_settled" },
+      ];
+      let tail = false;
+      const half = {
+        ...message,
+        message: {
+          ...message.message,
+          usage: {
+            ...Object.fromEntries(Object.entries(usage).map(([key, n]) => [key, n / 2])),
+            cost: { total: usage.cost / 2 },
+          },
+        },
+      };
+      const backend: AgentBackend = {
+        kind: "fake",
+        async start(launch, sink, signal) {
+          // Use the actual detached reader, but no model process or provider.
+          const files = { ...(await agentFiles(launch)), events: join(dir, "outbox.jsonl") };
+          const records = tail
+            ? [
+                ...raw.slice(0, -1),
+                { type: "turn_start" },
+                half,
+                { type: "turn_start" },
+                half,
+                { type: "pinata_user_input", text: "Check again" },
+                raw.at(-1),
+              ]
+            : raw;
+          await writeFile(files.events, records.map((e) => JSON.stringify(e)).join("\n") + "\n");
+          return followDetached(
+            files,
+            { pid: 2147483647, started: "absent-test-process" },
+            launch,
+            sink,
+            signal,
+            undefined,
+            0,
+          );
+        },
+        async reattach(launch, sink, signal) {
+          return this.start(launch, sink, signal);
+        },
+      };
+      const make = () => createEngine({ backends: { fake: backend }, defaultBackend: "fake" });
+      let handle = await make().run([spec("a")], { dir: join(dir, "run"), cwd: dir, mode });
+      await handle.done;
+      // No clean detach/consumed.json, including a second crash after resuming.
+      for (let crash = 0; crash < 4; crash++) {
+        tail = crash >= 2;
+        const kept = (await readEvents(handle.dir))
+          .filter((e) => !["agent_settled", "run_settled"].includes(e.t))
+          .map((e) => {
+            if (legacy) {
+              const { source: _source, ...rest } = e;
+              return rest;
+            }
+            return e;
+          });
+        await writeFile(
+          join(handle.dir, "events.jsonl"),
+          kept.map((e) => JSON.stringify(e)).join("\n") + "\n",
+        );
+        handle = await make().resume(handle.dir, {
+          cwd: dir,
+          limits: { costUsd: crash === 2 ? 0.5 : 0.3 },
+        });
+        const view = await handle.done;
+        assert.deepEqual(view.usage, tail ? addUsage(usage, usage) : usage);
+        assert.equal(view.status, crash === 3 ? "cancelled" : "succeeded");
+        assert.equal(view.agents.a.turns, tail ? 3 : 1);
+        assert.equal(view.agents.a.toolCalls, 1);
+        assert.deepEqual(await replay(handle.dir), view);
+      }
+    });
+  }
+}
 
 test("repair preserves every attempt's spend and counters in views, snapshots, and settlement events", async (t) => {
   const { engine, run } = await fakeEngine(t, () => ({ usage }));

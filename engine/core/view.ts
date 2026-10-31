@@ -42,6 +42,7 @@ export interface AgentView {
   turns: number;
   toolCalls: number;
   usage: Usage;
+  source?: AgentEvent["source"];
   // Completed attempts. Usage events and settlements describe only the current attempt;
   // keep this baseline in snapshots so repairs and crash recovery never erase effort.
   previous?: { usage: Usage; turns: number; toolCalls: number };
@@ -144,7 +145,9 @@ function updateAgent(view: RunView, id: string, change: (agent: AgentView) => Ag
 // so a snapshot followed by the events after it equals a full replay.
 export function reduce(view: RunView, event: AgentEvent): RunView {
   if (event.seq <= view.seq) return view;
-  const next = apply(view, event);
+  let next = apply(view, event);
+  if (event.source && event.agent)
+    next = updateAgent(next, event.agent, (a) => ({ ...a, source: event.source }));
   return next === view ? { ...view, seq: event.seq } : { ...next, seq: event.seq };
 }
 
@@ -308,6 +311,8 @@ function apply(view: RunView, e: AgentEvent): RunView {
       const next = updateAgent(view, id!, (a) => ({
         ...a,
         usage: addUsage(a.previous?.usage ?? ZERO_USAGE, e.usage),
+        ...(e.turns !== undefined && { turns: (a.previous?.turns ?? 0) + e.turns }),
+        ...(e.toolCalls !== undefined && { toolCalls: (a.previous?.toolCalls ?? 0) + e.toolCalls }),
       }));
       return { ...next, usage: totalUsage(next.agents) };
     }
