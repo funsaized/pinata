@@ -344,6 +344,11 @@ test("a pull request is fetched into a private ref and reviewed at its head", as
   const view = await handle.done;
   assert.equal(view.status, "succeeded", JSON.stringify(view.agents));
   const brief = world.turns.find((x) => x.agent === "look")!.text;
+  assert.equal(
+    view.agents.look.workspace!.path,
+    (world.dataOf.get(handle.id)!.prep as any).worktreePaths["pr-7"],
+  );
+  assert(view.agents.look.workspace!.path.startsWith(join(world.dir, "worktrees")));
   assert.match(brief, /"kind":"pull-request"/);
   assert.match(brief, /Changed files: \[\{"status":"M","path":"b.txt"\}\]/);
   assert.equal(world.fixture.git("rev-parse", `refs/pinata/${handle.id}/pr-7`).trim(), pr.head);
@@ -377,7 +382,7 @@ test("a reviewer cannot approve a worktree mutated after builder verification", 
     async (turn) => {
       if (turn.role === "reviewer")
         await writeFile(
-          join(world.dir, "runs", "run-1", "worktrees", "build", "a.txt"),
+          join((world.dataOf.values().next().value!.prep as any).worktreePaths.build, "a.txt"),
           "mutated during review",
         );
       return responder(turn);

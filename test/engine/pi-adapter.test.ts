@@ -30,6 +30,10 @@ const submit = (turn: FauxTurn) =>
 // Loads the extension against a fake ExtensionAPI and a faux-provider world.
 async function adapter(t: TestContext, respond: (turn: FauxTurn) => any) {
   const world = await fauxWorld(t, respond);
+  await writeFile(
+    join(world.agentDir, "pinata.json"),
+    JSON.stringify({ worktreeRoot: join(world.dir, "worktrees") }),
+  );
   const previous = process.env.PI_CODING_AGENT_DIR;
   process.env.PI_CODING_AGENT_DIR = world.agentDir;
   t.after(() => {
@@ -595,7 +599,7 @@ test("orchestrator tools hand off artifacts, integrate after HEAD advancement, a
   }
   const run = await a.call("pinata_run", {
     approval: "Fixture authorizes these local writes",
-    config: { setup: false },
+    config: { setup: false, worktreeRoot: join(a.world.dir, "custom worktrees") },
     tasks: [
       spec("build", "implementer", { ownership: ["README.md"], noChecksReason: "fixture" }),
       spec("review", "auditor", { reviewOf: "build", after: ["build"] }),
@@ -604,6 +608,10 @@ test("orchestrator tools hand off artifacts, integrate after HEAD advancement, a
   });
   const result = run.details.result;
   assert.equal(result.status, "succeeded", JSON.stringify(run));
+  const saved = JSON.parse(await readFile(join(result.dir, "run.json"), "utf8"));
+  const path = saved.resume.data.prep.worktreePaths.build;
+  assert(path.startsWith(join(a.world.dir, "custom worktrees")));
+  assert.equal(await readFile(join(path, "README.md"), "utf8"), "# Implemented\n");
   assert.equal(result.handoff.tool, "pinata_changes");
   assert.equal(result.tasks[0].artifact.scope, "builder-artifact");
   assert.equal(result.tasks[0].agent, "implementer");

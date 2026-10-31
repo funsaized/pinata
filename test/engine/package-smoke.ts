@@ -63,6 +63,10 @@ async function main() {
     await mkdir(repo, { recursive: true });
     await mkdir(agent, { recursive: true });
     await writeFile(join(repo, "README.md"), "# Package fixture\n");
+    await writeFile(
+      join(agent, "pinata.json"),
+      JSON.stringify({ worktreeRoot: join(dir, "worktrees") }),
+    );
     for (const args of [
       ["init", "-q"],
       ["add", "-A"],

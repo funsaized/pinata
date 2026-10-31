@@ -13,6 +13,7 @@ replace. Unknown keys are rejected.
 | `backend`            | `in-process`; or `process`, `herdr-pi` (see [backends](../how-to/backends.md))                          |
 | `codemode`           | `true`: agents get Pi's `codemode` tool                                                                 |
 | `setup`              | Builders' setup: detected from root lockfiles; a command string to override; `false` for none           |
+| `worktreeRoot`       | External directory for new worktrees; defaults to the platform's user data directory (see below)        |
 | `includeUncommitted` | `true`: builders start from the checkout with uncommitted changes; `false` starts them from `HEAD`      |
 | `webExtension`       | pi-web-access's entry file, detected from this Pi                                                       |
 | `toolProviders`      | Named `{extension, tools}` records for custom agent tools; only required providers load                 |
@@ -42,6 +43,43 @@ An agent over its turns, tool calls or wall clock fails with the reason. When th
 cost passes `costUsd`, the run is cancelled; the agent that crossed it fails with "cost
 limit reached". Providers' rate limits are handled adaptively (each provider starts at 8
 agents at once, halves on a 429 and recovers).
+
+## Worktree location
+
+New builder and pull-request review worktrees live at
+`<worktreeRoot>/<repository-id>/<run-id>/<task>/`. The repository ID is derived from
+the canonical Git common directory, so linked checkouts share an identity. Run
+metadata, logs, and the dependency cache remain under `<git common dir>/pinata/`.
+
+Default roots:
+
+| Platform             | Default                                                                                        |
+| -------------------- | ---------------------------------------------------------------------------------------------- |
+| Linux and other Unix | `$XDG_DATA_HOME/pinata/worktrees`, or `~/.local/share/pinata/worktrees` when unset or relative |
+| macOS                | `~/Library/Application Support/pinata/worktrees`                                               |
+| Windows              | `%LOCALAPPDATA%\pinata\worktrees`, or `~\AppData\Local\pinata\worktrees`                       |
+
+Override the location globally in `~/.pi/agent/pinata.json`, in the project's
+`.pi/pinata.json`, or in a run's `config`:
+
+```json
+{
+  "worktreeRoot": "~/worktrees/pinata"
+}
+```
+
+Absolute paths, `~/` paths, and paths relative to the initiating repository root
+(such as `../pinata-worktrees`) are supported. The resolved root must be outside
+the repository's registered checkouts and Git metadata, including through symlinks.
+This keeps tools such as Vite from rejecting working files under `.git`.
+
+Each run saves its absolute worktree paths in `run.json`. Changing the setting
+affects new runs only; resume, repair, and review reuse the saved locations. Runs
+created before this setting retain their original `<run>/worktrees/` paths and are
+not moved automatically. Start a new run to use the external layout for those jobs.
+Worktrees remain available after a run for review and recovery. To remove one when
+it is no longer needed, use `git worktree remove <path>` from the repository after
+preserving any wanted changes; deleting run logs alone does not remove its worktrees.
 
 ## Setup
 

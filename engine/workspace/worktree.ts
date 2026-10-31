@@ -1,10 +1,10 @@
-// Builder worktrees: `git worktree add --detach <run>/worktrees/<task> <base>`. A dependent
+// Builder worktrees: `git worktree add --detach <recorded-path> <base>`. A dependent
 // builder starts from a commit that already contains its predecessors' verified changes,
 // composed with git plumbing (temporary index, update-index, write-tree, commit-tree).
 import { existsSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { ChangeSet, Workspace } from "../core/types.ts";
 import { capture, writeTree, ZERO, type Change } from "./changes.ts";
 import { git, line, zsplit } from "./git.ts";
@@ -98,8 +98,10 @@ export class Worktree implements Workspace {
   static async create(root: string, path: string, baseCommit: string): Promise<Worktree> {
     const baseTree = line(await git(root, ["rev-parse", `${baseCommit}^{tree}`]));
     const existing = await git(path, ["rev-parse", "HEAD"], { allowFailure: true }).catch(() => "");
-    if (line(existing) !== baseCommit)
+    if (line(existing) !== baseCommit) {
+      await mkdir(dirname(path), { recursive: true, mode: 0o700 });
       await git(root, ["worktree", "add", "--detach", path, baseCommit]);
+    }
     const gitDir = line(await git(path, ["rev-parse", "--absolute-git-dir"]));
     const tree = new Worktree(root, path, baseCommit, baseTree, gitDir);
     // A fresh checkout's index entries are racily clean, so every capture would rehash every

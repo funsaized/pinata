@@ -221,7 +221,11 @@ export async function runEngineScenario(
     }),
   }));
   const { tasks, definitions } = resolveTasks(inputs, agents);
-  const config = validateConfig({ setup: false, codemode: false }).config;
+  const config = validateConfig({
+    setup: false,
+    codemode: false,
+    worktreeRoot: join(setup.repo, "..", "worktrees"),
+  }).config;
   const prep = await prepareRun(
     setup.repo,
     `bench-${scenario.name}`,

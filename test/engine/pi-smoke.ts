@@ -119,6 +119,10 @@ async function main() {
   const agent = join(dir, "agent");
   await mkdir(repo, { recursive: true });
   await mkdir(join(agent, "pinata", "agents"), { recursive: true });
+  await writeFile(
+    join(agent, "pinata.json"),
+    JSON.stringify({ worktreeRoot: join(dir, "worktrees") }),
+  );
   await copyFile(
     join(ROOT, "examples", "agents", "planner.md"),
     join(agent, "pinata", "agents", "planner.md"),

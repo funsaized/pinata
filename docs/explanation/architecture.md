@@ -78,10 +78,16 @@ Pinata processes; external Git/editor activity is not controlled by this lock.
 
 ## Storage
 
-Everything lives in `<git common dir>/pinata/<run>`: `events.jsonl`, `run.json`,
+Run metadata lives in `<git common dir>/pinata/<run>`: `events.jsonl`, `run.json`,
 `results/`, `transcripts/`, `handoffs/<digest>/`, `verification/<attempt>/`,
-`integration/journal.json`, worktrees, and per-agent files for out-of-process agents.
+`integration/journal.json`, and per-agent files for out-of-process agents.
 Directories are private (0700).
+
+Working checkouts live separately at `<worktreeRoot>/<repository-id>/<run>/<task>`;
+see [worktree location](../reference/config.md#worktree-location) for platform defaults.
+The absolute paths are frozen in `run.json`'s `resume.data.prep.worktreePaths` before
+agents start. Resume and repair reuse them even if configuration changes. Legacy
+records without that field continue using `<run>/worktrees/<task>`.
 
 The `run.json` record uses schema version 2 and contains a table of agent definitions keyed
 by digest. Tasks reference that table; `run_started` carries the same snapshots. Resume,

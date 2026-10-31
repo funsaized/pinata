@@ -189,7 +189,11 @@ export async function fauxWorld(
     } = {},
   ) => {
     const id = opts.id ?? randomUUID();
-    const config = validateConfig({ setup: false, ...opts.config }).config;
+    const config = validateConfig({
+      setup: false,
+      worktreeRoot: join(dir, "worktrees"),
+      ...opts.config,
+    }).config;
     const prep = await prepareRun(
       repo,
       id,

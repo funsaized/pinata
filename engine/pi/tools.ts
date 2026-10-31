@@ -124,6 +124,9 @@ export function schemas() {
     passEnv: optional(strings()),
     webExtension: optional(string()),
     setup: optional(Type.Union([Type.Literal(false), string()])),
+    worktreeRoot: optional(
+      string("External directory for new worktrees; defaults to the user data directory."),
+    ),
     codemode: optional(Type.Boolean()),
     includeUncommitted: optional(Type.Boolean()),
     mode: optional(choices(["lean", "observe"])),

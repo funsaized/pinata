@@ -102,6 +102,7 @@ const engine = createEngine({
   pipeline: piPipeline(verificationStages()),
 });
 const config = validateConfig({
+  worktreeRoot: join(base, "worktrees"),
   codemode: cfg.codemode !== false,
   setup: false,
   limits: {
