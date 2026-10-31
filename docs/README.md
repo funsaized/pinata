@@ -8,7 +8,7 @@ things up, and explanation to understand.
 - [First run](tutorials/first-run.md): two read-only scouts, and where to see them.
 - [Build and review](tutorials/build-and-review.md): a builder, an independent reviewer,
   integration and rollback.
-- [Watching agents](tutorials/watching-agents.md): the widget, the detail view, steering,
+- [Watching agents](tutorials/watching-agents.md): the widget, the shared run workspace, steering,
   the live mascot and the external viewer.
 
 ## How-to guides
@@ -43,4 +43,6 @@ things up, and explanation to understand.
 - [Publication](maintainers/publication.md)
 - [GitHub Packages](maintainers/github-packages.md)
 
-Commands in these docs are run by the test suite unless marked _manual_.
+The test suite checks documentation links, command forms, and example fixtures.
+Commands marked _manual_ need credentials, a running service, or explicit action
+authorization; documentation tests do not execute every command shown here.

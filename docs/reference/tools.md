@@ -18,6 +18,10 @@ results; a completed call can still report failed tasks, so read the statuses.
 
 ## Task
 
+You can describe the work in ordinary language; Pi maps it to these fields. Put
+`ownership`, `checks`, and `evidenceChecks` on individual tasks. Put
+`integratedChecks` on the run, and model or concurrency settings in `config`.
+
 | Field                     | Rule                                                                                                           |
 | ------------------------- | -------------------------------------------------------------------------------------------------------------- |
 | `id`                      | `^[a-z][a-z0-9-]{0,31}$`, unique in the run                                                                    |
@@ -36,6 +40,22 @@ results; a completed call can still report failed tasks, so read the statuses.
 
 A reviewer takes exactly one of `reviewOf`, `reviewBase`, `reviewPr`. Check `timeoutMs`
 defaults to 120000 (at most 1200000).
+
+Ownership entries are literal paths or directory prefixes, not globs. They bound
+which changes the engine accepts; they do not restrict reading or express semantic
+rules such as “only the heading.” Put behavioral scope in the task and acceptance
+criteria for the reviewer to inspect. Agents are not an OS sandbox.
+
+Builder `checks` run in the builder worktree after it finishes. `evidenceChecks`
+run after an agent finishes and must not change source; failed commands or detected
+source changes fail the task. Both save engine-executed evidence separately from
+agent claims. A zero exit code proves the command succeeded, so choose commands
+that actually test the requirement. `integratedChecks` run later in the destination
+checkout when the coordinator integrates or verifies.
+
+`after` waits for successful predecessors and passes along their results.
+`reviewOf` binds a reviewer to one builder’s exact captured artifact, not just its
+summary. Include that builder in `after` so the artifact exists before review.
 
 ## Preset tools
 

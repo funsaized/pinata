@@ -1,7 +1,5 @@
 {
   "cwd": "/absolute/path/to/repository",
-  "approval": "Replace with your approval for a read-only review of the current branch against main",
-  "allowWrites": false,
   "config": {
     "limits": {
       "costUsd": 2

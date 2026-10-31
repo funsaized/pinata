@@ -65,10 +65,14 @@ lock or reset the destination to force a retry.
 /pinata gc confirm
 ```
 
-The first is a preview. It lists 0.7.0 run directories it can retire (see below) and,
-inside Herdr, closes pinata workspaces whose work has settled. With `confirm` it acts.
+Without `confirm`, retirement of 0.7.0 run directories is a preview (see below).
+Inside Herdr, both commands close pinata workspaces whose work has settled.
+`confirm` also performs the listed legacy retirements.
 Engine runs keep their logs and results; delete `<git common dir>/pinata/<run>` yourself
-when you no longer need one. The same from a shell:
+when you no longer need one. Modern worktrees are retained separately: preserve
+any wanted changes, then use `git worktree remove <path>` for each unused
+worktree. Run metadata records its location; deleting logs does not remove it.
+The same legacy cleanup from a shell:
 
 ```sh
 pinata gc

@@ -352,14 +352,16 @@ test("the widget and footer follow a run in the TUI and clear when it settles; i
   assert(widget.disposed && !widget.animating);
 });
 
-test("/pinata live opens the demo without runs or model calls, persists motion, and closes on shutdown", async (t) => {
+test("/pinata live opens an empty workspace without model calls, persists motion, and closes on shutdown", async (t) => {
   const { initTheme } = await import("@earendil-works/pi-coding-agent");
   initTheme("dark");
   const a = await adapter(t, () => {
-    throw new Error("the demo never calls a model");
+    throw new Error("opening an empty workspace never calls a model");
   });
   let scene: any;
   const shown: Promise<unknown>[] = [];
+  let signalOpened!: () => void;
+  const opened = new Promise<void>((resolve) => (signalOpened = resolve));
   Object.assign(a.ctx, {
     mode: "tui",
     hasUI: true,
@@ -380,18 +382,23 @@ test("/pinata live opens the demo without runs or model calls, persists motion, 
         );
       });
       shown.push(p);
+      signalOpened();
       return p;
     },
   };
   const command = a.commands.get("pinata");
   assert(
-    command.getArgumentCompletions("li").some((o: any) => o.value === "live demo"),
-    "live demo is offered",
+    !command.getArgumentCompletions("li").some((o: any) => o.value === "live demo"),
+    "live demo is not offered",
   );
-  const pending = command.handler("live demo", a.ctx);
-  await settle();
-  assert(scene.demo);
-  assert.match(scene.render(100).join("\n"), /DEMO/);
+  await command.handler("live demo", a.ctx);
+  assert.match(a.notes.at(-1)!, /No pinata run starts with demo/);
+  assert.equal(shown.length, 0);
+  const pending = command.handler("live", a.ctx);
+  await opened;
+  await scene.ready;
+  assert.equal(scene.run, null);
+  assert.match(scene.render(100).join("\n"), /No runs yet/);
   scene.handleInput("m");
   assert.deepEqual(a.entries.at(-1), {
     type: "custom",
@@ -403,7 +410,7 @@ test("/pinata live opens the demo without runs or model calls, persists motion, 
   assert(scene.disposed, "shutdown closes the overlay");
   assert.equal(scene.frameTimer, null);
   a.ctx.mode = "rpc";
-  await command.handler("live demo", a.ctx);
+  await command.handler("live", a.ctx);
   assert.match(a.notes.at(-1)!, /needs interactive Pi/);
 });
 

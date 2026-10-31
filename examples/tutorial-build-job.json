@@ -1,7 +1,6 @@
 {
   "cwd": "/absolute/path/to/pinata-playground",
   "approval": "Replace with your approval to fix greet, update its tests, use the selected model, and integrate locally",
-  "allowWrites": true,
   "instructions": [
     "Work only on the greeting whitespace fix. Do not install dependencies, stage, commit, push, publish, or deploy."
   ],

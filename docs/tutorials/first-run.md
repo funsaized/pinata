@@ -14,8 +14,9 @@ pi
 ## 2. Ask for scouts
 
 ```text
-Send two scouts in parallel: one maps how errors are handled, one maps the tests.
-Bring back the relevant files and gaps in test coverage.
+Start two scouts in the background: scout-errors maps how errors are handled;
+scout-tests maps the tests. Run them in parallel. Bring back relevant files and
+gaps in coverage, with file and line references. Do not change files.
 ```
 
 Pi calls `pinata_run` with two tasks using `agent: "scout"`. They run in parallel;

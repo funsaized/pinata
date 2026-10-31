@@ -60,6 +60,7 @@ Layered: `~/.pi/agent/pinata.json`, then `<repo>/.pi/pinata.json`, then the run'
 | `backend`            | `in-process`                                                                                                            |
 | `codemode`           | `true`                                                                                                                  |
 | `setup`              | Builders: detected from the root lockfile; a shell string to override, or `false`                                       |
+| `worktreeRoot`       | External root for new worktrees; defaults to the platform user data directory. Saved runs retain their existing paths.  |
 | `includeUncommitted` | `true`: builders start from the checkout with uncommitted changes; `false` starts them from `HEAD`                      |
 | `webExtension`       | pi-web-access, detected from this Pi                                                                                    |
 | `toolProviders`      | Named `{extension, tools}` records for custom agent tools; only required providers load                                 |
