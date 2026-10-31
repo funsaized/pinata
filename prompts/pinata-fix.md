@@ -3,7 +3,7 @@ description: Delegate a well-specified fix directly to a builder and independent
 argument-hint: "[fix, affected files, and acceptance criteria]"
 ---
 
-Use pinata's subagents skill to carry out the requested fix: ${@}.
+Use pinata's subagents skill to carry out the requested fix: $@.
 
 When the affected files, intended behavior, and checks are known, run a builder
 and one independent reviewer with `pinata_run`. Give the builder explicit ownership
