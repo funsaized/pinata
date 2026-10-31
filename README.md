@@ -82,8 +82,10 @@ See [creating agents](docs/how-to/agents.md).
 - **Fast.** Agents share your Pi process by default. Startup, memory, and dispatch have
   [measured budgets](docs/maintainers/performance-v2.md), including tests at 64 active agents.
 - **Visible.** A widget above the editor shows every agent's state, time, tokens, cost and
-  current tool. `/pinata open <task>` shows an agent's whole conversation as it streams, and
-  you can steer it from there. `pinata view` follows a run from another terminal.
+  current tool. `/pinata live` opens a rainbow-framed workspace with the animated piñata,
+  selectable agents, and streaming conversations. `/pinata open <task>` focuses that
+  agent's conversation so you can scroll or steer it. Tab switches panes.
+  `pinata view` follows a run from another terminal.
 - **Evidence you can inspect.** Writers use isolated git worktrees and engine-run checks.
   Add an independent reviewer when your workflow calls for one. The guarded handoff and
   exact integration helpers require approval of the exact artifact. Pinata hands off the exact artifact, base, checks and review;

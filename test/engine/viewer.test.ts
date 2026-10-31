@@ -36,6 +36,25 @@ test("a viewer attaches mid-run, follows new agents, steers, detaches and re-att
     second: { hang: true },
   });
   const handle = await run([spec("first"), spec("second", "planner", { after: ["first"] })]);
+  // FakeBackend emits deltas but only snapshots its user brief. Give this viewer fixture
+  // the completed messages and in-flight text a real backend snapshot supplies.
+  const text = new Map<string, string>();
+  const messages = new Map<string, unknown[]>();
+  const stopRecording = engine.subscribe(handle.id, (event) => {
+    if (!event.agent) return;
+    if (event.t === "text_delta")
+      text.set(event.agent, (text.get(event.agent) ?? "") + event.delta);
+    if (event.t === "message_end") {
+      const content = text.get(event.agent);
+      if (content)
+        messages.set(event.agent, [
+          ...(messages.get(event.agent) ?? []),
+          { role: "assistant", content: [{ type: "text", text: content }], stopReason: "stop" },
+        ]);
+      text.delete(event.agent);
+    }
+  });
+  t.after(stopRecording);
   const server = await RunServer.start({
     run: handle.id,
     dir: handle.dir,
@@ -45,7 +64,13 @@ test("a viewer attaches mid-run, follows new agents, steers, detaches and re-att
       subscribe: (consumer) => engine.subscribe(handle.id, consumer),
       steer: (agent, text, as) => engine.steer(handle.id, agent, text, as, "user"),
       abort: (agent) => engine.cancel(handle.id, agent, "cancelled from a viewer"),
-      messages: async (agent) => (await engine.snapshot(handle.id, agent)) ?? { messages: [] },
+      messages: async (agent) => ({
+        messages: [
+          ...((await engine.snapshot(handle.id, agent))?.messages ?? []),
+          ...(messages.get(agent) ?? []),
+        ],
+        streaming: { text: text.get(agent) ?? "", thinking: "" },
+      }),
     },
   });
   t.after(async () => {

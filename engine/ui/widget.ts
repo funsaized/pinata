@@ -9,6 +9,8 @@ import { GLYPHS, clean, duration, money, short, tokens } from "./text.ts";
 
 // The subset of Pi's Theme the widget uses, so tests can pass a plain one.
 export interface Paint {
+  bg?(color: "selectedBg" | "customMessageBg", text: string): string;
+  bold?(text: string): string;
   fg(
     color: "accent" | "muted" | "dim" | "success" | "error" | "warning" | "text" | "border",
     text: string,

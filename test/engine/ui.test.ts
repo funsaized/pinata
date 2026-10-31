@@ -3,6 +3,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { visibleWidth } from "@earendil-works/pi-tui";
+import { initTheme } from "@earendil-works/pi-coding-agent";
+import type { DetailSource } from "../../engine/ui/detail.ts";
 import type { AgentEvent, TaskSpec } from "../../engine/core/types.ts";
 import { replayView, type RunView } from "../../engine/core/view.ts";
 import { LiveScene, demoRun, type SceneOptions, type SceneRun } from "../../engine/ui/live.ts";
@@ -10,6 +12,8 @@ import { mascotFrame, mood } from "../../engine/ui/mascot.ts";
 import { footerLine } from "../../engine/ui/text.ts";
 import { PinataWidget, agentRow, widgetLines } from "../../engine/ui/widget.ts";
 import { spec } from "./helpers.ts";
+
+initTheme("dark");
 
 const usage = (totalTokens: number, cost: number) => ({
   input: totalTokens,
@@ -145,6 +149,13 @@ const KEYS: Record<string, string> = {
   "tui.select.down": "down",
   "tui.editor.cursorLeft": "left",
   "tui.editor.cursorRight": "right",
+  "tui.input.submit": "\r",
+  "tui.select.pageUp": "pgup",
+  "tui.select.pageDown": "pgdn",
+  "tui.editor.cursorLineEnd": "end",
+  "tui.editor.cursorLineStart": "home",
+  "app.tools.expand": "ctrl+o",
+  "app.message.followUp": "alt+enter",
 };
 const keys = { matches: (data: string, id: string) => KEYS[id] === data };
 const theme = { fg: (_color: string, text: string) => text };
@@ -330,6 +341,165 @@ test("renderer is bounded, deterministic, and has distinct animated and bonked p
   assert.deepEqual(mascotFrame({ width: 40, height: 18, colors: false }), a);
   assert.notDeepEqual(mascotFrame({ width: 40, height: 18, colors: false, seconds: 3 }), a);
   assert.notDeepEqual(mascotFrame({ width: 40, height: 18, colors: false, bonk: 0.3 }), a);
+});
+
+test("the workspace selects conversations, scrolls, steers, and preserves draft focus", async (t) => {
+  const run = demoRun(1);
+  const sent: unknown[] = [];
+  const subscriptions = new Set<string>();
+  const source: DetailSource = {
+    run: run.view.run,
+    cwd: ".",
+    agents: () => run.view.order,
+    view: (id) => run.view.agents[id],
+    load: async (id) => ({
+      messages: [{ role: "user", content: `${id} history\n` + "Transcript line\n".repeat(40) }],
+    }),
+    subscribe: (id) => {
+      subscriptions.add(id);
+      return () => {
+        subscriptions.delete(id);
+      };
+    },
+    steer: async (...args) => {
+      sent.push(args);
+    },
+  };
+  const h = harness({
+    demo: false,
+    runs: [run.view.run],
+    readRun: () => run,
+    detailSource: () => source,
+  });
+  t.after(() => h.scene.dispose());
+  await h.scene.ready;
+  assert.equal(h.scene.focus, "agents");
+  assert.equal(h.scene.agent, "build", "initial selection is the running agent");
+  assert.deepEqual([...subscriptions], ["build"]);
+  h.scene.handleInput("up");
+  await h.scene.ready;
+  assert.equal(h.scene.agent, "map");
+  assert.deepEqual([...subscriptions], ["map"]);
+  h.scene.handleInput("\r");
+  assert.equal(h.scene.focus, "detail");
+  h.scene.render(120);
+  h.scene.handleInput("pgup");
+  assert(h.scene.detail!.offset > 0);
+  h.scene.handleInput("end");
+  assert.equal(h.scene.detail!.offset, 0);
+  h.scene.handleInput("right");
+  await h.scene.detail!.ready;
+  assert.equal(h.scene.agent, "build", "conversation navigation updates the list selection");
+  h.scene.handleInput("ctrl+o");
+  assert(h.scene.detail!.expanded);
+  h.scene.handleInput("\r");
+  assert(h.scene.detail!.input);
+  for (const ch of "m q keep scope") h.scene.handleInput(ch);
+  assert(h.scene.motion, "typing m does not toggle motion");
+  assert.equal(h.closed(), 0, "typing q does not close the workspace");
+  h.scene.render(120);
+  const other = h.scene.agentBounds.find((b) => b.agent === "map")!;
+  h.scene.handleMouse({ type: "click", button: "left", x: other.x, y: other.y });
+  assert.equal(h.scene.agent, "build", "a click cannot redirect a draft");
+  h.tui.terminal.rows = 12;
+  assert.match(strip(h.scene.render(80)).join("\n"), /steer › m q keep scope/);
+  h.scene.handleInput("alt+enter");
+  await flush();
+  assert.deepEqual(sent, [["build", "m q keep scope", "followUp"]]);
+  h.scene.handleInput("\r");
+  h.scene.handleInput("\x1b");
+  assert.equal(h.scene.detail!.input, null);
+  assert.equal(h.closed(), 0, "Escape first cancels the input");
+  h.scene.handleInput("\t");
+  assert.equal(h.scene.focus, "agents");
+  assert.match(strip(h.scene.render(80)).join("\n"), /AGENTS/);
+  h.tui.terminal.rows = 32;
+  h.scene.render(120);
+  const review = h.scene.agentBounds.find((b) => b.agent === "review")!;
+  h.scene.handleMouse({ type: "click", button: "left", x: review.x, y: review.y });
+  await h.scene.ready;
+  assert.equal(h.scene.focus, "detail");
+  assert.equal(h.scene.agent, "review");
+  h.scene.handleInput("\r");
+  assert.match(h.scene.detail!.notice!, /Only a running agent/);
+  h.scene.close();
+  assert.equal(subscriptions.size, 0);
+  assert.equal(h.timers.size, 0);
+});
+
+test("rapid selection during a transcript load never displays the previous agent's messages", async (t) => {
+  const run = demoRun(1);
+  let release!: (value: { messages: unknown[] }) => void;
+  const loads: string[] = [];
+  const h = harness({
+    demo: false,
+    runs: [run.view.run],
+    readRun: () => run,
+    agent: "map",
+    detailSource: () => ({
+      run: run.view.run,
+      cwd: ".",
+      agents: () => run.view.order,
+      view: (id) => run.view.agents[id],
+      load: async (id) => {
+        loads.push(id);
+        return id === "map"
+          ? new Promise((resolve) => {
+              release = resolve;
+            })
+          : { messages: [{ role: "user", content: `History of ${id}` }] };
+      },
+    }),
+  });
+  t.after(() => h.scene.dispose());
+  await flush();
+  assert.equal(h.scene.focus, "detail");
+  h.scene.selectAgent("build");
+  h.scene.selectAgent("review");
+  release({ messages: [{ role: "user", content: "STALE MAP HISTORY" }] });
+  await h.scene.ready;
+  const text = strip(h.scene.render(120)).join("\n");
+  assert.match(text, /History of review/);
+  assert(!text.includes("STALE MAP HISTORY"));
+  assert.deepEqual(loads, ["map", "review"]);
+});
+
+test("a late conversation source cannot replace the selected run, and failed sources can retry", async (t) => {
+  let release!: (source: DetailSource) => void;
+  let fail = true;
+  const named = (id: string) => ({ ...demoRun(1), view: { ...demoRun(1).view, run: id } });
+  const source = (id: string): DetailSource => ({
+    run: id,
+    cwd: ".",
+    agents: () => named(id).view.order,
+    view: (agent) => named(id).view.agents[agent],
+    load: async () => ({ messages: [{ role: "user", content: `Run ${id} history` }] }),
+  });
+  const h = harness({
+    demo: false,
+    runs: ["first", "second"],
+    readRun: named,
+    detailSource: (id) => {
+      if (id === "first")
+        return new Promise((resolve) => {
+          release = resolve;
+        });
+      if (fail) throw new Error("transcript unavailable");
+      return source(id);
+    },
+  });
+  t.after(() => h.scene.dispose());
+  await flush();
+  h.scene.handleInput("right");
+  release(source("first"));
+  await h.scene.ready;
+  assert.equal(h.scene.detail, null);
+  assert.match(h.scene.detailError!, /transcript unavailable/);
+  fail = false;
+  h.scene.handleInput("r");
+  await h.scene.ready;
+  assert.equal(h.scene.detail!.options.source.run, "second");
+  assert.match(strip(h.scene.render(120)).join("\n"), /Run second history/);
 });
 
 test("widget ears respect motion, run only while an agent works, and release their timer", () => {

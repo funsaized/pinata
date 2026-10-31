@@ -353,6 +353,8 @@ test("the widget and footer follow a run in the TUI and clear when it settles; i
 });
 
 test("/pinata live opens the demo without runs or model calls, persists motion, and closes on shutdown", async (t) => {
+  const { initTheme } = await import("@earendil-works/pi-coding-agent");
+  initTheme("dark");
   const a = await adapter(t, () => {
     throw new Error("the demo never calls a model");
   });
@@ -431,7 +433,11 @@ test("/pinata open replays a finished run from disk in a session that never ran 
         detail = factory(
           { terminal: { rows: 100 }, requestRender() {} },
           { fg: (_: string, x: string) => x },
-          { matches: (data: string, id: string) => id === "tui.select.cancel" && data === "\x1b" },
+          {
+            matches: (data: string, id: string) =>
+              (id === "tui.select.cancel" && data === "\x1b") ||
+              (id === "tui.input.submit" && data === "\r"),
+          },
           done,
         );
       }),
@@ -443,14 +449,31 @@ test("/pinata open replays a finished run from disk in a session that never ran 
   for (let i = 0; !detail && i < 400; i++) await new Promise((r) => setTimeout(r, 5));
   assert(detail, second.notes.join("\n"));
   await detail.ready;
+  assert.equal(detail.focus, "detail", "open enters the workspace with conversation focus");
+  assert.equal(detail.agent, "look");
   // oxlint-disable-next-line no-control-regex
   const ansi = /\x1b\[[0-9;]*m|\x1b\][^\x07]*\x07/g;
   const text = detail.render(100).join("\n").replace(ansi, "");
   assert.match(text, /✓ scout look/);
   assert.match(text, /Task look \(scout\)/);
   assert.match(text, /README\.md/);
+  assert.match(text, /AGENTS/);
+  assert.match(text, /╔═/);
   detail.handleInput("\x1b");
   await pending;
+  detail = null;
+  const live = command.handler(`live ${run.slice(0, 8)}`, second.ctx);
+  for (let i = 0; !detail && i < 400; i++) await new Promise((r) => setTimeout(r, 5));
+  assert(detail, second.notes.join("\n"));
+  await detail.ready;
+  assert.equal(detail.focus, "agents", "live enters the same workspace with list focus");
+  detail.handleInput("\r");
+  assert.equal(detail.focus, "detail");
+  assert.match(detail.render(100).join("\n").replace(ansi, ""), /Task look \(scout\)/);
+  detail.handleInput("\r");
+  assert.match(detail.detail.notice, /read-only/);
+  detail.handleInput("\x1b");
+  await live;
   await command.handler("open nope", second.ctx);
   assert.match(second.notes.at(-1)!, /no task nope/);
 });
