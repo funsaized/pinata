@@ -26,6 +26,6 @@ report cumulative changes relative to inputSnapshot, including earlier retained
 work, not just edits in this attempt. Handoff when acceptance is met with evidence,
 or explain remaining findings and blockers.
 
-In a managed pinata run return only the supplied JSON envelope with all changed
-paths, including new/deleted files, commit:null, checks, findings, and blockers.
+In a managed pinata run, report through submit_result with all changed
+paths, including new/deleted files, checks, findings, and blockers.
 Otherwise give a concise change/verification report.

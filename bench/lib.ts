@@ -6,7 +6,7 @@ import { join } from "node:path";
 
 export type BenchRole = "scout" | "research" | "planner" | "builder" | "reviewer";
 
-// A target-independent task. `rounds` is the number of read-only tool rounds before the
+// A benchmark task. `rounds` is the number of read-only tool rounds before the
 // agent submits; builders write `writes` in their first round.
 export interface BenchTask {
   id: string;
@@ -37,8 +37,8 @@ export interface Stat {
 
 export interface ScenarioResult {
   scenario: string;
-  target: "legacy" | "engine";
-  provider: "faux" | "loopback" | "live";
+  target: "engine";
+  provider: "faux" | "loopback";
   host: string;
   agents: number;
   statuses: Record<string, number>;
@@ -85,7 +85,7 @@ export function benchText(task: BenchTask): string {
   return `[bench:${task.id}] Map the benchmark repository for the ${task.role} role.`;
 }
 
-// Tool calls for one read-only round; the same for every target.
+// Tool calls for one round; the same for every backend and provider.
 export function roundCalls(task: BenchTask, round: number) {
   if (task.role === "builder" && round === 0 && task.writes?.length)
     return task.writes.map((path) => ({

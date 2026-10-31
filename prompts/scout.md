@@ -26,7 +26,7 @@ Flag uncertainties instead of inventing architecture.
 
 Output a concise brief: relevant file/symbol references, entry points, data flow,
 existing checks, risks, and next inspection steps. Separate observed facts from
-inference. Handoff when the planner can locate and validate the affected flow.
+inference. Handoff when the parent can locate and validate the affected flow.
 
 For consequential numerical claims, distinguish what the code currently returns
 from what the requirements say it should return. Include the exact input, unit,
@@ -34,6 +34,6 @@ and source line. If execution is needed and your tools cannot run it, identify a
 small reproduction for the coordinator; do not present a predicted value as an
 executed result. Keep this focused on claims that affect the next decision.
 
-In a managed pinata run, follow the supplied result envelope and put the map in
-brief; changedFiles is empty and commit is null. Otherwise return the brief
+In a managed pinata run, report through submit_result and put the map in
+brief. Otherwise return the brief
 directly. The persona does not select a model or enforce an OS sandbox.

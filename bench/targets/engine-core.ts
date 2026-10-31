@@ -179,20 +179,27 @@ export async function runEngineScenario(
       }
     }),
   );
-  // A Pi session has already run these code paths; warm them up so the run measures steady state.
-  const warm = await engine.run(
-    [{ id: "warm-up", role: "scout", task: "[bench:warm-up] warm up", acceptance: ["none"] }],
-    {
-      cwd: setup.repo,
-      dir: join(setup.runsDir, `${scenario.name}-warm-up`),
-      data: {
-        models: { "warm-up": setup.model },
-        instructions: [],
-        codemode: false,
-        backend: kind,
-      },
-    },
+  const agents = discoverAgents(undefined, setup.agentDir);
+  agents.set(
+    "planner",
+    readDefinition(fileURLToPath(new URL("../../examples/agents/planner.md", import.meta.url))),
   );
+  // A Pi session has already run these code paths; warm them up so the run measures steady state.
+  const warmTasks = resolveTasks(
+    [{ id: "warm-up", agent: "scout", task: "[bench:warm-up] warm up", acceptance: ["none"] }],
+    agents,
+  );
+  const warm = await engine.run(warmTasks.tasks, {
+    cwd: setup.repo,
+    dir: join(setup.runsDir, `${scenario.name}-warm-up`),
+    data: {
+      definitions: warmTasks.definitions,
+      models: { "warm-up": setup.model },
+      instructions: [],
+      codemode: false,
+      backend: kind,
+    },
+  });
   await warm.done;
   for (const key of Object.keys(startedAt)) delete startedAt[key];
   for (const key of Object.keys(settledAt)) delete settledAt[key];
@@ -201,9 +208,9 @@ export async function runEngineScenario(
   errors.length = 0;
   maxRunning = 0;
   running = 0;
-  let tasks: TaskSpec[] = scenario.tasks.map((t) => ({
+  const inputs: TaskSpec[] = scenario.tasks.map((t) => ({
     id: t.id,
-    role: t.role,
+    agent: t.role,
     task: benchText(t),
     acceptance: ["Benchmark acceptance"],
     ...(t.after?.length && { after: t.after }),
@@ -213,17 +220,7 @@ export async function runEngineScenario(
       checks: [{ id: "noop", argv: ["git", "--version"], timeoutMs: 30_000 }],
     }),
   }));
-  let definitions = {};
-  if (!process.env.BENCH_LEGACY) {
-    const agents = discoverAgents(undefined, setup.agentDir);
-    agents.set(
-      "planner",
-      readDefinition(fileURLToPath(new URL("../../examples/agents/planner.md", import.meta.url))),
-    );
-    const resolved = resolveTasks(tasks, agents);
-    tasks = resolved.tasks;
-    definitions = resolved.definitions;
-  }
+  const { tasks, definitions } = resolveTasks(inputs, agents);
   const config = validateConfig({ setup: false, codemode: false }).config;
   const prep = await prepareRun(
     setup.repo,

@@ -35,7 +35,7 @@ Handoff with approve or changes_requested. Reject when acceptance is unmet,
 required evidence is absent, or critical/high/medium findings remain. Re-review
 repairs against the new actual target, not the previous verdict.
 
-In a managed pinata run use the supplied envelope and review object matching
-reviewTarget.taskId (null for existing changes) and reviewTarget.fingerprint. changedFiles is empty and commit
-is null. Otherwise return a concise severity-ordered review and verdict. These
+In a managed pinata run, report through submit_result with a review object matching
+reviewTarget.taskId (null for existing changes) and reviewTarget.fingerprint.
+Otherwise return a concise severity-ordered review and verdict. These
 instructions are not an OS permission boundary.

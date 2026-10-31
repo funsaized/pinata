@@ -7,8 +7,9 @@ Full human reference: `../../docs/` (read only if this is not enough).
 
 | Tool               | Parameters and effect                                                                                                                                                                                                                                   |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pinata_agents`    | `{name?}`. List installed definitions or inspect one agent's tools, workspace, defaults, and source.                                                                                                                                                    |
 | `pinata_run`       | `{tasks, background?, survive?, cwd?, approval?, instructions?, config?, integratedChecks?, noIntegratedChecksReason?}`. Creates and starts a run. `approval` is required with builders. `survive` (with `background`) keeps the run going if Pi exits. |
-| `pinata_status`    | `{run?, task?, detail?: "summary" \| "result" \| "transcript"}`. Read-only. Without `run`, the latest run.                                                                                                                                              |
+| `pinata_status`    | `{run?, task?, offset?, limit?, detail?: "summary" \| "result" \| "transcript"}`. Read-only. Without `run`, the latest run. Follow `nextOffset` to read subsequent pages.                                                                               |
 | `pinata_steer`     | `{run, task, message, as?: "steer" \| "followUp"}`. Message a running agent; recorded and shown to its reviewer.                                                                                                                                        |
 | `pinata_cancel`    | `{run, task?}`. Cancel a run or one agent.                                                                                                                                                                                                              |
 | `pinata_repair`    | `{run, task, feedback}`. Re-run a builder in its worktree with feedback, within `limits.repairs`; its reviews run again.                                                                                                                                |
@@ -30,7 +31,7 @@ Commands (no model turn): `/pinata` (status), `/pinata runs`, `/pinata open [run
 | ------------------------- | ----------------------------------------------------------------------------------------------------------------- |
 | `id`                      | `^[a-z][a-z0-9-]{0,31}$`, unique in the run                                                                       |
 | `agent`                   | scout, builder, reviewer, or an installed custom definition                                                       |
-| `task`, `acceptance`      | Required text; acceptance is a nonempty string array                                                              |
+| `task`, `acceptance`      | Required task text; optional nonempty `acceptance` string array                                                   |
 | `instructions`, `context` | Optional string arrays; context is evidence, not authority                                                        |
 | `after`                   | Predecessor ids; their results are inlined into this task's brief. A failed predecessor blocks its dependents.    |
 | `model`                   | Optional `{provider, id, thinking}`                                                                               |
@@ -48,7 +49,7 @@ A reviewer takes exactly one of `reviewOf`, `reviewBase`, `reviewPr`. Keep
 ## Config (all optional)
 
 Layered: `~/.pi/agent/pinata.json`, then `<repo>/.pi/pinata.json`, then the run's
-`config`. `models`, `fallbacks` and `limits` merge per entry; other keys replace.
+`config`. `models`, `fallbacks`, `limits` and `toolProviders` merge per entry; other keys replace.
 
 | Key                  | Default                                                                                                                 |
 | -------------------- | ----------------------------------------------------------------------------------------------------------------------- |
@@ -61,6 +62,7 @@ Layered: `~/.pi/agent/pinata.json`, then `<repo>/.pi/pinata.json`, then the run'
 | `setup`              | Builders: detected from the root lockfile; a shell string to override, or `false`                                       |
 | `includeUncommitted` | `true`: builders start from the checkout with uncommitted changes; `false` starts them from `HEAD`                      |
 | `webExtension`       | pi-web-access, detected from this Pi                                                                                    |
+| `toolProviders`      | Named `{extension, tools}` records for custom agent tools; only required providers load                                 |
 | `passEnv`            | Extra environment variable names for checks and builders (never values)                                                 |
 
 ## Results

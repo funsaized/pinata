@@ -24,14 +24,22 @@ test("example configs and job files satisfy the engine's contracts", async () =>
     "examples/job.json",
     "examples/scout-job.json",
     "examples/tutorial-build-job.json",
+    "examples/jobs.md",
   ];
   for (const file of jobs) {
-    const job = (await json(file)) as Job;
+    const job: Job = file.endsWith(".md")
+      ? {
+          tasks: [
+            ...(await readFile(join(ROOT, file), "utf8")).matchAll(/```json\n([\s\S]*?)```/g),
+          ].map(([, source]) => JSON.parse(source)),
+        }
+      : await json(file);
     const params = jobParams(job, join(ROOT, file));
     const agents = discoverAgents(undefined, join(ROOT, "test", "absent-agent-dir"));
     for (const name of ["planner", "researcher"])
       agents.set(name, readDefinition(join(ROOT, "examples", "agents", `${name}.md`)));
     const resolved = resolveTasks(params.tasks, agents);
+    assert.deepEqual(resolved.notices, [], `${file} uses deprecated task selectors`);
     const tasks = validateGraph(resolved.tasks, {
       allowWrites: true,
       definitions: resolved.definitions,

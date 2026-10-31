@@ -1,7 +1,7 @@
 # Configuration
 
 All keys are optional. Layered: `~/.pi/agent/pinata.json`, then `<repo>/.pi/pinata.json`,
-then the run's `config`. `models`, `fallbacks` and `limits` merge per entry; other keys
+then the run's `config`. `models`, `fallbacks`, `limits` and `toolProviders` merge per entry; other keys
 replace. Unknown keys are rejected.
 
 | Key                  | Default and meaning                                                                                     |
@@ -15,6 +15,7 @@ replace. Unknown keys are rejected.
 | `setup`              | Builders' setup: detected from root lockfiles; a command string to override; `false` for none           |
 | `includeUncommitted` | `true`: builders start from the checkout with uncommitted changes; `false` starts them from `HEAD`      |
 | `webExtension`       | pi-web-access's entry file, detected from this Pi                                                       |
+| `toolProviders`      | Named `{extension, tools}` records for custom agent tools; only required providers load                 |
 | `passEnv`            | Extra environment variable names for agents' checks and setup (never values)                            |
 
 ## Models
@@ -22,6 +23,8 @@ replace. Unknown keys are rejected.
 `thinking` is `off`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max`. A task uses the
 first of `task.model`, `models[agent]`, the definition model, `models.default` and this Pi's current model; if that
 model is unknown or has no configured authentication, `fallbacks[agent]` (or definition fallbacks) in order.
+`models` and `fallbacks` accept any installed agent name. See [creating agents](../how-to/agents.md)
+for definition defaults and tool providers.
 
 ## Limits
 
@@ -75,10 +78,3 @@ directories and, on Windows, the system variables), plus `passEnv` names and
 
 0.7.0's `pi`, `herdr`, `session`, `workspaceReuse` and `limits.startupMs` are ignored with a
 one-line notice.
-
-## Custom agent defaults
-
-`models` and `fallbacks` accept any installed agent name. A definition's model default
-applies after an explicit task model and configured agent model, before the configured
-default and current Pi model. `toolProviders` maps names to `{extension, tools}` records;
-it merges per provider across config layers. See [creating agents](../how-to/agents.md).

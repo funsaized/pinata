@@ -20,17 +20,14 @@ For task JSON, model configs, and complete jobs, see [task and job examples](job
 For parallel explanations, use distinct assignments and let the parent synthesize:
 
 ```text
-Use scout and research subagents in parallel. Scout: explain this repository's
-purpose and trace one typical command through the local implementation. Research:
+Use scout and researcher subagents in parallel. Scout: explain this repository's
+purpose and trace one typical command through the local implementation. Researcher:
 clarify the schema/protocol guarantees and dependency-version caveats relevant to
 that command, using only the local files needed for applicability and primary
 external sources when needed. Avoid a second full architecture map. After required
 orientation, launch both and yield; then synthesize their evidence and spot-check
 material claims. Do not change files.
 ```
-
-The parent should reserve `yield:false` for a separate deliverable outside worker
-scope. Reading the same modules while they investigate defeats the division of work.
 
 ## Scout: find local evidence
 
@@ -53,16 +50,16 @@ test configuration. Report the existing command for the narrowest unit test
 suite and any setup it needs. Do not install dependencies or execute commands.
 ```
 
-## Research: answer a question from sources
+## Researcher: answer a question from sources
 
-Use research when the answer depends on external documentation. It needs
+Use the optional researcher when the answer depends on external documentation. It needs
 [pi-web-access setup](../docs/how-to/research.md) and approval for external
 requests. Ask a scout first if you do not yet know the dependency version.
 
 ### Check a version-specific API
 
 ```text
-Use a research subagent to check the official Node.js 22.19.0 documentation for
+Use a researcher subagent to check the official Node.js 22.19.0 documentation for
 the built-in test runner. Confirm the command for running one .mjs test file.
 Fetch the source page, cite the URL and the claim it supports, and distinguish
 that version from newer documentation. Do not use snippets alone as evidence.
@@ -130,7 +127,7 @@ Pi should identify the check to run or explain why no automated check applies.
 
 ## Reviewer: challenge the actual result
 
-Use a reviewer for an independent inspection of a plan or change. It has no
+Use a reviewer for an independent inspection of a change. It has no
 bash or write tools, so it inspects the target's source, diff, result, and check
 logs rather than rerunning tests itself.
 

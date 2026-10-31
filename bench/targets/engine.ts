@@ -1,6 +1,6 @@
 // The engine target: runs a scenario on the in-process backend, in this Node process or inside
 // the real `pi` binary through bench/pi-host.ts. Providers: pi-ai's faux provider, or the
-// loopback HTTP server (the same path 0.7.0 is measured on).
+// loopback HTTP server.
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
@@ -185,13 +185,11 @@ async function inPiTui(
 
 export async function runEngine(
   scenario: Scenario,
-  options: { provider: string; host: string; tokenDelayMs: number },
+  options: { provider: ScenarioResult["provider"]; host: string; tokenDelayMs: number },
 ): Promise<ScenarioResult> {
-  const provider = options.provider as ScenarioResult["provider"];
+  const provider = options.provider;
   const why = supported(scenario);
   if (why) return skipped(scenario, provider, options.host, why);
-  if (provider === "live")
-    throw new Error("Live engine benchmarks run through npm run bench:live (E3.7)");
   const { dir, cwd: repo } = await benchRepository();
   const agentDir = join(dir, "agent");
   const runsDir = join(dir, "runs");
