@@ -9,3 +9,6 @@ bench/results/
 
 # Local implementation checklist, not part of the project or release.
 PLAN.md
+
+# Local arena attempts (the explicit example-run fixture is committed separately).
+examples/arena/runs/

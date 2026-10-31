@@ -11,7 +11,11 @@ const engine = readdirSync("test/engine", { recursive: true })
   .filter((file) => file.endsWith(".test.ts") && !timed.includes(file))
   .sort()
   .map((file) => join("test/engine", file));
-const suites = [engine, ...timed.map((file) => [join("test/engine", file)])];
+const arena = readdirSync("test/arena")
+  .filter((file) => file.endsWith(".test.ts"))
+  .sort()
+  .map((file) => join("test/arena", file));
+const suites = [[...engine, ...arena], ...timed.map((file) => [join("test/engine", file)])];
 if (process.platform !== "win32") suites.push(["test/*.test.mjs"]);
 for (const files of suites) {
   // A hung test fails after 5 minutes instead of holding CI until the job times out.
