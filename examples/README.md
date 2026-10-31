@@ -142,8 +142,11 @@ the current evidence if the acceptance criteria hold.
 
 ### Review a plan
 
+For a plan without a code diff, use a fresh scout or a custom read-only agent.
+The reviewer preset requires an actual change target.
+
 ```text
-Have a fresh reviewer challenge the planner's migration proposal before any
+Have a fresh scout challenge the planner's migration proposal before any
 builder starts. Check dependency order, ownership overlap, data-loss risks,
 and whether the proposed tests can detect failure. Separate blocking defects
 from optional improvements. Do not implement the plan.
@@ -170,10 +173,10 @@ security and one for test coverage. Keep it under a dollar. Don't change files.
 
 ## Coordinate the whole coding job
 
-`engmgmt` is a coordinator skill, not a sixth worker role:
+Ask the parent Pi to coordinate the whole job:
 
 ```text
-/skill:engmgmt Fix the approved greeting whitespace issue. Use the existing Node
+Fix the greeting whitespace issue with pinata. Use the existing Node
 test, keep ownership to greet.mjs and greet.test.mjs, require an independent
 review, and integrate locally after checks pass. Do not commit, push, or publish.
 ```

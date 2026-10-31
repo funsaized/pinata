@@ -5,13 +5,14 @@
 
 ## Write a job file
 
-A job is the same JSON as `pinata_run`'s parameters, with an optional `cwd` (relative to
-the job file):
+A job contains `tasks` and optional `config`, `approval`, `instructions`,
+`integratedChecks`, and `noIntegratedChecksReason`. An optional `cwd` is relative
+to the job file; when omitted, the current shell directory is used. Interactive
+options such as `background` and `survive` belong to `pinata_run`, not this CLI:
 
 ```json
 {
   "cwd": "repo",
-  "approval": "Approved: one builder may edit src/duration.mjs and run npm test.",
   "config": {
     "models": { "default": { "provider": "openai", "id": "gpt-6-luna", "thinking": "low" } }
   },
@@ -48,7 +49,9 @@ on stderr.
 | 2         | the job file is invalid       |
 | 3         | the run was cancelled         |
 
-Builders' changes stay in their worktrees: integrate from an interactive Pi.
+For writers, record the authorized scope in `approval`. Builders’ changes stay in
+their worktrees even when all tasks pass. Integrate from an interactive Pi; the
+headless command does not apply them or run destination checks automatically.
 
 ## Read a run's log
 

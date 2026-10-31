@@ -70,8 +70,8 @@ approved for execution.
 
 ## Builder: make a bounded change
 
-The enclosing job must set `allowWrites: true`. Supply approved checks or an
-explicit `noChecksReason` before submitting the task.
+The enclosing job must record the authorized write scope in `approval`. Supply
+approved checks or an explicit `noChecksReason` before submitting the task.
 
 ```json
 {
@@ -118,7 +118,7 @@ Add this alongside or after the `build` task above:
 To review changes that already exist, replace `reviewOf` and `after` with
 `"reviewBase": "HEAD"` (your uncommitted changes), `"reviewBase": "main"` (your
 branch since `main`), or `"reviewPr": 482` (a GitHub pull request, fetched with
-`gh`). Such a job needs no builder and can keep `allowWrites` false.
+`gh`). Such a job needs no builder or write approval.
 
 Expect a fingerprint-bound `approve` or `changes_requested` verdict. Approval
 cannot include unresolved medium, high, or critical findings. A rejection needs
@@ -140,12 +140,12 @@ job's `config` field. They use models from a real Pi setup (OpenAI `gpt-6-luna`,
 | [per-role.json](configs/per-role.json)       | Luna scouts and builds, Sol researches, Astra plans and reviews; DeepSeek Flash backs up the builder |
 | [research.json](configs/research.json)       | Research on Sol, with a search key passed through; pi-web-access is found automatically              |
 | [no-codemode.json](configs/no-codemode.json) | A model that handles codemode poorly; raises `maxTurns` to compensate                                |
-| [pinata.config.json](pinata.config.json)     | Every default limit written out, for reference                                                       |
+| [pinata.config.json](pinata.config.json)     | An example with explicit limits                                                                      |
 
 Pick models and thinking levels by role. Scouts mostly read, so `low` is
-usually enough. A reviewer on a different model from the builder is more
-independent, because it does not share the builder's blind spots; `per-role.json`
-reviews Luna's work with Astra. Fallbacks are tried only when the preferred model is unavailable
+usually enough. A different reviewer model can bring a different perspective, but does not
+guarantee it will catch the builder’s mistakes. `per-role.json` reviews Luna’s work
+with Astra. Fallbacks are tried only when the preferred model is unavailable
 or unauthenticated, never after a bad result.
 
 Use the thinking level Pi actually applies to that model. Pi silently maps some

@@ -14,8 +14,9 @@ While a run of this Pi session works, the widget above the editor lists each age
 · reviewer review — queued
 ```
 
-It updates as events arrive, at most four times a second, and uses no timers while
-nothing changes. Clicking the first line opens `/pinata live`.
+Status updates are coalesced as events arrive. With motion enabled, the ears animate
+while agents work; the animation timer stops when no agent is running. Clicking the
+first line opens `/pinata live`.
 
 ## An agent's conversation
 
@@ -50,13 +51,12 @@ belong to your message, and clicking another agent cannot redirect the draft.
 ## The live mascot
 
 ```text
-/pinata live demo
+/pinata live
 ```
 
 A turning paper piñata with one ribbon per task sits beside the conversations. Space
 bonks it, M toggles motion, and Esc returns to Pi. `/pinata live` shows your latest run;
-`demo` previews the workspace with sample conversations and no model calls. Press D to
-cycle demo scenes. Animation runs while an agent works or a brief reaction plays.
+animation runs while an agent works or a brief reaction plays.
 
 ## A viewer in another terminal
 

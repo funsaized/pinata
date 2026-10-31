@@ -12,9 +12,9 @@ Scout, builder, and reviewer come in the box. Planner and researcher are
 
 Small engine. Sharp defaults. Your wiring.
 
-[![Watch the 50-second piñata demo: meet your subagents](media/pinata-demo-poster.png)](media/pinata-demo.mp4)
+[![piñata: small core, parallel agents](media/pinata-hero-v2.png)](media/pinata-demo.mp4)
 
-[Watch the demo](media/pinata-demo.mp4) · Parallel builders, independent review, passing tests.
+[Watch the 70-second demo](media/pinata-demo.mp4) · Ten real agents, four reviews, 23 passing tests.
 
 ## Install
 
@@ -88,7 +88,7 @@ See [creating agents](docs/how-to/agents.md).
   `pinata view` follows a run from another terminal.
 - **Evidence you can inspect.** Writers use isolated git worktrees and engine-run checks.
   Add an independent reviewer when your workflow calls for one. The guarded handoff and
-  exact integration helpers require approval of the exact artifact. Pinata hands off the exact artifact, base, checks and review;
+  exact integration helpers require an approving reviewer verdict on the exact artifact. Pinata hands off the exact artifact, base, checks and review;
   an optional helper applies it to your checkout without staging or committing. Unrelated
   commits may advance while builders work. Destination checks remain separate evidence.
 - **Recoverable.** Runs are logged on disk. A run started with `survive: true` keeps going

@@ -37,3 +37,13 @@ test("pinata-fix without arguments leaves no literal argument placeholder", () =
   assert.ok(expanded.includes("requested fix: ."));
   assert.ok(!expanded.includes("${@}"));
 });
+
+for (const name of ["scout", "builder", "reviewer", "pinata-review"]) {
+  test(`${name} forwards arguments through real Pi expansion`, () => {
+    const request = "Inspect src/duration.mjs and its zero-delay test";
+    const expanded = expandPromptTemplate(`/${name} ${request}`, templates);
+    assert.ok(expanded.includes(request));
+    assert.ok(!expanded.includes("${@"));
+    assert.ok(!expandPromptTemplate(`/${name}`, templates).includes("${@"));
+  });
+}

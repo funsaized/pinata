@@ -1,8 +1,7 @@
 // The live scene (port of 0.7.0's lib/live.mjs): the mascot overlay behind /pinata live. It
 // is fed RunViews pushed by the host instead of polling saved runs, and its animation timer
 // runs only while motion is on and an agent is working (or a bonk or cheer is playing).
-import type { AgentEvent, TaskSpec } from "../core/types.ts";
-import { replayView, type RunView } from "../core/view.ts";
+import type { RunView } from "../core/view.ts";
 import { RIBBON_COLORS, colorize, mascotFrame, mood } from "./mascot.ts";
 import { GLYPHS, clean, duration, money, short, tokens } from "./text.ts";
 import type { Paint } from "./widget.ts";
@@ -34,56 +33,6 @@ const age = (now: number, then: number | null) => (then === null ? Infinity : (n
 const working = (view: RunView | undefined) =>
   !!view && view.order.some((id) => view.agents[id].status === "running");
 
-// Deliberately synthetic: never written to run history or sent to a model.
-export function demoRun(step = 0): SceneRun {
-  const phase = ((step % 6) + 6) % 6;
-  const at = 1_000_000;
-  const tasks: TaskSpec[] = [
-    { id: "map", role: "scout", task: "Map the code", acceptance: ["a map"] },
-    { id: "build", role: "builder", task: "Build it", acceptance: ["it works"], after: ["map"] },
-    {
-      id: "review",
-      role: "reviewer",
-      task: "Review it",
-      acceptance: ["a verdict"],
-      reviewOf: "build",
-    },
-  ];
-  const status = {
-    map: phase === 0 ? "running" : "succeeded",
-    build: phase < 1 ? "queued" : phase === 1 ? "running" : "succeeded",
-    review: phase < 2 ? "queued" : phase === 2 ? "running" : phase === 5 ? "rejected" : "succeeded",
-  } as const;
-  const events: AgentEvent[] = [];
-  const push = (agent: string | undefined, body: Record<string, unknown>) =>
-    events.push({ v: 1, seq: events.length, run: "demo", agent, at, ...body } as AgentEvent);
-  push(undefined, { t: "run_started", tasks, mode: "lean" });
-  const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: 0 };
-  for (const task of tasks) {
-    const s = status[task.id as keyof typeof status];
-    if (s === "queued") continue;
-    push(task.id, {
-      t: "agent_started",
-      backend: "in-process",
-      model: { provider: "demo", id: "demo" },
-      workspace: { kind: "live", path: "." },
-    });
-    if (s === "running") continue;
-    push(task.id, {
-      t: "agent_settled",
-      status: s,
-      summary: s === "rejected" ? "Demo: a check needs attention." : "Demo: done.",
-      ...(s === "rejected" && { reason: "Demo: a check needs attention." }),
-      usage,
-      turns: 0,
-      toolCalls: 0,
-    });
-  }
-  if (phase >= 3)
-    push(undefined, { t: "run_settled", status: phase === 5 ? "failed" : "succeeded", usage });
-  return { view: replayView(events, "demo"), integration: phase === 4 ? "verified" : null };
-}
-
 export interface SceneOptions {
   tui: { requestRender(): void; terminal?: { rows: number } };
   theme: Paint;
@@ -94,7 +43,6 @@ export interface SceneOptions {
   detailSource?: (run: string) => Promise<DetailSource> | DetailSource;
   // /pinata open enters the same workspace with this conversation focused.
   agent?: string;
-  demo?: boolean;
   motion?: boolean;
   setMotion?: (enabled: boolean) => void;
   now?: () => number;
@@ -112,7 +60,6 @@ export class LiveScene {
   readonly done: () => void;
   readonly runs: string[];
   readRun: NonNullable<SceneOptions["readRun"]>;
-  readonly demo: boolean;
   motion: boolean;
   readonly setMotion: (enabled: boolean) => void;
   readonly now: () => number;
@@ -129,7 +76,6 @@ export class LiveScene {
   bonkAt: number | null = null;
   cheerAt: number | null = null;
   twitchAt: number | null = null;
-  demoStep = 0;
   disposed = false;
   generation = 0;
   frameTimer: unknown = null;
@@ -150,7 +96,6 @@ export class LiveScene {
     this.runs = options.runs ?? [];
     this.readRun = options.readRun ?? (() => Promise.reject(new Error("No run reader")));
     this.detailSource = options.detailSource;
-    this.demo = options.demo ?? false;
     this.motion = options.motion ?? true;
     this.setMotion = options.setMotion ?? (() => {});
     this.now = options.now ?? Date.now;
@@ -162,7 +107,7 @@ export class LiveScene {
   }
 
   selected(): string | null {
-    return this.demo ? null : (this.runs[this.index] ?? null);
+    return this.runs[this.index] ?? null;
   }
 
   offer(run: SceneRun): void {
@@ -205,7 +150,7 @@ export class LiveScene {
     const generation = this.generation;
     try {
       const id = this.selected();
-      const run = this.demo ? demoRun(this.demoStep) : id ? await this.readRun(id) : null;
+      const run = id ? await this.readRun(id) : null;
       if (!this.disposed && generation === this.generation) {
         this.update(run);
         await this.ready;
@@ -227,33 +172,9 @@ export class LiveScene {
     this.scroll = 0;
   }
 
-  private demoSource(): DetailSource {
-    const copy: Record<string, string> = {
-      map: "The home page lives in `src/routes/index.tsx`. The hero heading uses the existing Tailwind utilities.\n\nI found the route, its styles, and the checks the builder should run.",
-      build:
-        "Added `text-red-600` to the hero heading.\n\n- The eyebrow and social links are unchanged.\n- Formatting, type checking, and the build passed.\n\nThe change is ready for an independent review.",
-      review:
-        "Reviewed the heading change and its verification evidence.\n\nThe change stays within the assigned scope. This is a demo conversation; no files were changed.",
-    };
-    return {
-      run: "demo",
-      cwd: ".",
-      agents: () => this.run?.view.order ?? [],
-      view: (agent) => this.run?.view.agents[agent],
-      load: async (agent) => ({
-        messages: [
-          {
-            role: "assistant",
-            content: [{ type: "text", text: copy[agent] ?? "Demo conversation." }],
-          },
-        ],
-      }),
-    };
-  }
-
   private ensureDetail(): Promise<void> {
     const run = this.run?.view.run;
-    if (!run || !this.agent || (!this.detailSource && !this.demo)) return Promise.resolve();
+    if (!run || !this.agent || !this.detailSource) return Promise.resolve();
     if (this.detail) {
       if (this.detail.agent !== this.agent) this.detail.select(this.agent);
       return this.detail.ready;
@@ -263,7 +184,7 @@ export class LiveScene {
     const generation = this.generation;
     this.loading = (async () => {
       try {
-        const source = this.demo ? this.demoSource() : await this.detailSource!(run);
+        const source = await this.detailSource!(run);
         if (this.disposed || generation !== this.generation || !this.agent) return;
         if (source.run !== run) throw new Error("Conversation source belongs to another run");
         this.detail = new AgentDetail({
@@ -361,10 +282,7 @@ export class LiveScene {
       this.setMotion(this.motion);
       this.animate();
     } else if (data === " ") this.bonk();
-    else if (data === "d" && this.demo) {
-      this.demoStep++;
-      this.update(demoRun(this.demoStep));
-    } else if (data === "r" && (this.detailError || this.error)) {
+    else if (data === "r" && (this.detailError || this.error)) {
       this.loadingRun = null;
       this.detailError = null;
       this.ready = this.refresh();
@@ -375,7 +293,7 @@ export class LiveScene {
       else if (key("tui.select.pageDown")) this.moveAgent(this.listSize);
       else if (key("tui.input.submit") || key("tui.select.confirm")) this.focus = "detail";
       else if (key("tui.editor.cursorLeft") || key("tui.editor.cursorRight")) {
-        if (!this.demo && this.runs.length > 1) {
+        if (this.runs.length > 1) {
           const step = key("tui.editor.cursorLeft") ? this.runs.length - 1 : 1;
           this.index = (this.index + step) % this.runs.length;
           this.clearDetail();
@@ -460,9 +378,7 @@ export class LiveScene {
     const done =
       view?.order.filter((id) => !["running", "queued"].includes(view.agents[id].status)).length ??
       0;
-    const title = this.demo
-      ? "PINATA · DEMO · no agents running"
-      : `PINATA${view ? ` · ${short(view.run)} · ${view.status} · ${done}/${view.order.length} done` : ""}`;
+    const title = `PINATA${view ? ` · ${short(view.run)} · ${view.status} · ${done}/${view.order.length} done` : ""}`;
     const facts = view
       ? ` · ${duration((view.settledAt ?? now) - view.startedAt)} · ${tokens(view.usage.totalTokens)} tok · ${money(view.usage.cost)}`
       : "";
@@ -517,7 +433,7 @@ export class LiveScene {
             : !view
               ? this.runs.length
                 ? "Reading saved run state…"
-                : "No runs yet. Start a pinata task, or try /pinata live demo."
+                : "No runs yet. Ask Pi to start a pinata task."
               : this.agent
                 ? "Loading conversation…"
                 : "No agent selected.",
@@ -540,14 +456,14 @@ export class LiveScene {
       );
     // Empty runs should explain how to begin even when the agent list owns focus.
     if (!view && bodyHeight > 1 && !wide)
-      body[1] = pad(this.error ?? "No runs yet. Try /pinata live demo.", inner);
+      body[1] = pad(this.error ?? "No runs yet. Ask Pi to start a pinata task.", inner);
     const input = !!this.detail?.input;
     const primary = input
       ? "Enter send steer · Alt+Enter follow-up · Esc cancel"
       : this.focus === "agents"
         ? "↑↓ select agent · Enter open · Tab conversation"
         : "↑↓ scroll · PgUp/PgDn page · Enter steer · Ctrl+O tools · Tab agents";
-    const secondary = `Esc close · M motion ${this.motion ? "on" : "off"} · Space bonk${this.demo ? " · D next scene" : this.runs.length > 1 ? ` · ←→ run (${this.index + 1}/${this.runs.length}, agent list)` : ""}`;
+    const secondary = `Esc close · M motion ${this.motion ? "on" : "off"} · Space bonk${this.runs.length > 1 ? ` · ←→ run (${this.index + 1}/${this.runs.length}, agent list)` : ""}`;
     const content = [
       ...top,
       ...body,

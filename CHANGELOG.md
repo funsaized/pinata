@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.0.1 (2026-10-31)
+
+- Share one rainbow-framed workspace between `/pinata live` and `/pinata open`,
+  with an animated mascot, selectable agents, streaming conversations, and steering.
+  Remove `/pinata live demo` and its synthetic conversations.
+- Store new managed worktrees outside Git metadata by default, with a configurable
+  `worktreeRoot`. Existing runs keep their saved locations.
+- Fix argument forwarding in all shipped prompt templates using Pi’s supported syntax.
+- Refresh tutorials, examples, and references to explain configuration, ownership,
+  engine-run checks, review, and integration without unnecessary ceremony.
+- Replace the README artwork and record a real ten-agent build, review, and integration.
+
 ## 2.0.0 (2026-10-30)
 
 Pi stays small. Your subagent system should too.
