@@ -2,7 +2,7 @@
 // test/live.test.mjs, run against RunViews instead of saved-run polls.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { visibleWidth } from "@earendil-works/pi-tui";
+import { TuiAltScreen, visibleWidth, type Terminal } from "@earendil-works/pi-tui";
 import { initTheme } from "@earendil-works/pi-coding-agent";
 import type { DetailSource } from "../../engine/ui/detail.ts";
 import type { AgentEvent, TaskSpec } from "../../engine/core/types.ts";
@@ -384,6 +384,57 @@ test("stale and failed reads cannot replace the selected run or update a dispose
   assert.equal(h.timers.size, 0);
 });
 
+test("new runs replace a stale initial read but preserve historical selections and steering drafts", async (t) => {
+  const named = (id: string): SceneRun => ({
+    ...sceneRun(1),
+    view: { ...sceneRun(1).view, run: id },
+  });
+  let release!: (run: SceneRun) => void;
+  const h = harness({
+    runs: ["saved"],
+    followNewRuns: true,
+    readRun: (id) => (id === "saved" ? new Promise((resolve) => (release = resolve)) : named(id)),
+    detailSource: (id) => ({
+      run: id,
+      cwd: ".",
+      agents: () => named(id).view.order,
+      view: (agent) => named(id).view.agents[agent],
+      load: async () => ({ messages: [{ role: "user", content: `Run ${id} history` }] }),
+      steer: async () => {},
+    }),
+  });
+  t.after(() => h.scene.dispose());
+  h.scene.offer(named("first"));
+  release(named("saved"));
+  await h.scene.ready;
+  await flush();
+  assert.equal(h.scene.selected(), "first");
+  assert.equal(h.scene.run!.view.run, "first");
+  assert.match(strip(h.scene.render(120)).join("\n"), /Run first history/);
+  h.scene.offer(named("second"));
+  await h.scene.ready;
+  assert.equal(h.scene.selected(), "second");
+  h.scene.handleInput("right");
+  await h.scene.ready;
+  assert.equal(h.scene.selected(), "first");
+  h.scene.offer(named("third"));
+  assert.equal(h.scene.selected(), "first", "browsing an older run stays in place");
+  h.scene.handleInput("left");
+  h.scene.handleInput("left");
+  await h.scene.ready;
+  assert.equal(h.scene.selected(), "third");
+  h.scene.handleInput("\r");
+  h.scene.handleInput("\r");
+  h.scene.handleInput("keep this draft");
+  const detail = h.scene.detail;
+  h.scene.offer(named("fourth"));
+  assert.equal(h.scene.selected(), "third");
+  assert.equal(h.scene.detail, detail);
+  assert.equal(detail!.input!.getValue(), "keep this draft");
+  h.scene.offer(named("fourth"));
+  assert.deepEqual(h.scene.runs, ["fourth", "third", "second", "first", "saved"]);
+});
+
 test("renderer is bounded, deterministic, and has distinct animated and bonked poses", () => {
   const a = mascotFrame({ width: 40, height: 18, colors: false });
   assert.equal(a.length, 18);
@@ -429,6 +480,18 @@ test("the workspace selects conversations, scrolls, steers, and preserves draft 
   await h.scene.ready;
   assert.equal(h.scene.agent, "map");
   assert.deepEqual([...subscriptions], ["map"]);
+  h.scene.render(120);
+  const pane = h.scene.detailBounds!;
+  const wheel = (delta: number, x = pane.x, y = pane.y) =>
+    h.scene.handleMouse({ type: "wheel", x, y, wheelDelta: delta });
+  assert(wheel(-3)!.handled);
+  assert.equal(h.scene.detail!.offset, 3, "wheel scrolls the hovered chat even with list focus");
+  wheel(2);
+  assert.equal(h.scene.detail!.offset, 1);
+  wheel(1000);
+  assert.equal(h.scene.detail!.offset, 0, "scrolling down resumes following output");
+  assert(wheel(-3, 0, 0)!.handled, "overlay borders consume wheel events too");
+  assert.equal(h.scene.detail!.offset, 0);
   h.scene.handleInput("\r");
   assert.equal(h.scene.focus, "detail");
   h.scene.render(120);
@@ -448,6 +511,10 @@ test("the workspace selects conversations, scrolls, steers, and preserves draft 
   assert.equal(h.closed(), 0, "typing q does not close the workspace");
   h.scene.render(120);
   const other = h.scene.agentBounds.find((b) => b.agent === "map")!;
+  wheel(-3);
+  assert.equal(h.scene.detail!.offset, 3, "scrolling remains available while composing");
+  wheel(-1, other.x, other.y);
+  assert.equal(h.scene.detail!.input!.getValue(), "m q keep scope");
   h.scene.handleMouse({ type: "click", button: "left", x: other.x, y: other.y });
   assert.equal(h.scene.agent, "build", "a click cannot redirect a draft");
   h.tui.terminal.rows = 12;
@@ -474,6 +541,81 @@ test("the workspace selects conversations, scrolls, steers, and preserves draft 
   h.scene.close();
   assert.equal(subscriptions.size, 0);
   assert.equal(h.timers.size, 0);
+});
+
+test("terminal wheel input scrolls the live conversation without moving the chat behind it", async (t) => {
+  let input!: (data: string) => void;
+  const terminal: Terminal = {
+    columns: 120,
+    rows: 32,
+    kittyProtocolActive: false,
+    start: (onInput) => {
+      input = onInput;
+    },
+    stop() {},
+    async drainInput() {},
+    write() {},
+    moveBy() {},
+    hideCursor() {},
+    showCursor() {},
+    clearLine() {},
+    clearFromCursor() {},
+    clearScreen() {},
+    setTitle() {},
+    setProgress() {},
+    setProgramStatus() {},
+  };
+  const tui = new TuiAltScreen(terminal, false, undefined, { wheelScrollLines: 3 });
+  const run = sceneRun(1);
+  const h = harness({
+    tui,
+    motion: false,
+    runs: [run.view.run],
+    readRun: () => run,
+    detailSource: () => ({
+      run: run.view.run,
+      cwd: ".",
+      agents: () => run.view.order,
+      view: (id) => run.view.agents[id],
+      load: async () => ({
+        messages: [{ role: "user", content: "Agent transcript\n".repeat(100) }],
+      }),
+    }),
+  });
+  t.after(() => {
+    h.scene.dispose();
+    tui.stop();
+  });
+  await h.scene.ready;
+  tui.addChild({
+    render: () => Array.from({ length: 100 }, (_, i) => `Parent chat ${i}`),
+    invalidate() {},
+  });
+  tui.start();
+  tui.renderNow();
+  const top = tui.viewportTop;
+  assert(top > 0, "the parent has scrollback");
+  const overlay = tui.showOverlay(h.scene, { width: "96%", maxHeight: "95%", anchor: "center" });
+  tui.renderNow();
+  const bounds = overlay.getBounds()!;
+  const pane = h.scene.detailBounds!;
+  const wheel = (button: number, x = pane.x, y = pane.y) => {
+    input(`\x1b[<${button};${bounds.col + x + 1};${bounds.row + y + 1}M`);
+    tui.renderNow();
+  };
+  wheel(64);
+  assert.equal(h.scene.detail!.offset, 3);
+  assert.equal(tui.viewportTop, top);
+  wheel(65);
+  assert.equal(h.scene.detail!.offset, 0);
+  wheel(65);
+  wheel(64, 0, 0);
+  assert.equal(h.scene.detail!.offset, 0);
+  assert.equal(tui.viewportTop, top, "scroll boundaries and overlay borders never leak");
+  overlay.hide();
+  tui.renderNow();
+  wheel(64);
+  assert(tui.viewportTop < top, "normal parent scrolling resumes after closing the overlay");
 });
 
 test("rapid selection during a transcript load never displays the previous agent's messages", async (t) => {

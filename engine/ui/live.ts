@@ -39,6 +39,8 @@ export interface SceneOptions {
   keys: Keys;
   done: () => void;
   runs?: string[];
+  // Unqualified /pinata live follows newly started runs; explicit run views stay pinned.
+  followNewRuns?: boolean;
   readRun?: (run: string) => Promise<SceneRun> | SceneRun;
   detailSource?: (run: string) => Promise<DetailSource> | DetailSource;
   // /pinata open enters the same workspace with this conversation focused.
@@ -59,6 +61,7 @@ export class LiveScene {
   readonly keys: Keys;
   readonly done: () => void;
   readonly runs: string[];
+  readonly followNewRuns: boolean;
   readRun: NonNullable<SceneOptions["readRun"]>;
   motion: boolean;
   readonly setMotion: (enabled: boolean) => void;
@@ -93,7 +96,8 @@ export class LiveScene {
     this.theme = options.theme;
     this.keys = options.keys;
     this.done = options.done;
-    this.runs = options.runs ?? [];
+    this.runs = [...(options.runs ?? [])];
+    this.followNewRuns = options.followNewRuns ?? false;
     this.readRun = options.readRun ?? (() => Promise.reject(new Error("No run reader")));
     this.detailSource = options.detailSource;
     this.motion = options.motion ?? true;
@@ -111,7 +115,17 @@ export class LiveScene {
   }
 
   offer(run: SceneRun): void {
-    if (!this.disposed && run.view.run === this.selected()) this.update(run);
+    if (this.disposed) return;
+    if (!this.runs.includes(run.view.run)) {
+      if (!this.followNewRuns) return;
+      // Keep a historical selection or steering draft in place when another run starts.
+      const followLatest = this.index === 0 && !this.detail?.input;
+      this.runs.unshift(run.view.run);
+      if (followLatest) this.agent = null;
+      else this.index++;
+      this.tui.requestRender();
+    }
+    if (run.view.run === this.selected()) this.update(run);
   }
 
   update(run: SceneRun | null): void {
@@ -308,8 +322,23 @@ export class LiveScene {
     this.tui.requestRender();
   }
 
-  handleMouse(event: { type: string; button?: string; x: number; y: number }) {
-    if (this.disposed || event.type !== "click" || event.button !== "left") return undefined;
+  handleMouse(event: { type: string; button?: string; x: number; y: number; wheelDelta?: number }) {
+    if (this.disposed) return undefined;
+    if (event.type === "wheel") {
+      const delta = event.wheelDelta ?? 0;
+      if (delta && contains(this.detailBounds, event.x, event.y) && this.detail) {
+        this.detail.scrollBy(delta);
+      } else if (
+        delta &&
+        !this.detail?.input &&
+        this.agentBounds.some((b) => contains(b, event.x, event.y))
+      ) {
+        this.moveAgent(delta);
+      }
+      // Even empty space and scroll limits belong to the overlay, not Pi's chat behind it.
+      return { handled: true, render: true };
+    }
+    if (event.type !== "click" || event.button !== "left") return undefined;
     // Never discard a steering draft by clicking a different agent or pane.
     if (this.detail?.input) return { handled: true, render: false };
     if (contains(this.artBounds, event.x, event.y)) {

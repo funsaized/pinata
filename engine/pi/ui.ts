@@ -142,12 +142,13 @@ export class PinataUI {
 
   refresh(): void {
     const scene = this.scene;
-    const followed = scene && this.followed.get(scene.selected() ?? "");
-    if (followed)
-      scene.offer({
-        view: followed.handle.view(),
-        integration: this.integration.get(followed.handle.id) ?? null,
-      });
+    // Offer in start order so an unqualified live view discovers new runs newest-last.
+    if (scene)
+      for (const { handle } of this.followed.values())
+        scene.offer({
+          view: handle.view(),
+          integration: this.integration.get(handle.id) ?? null,
+        });
     const ctx = this.ctx;
     if (!ctx?.hasUI) return;
     const active = this.active();
@@ -228,6 +229,7 @@ export class PinataUI {
             keys,
             done: () => done(undefined),
             runs,
+            followNewRuns: !arg,
             readRun: async (run) => {
               const live = this.followed.get(run);
               if (live)
@@ -248,6 +250,8 @@ export class PinataUI {
             motion: this.motion,
             setMotion: (enabled) => this.setMotion(enabled),
           });
+          // A run may have started while the initial run list was being read.
+          this.refresh();
           return this.scene;
         },
         { overlay: true, overlayOptions: { width: "96%", maxHeight: "95%", anchor: "center" } },
