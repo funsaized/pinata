@@ -352,7 +352,7 @@ test("the widget and footer follow a run in the TUI and clear when it settles; i
   assert(widget.disposed && !widget.animating);
 });
 
-test("/pinata live opens an empty workspace without model calls, persists motion, and closes on shutdown", async (t) => {
+test("/pinata view opens an empty workspace without model calls, persists motion, and closes on shutdown", async (t) => {
   const { initTheme } = await import("@earendil-works/pi-coding-agent");
   initTheme("dark");
   const a = await adapter(t, () => {
@@ -388,13 +388,13 @@ test("/pinata live opens an empty workspace without model calls, persists motion
   };
   const command = a.commands.get("pinata");
   assert(
-    !command.getArgumentCompletions("li").some((o: any) => o.value === "live demo"),
-    "live demo is not offered",
+    !(await command.getArgumentCompletions("vi")).some((o: any) => o.value === "view demo"),
+    "only canonical commands are offered",
   );
-  await command.handler("live demo", a.ctx);
-  assert.match(a.notes.at(-1)!, /No pinata run starts with demo/);
+  await command.handler("view demo", a.ctx);
+  assert.match(a.notes.at(-1)!, /Unknown run demo/);
   assert.equal(shown.length, 0);
-  const pending = command.handler("live", a.ctx);
+  const pending = command.handler("view", a.ctx);
   await opened;
   await scene.ready;
   assert.equal(scene.run, null);
@@ -410,7 +410,7 @@ test("/pinata live opens an empty workspace without model calls, persists motion
   assert(scene.disposed, "shutdown closes the overlay");
   assert.equal(scene.frameTimer, null);
   a.ctx.mode = "rpc";
-  await command.handler("live", a.ctx);
+  await command.handler("view", a.ctx);
   assert.match(a.notes.at(-1)!, /needs interactive Pi/);
 });
 
@@ -446,7 +446,7 @@ test("an already-open live workspace picks up new runs; explicit run views stay 
   };
   t.after(() => scene?.close());
   const command = a.commands.get("pinata");
-  const opened = command.handler("live", a.ctx);
+  const opened = command.handler("view", a.ctx);
   await until(() => !!scene, "the empty live workspace");
   await scene.ready;
   assert.equal(scene.run, null);
@@ -467,7 +467,7 @@ test("an already-open live workspace picks up new runs; explicit run views stay 
   scene.close();
   await opened;
   scene = null;
-  const pinned = command.handler(`live ${first}`, a.ctx);
+  const pinned = command.handler(`view ${first}`, a.ctx);
   await until(() => !!scene, "the pinned live workspace");
   await scene.ready;
   const third = await a.call("pinata_run", { tasks: [spec("third")] });
@@ -478,7 +478,7 @@ test("an already-open live workspace picks up new runs; explicit run views stay 
   await pinned;
 });
 
-test("/pinata open replays a finished run from disk in a session that never ran it", async (t) => {
+test("/pinata view --task replays a finished run from disk in a session that never ran it", async (t) => {
   const { initTheme } = await import("@earendil-works/pi-coding-agent");
   initTheme("dark");
   const first = await adapter(t, reader);
@@ -516,7 +516,7 @@ test("/pinata open replays a finished run from disk in a session that never ran 
   const command = second.commands.get("pinata");
   await command.handler("runs", second.ctx);
   assert.match(second.notes.at(-1)!, new RegExp(run.slice(0, 8)));
-  const pending = command.handler(`open ${run.slice(0, 8)} look`, second.ctx);
+  const pending = command.handler(`view ${run.slice(0, 8)} --task look`, second.ctx);
   for (let i = 0; !detail && i < 400; i++) await new Promise((r) => setTimeout(r, 5));
   assert(detail, second.notes.join("\n"));
   await detail.ready;
@@ -533,7 +533,7 @@ test("/pinata open replays a finished run from disk in a session that never ran 
   detail.handleInput("\x1b");
   await pending;
   detail = null;
-  const live = command.handler(`live ${run.slice(0, 8)}`, second.ctx);
+  const live = command.handler(`view ${run.slice(0, 8)}`, second.ctx);
   for (let i = 0; !detail && i < 400; i++) await new Promise((r) => setTimeout(r, 5));
   assert(detail, second.notes.join("\n"));
   await detail.ready;
@@ -545,11 +545,11 @@ test("/pinata open replays a finished run from disk in a session that never ran 
   assert.match(detail.detail.notice, /read-only/);
   detail.handleInput("\x1b");
   await live;
-  await command.handler("open nope", second.ctx);
+  await command.handler("view --task nope", second.ctx);
   assert.match(second.notes.at(-1)!, /no task nope/);
 });
 
-test("modes: lean by default with the socket on /pinata watch; observe starts it with the run", async (t) => {
+test("modes: lean by default with the socket on /pinata view --external; observe starts it with the run", async (t) => {
   const { validateConfig } = await import("../../engine/pi/config.ts");
   const { IpcClient } = await import("../../engine/ipc/client.ts");
   assert.equal(validateConfig({}).config.mode, "lean");
@@ -559,6 +559,10 @@ test("modes: lean by default with the socket on /pinata watch; observe starts it
   const gate = new Promise<void>((resolve) => (release = resolve));
   let finish!: () => void;
   const later = new Promise<void>((resolve) => (finish = resolve));
+  t.after(() => {
+    release();
+    finish();
+  });
   const a = await adapter(t, async (turn) => {
     if (turn.agent === "slow" && turn.round === 0) await gate;
     if (turn.agent === "seen" && turn.round === 0) await later;
@@ -568,8 +572,8 @@ test("modes: lean by default with the socket on /pinata watch; observe starts it
   const started = await a.call("pinata_run", { tasks: [spec("slow")], background: true });
   const { run, dir } = started.details.result;
   assert(!existsSync(join(dir, "link.json")), "lean mode starts no socket");
-  await command.handler("watch slow", a.ctx);
-  assert.match(a.notes.at(-1)!, /pinata view [0-9a-f]{8} slow/);
+  await command.handler("view --external --task slow", a.ctx);
+  assert.match(a.notes.at(-1)!, /pinata view [0-9a-f-]{36} --task slow/);
   const viewer = await IpcClient.connect(dir);
   assert.equal(viewer.view?.run, run);
   assert.equal(viewer.view?.mode, "lean");

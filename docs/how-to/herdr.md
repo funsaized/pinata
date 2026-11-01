@@ -5,11 +5,11 @@ Herdr workspaces. Nothing changes outside Herdr.
 
 ## Watch a run in a pane
 
-Start the run's viewer with `/pinata watch` (or run in `observe` mode, which starts it with
+Start the run's viewer with `/pinata view --external` (or run in `observe` mode, which starts it with
 the run). Inside Herdr, pinata opens the viewer in a new workspace labelled
 `pinata-<run>-view`, without taking focus. The workspace closes when the run settles.
 
-Outside Herdr, `/pinata watch` prints the command to run in another terminal:
+Outside Herdr, `/pinata view --external` prints the command to run in another terminal:
 `pinata view <run>`.
 
 ## Run agents in Herdr panes
@@ -19,7 +19,7 @@ Choose the `herdr-pi` backend for a task (`"backend": "herdr-pi"`) or for every 
 `pinata-<run>-<task>`:
 
 - the widget shows it with the `herdr` badge;
-- in the agent's detail view (`/pinata open <task>`), press `o` to bring its pane to the
+- in the agent's detail view (`/pinata view --task <task>`), press `o` to bring its pane to the
   front;
 - whatever you type in that pane is delivered to the agent and recorded as a steer by the
   user, so its reviewer sees it;

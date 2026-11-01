@@ -8,7 +8,7 @@ import { closeSync, existsSync, openSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { InProcessBackend } from "../backends/in-process.ts";
 import { ProcessBackend } from "../backends/process.ts";
@@ -288,7 +288,7 @@ export class PinataHost {
   readonly roots = new Map<string, string>();
   // Runs that outlive this Pi (survive): detached at shutdown instead of cancelled.
   readonly survivors = new Set<string>();
-  // Socket servers of this session's runs (observe mode, or after /pinata watch).
+  // Socket servers of this session's runs (observe mode, or after /pinata view --external).
   readonly servers = new Map<string, Promise<RunServer>>();
 
   // This Pi's process identity, for run ownership (PowerShell on Windows takes seconds, so
@@ -424,7 +424,7 @@ export class PinataHost {
     this.roots.set(handle.id, root);
     this.ui?.bind(ctx);
     this.ui?.follow(handle, engine);
-    // Observe mode starts the run's socket with the run; lean mode on the first /pinata watch.
+    // Observe mode starts the run's socket with the run; lean mode on the first /pinata view --external.
     if (handle.view().mode === "observe") await this.serve(handle);
     // What integration needs after a reload: the run's tasks, base HEAD and checks.
     await writeRunRecord(handle.dir, {
@@ -542,25 +542,32 @@ export class PinataHost {
     }
   }
 
-  // Finds a run in this session or on disk by id or unique id prefix.
+  // Explicit selectors search all history, independently of the default run picker.
   async find(
     run: string,
     cwd: string,
   ): Promise<{ id: string; dir: string; view: RunView; handle?: RunHandle }> {
-    const live = [...this.handles.values()].filter((h) => h.id === run || h.id.startsWith(run));
-    if (live.length === 1)
-      return { id: live[0].id, dir: live[0].dir, view: live[0].view(), handle: live[0] };
+    const exact = this.handles.get(run);
+    if (exact) return { id: exact.id, dir: exact.dir, view: exact.view(), handle: exact };
+    const path = resolve(cwd, run);
+    if (existsSync(join(path, "events.jsonl"))) {
+      const view = await replay(path);
+      const candidate = this.handles.get(view.run);
+      const handle = candidate && resolve(candidate.dir) === path ? candidate : undefined;
+      return { id: view.run, dir: path, view: handle?.view() ?? view, handle };
+    }
     const root = await runsRoot(await repositoryRoot(cwd));
-    const dirs = (await listRuns(root)).filter((d) => {
-      const id = d.slice(root.length + 1);
-      return id === run || id.startsWith(run);
-    });
-    if (dirs.length !== 1)
+    const dirs = new Map((await listRuns(root)).map((dir) => [basename(dir), dir]));
+    for (const handle of this.handles.values()) dirs.set(handle.id, handle.dir);
+    const matches = [...dirs].filter(([id]) => id.startsWith(run));
+    if (matches.length !== 1)
       throw new ValidationError(
-        dirs.length ? `Run prefix ${run} is ambiguous` : `Unknown run ${run}`,
+        matches.length ? `Run prefix ${run} is ambiguous` : `Unknown run ${run}`,
       );
-    const view = await replay(dirs[0]);
-    return { id: view.run, dir: dirs[0], view };
+    const [id, dir] = matches[0];
+    const handle = this.handles.get(id);
+    const view = handle?.view() ?? (await replay(dir));
+    return { id, dir, view, handle };
   }
 
   async readResult(dir: string, task: string): Promise<unknown> {

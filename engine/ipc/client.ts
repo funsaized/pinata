@@ -117,7 +117,12 @@ export class IpcClient {
         run: link.run,
       }),
     );
-    await ready;
+    try {
+      await ready;
+    } catch (error) {
+      client.close();
+      throw error;
+    }
     return client;
   }
 

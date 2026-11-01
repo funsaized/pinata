@@ -197,7 +197,13 @@ export class LogClient {
           client.emit({ kind: "events", view: client.view, events: [event] });
         },
         { follow: true, signal: client.controller.signal },
-      ).then(() => client.close());
+      ).then(
+        () => client.close(),
+        (error: Error) => {
+          client.emit({ kind: "error", message: error.message });
+          client.close();
+        },
+      );
     }
     return client;
   }

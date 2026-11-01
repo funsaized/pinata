@@ -19,7 +19,7 @@ import {
 } from "@earendil-works/pi-tui";
 import type { AgentEvent } from "../core/types.ts";
 import type { AgentView } from "../core/view.ts";
-import type { Keys } from "./live.ts";
+import type { Keys } from "./workspace.ts";
 import { GLYPHS, clean, duration, elapsed, money, tokens } from "./text.ts";
 import type { Paint } from "./widget.ts";
 

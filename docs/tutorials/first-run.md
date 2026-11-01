@@ -31,7 +31,7 @@ doing now. The footer shows a one-line summary. Both disappear when the run sett
 Open one agent's conversation while it works:
 
 ```text
-/pinata open scout-errors
+/pinata view --task scout-errors
 ```
 
 Press Esc to return. [Watching agents](watching-agents.md) covers the detail view.
