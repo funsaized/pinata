@@ -98,7 +98,7 @@ test("a viewer attaches mid-run, follows new agents, steers, detaches and re-att
   await viewer.detail!.ready;
   await until(() => /Done\./.test(viewer.render(120).join("\n")), "the planner's streamed text");
   const screen = viewer.render(120).join("\n").replace(ansi, "");
-  assert.match(screen, /PINATA · [0-9a-f]{8} · running · 1\/2 done/);
+  assert.match(screen, /Pinata [0-9a-f]{8} · 1 running · 1\/2 finished/);
   assert.match(screen, /✓.*first/);
   assert.match(screen, /▸.*second/);
   // Focus the conversation, then steer the running planner through the socket.

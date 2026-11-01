@@ -3,7 +3,7 @@
 // runs only while motion is on and an agent is working (or a bonk or cheer is playing).
 import type { RunView } from "../core/view.ts";
 import { RIBBON_COLORS, colorize, mascotFrame, mood } from "./mascot.ts";
-import { GLYPHS, clean, duration, money, short, tokens } from "./text.ts";
+import { GLYPHS, clean, duration, counts, runSummary, usageText, statusLabel } from "./text.ts";
 import type { Paint } from "./widget.ts";
 import { AgentDetail, type DetailSource } from "./detail.ts";
 import { pad, workspaceFrame } from "./frame.ts";
@@ -399,7 +399,7 @@ export class RunWorkspace {
       const name = `${active ? "›" : " "} ${glyph} ${clean(id)}`;
       const label = this.theme.fg(active ? "accent" : "text", pad(name, width));
       rows.push(active ? (this.theme.bg?.("selectedBg", label) ?? label) : label);
-      const status = `${agent.role} · ${agent.status}`;
+      const status = `${statusLabel(agent.status)} · ${clean(agent.role)}`;
       const note = agent.reason && agent.status !== "succeeded" ? clean(agent.reason) : status;
       if (rowHeight > 1)
         rows.push(this.theme.fg(agent.reason ? "warning" : "muted", `    ${note}`));
@@ -424,12 +424,11 @@ export class RunWorkspace {
       age(now, this.bonkAt) < BONK_S && !this.error && state.kind !== "attention"
         ? "Hey! I am supervising here."
         : state.text;
-    const done =
-      view?.order.filter((id) => !["running", "queued"].includes(view.agents[id].status)).length ??
-      0;
-    const title = `PINATA${view ? ` · ${short(view.run)} · ${view.status} · ${done}/${view.order.length} done` : ""}`;
+    const title = view
+      ? runSummary(view.run, view.status, counts(view), view.order.length)
+      : "Pinata · Waiting for a run";
     const facts = view
-      ? ` · ${duration((view.settledAt ?? now) - view.startedAt)} · ${tokens(view.usage.totalTokens)} tok · ${money(view.usage.cost)}`
+      ? ` · ${duration((view.settledAt ?? now) - view.startedAt)} elapsed · ${usageText(view.usage)}`
       : "";
     const top = [
       fg("accent", this.theme.bold?.(title) ?? title),

@@ -14,6 +14,59 @@ export const GLYPHS: Record<AgentView["status"], string> = {
   uncertain: "?",
 };
 
+export function statusLabel(status: string): string {
+  const labels: Record<string, string> = {
+    queued: "Waiting",
+    running: "Running",
+    succeeded: "Done",
+    failed: "Failed",
+    rejected: "Needs changes",
+    blocked: "Blocked",
+    cancelled: "Cancelled",
+    uncertain: "Unconfirmed",
+    verified: "Verified",
+    verification_failed: "Checks failed",
+    applied_unverified: "Applied · not verified",
+    rolled_back: "Rolled back",
+    not_run: "Not checked",
+    source_changed: "Source changed",
+    applying: "Applying changes",
+    verifying: "Checking checkout",
+    destination_checked: "Checkout checked",
+    historical: "Historical record",
+    legacy_unverified: "Older record · not verified",
+  };
+  return labels[status] ?? clean(status).replaceAll("_", " ");
+}
+
+export function backendLabel(backend: string): string {
+  return (
+    { "in-process": "Shared process", process: "Separate process", "herdr-pi": "Herdr pane" }[
+      backend
+    ] ?? clean(backend)
+  );
+}
+
+export function agentActivity(
+  agent: Pick<AgentView, "status" | "activity" | "reason" | "summary">,
+): string {
+  const raw = clean(agent.status === "running" ? agent.activity : (agent.reason ?? agent.summary));
+  if (!raw) return "";
+  const words: Record<string, string> = {
+    thinking: "Thinking",
+    writing: "Writing",
+    starting: "Starting",
+    read: "Reading",
+    edit: "Editing",
+    write: "Writing",
+    bash: "Running",
+    check: "Checking",
+  };
+  const space = raw.indexOf(" ");
+  const verb = space < 0 ? raw : raw.slice(0, space);
+  return words[verb] ? words[verb] + (space < 0 ? "" : raw.slice(space)) : raw;
+}
+
 export function duration(ms: number): string {
   if (!Number.isFinite(ms) || ms < 0) return "-";
   if (ms < 1000) return `${Math.round(ms)}ms`;
@@ -72,44 +125,56 @@ export function counts(view: RunView): Record<string, number> {
   return out;
 }
 
-function usageText(u: Usage): string {
-  return `${tokens(u.totalTokens)} tok · ${money(u.cost)}`;
+export function usageText(u: Pick<Usage, "totalTokens" | "cost">): string {
+  return `${tokens(u.totalTokens)} tokens · ${money(u.cost)} cost`;
+}
+
+export function runSummary(
+  run: string,
+  status: string,
+  c: Record<string, number>,
+  total: number,
+): string {
+  const finished = total - (c.queued ?? 0) - (c.running ?? 0);
+  const parts = [`Pinata ${short(run)}`];
+  if (status !== "running") parts.push(statusLabel(status));
+  if (c.running) parts.push(`${c.running} running`);
+  if (c.queued) parts.push(`${c.queued} waiting`);
+  parts.push(`${finished}/${total} finished`);
+  for (const s of ["failed", "rejected", "blocked", "cancelled", "uncertain"])
+    if (c[s]) parts.push(`${c[s]} ${statusLabel(s).toLowerCase()}`);
+  return parts.join(" · ");
 }
 
 // One line for a whole run, for tool progress updates and the footer.
 export function progressLine(view: RunView, now = Date.now()): string {
-  const c = counts(view);
-  const done = view.order.length - (c.queued ?? 0) - (c.running ?? 0);
-  const parts = [`pinata ${short(view.run)}`, `${done}/${view.order.length} done`];
-  if (c.running) parts.push(`${c.running} running`);
-  if (c.queued) parts.push(`${c.queued} queued`);
-  for (const s of ["failed", "rejected", "blocked", "cancelled"] as const)
-    if (c[s]) parts.push(`${c[s]} ${s}`);
-  parts.push(usageText(view.usage));
-  parts.push(duration((view.settledAt ?? now) - view.startedAt));
-  return parts.join(" · ");
+  return [
+    runSummary(view.run, view.status, counts(view), view.order.length),
+    `${duration((view.settledAt ?? now) - view.startedAt)} elapsed`,
+    usageText(view.usage),
+  ].join(" · ");
+}
+
+export function agentMetrics(agent: AgentView, now = Date.now()): string {
+  return [
+    agent.startedAt !== undefined ? `${duration(elapsed(agent, now))} elapsed` : undefined,
+    agent.turns ? `${agent.turns} turns` : undefined,
+    agent.toolCalls ? `${agent.toolCalls} tool calls` : undefined,
+    agent.usage.totalTokens ? usageText(agent.usage) : undefined,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 export function agentLine(agent: AgentView, now = Date.now()): string {
-  const head = `${GLYPHS[agent.status]} ${agent.role.padEnd(8)} ${agent.id}`;
-  const facts = [
-    agent.status,
-    agent.backend && agent.backend !== "in-process"
-      ? agent.backend === "process"
-        ? "proc"
-        : agent.backend
-      : undefined,
-    agent.startedAt !== undefined ? duration(elapsed(agent, now)) : undefined,
-    agent.turns ? `${agent.turns} turns` : undefined,
-    agent.toolCalls ? `${agent.toolCalls} tools` : undefined,
-    agent.usage.totalTokens ? usageText(agent.usage) : undefined,
-  ].filter(Boolean);
-  const tail = agent.status === "running" ? agent.activity : (agent.reason ?? agent.summary);
-  return `${head}  ${facts.join(" · ")}${tail ? ` — ${tail.replace(/\s+/g, " ").slice(0, 160)}` : ""}`;
+  const head = `${GLYPHS[agent.status]} ${clean(agent.id)} (${clean(agent.role)}) · ${statusLabel(agent.status)}`;
+  const facts = agentMetrics(agent, now);
+  const tail = agentActivity(agent);
+  return `${head}${facts ? ` · ${facts}` : ""}${tail ? ` — ${tail.slice(0, 160)}` : ""}`;
 }
 
 export function statusText(view: RunView, now = Date.now()): string {
-  const lines = [`${progressLine(view, now)} · ${view.mode}`];
+  const lines = [progressLine(view, now)];
   for (const id of view.order) lines.push(`  ${agentLine(view.agents[id], now)}`);
   return lines.join("\n");
 }
@@ -127,5 +192,5 @@ export function footerLine(views: readonly RunView[]): string {
     done += view.order.length - (c.running ?? 0) - (c.queued ?? 0);
     cost += view.usage.cost;
   }
-  return `pinata ${done}/${total}${running ? ` · ${running} running` : ""} · ${money(cost)}`;
+  return `Pinata${running ? ` · ${running} running` : ""} · ${done}/${total} finished · ${money(cost)} cost`;
 }

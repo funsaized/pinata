@@ -18,7 +18,7 @@ Choose the `herdr-pi` backend for a task (`"backend": "herdr-pi"`) or for every 
 (`config.backend`). Each agent then runs in an interactive Pi in its own workspace,
 `pinata-<run>-<task>`:
 
-- the widget shows it with the `herdr` badge;
+- the conversation header identifies it as a Herdr pane;
 - in the agent's detail view (`/pinata view --task <task>`), press `o` to bring its pane to the
   front;
 - whatever you type in that pane is delivered to the agent and recorded as a steer by the

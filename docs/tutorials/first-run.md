@@ -24,9 +24,10 @@ Pi combines their findings when both finish.
 
 ## 3. Watch them
 
-Above the editor, the widget shows one row per agent: its state (`▸` running, `✓`
-succeeded), agent name, id, backend badge, time, turns, tool calls, tokens, cost and what it is
-doing now. The footer shows a one-line summary. Both disappear when the run settles.
+Above the editor, the widget shows one row per agent: its task ID, a plain status such as
+Running or Done, elapsed time, and current activity. Tokens and cost appear once as run
+totals. The footer shows a one-line summary. Both disappear when the run settles.
+Tool results use readable summaries; Ctrl+O expands the details.
 
 Open one agent's conversation while it works:
 

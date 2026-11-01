@@ -137,29 +137,26 @@ const strip = (lines: string[]) => lines.map((l) => l.replace(/\x1b\[[0-9;]*m/g,
 test("widget rows render the expected lines at several widths", () => {
   const view = sample();
   assert.deepEqual(strip(widgetLines([view], 120, undefined, NOW)), [
-    "pinata 0f3c9a51 · 1/3 done · 1 running · 5.4k tok · $0.012",
-    "✓ scout    map  in 9.0s 2t 4⚒ 5.4k $0.012 — Mapped the parser and its tests",
-    "▸ builder  build  in 12.0s 1t 1⚒ — edit src/date.ts [2J",
-    "· reviewer review — queued",
+    "Pinata 0f3c9a51 · 1 running · 1 waiting · 1/3 finished",
+    "✓ map     Done · 9.0s — Mapped the parser and its tests",
+    "▸ build   Running · 12.0s — Editing src/date.ts [2J",
+    "· review  Waiting",
+    "Total: 5.4k tokens · $0.012 cost · View & steer: /pinata view",
   ]);
-  assert.deepEqual(strip(widgetLines([view], 48, undefined, NOW)), [
-    "pinata 0f3c9a51 · 1/3 done · 1 running · 5.4k t…",
-    "✓ scout    map  in 9.0s 2t 4⚒ 5.4k $0.012",
-    "▸ builder  build  in 12.0s 1t 1⚒ — edit src/dat…",
-    "· reviewer review — queued",
-  ]);
-  assert.deepEqual(strip(widgetLines([view], 24, undefined, NOW)), [
-    "pinata 0f3c9a51 · 1/3 d…",
-    "✓ scout    map  in 9.0s…",
-    "▸ builder  build  in 12…",
-    "· reviewer review",
-  ]);
+  for (const columns of [24, 48]) {
+    const rows = strip(widgetLines([view], columns, undefined, NOW));
+    assert.match(rows[1], /map\s+Done/);
+    assert.match(rows[2], /build\s+Running/);
+    assert.match(rows[3], /review\s+Waiting/);
+    assert.match(rows[4], /^Total: .*tokens/);
+    assert.match(rows[5], /^View & steer:/);
+  }
   for (const width of [10, 24, 33, 48, 80, 120, 200])
     for (const line of widgetLines([view], width, undefined, NOW))
       assert(visibleWidth(line) <= width, `overflow at ${width}: ${line}`);
   // Terminal controls in model output never reach the terminal.
   assert(!agentRow(view.agents.build, 120, undefined, NOW).includes("\x1b"));
-  assert.equal(footerLine([view]), "pinata 1/3 · 1 running · $0.012");
+  assert.equal(footerLine([view]), "Pinata · 1 running · 1/3 finished · $0.012 cost");
 });
 
 test("celebrations require every successful task and verified builder integration", () => {

@@ -98,6 +98,10 @@ test("the extension registers the tools and the command", async (t) => {
   ]);
   assert(a.commands.has("pinata"));
   assert(a.handlers.session_shutdown?.length);
+  for (const tool of a.tools.values()) {
+    assert.equal(typeof tool.renderCall, "function", tool.name);
+    assert.equal(typeof tool.renderResult, "function", tool.name);
+  }
 });
 
 test("children never get pinata tools (recursion guard)", () => {
@@ -127,6 +131,22 @@ test("pinata_run runs in the foreground, streams progress and returns compact re
   );
   assert(!out.isError, JSON.stringify(out));
   const r = out.details.result;
+  const beforeRender = JSON.stringify(out);
+  const rendered = a.tools
+    .get("pinata_run")
+    .renderResult(
+      out,
+      { expanded: false, isPartial: false },
+      { fg: (_: string, text: string) => text },
+      { args: {} },
+    )
+    .render(100)
+    .join("\n");
+  assert.match(rendered, /3\/3 finished/);
+  assert.match(rendered, /✓ one · Done/);
+  assert.match(rendered, /View results: \/pinata view/);
+  assert(!rendered.includes('"tasks":'), "collapsed results are readable summaries");
+  assert.equal(JSON.stringify(out), beforeRender, "rendering preserves structured model results");
   assert.equal(r.status, "succeeded");
   assert.deepEqual(
     r.tasks.map((x: any) => [x.id, x.status, x.brief]),
@@ -136,7 +156,7 @@ test("pinata_run runs in the foreground, streams progress and returns compact re
       ["plan", "succeeded", "plan brief"],
     ],
   );
-  assert(updates.length >= 1 && /pinata [0-9a-f]{8} · /.test(updates.at(-1).content[0].text));
+  assert(updates.length >= 1 && /Pinata [0-9a-f]{8} · /.test(updates.at(-1).content[0].text));
   const summary = (await a.call("pinata_status", {})).details.result;
   assert.equal(summary.run, r.run);
   const full = (
@@ -285,7 +305,7 @@ test("/pinata reports runs, modes and runs a crashed Pi left unsettled", async (
   const command = a.commands.get("pinata");
   await command.handler("", a.ctx);
   assert.match(a.notes.at(-1)!, /Interrupted \(Pi exited before they settled\): 00000000/);
-  assert.match(a.notes.at(-1)!, /✓ scout\s+done/);
+  assert.match(a.notes.at(-1)!, /✓ done \(scout\)/);
   await command.handler("runs", a.ctx);
   assert.equal(a.notes.at(-1)!.split("\n").length, 2);
   await command.handler("mode observe", a.ctx);
@@ -342,7 +362,7 @@ test("the widget and footer follow a run in the TUI and clear when it settles; i
   assert.equal(widgets[0].options.placement, "aboveEditor");
   assert(renders >= 1, "the widget re-renders as events arrive");
   assert(
-    statuses.some((s) => /^pinata \d\/2/.test(s ?? "")),
+    statuses.some((s) => /^Pinata · .*\d\/2 finished/.test(s ?? "")),
     `footer: ${JSON.stringify(statuses)}`,
   );
   // Settled: the coalesced update clears the widget and the footer, and the ears stop.
@@ -525,7 +545,7 @@ test("/pinata view --task replays a finished run from disk in a session that nev
   // oxlint-disable-next-line no-control-regex
   const ansi = /\x1b\[[0-9;]*m|\x1b\][^\x07]*\x07/g;
   const text = detail.render(100).join("\n").replace(ansi, "");
-  assert.match(text, /✓ scout look/);
+  assert.match(text, /✓ look \(scout\)/);
   assert.match(text, /Task look \(scout\)/);
   assert.match(text, /README\.md/);
   assert.match(text, /AGENTS/);
