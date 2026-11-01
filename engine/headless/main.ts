@@ -14,6 +14,7 @@ import { PinataHost, repositoryRoot, type RunParams } from "../pi/host.ts";
 import { gcText } from "../pi/commands.ts";
 import { followEvents } from "../sources/log.ts";
 import { JsonReporter, TextReporter, type Reporter } from "./reporters.ts";
+import { resolveView, type ViewArgs } from "../viewer/selection.ts";
 
 export const EXIT = { succeeded: 0, failed: 1, invalid: 2, cancelled: 3 } as const;
 
@@ -185,8 +186,10 @@ export default function headless(pi: ExtensionAPI): void {
   pi.registerCommand("pinata-resume", {
     description: "Continue a run that outlived its Pi (headless)",
     handler: async (raw, ctx) => {
-      const { dir } = JSON.parse(raw) as { dir: string };
       try {
+        const args = JSON.parse(raw) as { dir?: string; run?: string; cwd?: string };
+        const dir = args.dir ?? (await resolveView({ run: args.run }, args.cwd ?? ctx.cwd)).runs[0];
+        if (!dir) throw new Error("No pinata runs in this repository.");
         // Progress goes to stderr (the run's headless.log when Pi started this host).
         const engine = host.engine(ctx);
         const reporter = new TextReporter(err);
@@ -214,9 +217,12 @@ export default function headless(pi: ExtensionAPI): void {
   });
   pi.registerCommand("pinata-logs", {
     description: "Print a pinata run's log (headless)",
-    handler: async (raw) => {
+    handler: async (raw, ctx) => {
       try {
-        await printLogs(JSON.parse(raw) as LogsArgs, out);
+        const args = JSON.parse(raw) as Partial<LogsArgs> & ViewArgs & { cwd?: string };
+        const dir = args.dir ?? (await resolveView(args, args.cwd ?? ctx.cwd)).runs[0];
+        if (!dir) throw new Error("No pinata runs in this repository.");
+        await printLogs({ ...args, dir }, out);
       } catch (error) {
         err(`pinata logs: ${(error as Error).message}`);
         process.exitCode = EXIT.failed;

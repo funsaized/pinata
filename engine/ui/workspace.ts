@@ -1,4 +1,4 @@
-// The live scene (port of 0.7.0's lib/live.mjs): the mascot overlay behind /pinata live. It
+// The shared run workspace behind /pinata view and the terminal's pinata view. It
 // is fed RunViews pushed by the host instead of polling saved runs, and its animation timer
 // runs only while motion is on and an agent is working (or a bonk or cheer is playing).
 import type { RunView } from "../core/view.ts";
@@ -9,7 +9,7 @@ import { AgentDetail, type DetailSource } from "./detail.ts";
 import { pad, workspaceFrame } from "./frame.ts";
 
 // A run as the scene shows it: its view and, for builder runs, the integration journal status.
-export interface SceneRun {
+export interface WorkspaceRun {
   view: RunView;
   integration: string | null;
 }
@@ -33,17 +33,17 @@ const age = (now: number, then: number | null) => (then === null ? Infinity : (n
 const working = (view: RunView | undefined) =>
   !!view && view.order.some((id) => view.agents[id].status === "running");
 
-export interface SceneOptions {
+export interface WorkspaceOptions {
   tui: { requestRender(): void; terminal?: { rows: number } };
   theme: Paint;
   keys: Keys;
   done: () => void;
   runs?: string[];
-  // Unqualified /pinata live follows newly started runs; explicit run views stay pinned.
+  // Unqualified view follows newly started runs; explicit run/task views stay pinned.
   followNewRuns?: boolean;
-  readRun?: (run: string) => Promise<SceneRun> | SceneRun;
+  readRun?: (run: string) => Promise<WorkspaceRun> | WorkspaceRun;
   detailSource?: (run: string) => Promise<DetailSource> | DetailSource;
-  // /pinata open enters the same workspace with this conversation focused.
+  // --task enters the workspace with this conversation focused.
   agent?: string;
   motion?: boolean;
   setMotion?: (enabled: boolean) => void;
@@ -55,14 +55,14 @@ type Bounds = { x: number; y: number; width: number; height: number };
 const contains = (b: Bounds | null, x: number, y: number) =>
   !!b && x >= b.x && x < b.x + b.width && y >= b.y && y < b.y + b.height;
 
-export class LiveScene {
-  readonly tui: SceneOptions["tui"];
+export class RunWorkspace {
+  readonly tui: WorkspaceOptions["tui"];
   readonly theme: Paint;
   readonly keys: Keys;
   readonly done: () => void;
   readonly runs: string[];
   readonly followNewRuns: boolean;
-  readRun: NonNullable<SceneOptions["readRun"]>;
+  readRun: NonNullable<WorkspaceOptions["readRun"]>;
   motion: boolean;
   readonly setMotion: (enabled: boolean) => void;
   readonly now: () => number;
@@ -73,9 +73,10 @@ export class LiveScene {
   focus: "agents" | "detail";
   agent: string | null;
   detail: AgentDetail | null = null;
-  run: SceneRun | null = null;
+  run: WorkspaceRun | null = null;
   error: string | null = null;
   detailError: string | null = null;
+  connection: string | null = null;
   bonkAt: number | null = null;
   cheerAt: number | null = null;
   twitchAt: number | null = null;
@@ -86,12 +87,13 @@ export class LiveScene {
   agentBounds: Array<Bounds & { agent: string }> = [];
   detailBounds: Bounds | null = null;
   ready: Promise<void> = Promise.resolve();
-  private detailSource?: SceneOptions["detailSource"];
+  private detailSource?: WorkspaceOptions["detailSource"];
   private loadingRun: string | null = null;
   private loading: Promise<void> = Promise.resolve();
   private listSize = 5;
+  private followingAgent: boolean;
 
-  constructor(options: SceneOptions) {
+  constructor(options: WorkspaceOptions) {
     this.tui = options.tui;
     this.theme = options.theme;
     this.keys = options.keys;
@@ -106,6 +108,7 @@ export class LiveScene {
     this.timers = options.timers ?? globalThis;
     this.started = this.now();
     this.agent = options.agent ?? null;
+    this.followingAgent = !options.agent;
     this.focus = options.agent ? "detail" : "agents";
     this.ready = this.refresh();
   }
@@ -114,21 +117,23 @@ export class LiveScene {
     return this.runs[this.index] ?? null;
   }
 
-  offer(run: SceneRun): void {
+  offer(run: WorkspaceRun): void {
     if (this.disposed) return;
     if (!this.runs.includes(run.view.run)) {
       if (!this.followNewRuns) return;
       // Keep a historical selection or steering draft in place when another run starts.
       const followLatest = this.index === 0 && !this.detail?.input;
       this.runs.unshift(run.view.run);
-      if (followLatest) this.agent = null;
-      else this.index++;
+      if (followLatest) {
+        this.agent = null;
+        this.followingAgent = true;
+      } else this.index++;
       this.tui.requestRender();
     }
     if (run.view.run === this.selected()) this.update(run);
   }
 
-  update(run: SceneRun | null): void {
+  update(run: WorkspaceRun | null): void {
     if (this.disposed) return;
     const previous = this.run;
     if (previous && run && previous.view.run === run.view.run) {
@@ -145,7 +150,13 @@ export class LiveScene {
     }
     this.run = run;
     this.error = null;
-    if (!this.agent || !run?.view.agents[this.agent]) {
+    if (
+      !this.agent ||
+      !run?.view.agents[this.agent] ||
+      (this.followingAgent &&
+        !this.detail?.input &&
+        run.view.agents[this.agent].status !== "running")
+    ) {
       this.agent =
         run?.view.order.find((id) => run.view.agents[id].status === "running") ??
         run?.view.order.find((id) =>
@@ -186,6 +197,13 @@ export class LiveScene {
     this.scroll = 0;
   }
 
+  async reloadSource(): Promise<void> {
+    if (this.disposed || this.detail?.input) return;
+    this.clearDetail();
+    this.ready = this.refresh();
+    await this.ready;
+  }
+
   private ensureDetail(): Promise<void> {
     const run = this.run?.view.run;
     if (!run || !this.agent || !this.detailSource) return Promise.resolve();
@@ -213,6 +231,7 @@ export class LiveScene {
         });
         this.detail.onSwitch = (agent) => {
           this.agent = agent;
+          this.followingAgent = false;
         };
         await this.detail.ready;
       } catch (error) {
@@ -226,6 +245,7 @@ export class LiveScene {
 
   selectAgent(agent: string, focus = false): void {
     if (this.disposed || this.detail?.input || !this.run?.view.agents[agent]) return;
+    this.followingAgent = false;
     this.agent = agent;
     if (focus) this.focus = "detail";
     this.ready = this.ensureDetail();
@@ -415,7 +435,9 @@ export class LiveScene {
       fg("accent", this.theme.bold?.(title) ?? title),
       fg(
         this.error ? "error" : state.kind === "attention" ? "warning" : "muted",
-        this.error ? `Status unavailable · ${this.error} · R retry` : moodText + facts,
+        this.error
+          ? `Status unavailable · ${this.error} · R retry`
+          : moodText + facts + (this.connection ? ` · ${this.connection}` : ""),
       ),
     ];
     this.artBounds = this.detailBounds = null;

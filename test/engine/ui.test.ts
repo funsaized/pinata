@@ -7,7 +7,11 @@ import { initTheme } from "@earendil-works/pi-coding-agent";
 import type { DetailSource } from "../../engine/ui/detail.ts";
 import type { AgentEvent, TaskSpec } from "../../engine/core/types.ts";
 import { replayView, type RunView } from "../../engine/core/view.ts";
-import { LiveScene, type SceneOptions, type SceneRun } from "../../engine/ui/live.ts";
+import {
+  RunWorkspace,
+  type WorkspaceOptions,
+  type WorkspaceRun,
+} from "../../engine/ui/workspace.ts";
 import { mascotFrame, mood } from "../../engine/ui/mascot.ts";
 import { footerLine } from "../../engine/ui/text.ts";
 import { PinataWidget, agentRow, widgetLines } from "../../engine/ui/widget.ts";
@@ -77,7 +81,7 @@ function sample(): RunView {
 }
 
 // Synthetic run states for UI tests only.
-function sceneRun(step = 0): SceneRun {
+function sceneRun(step = 0): WorkspaceRun {
   const phase = ((step % 6) + 6) % 6;
   const at = 1_000_000;
   const tasks: TaskSpec[] = [
@@ -159,7 +163,7 @@ test("widget rows render the expected lines at several widths", () => {
 });
 
 test("celebrations require every successful task and verified builder integration", () => {
-  const kind = (run: SceneRun) => mood(run.view, run.integration).kind;
+  const kind = (run: WorkspaceRun) => mood(run.view, run.integration).kind;
   assert.equal(kind(sceneRun(2)), "review");
   assert.equal(kind(sceneRun(3)), "ready");
   assert.equal(kind(sceneRun(4)), "success");
@@ -210,13 +214,13 @@ const KEYS: Record<string, string> = {
 const keys = { matches: (data: string, id: string) => KEYS[id] === data };
 const theme = { fg: (_color: string, text: string) => text };
 
-function harness(options: Partial<SceneOptions> = {}) {
+function harness(options: Partial<WorkspaceOptions> = {}) {
   let now = 1000,
     closed = 0,
     renders = 0;
   const timers = new Map<symbol, { fn: () => void; ms: number }>();
   const tui = { terminal: { rows: 32 }, requestRender: () => renders++ };
-  const scene = new LiveScene({
+  const scene = new RunWorkspace({
     tui,
     theme,
     keys,
@@ -302,7 +306,7 @@ test("empty views, small terminals, scrolling, and clicks keep status and contro
   assert.equal(h.scene.error, null);
   assert.match(h.scene.render(100).join("\n"), /No runs yet/);
   const tasks = Array.from({ length: 30 }, (_, i) => spec(`task-${i}`, "reviewer"));
-  const run: SceneRun = {
+  const run: WorkspaceRun = {
     view: build(
       tasks,
       tasks.flatMap((t, i): Array<[string, Record<string, unknown>]> => [
@@ -350,13 +354,13 @@ test("empty views, small terminals, scrolling, and clicks keep status and contro
 });
 
 test("stale and failed reads cannot replace the selected run or update a disposed overlay", async () => {
-  let resolveFirst!: (run: SceneRun) => void;
-  const named = (run: SceneRun, id: string) => ({ ...run, view: { ...run.view, run: id } });
+  let resolveFirst!: (run: WorkspaceRun) => void;
+  const named = (run: WorkspaceRun, id: string) => ({ ...run, view: { ...run.view, run: id } });
   const h = harness({
     runs: ["first", "second"],
     readRun: (id) =>
       id === "first"
-        ? new Promise<SceneRun>((resolve) => (resolveFirst = resolve))
+        ? new Promise<WorkspaceRun>((resolve) => (resolveFirst = resolve))
         : Promise.resolve(named(sceneRun(1), "second")),
   });
   h.scene.handleInput("right");
@@ -373,8 +377,8 @@ test("stale and failed reads cannot replace the selected run or update a dispose
   assert.equal(h.scene.run!.view.run, "second");
   assert.match(h.scene.render(100).join("\n"), /Status unavailable/);
   assert(!h.scene.error!.includes("\x1b"));
-  let resolveLate!: (run: SceneRun) => void;
-  h.scene.readRun = () => new Promise<SceneRun>((resolve) => (resolveLate = resolve));
+  let resolveLate!: (run: WorkspaceRun) => void;
+  h.scene.readRun = () => new Promise<WorkspaceRun>((resolve) => (resolveLate = resolve));
   const pending = h.scene.refresh();
   const before = h.renders();
   h.scene.dispose();
@@ -385,11 +389,11 @@ test("stale and failed reads cannot replace the selected run or update a dispose
 });
 
 test("new runs replace a stale initial read but preserve historical selections and steering drafts", async (t) => {
-  const named = (id: string): SceneRun => ({
+  const named = (id: string): WorkspaceRun => ({
     ...sceneRun(1),
     view: { ...sceneRun(1).view, run: id },
   });
-  let release!: (run: SceneRun) => void;
+  let release!: (run: WorkspaceRun) => void;
   const h = harness({
     runs: ["saved"],
     followNewRuns: true,

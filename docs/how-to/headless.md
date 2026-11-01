@@ -57,7 +57,7 @@ headless command does not apply them or run destination checks automatically.
 
 ```sh
 pinata logs
-pinata logs <run> <task> --follow
+pinata logs <run> --task <task> --follow
 pinata logs <run> --json
 ```
 

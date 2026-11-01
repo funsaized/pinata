@@ -3,7 +3,7 @@
 // mascot's ears, and runs only while an agent is working and motion is on.
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { AgentView, RunView } from "../core/view.ts";
-import type { Timers } from "./live.ts";
+import type { Timers } from "./workspace.ts";
 import { mood } from "./mascot.ts";
 import { GLYPHS, clean, duration, money, short, tokens } from "./text.ts";
 
@@ -111,7 +111,7 @@ export interface WidgetOptions {
   paint: Paint;
   views: () => readonly RunView[];
   motion: () => boolean;
-  // Opens /pinata live (a click on the first line).
+  // Opens /pinata view (a click on the first line).
   open?: () => void;
   timers?: Timers;
   now?: () => number;

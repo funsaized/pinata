@@ -152,11 +152,12 @@ test("the post-mortem viewer opens a finished run from its directory alone", asy
     },
     done: () => closed++,
     runs: [handle.dir],
+    task: "a",
     connect: (dir) => LogClient.open(dir, { follow: true }),
     cwd: handle.dir,
   });
   await viewer.ready;
-  assert.equal(viewer.status, "from the run's log");
+  assert.match(viewer.status, /from the run's log/);
   // oxlint-disable-next-line no-control-regex
   const ansi = /\x1b\[[0-9;]*m|\x1b\][^\x07]*\x07/g;
   const screen = viewer.render(100).join("\n").replace(ansi, "");

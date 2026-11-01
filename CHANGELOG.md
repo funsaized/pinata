@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Unify run and conversation viewing as `/pinata view [run] [--task <task>]` and
+  `pinata view [run] [--task <task>]`, using the same workspace and controls.
+  Bare views discover new runs; explicit run or task selections stay pinned.
+- Use `/pinata view --external` to enable a terminal viewer or open a Herdr pane.
+  The former `live`, `open`, and `watch` slash commands remain compatibility aliases.
+- Follow recorded output when a socket is unavailable and connect automatically when
+  it appears. Standardize run lookup, validation, completion, and `logs --task` selection.
+
 ## 2.0.1 (2026-10-31)
 
 - Share one rainbow-framed workspace between `/pinata live` and `/pinata open`,

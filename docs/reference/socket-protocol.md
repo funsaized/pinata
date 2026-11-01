@@ -1,7 +1,7 @@
 # Socket protocol
 
 A run's socket lets viewers follow it (`pinata view`). It starts with an observe-mode run or
-on `/pinata watch`, and stops when the run has settled and the last viewer leaves.
+on `/pinata view --external`, and stops when the run has settled and the last viewer leaves.
 
 ## Finding it
 
