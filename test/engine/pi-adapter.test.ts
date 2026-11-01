@@ -49,6 +49,7 @@ async function adapter(t: TestContext, respond: (turn: FauxTurn) => any) {
     );
   const tools = new Map<string, any>();
   const commands = new Map<string, any>();
+  const shortcuts = new Map<string, any>();
   const handlers: Record<string, Array<(e: any, ctx: any) => any>> = {};
   const messages: Array<{ message: any; options: any }> = [];
   const notes: string[] = [];
@@ -58,6 +59,7 @@ async function adapter(t: TestContext, respond: (turn: FauxTurn) => any) {
       entries.push({ type: "custom", customType, data }),
     registerTool: (tool: any) => tools.set(tool.name, tool),
     registerCommand: (name: string, options: any) => commands.set(name, options),
+    registerShortcut: (key: string, options: any) => shortcuts.set(key, options),
     registerMessageRenderer() {},
     on: (event: string, handler: any) => (handlers[event] ??= []).push(handler),
     sendMessage: (message: any, options: any) => messages.push({ message, options }),
@@ -74,7 +76,7 @@ async function adapter(t: TestContext, respond: (turn: FauxTurn) => any) {
   };
   const call = (name: string, params: unknown, signal?: AbortSignal, updates: any[] = []) =>
     tools.get(name).execute("call-1", params, signal, (u: any) => updates.push(u), ctx);
-  return { world, tools, commands, handlers, messages, notes, entries, ctx, call };
+  return { world, tools, commands, shortcuts, handlers, messages, notes, entries, ctx, call };
 }
 
 const reader = (turn: FauxTurn) =>
@@ -98,6 +100,7 @@ test("the extension registers the tools and the command", async (t) => {
   ]);
   assert(a.commands.has("pinata"));
   assert(a.handlers.session_shutdown?.length);
+  assert.deepEqual([...a.shortcuts.keys()], ["shift+up", "shift+down"]);
   for (const tool of a.tools.values()) {
     assert.equal(typeof tool.renderCall, "function", tool.name);
     assert.equal(typeof tool.renderResult, "function", tool.name);
@@ -118,6 +121,72 @@ test("children never get pinata tools (recursion guard)", () => {
     delete process.env.PINATA_AGENT;
   }
   assert.deepEqual(registered, []);
+});
+
+test("agent shortcuts open available conversations, stay quiet without runs, and preserve the parent draft", async (t) => {
+  const { initTheme } = await import("@earendil-works/pi-coding-agent");
+  initTheme("dark");
+  let modelCalls = 0;
+  const a = await adapter(t, (turn) => {
+    modelCalls++;
+    return reader(turn);
+  });
+  let scene: any;
+  let opened = 0;
+  const parentDraft = "Finish my unfinished request";
+  Object.assign(a.ctx, { mode: "tui", hasUI: true, sessionManager: { getBranch: () => [] } });
+  Object.assign(a.ctx.ui, {
+    setWidget() {},
+    setStatus() {},
+    getEditorText: () => parentDraft,
+    setEditorText: () => assert.fail("view navigation must not overwrite the parent draft"),
+    custom: (factory: any) =>
+      new Promise((done) => {
+        opened++;
+        scene = factory(
+          { terminal: { rows: 32 }, requestRender() {} },
+          { fg: (_: string, x: string) => x },
+          { matches: (data: string, id: string) => id === "tui.select.cancel" && data === "\x1b" },
+          done,
+        );
+      }),
+  });
+  const next = a.shortcuts.get("shift+down").handler;
+  const previous = a.shortcuts.get("shift+up").handler;
+  await next(a.ctx);
+  await previous(a.ctx);
+  assert.equal(opened, 0);
+  assert.equal(modelCalls, 0);
+  assert.deepEqual(a.notes, []);
+  await a.call("pinata_run", { tasks: [spec("one"), spec("two")] });
+  const calls = modelCalls;
+  const pending = next(a.ctx);
+  const duplicate = next(a.ctx);
+  for (let i = 0; !scene && i < 400; i++) await new Promise((r) => setTimeout(r, 5));
+  assert(scene);
+  await scene.ready;
+  assert.equal(scene.agent, "one");
+  assert.equal(scene.focus, "detail");
+  assert.equal(scene.followNewRuns, false, "keyboard entry pins the selected run");
+  assert.equal(opened, 1, "rapid entry does not stack overlays");
+  scene.handleInput("\x1b[1;2B");
+  await scene.ready;
+  assert.equal(scene.agent, "two");
+  scene.handleInput("\x1b");
+  await Promise.all([pending, duplicate]);
+  scene = undefined;
+  const reopened = previous(a.ctx);
+  for (let i = 0; !scene && i < 400; i++) await new Promise((r) => setTimeout(r, 5));
+  assert(scene);
+  await scene.ready;
+  assert.equal(scene.agent, "two", "Shift+Up enters the last agent");
+  scene.close();
+  await reopened;
+  assert.equal(modelCalls, calls, "navigation makes no model calls");
+  assert.equal(a.ctx.ui.getEditorText(), parentDraft);
+  a.ctx.mode = "rpc";
+  await next(a.ctx);
+  assert.equal(opened, 2, "shortcuts only act in the interactive TUI");
 });
 
 test("pinata_run runs in the foreground, streams progress and returns compact results", async (t) => {
@@ -567,6 +636,15 @@ test("/pinata view --task replays a finished run from disk in a session that nev
   await live;
   await command.handler("view --task nope", second.ctx);
   assert.match(second.notes.at(-1)!, /no task nope/);
+  detail = null;
+  const shortcut = second.shortcuts.get("shift+down").handler(second.ctx);
+  for (let i = 0; !detail && i < 400; i++) await new Promise((r) => setTimeout(r, 5));
+  assert(detail, "a shortcut can open saved agents from a previous session");
+  await detail.ready;
+  assert.equal(detail.agent, "look");
+  assert.equal(detail.focus, "detail");
+  detail.close();
+  await shortcut;
 });
 
 test("modes: lean by default with the socket on /pinata view --external; observe starts it with the run", async (t) => {

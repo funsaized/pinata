@@ -141,7 +141,7 @@ test("widget rows render the expected lines at several widths", () => {
     "✓ map     Done · 9.0s — Mapped the parser and its tests",
     "▸ build   Running · 12.0s — Editing src/date.ts [2J",
     "· review  Waiting",
-    "Total: 5.4k tokens · $0.012 cost · View & steer: /pinata view",
+    "Total: 5.4k tokens · $0.012 cost · View & steer: Shift+↑/↓ · /pinata view",
   ]);
   for (const columns of [24, 48]) {
     const rows = strip(widgetLines([view], columns, undefined, NOW));
@@ -477,6 +477,20 @@ test("the workspace selects conversations, scrolls, steers, and preserves draft 
   assert.equal(h.scene.focus, "agents");
   assert.equal(h.scene.agent, "build", "initial selection is the running agent");
   assert.deepEqual([...subscriptions], ["build"]);
+  h.scene.handleInput("\x1b[1;2A");
+  await h.scene.ready;
+  assert.equal(h.scene.agent, "map");
+  assert.equal(h.scene.focus, "detail", "Shift+Up enters the previous conversation from the list");
+  h.scene.handleInput("\x1b[1;2A");
+  await h.scene.ready;
+  assert.equal(h.scene.agent, "review", "previous agent wraps to the end");
+  h.scene.handleInput("\x1b[1;2B");
+  await h.scene.ready;
+  assert.equal(h.scene.agent, "map", "next agent wraps to the start");
+  h.scene.handleInput("\x1b[1;2B");
+  await h.scene.ready;
+  assert.equal(h.scene.agent, "build");
+  h.scene.handleInput("\t");
   h.scene.handleInput("up");
   await h.scene.ready;
   assert.equal(h.scene.agent, "map");
@@ -516,6 +530,9 @@ test("the workspace selects conversations, scrolls, steers, and preserves draft 
   assert.equal(h.scene.detail!.offset, 3, "scrolling remains available while composing");
   wheel(-1, other.x, other.y);
   assert.equal(h.scene.detail!.input!.getValue(), "m q keep scope");
+  for (const key of ["\x1b[1;2A", "\x1b[1;2B"]) h.scene.handleInput(key);
+  assert.equal(h.scene.detail!.input!.getValue(), "m q keep scope");
+  assert.equal(h.scene.agent, "build", "keyboard navigation cannot redirect a steering draft");
   h.scene.handleMouse({ type: "click", button: "left", x: other.x, y: other.y });
   assert.equal(h.scene.agent, "build", "a click cannot redirect a draft");
   h.tui.terminal.rows = 12;

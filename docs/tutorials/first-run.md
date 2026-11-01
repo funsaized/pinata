@@ -29,7 +29,8 @@ Running or Done, elapsed time, and current activity. Tokens and cost appear once
 totals. The footer shows a one-line summary. Both disappear when the run settles.
 Tool results use readable summaries; Ctrl+O expands the details.
 
-Open one agent's conversation while it works:
+Press Shift+↓ to jump into a running agent's conversation, then Shift+↑/↓ to move between
+agents and Esc to return. You can also choose a particular agent:
 
 ```text
 /pinata view --task scout-errors

@@ -85,7 +85,7 @@ export function widgetLines(
   ears = "",
 ): string[] {
   const lines: string[] = [];
-  const hint = "View & steer: /pinata view";
+  const hint = "View & steer: Shift+↑/↓ · /pinata view";
   for (const view of views) {
     const agents = view.order.map((id) => view.agents[id]);
     const prefix = lines.length ? "" : ears;

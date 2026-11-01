@@ -17,9 +17,16 @@ selection. Browsing an older run or writing a steering draft also keeps your pla
 Inside Pi, active work from the current session takes priority; otherwise both interfaces
 prefer active repository runs, then the most recent saved run. Explicit IDs search all history.
 
+**Keyboard shortcut:** in Pi, Shift+↓ opens a running agent in the default run, or its
+first agent when none is running. Shift+↑ opens its last agent. These shortcuts do
+nothing when no agents are available. They open the conversation directly, pin that
+run, and preserve your parent draft; Esc returns to it.
+
 Both interfaces use the same workspace: ↑/↓ selects an agent, Enter focuses its
 conversation, and Tab switches panes. In a conversation, ↑/↓ or the mouse wheel scrolls,
 PgUp/PgDn moves a page, End follows new output, and Enter starts a steering message.
+Shift+↑/↓ cycles through agent conversations in either pane, wrapping at either end.
+It stays on the same agent while you compose a steering message.
 Esc cancels a draft before closing. M toggles mascot motion; Space bonks it.
 
 For streaming and steering from another terminal, run `/pinata view --external` in the
