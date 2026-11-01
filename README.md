@@ -81,8 +81,8 @@ See [creating agents](docs/how-to/agents.md).
 
 - **Fast.** Agents share your Pi process by default. Startup, memory, and dispatch have
   [measured budgets](docs/maintainers/performance-v2.md), including tests at 64 active agents.
-- **Visible.** A widget above the editor shows every agent's state, time, tokens, cost and
-  current tool. `/pinata view` opens the run workspace with the animated piñata, agents,
+- **Visible.** A widget above the editor shows each agent's status, time, and activity,
+  plus total tokens and cost. `/pinata view` opens the run workspace with the animated piñata, agents,
   and conversations. Add `--task <task>` to focus an agent, then scroll or steer it.
   The same workspace opens with `pinata view` in another terminal;
   `/pinata view --external` enables its live streaming and steering.

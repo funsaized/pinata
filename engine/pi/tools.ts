@@ -29,6 +29,7 @@ import {
 import { integrationStatus } from "./ui.ts";
 import { ValidationError } from "../core/validate.ts";
 import type { Settled } from "../core/engine.ts";
+import { toolRenderers } from "./render.ts";
 
 const object = (fields: Record<string, TSchema>, options: Record<string, unknown> = {}) =>
   Type.Object(fields, { additionalProperties: false, ...options });
@@ -343,6 +344,7 @@ export function registerTools(pi: ExtensionAPI, host: PinataHost): void {
   const s = schemas();
   pi.registerTool({
     name: "pinata_agents",
+    ...toolRenderers("agents"),
     label: "Pinata agents",
     description:
       "List available agent definitions, or inspect one agent's instructions, tools, workspace, defaults, and source.",
@@ -372,6 +374,7 @@ export function registerTools(pi: ExtensionAPI, host: PinataHost): void {
   });
   pi.registerTool({
     name: "pinata_run",
+    ...toolRenderers("run"),
     label: "Pinata run",
     description: DESCRIPTIONS.run,
     parameters: s.run,
@@ -408,6 +411,7 @@ export function registerTools(pi: ExtensionAPI, host: PinataHost): void {
   });
   pi.registerTool({
     name: "pinata_status",
+    ...toolRenderers("status"),
     label: "Pinata status",
     description: DESCRIPTIONS.status,
     parameters: s.status,
@@ -424,6 +428,7 @@ export function registerTools(pi: ExtensionAPI, host: PinataHost): void {
   });
   pi.registerTool({
     name: "pinata_steer",
+    ...toolRenderers("steer"),
     label: "Pinata steer",
     description: DESCRIPTIONS.steer,
     parameters: s.steer,
@@ -449,6 +454,7 @@ export function registerTools(pi: ExtensionAPI, host: PinataHost): void {
   });
   pi.registerTool({
     name: "pinata_repair",
+    ...toolRenderers("repair"),
     label: "Pinata repair",
     description: DESCRIPTIONS.repair,
     parameters: s.repair,
@@ -474,6 +480,7 @@ export function registerTools(pi: ExtensionAPI, host: PinataHost): void {
   });
   pi.registerTool({
     name: "pinata_changes",
+    ...toolRenderers("changes"),
     label: "Pinata changes",
     description: DESCRIPTIONS.changes,
     parameters: s.changes,
@@ -492,6 +499,7 @@ export function registerTools(pi: ExtensionAPI, host: PinataHost): void {
   });
   pi.registerTool({
     name: "pinata_verify",
+    ...toolRenderers("verify"),
     label: "Pinata verify destination",
     description: DESCRIPTIONS.verify,
     parameters: s.verify,
@@ -516,6 +524,7 @@ export function registerTools(pi: ExtensionAPI, host: PinataHost): void {
   });
   pi.registerTool({
     name: "pinata_integrate",
+    ...toolRenderers("integrate"),
     label: "Pinata integrate",
     description: DESCRIPTIONS.integrate,
     parameters: s.integrate,
@@ -537,6 +546,7 @@ export function registerTools(pi: ExtensionAPI, host: PinataHost): void {
   });
   pi.registerTool({
     name: "pinata_rollback",
+    ...toolRenderers("rollback"),
     label: "Pinata rollback",
     description: DESCRIPTIONS.rollback,
     parameters: s.rollback,
@@ -557,6 +567,7 @@ export function registerTools(pi: ExtensionAPI, host: PinataHost): void {
   });
   pi.registerTool({
     name: "pinata_cancel",
+    ...toolRenderers("cancel"),
     label: "Pinata cancel",
     description: DESCRIPTIONS.cancel,
     parameters: s.cancel,

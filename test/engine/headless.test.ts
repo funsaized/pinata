@@ -177,7 +177,7 @@ test("pinata run executes a job headless: JSONL events, then exit 0; a failure e
   assert.equal(events.at(-1).t, "run_settled");
   const text = pinata(["logs", events[0].run.slice(0, 8)], w);
   assert.equal(await text.exited, 0, text.err());
-  assert.match(text.out(), /✓ planner plan succeeded/);
+  assert.match(text.out(), /✓ plan \(planner\) · Done/);
   await writeFile(
     job,
     JSON.stringify({
@@ -188,7 +188,7 @@ test("pinata run executes a job headless: JSONL events, then exit 0; a failure e
   );
   const failed = pinata(["run", job], w);
   assert.equal(await failed.exited, EXIT.failed, failed.err());
-  assert.match(failed.out(), /✗ scout broken failed/);
+  assert.match(failed.out(), /✗ broken \(scout\) · Failed/);
   await writeFile(job, JSON.stringify({ cwd: "repo", tasks: [{ id: "Bad id", role: "scout" }] }));
   const bad = pinata(["run", job], w);
   assert.equal(await bad.exited, EXIT.invalid);

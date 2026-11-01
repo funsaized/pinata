@@ -1,7 +1,9 @@
 # View and steer agents
 
-The widget above Pi's editor shows agent status, elapsed time, tokens, cost, and the
-current tool. Click its first line or run:
+The widget above Pi's editor shows each agent's name, status, elapsed time, and current
+activity, with total tokens and cost underneath. Waiting agents have not started;
+finished agents include successes, failures, and cancellations. Tool results use short
+summaries; Ctrl+O expands the details. Click the widget's first line or run:
 
 ```text
 /pinata view

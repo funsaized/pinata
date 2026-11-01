@@ -2,7 +2,16 @@
 // `pinata logs` and headless runs (M8) share them.
 import type { AgentEvent } from "../core/types.ts";
 import { emptyView, reduce, type RunView } from "../core/view.ts";
-import { GLYPHS, clean, duration, money, short } from "../ui/text.ts";
+import {
+  GLYPHS,
+  clean,
+  duration,
+  money,
+  short,
+  statusLabel,
+  backendLabel,
+  progressLine,
+} from "../ui/text.ts";
 
 export interface Reporter {
   push(event: AgentEvent): void;
@@ -30,21 +39,21 @@ export class TextReporter implements Reporter {
   private line(e: AgentEvent): string | null {
     const view = this.view;
     const agent = e.agent ? view.agents[e.agent] : undefined;
-    const who = agent ? `${agent.role} ${agent.id}` : (e.agent ?? "");
+    const who = agent ? `${agent.id} (${agent.role})` : (e.agent ?? "");
     switch (e.t) {
       case "run_started":
-        return `pinata ${short(e.run)} started: ${e.tasks.length} tasks (${e.mode})`;
+        return `Pinata ${short(e.run)} · Started ${e.tasks.length} agents · ${e.mode} mode`;
       case "agent_started":
-        return `${GLYPHS.running} ${who} started (${e.backend}, ${e.model.provider}/${e.model.id})`;
+        return `${GLYPHS.running} ${who} · Running · ${backendLabel(e.backend)} · ${e.model.provider}/${e.model.id}`;
       case "agent_settled": {
         const facts = [
           agent?.startedAt !== undefined ? `in ${duration(e.at - agent.startedAt)}` : "",
           e.turns ? `${e.turns} turns` : "",
-          e.toolCalls ? `${e.toolCalls} tools` : "",
-          e.usage.cost ? money(e.usage.cost) : "",
+          e.toolCalls ? `${e.toolCalls} tool calls` : "",
+          e.usage.cost ? `${money(e.usage.cost)} cost` : "",
         ].filter(Boolean);
         const note = clean(e.reason ?? e.summary).slice(0, 200);
-        return `${GLYPHS[e.status]} ${who} ${e.status}${facts.length ? ` ${facts.join(" · ")}` : ""}${note ? ` — ${note}` : ""}`;
+        return `${GLYPHS[e.status]} ${who} · ${statusLabel(e.status)}${facts.length ? ` · ${facts.join(" · ")}` : ""}${note ? ` — ${note}` : ""}`;
       }
       case "check_end":
         return `  ${who}: check ${e.check} ${e.passed ? "passed" : "failed"} (${duration(e.ms)})`;
@@ -55,9 +64,9 @@ export class TextReporter implements Reporter {
       case "checkout_changed":
         return `  ${who}: the checkout changed while it read`;
       case "run_resumed":
-        return `pinata ${short(e.run)} resumed: ${clean(e.reason)}`;
+        return `Pinata ${short(e.run)} · Resumed: ${clean(e.reason)}`;
       case "run_settled":
-        return `pinata ${short(e.run)} ${e.status} in ${duration(e.at - view.startedAt)} · ${money(e.usage.cost)}`;
+        return progressLine(view, e.at);
       default:
         return null;
     }
