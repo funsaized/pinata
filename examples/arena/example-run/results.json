@@ -1,0 +1,999 @@
+{
+  "manifest": {
+    "schema": 1,
+    "id": "pinata-arena-v1",
+    "mode": "simulated",
+    "track": "controlled-same-model",
+    "seed": 7,
+    "trials": 1,
+    "task": {
+      "id": "repair-ledger-v1",
+      "sha256": "b90840341a54e93a3449415c0a7c00033e6809d33694e1cc7256a936527de6d4"
+    },
+    "sourceCommit": "27156467565e31d2080a8cc9f200bb789eaca6a1",
+    "sourceDirty": true,
+    "sourceFilesSha256": {
+      "runner.ts": "2c48f203204895091b0a38076b7103d3c6a571274d91c0c540615268005cada1",
+      "protocol.ts": "d2eee3d4d199be862b860509e8705076c62f787393aaef45d022b03029ca1a51",
+      "task.ts": "14123131c20380d5b77412fc762c689f9928407d4368c6e2a246eb4fdba63ff3",
+      "sandbox.ts": "a35185d0c036c21f6f99321c55d66ad24cc9fafbac2887f9de2d0438b64f6f43",
+      "fixtures.ts": "2508c060928ef96b1d540ed6aa599bd865280a155f8ef868c32a81a1383dcf34",
+      "manifest.json": "171ee62be1710992c97688750c388f3f555a479793795f4e4f1726b1fa31cb2b"
+    },
+    "node": "v24.19.0",
+    "verifierImage": "sha256:daa74c183f7d8c1ba55ed79c76e912f50be8782ca9d2da640645f906dce474b8",
+    "verifierImagePin": "node:22.19.0-bookworm-slim@sha256:4a4884e8a44826194dff92ba316264f392056cbe243dcc9fd3551e71cea02b90",
+    "limits": {
+      "generationMs": 30000,
+      "verificationMs": 5000,
+      "costUsd": 1,
+      "outputBytes": 1048576
+    },
+    "contestants": [
+      {
+        "id": "pinata",
+        "name": "Piñata",
+        "version": "2.0.1",
+        "integration": "bundled-cli-mock-verified; live-uncalibrated",
+        "source": "https://github.com/funsaized/pinata/tree/9047a3d0f9d55e84a492e515fa01049ccf273dd4"
+      },
+      {
+        "id": "opencode",
+        "name": "OpenCode · native subagent",
+        "version": "2.2.5",
+        "integration": "bundled-cli-mock-verified; live-uncalibrated",
+        "source": "https://github.com/anomalyco/opencode/tree/9bbb8ce18c80f099e0e448775f59d965ead40a21"
+      },
+      {
+        "id": "pi-example",
+        "name": "Pi · official subagent example",
+        "version": "1.4.0",
+        "integration": "bundled-cli-mock-verified; live-uncalibrated",
+        "source": "https://github.com/earendil-works/pi/tree/4a080252f06caf63a525d7873c5d94d3c23887e0/packages/coding-agent/examples/extensions/subagent"
+      }
+    ],
+    "configured": null,
+    "simulatedNotice": "All lanes use the Piñata FakeBackend with scripted candidates and synthetic receipts. These are harness demonstrations, not competitive measurements.",
+    "budgetPolicy": "Observed receipts trigger cancellation after the threshold. Missing/unreported usage and in-flight calls can exceed it; this is not a provider billing cap."
+  },
+  "trials": [
+    {
+      "id": "pinata-1",
+      "contestant": "pinata",
+      "repetition": 1,
+      "mode": "simulated",
+      "fixture": "good",
+      "status": "completed",
+      "reason": null,
+      "generationMs": 520.397717,
+      "verificationMs": 2497.18175,
+      "elapsedMs": 3017.6888519999998,
+      "comparable": true,
+      "patch": {
+        "sha256": "f8273792e8c19e5c6c1bc6c424b2ca1a4e407b851f9cc914c47acc96c50ba167",
+        "artifact": "pinata-1/final.patch"
+      },
+      "quality": {
+        "passed": 81,
+        "total": 81,
+        "success": true,
+        "rubric": "repair-ledger-v1/81-cases/all-required",
+        "reason": null
+      },
+      "ledger": {
+        "complete": true,
+        "totals": {
+          "input": 700,
+          "output": 140,
+          "cacheRead": 210,
+          "cacheWrite": 280,
+          "totalTokens": 1330,
+          "turns": 7,
+          "toolCalls": 7,
+          "costUsd": 0.11
+        },
+        "partial": {
+          "input": 700,
+          "output": 140,
+          "cacheRead": 210,
+          "cacheWrite": 280,
+          "totalTokens": 1330,
+          "turns": 7,
+          "toolCalls": 7,
+          "costUsd": 0.11
+        },
+        "sessions": [
+          {
+            "type": "session-open",
+            "id": "parent",
+            "parent": null,
+            "role": "parent",
+            "model": {
+              "provider": "fixture",
+              "id": "deterministic-v1"
+            },
+            "closed": true,
+            "usageComplete": true
+          },
+          {
+            "type": "session-open",
+            "id": "map-1",
+            "parent": "parent",
+            "role": "map",
+            "model": {
+              "provider": "fixture",
+              "id": "deterministic-v1"
+            },
+            "closed": true,
+            "usageComplete": true
+          },
+          {
+            "type": "session-open",
+            "id": "build-1",
+            "parent": "parent",
+            "role": "build",
+            "model": {
+              "provider": "fixture",
+              "id": "deterministic-v1"
+            },
+            "closed": true,
+            "usageComplete": true
+          },
+          {
+            "type": "session-open",
+            "id": "review-1",
+            "parent": "parent",
+            "role": "review",
+            "model": {
+              "provider": "fixture",
+              "id": "deterministic-v1"
+            },
+            "closed": true,
+            "usageComplete": true
+          },
+          {
+            "type": "session-open",
+            "id": "build-2",
+            "parent": "parent",
+            "role": "build",
+            "model": {
+              "provider": "fixture",
+              "id": "deterministic-v1"
+            },
+            "closed": true,
+            "usageComplete": true
+          },
+          {
+            "type": "session-open",
+            "id": "review-2",
+            "parent": "parent",
+            "role": "review",
+            "model": {
+              "provider": "fixture",
+              "id": "deterministic-v1"
+            },
+            "closed": true,
+            "usageComplete": true
+          }
+        ],
+        "receipts": [
+          {
+            "type": "usage",
+            "id": "parent-planning",
+            "session": "parent",
+            "kind": "message",
+            "model": {
+              "provider": "fixture",
+              "id": "deterministic-v1"
+            },
+            "meters": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 30,
+              "cacheWrite": 40,
+              "totalTokens": 190,
+              "turns": 1,
+              "toolCalls": 1,
+              "costUsd": 0.005
+            },
+            "pricing": {
+              "source": "fixture",
+              "reference": "Synthetic fixture receipts; not provider prices",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          },
+          {
+            "type": "usage",
+            "id": "map-1-settlement",
+            "session": "map-1",
+            "kind": "message",
+            "model": {
+              "provider": "fixture",
+              "id": "deterministic-v1"
+            },
+            "meters": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 30,
+              "cacheWrite": 40,
+              "totalTokens": 190,
+              "turns": 1,
+              "toolCalls": 1,
+              "costUsd": 0.02
+            },
+            "pricing": {
+              "source": "fixture",
+              "reference": "Synthetic fixture receipts; not provider prices",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          },
+          {
+            "type": "usage",
+            "id": "build-1-settlement",
+            "session": "build-1",
+            "kind": "message",
+            "model": {
+              "provider": "fixture",
+              "id": "deterministic-v1"
+            },
+            "meters": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 30,
+              "cacheWrite": 40,
+              "totalTokens": 190,
+              "turns": 1,
+              "toolCalls": 1,
+              "costUsd": 0.02
+            },
+            "pricing": {
+              "source": "fixture",
+              "reference": "Synthetic fixture receipts; not provider prices",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          },
+          {
+            "type": "usage",
+            "id": "review-1-settlement",
+            "session": "review-1",
+            "kind": "message",
+            "model": {
+              "provider": "fixture",
+              "id": "deterministic-v1"
+            },
+            "meters": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 30,
+              "cacheWrite": 40,
+              "totalTokens": 190,
+              "turns": 1,
+              "toolCalls": 1,
+              "costUsd": 0.02
+            },
+            "pricing": {
+              "source": "fixture",
+              "reference": "Synthetic fixture receipts; not provider prices",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          },
+          {
+            "type": "usage",
+            "id": "build-2-settlement",
+            "session": "build-2",
+            "kind": "retry",
+            "model": {
+              "provider": "fixture",
+              "id": "deterministic-v1"
+            },
+            "meters": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 30,
+              "cacheWrite": 40,
+              "totalTokens": 190,
+              "turns": 1,
+              "toolCalls": 1,
+              "costUsd": 0.02
+            },
+            "pricing": {
+              "source": "fixture",
+              "reference": "Synthetic fixture receipts; not provider prices",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          },
+          {
+            "type": "usage",
+            "id": "review-2-settlement",
+            "session": "review-2",
+            "kind": "retry",
+            "model": {
+              "provider": "fixture",
+              "id": "deterministic-v1"
+            },
+            "meters": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 30,
+              "cacheWrite": 40,
+              "totalTokens": 190,
+              "turns": 1,
+              "toolCalls": 1,
+              "costUsd": 0.02
+            },
+            "pricing": {
+              "source": "fixture",
+              "reference": "Synthetic fixture receipts; not provider prices",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          },
+          {
+            "type": "usage",
+            "id": "parent-integration",
+            "session": "parent",
+            "kind": "overhead",
+            "model": {
+              "provider": "fixture",
+              "id": "deterministic-v1"
+            },
+            "meters": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 30,
+              "cacheWrite": 40,
+              "totalTokens": 190,
+              "turns": 1,
+              "toolCalls": 1,
+              "costUsd": 0.005
+            },
+            "pricing": {
+              "source": "fixture",
+              "reference": "Synthetic fixture receipts; not provider prices",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          }
+        ],
+        "estimated": false,
+        "synthetic": true
+      }
+    },
+    {
+      "id": "opencode-1",
+      "contestant": "opencode",
+      "repetition": 1,
+      "mode": "simulated",
+      "fixture": "good",
+      "status": "completed",
+      "reason": null,
+      "generationMs": 512.90047,
+      "verificationMs": 2379.2502820000004,
+      "elapsedMs": 2892.205185,
+      "comparable": true,
+      "patch": {
+        "sha256": "f8273792e8c19e5c6c1bc6c424b2ca1a4e407b851f9cc914c47acc96c50ba167",
+        "artifact": "opencode-1/final.patch"
+      },
+      "quality": {
+        "passed": 81,
+        "total": 81,
+        "success": true,
+        "rubric": "repair-ledger-v1/81-cases/all-required",
+        "reason": null
+      },
+      "ledger": {
+        "complete": true,
+        "totals": {
+          "input": 700,
+          "output": 140,
+          "cacheRead": 210,
+          "cacheWrite": 280,
+          "totalTokens": 1330,
+          "turns": 7,
+          "toolCalls": 7,
+          "costUsd": 0.11
+        },
+        "partial": {
+          "input": 700,
+          "output": 140,
+          "cacheRead": 210,
+          "cacheWrite": 280,
+          "totalTokens": 1330,
+          "turns": 7,
+          "toolCalls": 7,
+          "costUsd": 0.11
+        },
+        "sessions": [
+          {
+            "type": "session-open",
+            "id": "parent",
+            "parent": null,
+            "role": "parent",
+            "model": {
+              "provider": "fixture",
+              "id": "deterministic-v1"
+            },
+            "closed": true,
+            "usageComplete": true
+          },
+          {
+            "type": "session-open",
+            "id": "map-1",
+            "parent": "parent",
+            "role": "map",
+            "model": {
+              "provider": "fixture",
+              "id": "deterministic-v1"
+            },
+            "closed": true,
+            "usageComplete": true
+          },
+          {
+            "type": "session-open",
+            "id": "build-1",
+            "parent": "parent",
+            "role": "build",
+            "model": {
+              "provider": "fixture",
+              "id": "deterministic-v1"
+            },
+            "closed": true,
+            "usageComplete": true
+          },
+          {
+            "type": "session-open",
+            "id": "review-1",
+            "parent": "parent",
+            "role": "review",
+            "model": {
+              "provider": "fixture",
+              "id": "deterministic-v1"
+            },
+            "closed": true,
+            "usageComplete": true
+          },
+          {
+            "type": "session-open",
+            "id": "build-2",
+            "parent": "parent",
+            "role": "build",
+            "model": {
+              "provider": "fixture",
+              "id": "deterministic-v1"
+            },
+            "closed": true,
+            "usageComplete": true
+          },
+          {
+            "type": "session-open",
+            "id": "review-2",
+            "parent": "parent",
+            "role": "review",
+            "model": {
+              "provider": "fixture",
+              "id": "deterministic-v1"
+            },
+            "closed": true,
+            "usageComplete": true
+          }
+        ],
+        "receipts": [
+          {
+            "type": "usage",
+            "id": "parent-planning",
+            "session": "parent",
+            "kind": "message",
+            "model": {
+              "provider": "fixture",
+              "id": "deterministic-v1"
+            },
+            "meters": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 30,
+              "cacheWrite": 40,
+              "totalTokens": 190,
+              "turns": 1,
+              "toolCalls": 1,
+              "costUsd": 0.005
+            },
+            "pricing": {
+              "source": "fixture",
+              "reference": "Synthetic fixture receipts; not provider prices",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          },
+          {
+            "type": "usage",
+            "id": "map-1-settlement",
+            "session": "map-1",
+            "kind": "message",
+            "model": {
+              "provider": "fixture",
+              "id": "deterministic-v1"
+            },
+            "meters": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 30,
+              "cacheWrite": 40,
+              "totalTokens": 190,
+              "turns": 1,
+              "toolCalls": 1,
+              "costUsd": 0.02
+            },
+            "pricing": {
+              "source": "fixture",
+              "reference": "Synthetic fixture receipts; not provider prices",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          },
+          {
+            "type": "usage",
+            "id": "build-1-settlement",
+            "session": "build-1",
+            "kind": "message",
+            "model": {
+              "provider": "fixture",
+              "id": "deterministic-v1"
+            },
+            "meters": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 30,
+              "cacheWrite": 40,
+              "totalTokens": 190,
+              "turns": 1,
+              "toolCalls": 1,
+              "costUsd": 0.02
+            },
+            "pricing": {
+              "source": "fixture",
+              "reference": "Synthetic fixture receipts; not provider prices",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          },
+          {
+            "type": "usage",
+            "id": "review-1-settlement",
+            "session": "review-1",
+            "kind": "message",
+            "model": {
+              "provider": "fixture",
+              "id": "deterministic-v1"
+            },
+            "meters": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 30,
+              "cacheWrite": 40,
+              "totalTokens": 190,
+              "turns": 1,
+              "toolCalls": 1,
+              "costUsd": 0.02
+            },
+            "pricing": {
+              "source": "fixture",
+              "reference": "Synthetic fixture receipts; not provider prices",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          },
+          {
+            "type": "usage",
+            "id": "build-2-settlement",
+            "session": "build-2",
+            "kind": "retry",
+            "model": {
+              "provider": "fixture",
+              "id": "deterministic-v1"
+            },
+            "meters": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 30,
+              "cacheWrite": 40,
+              "totalTokens": 190,
+              "turns": 1,
+              "toolCalls": 1,
+              "costUsd": 0.02
+            },
+            "pricing": {
+              "source": "fixture",
+              "reference": "Synthetic fixture receipts; not provider prices",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          },
+          {
+            "type": "usage",
+            "id": "review-2-settlement",
+            "session": "review-2",
+            "kind": "retry",
+            "model": {
+              "provider": "fixture",
+              "id": "deterministic-v1"
+            },
+            "meters": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 30,
+              "cacheWrite": 40,
+              "totalTokens": 190,
+              "turns": 1,
+              "toolCalls": 1,
+              "costUsd": 0.02
+            },
+            "pricing": {
+              "source": "fixture",
+              "reference": "Synthetic fixture receipts; not provider prices",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          },
+          {
+            "type": "usage",
+            "id": "parent-integration",
+            "session": "parent",
+            "kind": "overhead",
+            "model": {
+              "provider": "fixture",
+              "id": "deterministic-v1"
+            },
+            "meters": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 30,
+              "cacheWrite": 40,
+              "totalTokens": 190,
+              "turns": 1,
+              "toolCalls": 1,
+              "costUsd": 0.005
+            },
+            "pricing": {
+              "source": "fixture",
+              "reference": "Synthetic fixture receipts; not provider prices",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          }
+        ],
+        "estimated": false,
+        "synthetic": true
+      }
+    },
+    {
+      "id": "pi-example-1",
+      "contestant": "pi-example",
+      "repetition": 1,
+      "mode": "simulated",
+      "fixture": "good",
+      "status": "completed",
+      "reason": null,
+      "generationMs": 511.90117999999984,
+      "verificationMs": 2513.529484999999,
+      "elapsedMs": 3025.5251670000007,
+      "comparable": true,
+      "patch": {
+        "sha256": "f8273792e8c19e5c6c1bc6c424b2ca1a4e407b851f9cc914c47acc96c50ba167",
+        "artifact": "pi-example-1/final.patch"
+      },
+      "quality": {
+        "passed": 81,
+        "total": 81,
+        "success": true,
+        "rubric": "repair-ledger-v1/81-cases/all-required",
+        "reason": null
+      },
+      "ledger": {
+        "complete": true,
+        "totals": {
+          "input": 700,
+          "output": 140,
+          "cacheRead": 210,
+          "cacheWrite": 280,
+          "totalTokens": 1330,
+          "turns": 7,
+          "toolCalls": 7,
+          "costUsd": 0.11
+        },
+        "partial": {
+          "input": 700,
+          "output": 140,
+          "cacheRead": 210,
+          "cacheWrite": 280,
+          "totalTokens": 1330,
+          "turns": 7,
+          "toolCalls": 7,
+          "costUsd": 0.11
+        },
+        "sessions": [
+          {
+            "type": "session-open",
+            "id": "parent",
+            "parent": null,
+            "role": "parent",
+            "model": {
+              "provider": "fixture",
+              "id": "deterministic-v1"
+            },
+            "closed": true,
+            "usageComplete": true
+          },
+          {
+            "type": "session-open",
+            "id": "map-1",
+            "parent": "parent",
+            "role": "map",
+            "model": {
+              "provider": "fixture",
+              "id": "deterministic-v1"
+            },
+            "closed": true,
+            "usageComplete": true
+          },
+          {
+            "type": "session-open",
+            "id": "build-1",
+            "parent": "parent",
+            "role": "build",
+            "model": {
+              "provider": "fixture",
+              "id": "deterministic-v1"
+            },
+            "closed": true,
+            "usageComplete": true
+          },
+          {
+            "type": "session-open",
+            "id": "review-1",
+            "parent": "parent",
+            "role": "review",
+            "model": {
+              "provider": "fixture",
+              "id": "deterministic-v1"
+            },
+            "closed": true,
+            "usageComplete": true
+          },
+          {
+            "type": "session-open",
+            "id": "build-2",
+            "parent": "parent",
+            "role": "build",
+            "model": {
+              "provider": "fixture",
+              "id": "deterministic-v1"
+            },
+            "closed": true,
+            "usageComplete": true
+          },
+          {
+            "type": "session-open",
+            "id": "review-2",
+            "parent": "parent",
+            "role": "review",
+            "model": {
+              "provider": "fixture",
+              "id": "deterministic-v1"
+            },
+            "closed": true,
+            "usageComplete": true
+          }
+        ],
+        "receipts": [
+          {
+            "type": "usage",
+            "id": "parent-planning",
+            "session": "parent",
+            "kind": "message",
+            "model": {
+              "provider": "fixture",
+              "id": "deterministic-v1"
+            },
+            "meters": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 30,
+              "cacheWrite": 40,
+              "totalTokens": 190,
+              "turns": 1,
+              "toolCalls": 1,
+              "costUsd": 0.005
+            },
+            "pricing": {
+              "source": "fixture",
+              "reference": "Synthetic fixture receipts; not provider prices",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          },
+          {
+            "type": "usage",
+            "id": "map-1-settlement",
+            "session": "map-1",
+            "kind": "message",
+            "model": {
+              "provider": "fixture",
+              "id": "deterministic-v1"
+            },
+            "meters": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 30,
+              "cacheWrite": 40,
+              "totalTokens": 190,
+              "turns": 1,
+              "toolCalls": 1,
+              "costUsd": 0.02
+            },
+            "pricing": {
+              "source": "fixture",
+              "reference": "Synthetic fixture receipts; not provider prices",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          },
+          {
+            "type": "usage",
+            "id": "build-1-settlement",
+            "session": "build-1",
+            "kind": "message",
+            "model": {
+              "provider": "fixture",
+              "id": "deterministic-v1"
+            },
+            "meters": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 30,
+              "cacheWrite": 40,
+              "totalTokens": 190,
+              "turns": 1,
+              "toolCalls": 1,
+              "costUsd": 0.02
+            },
+            "pricing": {
+              "source": "fixture",
+              "reference": "Synthetic fixture receipts; not provider prices",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          },
+          {
+            "type": "usage",
+            "id": "review-1-settlement",
+            "session": "review-1",
+            "kind": "message",
+            "model": {
+              "provider": "fixture",
+              "id": "deterministic-v1"
+            },
+            "meters": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 30,
+              "cacheWrite": 40,
+              "totalTokens": 190,
+              "turns": 1,
+              "toolCalls": 1,
+              "costUsd": 0.02
+            },
+            "pricing": {
+              "source": "fixture",
+              "reference": "Synthetic fixture receipts; not provider prices",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          },
+          {
+            "type": "usage",
+            "id": "build-2-settlement",
+            "session": "build-2",
+            "kind": "retry",
+            "model": {
+              "provider": "fixture",
+              "id": "deterministic-v1"
+            },
+            "meters": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 30,
+              "cacheWrite": 40,
+              "totalTokens": 190,
+              "turns": 1,
+              "toolCalls": 1,
+              "costUsd": 0.02
+            },
+            "pricing": {
+              "source": "fixture",
+              "reference": "Synthetic fixture receipts; not provider prices",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          },
+          {
+            "type": "usage",
+            "id": "review-2-settlement",
+            "session": "review-2",
+            "kind": "retry",
+            "model": {
+              "provider": "fixture",
+              "id": "deterministic-v1"
+            },
+            "meters": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 30,
+              "cacheWrite": 40,
+              "totalTokens": 190,
+              "turns": 1,
+              "toolCalls": 1,
+              "costUsd": 0.02
+            },
+            "pricing": {
+              "source": "fixture",
+              "reference": "Synthetic fixture receipts; not provider prices",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          },
+          {
+            "type": "usage",
+            "id": "parent-integration",
+            "session": "parent",
+            "kind": "overhead",
+            "model": {
+              "provider": "fixture",
+              "id": "deterministic-v1"
+            },
+            "meters": {
+              "input": 100,
+              "output": 20,
+              "cacheRead": 30,
+              "cacheWrite": 40,
+              "totalTokens": 190,
+              "turns": 1,
+              "toolCalls": 1,
+              "costUsd": 0.005
+            },
+            "pricing": {
+              "source": "fixture",
+              "reference": "Synthetic fixture receipts; not provider prices",
+              "at": "2026-10-31T00:00:00Z"
+            }
+          }
+        ],
+        "estimated": false,
+        "synthetic": true
+      }
+    }
+  ],
+  "aggregates": [
+    {
+      "contestant": "pinata",
+      "attempts": 1,
+      "successes": 1,
+      "successRate": 1,
+      "costUsd": 0.11,
+      "knownCostUsd": 0.11,
+      "costPerSuccessUsd": 0.11,
+      "totalElapsedMs": 3017.6888519999998,
+      "comparable": true,
+      "simulated": true
+    },
+    {
+      "contestant": "opencode",
+      "attempts": 1,
+      "successes": 1,
+      "successRate": 1,
+      "costUsd": 0.11,
+      "knownCostUsd": 0.11,
+      "costPerSuccessUsd": 0.11,
+      "totalElapsedMs": 2892.205185,
+      "comparable": true,
+      "simulated": true
+    },
+    {
+      "contestant": "pi-example",
+      "attempts": 1,
+      "successes": 1,
+      "successRate": 1,
+      "costUsd": 0.11,
+      "knownCostUsd": 0.11,
+      "costPerSuccessUsd": 0.11,
+      "totalElapsedMs": 3025.5251670000007,
+      "comparable": true,
+      "simulated": true
+    }
+  ]
+}

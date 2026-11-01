@@ -24,14 +24,16 @@ Pi combines their findings when both finish.
 
 ## 3. Watch them
 
-Above the editor, the widget shows one row per agent: its state (`▸` running, `✓`
-succeeded), agent name, id, backend badge, time, turns, tool calls, tokens, cost and what it is
-doing now. The footer shows a one-line summary. Both disappear when the run settles.
+Above the editor, the widget shows one row per agent: its task ID, a plain status such as
+Running or Done, elapsed time, and current activity. Tokens and cost appear once as run
+totals. The footer shows a one-line summary. Both disappear when the run settles.
+Tool results use readable summaries; Ctrl+O expands the details.
 
-Open one agent's conversation while it works:
+Press Shift+↓ to jump into a running agent's conversation, then Shift+↑/↓ to move between
+agents and Esc to return. You can also choose a particular agent:
 
 ```text
-/pinata open scout-errors
+/pinata view --task scout-errors
 ```
 
 Press Esc to return. [Watching agents](watching-agents.md) covers the detail view.

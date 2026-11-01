@@ -1,0 +1,8 @@
+# Repository-only recorded evidence and local run directories.
+example-run/
+runs/
+viewer-preview.png
+VALIDATION.md
+mock-example-run/
+mock-viewer-preview.png
+adapters/runtime/node_modules/

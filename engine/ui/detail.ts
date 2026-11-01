@@ -19,8 +19,8 @@ import {
 } from "@earendil-works/pi-tui";
 import type { AgentEvent } from "../core/types.ts";
 import type { AgentView } from "../core/view.ts";
-import type { Keys } from "./live.ts";
-import { GLYPHS, clean, duration, elapsed, money, tokens } from "./text.ts";
+import type { Keys } from "./workspace.ts";
+import { GLYPHS, clean, agentMetrics, backendLabel, statusLabel } from "./text.ts";
 import type { Paint } from "./widget.ts";
 
 // What the view reads: messages in Pi's AgentMessage shape, the agent's live view, and
@@ -281,6 +281,12 @@ export class AgentDetail implements Component {
     this.onSwitch?.(this.agent);
   }
 
+  scrollBy(lines: number): void {
+    if (this.disposed) return;
+    this.offset = Math.max(0, this.offset - lines);
+    this.options.tui.requestRender();
+  }
+
   handleInput(data: string): void {
     const key = (binding: string) => this.options.keys.matches(data, binding);
     if (this.input) {
@@ -368,12 +374,9 @@ export class AgentDetail implements Component {
     const now = (this.options.now ?? Date.now)();
     if (!view) return theme.fg("accent", truncateToWidth(`pinata · ${this.agent}`, width));
     const facts = [
-      view.status,
-      view.startedAt !== undefined ? duration(elapsed(view, now)) : "",
-      view.turns ? `${view.turns} turns` : "",
-      view.toolCalls ? `${view.toolCalls} tools` : "",
-      view.usage.totalTokens ? `${tokens(view.usage.totalTokens)} tok` : "",
-      view.usage.cost ? money(view.usage.cost) : "",
+      statusLabel(view.status),
+      agentMetrics(view, now),
+      view.backend ? backendLabel(view.backend) : "",
     ]
       .filter(Boolean)
       .join(" · ");
@@ -381,7 +384,7 @@ export class AgentDetail implements Component {
     const position =
       agents.length > 1 ? ` (${agents.indexOf(this.agent) + 1}/${agents.length})` : "";
     return truncateToWidth(
-      `${theme.fg("accent", `${GLYPHS[view.status]} ${view.role} ${this.agent}${position}`)} ${theme.fg("muted", facts)}`,
+      `${theme.fg("accent", `${GLYPHS[view.status]} ${clean(this.agent)} (${clean(view.role)})${position}`)} · ${theme.fg("muted", facts)}`,
       width,
     );
   }

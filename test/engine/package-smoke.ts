@@ -40,7 +40,11 @@ async function main() {
       assert(files.includes(need), `missing ${need}`);
     assert.equal(files.filter((f) => f.startsWith("prompts/")).length, 5);
     assert(
-      !files.some((f) => /^(test|bench|node_modules|\.github)\/|PLAN\.md|\.log$|\.env/.test(f)),
+      !files.some((f) =>
+        /^(test|bench|node_modules|\.github)\/|(?:^|\/)node_modules\/|PLAN\.md|\.log$|\.env/.test(
+          f,
+        ),
+      ),
       "development files in tarball",
     );
     const prefix = join(dir, "prefix");

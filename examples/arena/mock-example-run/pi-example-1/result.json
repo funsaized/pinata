@@ -1,0 +1,408 @@
+{
+  "id": "pi-example-1",
+  "contestant": "pi-example",
+  "repetition": 1,
+  "mode": "mock",
+  "status": "completed",
+  "reason": "Real pi-example CLI and all observed child sessions ended; candidate exported",
+  "generationMs": 10769.099029000005,
+  "verificationMs": 1329.0598959999988,
+  "elapsedMs": 12098.203633000005,
+  "comparable": true,
+  "patch": {
+    "sha256": "f8273792e8c19e5c6c1bc6c424b2ca1a4e407b851f9cc914c47acc96c50ba167",
+    "artifact": "pi-example-1/final.patch"
+  },
+  "quality": {
+    "passed": 81,
+    "total": 81,
+    "success": true,
+    "rubric": "repair-ledger-v1/81-cases/all-required",
+    "reason": null
+  },
+  "ledger": {
+    "complete": true,
+    "totals": {
+      "input": 1100,
+      "output": 220,
+      "cacheRead": 0,
+      "cacheWrite": 0,
+      "totalTokens": 1320,
+      "turns": 11,
+      "toolCalls": 7,
+      "costUsd": 0.00132
+    },
+    "partial": {
+      "input": 1100,
+      "output": 220,
+      "cacheRead": 0,
+      "cacheWrite": 0,
+      "totalTokens": 1320,
+      "turns": 11,
+      "toolCalls": 7,
+      "costUsd": 0.00132
+    },
+    "sessions": [
+      {
+        "type": "session-open",
+        "id": "parent",
+        "parent": null,
+        "role": "parent",
+        "model": {
+          "provider": "arena",
+          "id": "arena-model"
+        },
+        "closed": true,
+        "usageComplete": true,
+        "status": "completed",
+        "reason": ""
+      },
+      {
+        "type": "session-open",
+        "id": "pi-33",
+        "parent": "parent",
+        "role": "scout",
+        "model": {
+          "provider": "arena",
+          "id": "arena-model",
+          "thinking": "off"
+        },
+        "closed": true,
+        "usageComplete": true,
+        "status": "completed",
+        "reason": ""
+      },
+      {
+        "type": "session-open",
+        "id": "pi-44",
+        "parent": "parent",
+        "role": "worker",
+        "model": {
+          "provider": "arena",
+          "id": "arena-model",
+          "thinking": "off"
+        },
+        "closed": true,
+        "usageComplete": true,
+        "status": "completed",
+        "reason": ""
+      },
+      {
+        "type": "session-open",
+        "id": "pi-62",
+        "parent": "parent",
+        "role": "reviewer",
+        "model": {
+          "provider": "arena",
+          "id": "arena-model",
+          "thinking": "off"
+        },
+        "closed": true,
+        "usageComplete": true,
+        "status": "completed",
+        "reason": ""
+      }
+    ],
+    "receipts": [
+      {
+        "type": "usage",
+        "id": "parent/1",
+        "session": "parent",
+        "model": {
+          "provider": "arena",
+          "id": "arena-model",
+          "thinking": "off"
+        },
+        "kind": "message",
+        "meters": {
+          "input": 100,
+          "output": 20,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 120,
+          "turns": 1,
+          "toolCalls": 1,
+          "costUsd": 0.00012,
+          "reasoning": 0
+        },
+        "pricing": {
+          "source": "fixture",
+          "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+          "at": "2026-10-31T00:00:00Z"
+        }
+      },
+      {
+        "type": "usage",
+        "id": "pi-33/1",
+        "session": "pi-33",
+        "model": {
+          "provider": "arena",
+          "id": "arena-model",
+          "thinking": "off"
+        },
+        "kind": "message",
+        "meters": {
+          "input": 100,
+          "output": 20,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 120,
+          "turns": 1,
+          "toolCalls": 1,
+          "costUsd": 0.00012,
+          "reasoning": 0
+        },
+        "pricing": {
+          "source": "fixture",
+          "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+          "at": "2026-10-31T00:00:00Z"
+        }
+      },
+      {
+        "type": "usage",
+        "id": "pi-33/2",
+        "session": "pi-33",
+        "model": {
+          "provider": "arena",
+          "id": "arena-model",
+          "thinking": "off"
+        },
+        "kind": "message",
+        "meters": {
+          "input": 100,
+          "output": 20,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 120,
+          "turns": 1,
+          "toolCalls": 0,
+          "costUsd": 0.00012,
+          "reasoning": 0
+        },
+        "pricing": {
+          "source": "fixture",
+          "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+          "at": "2026-10-31T00:00:00Z"
+        }
+      },
+      {
+        "type": "usage",
+        "id": "pi-44/1",
+        "session": "pi-44",
+        "model": {
+          "provider": "arena",
+          "id": "arena-model",
+          "thinking": "off"
+        },
+        "kind": "message",
+        "meters": {
+          "input": 100,
+          "output": 20,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 120,
+          "turns": 1,
+          "toolCalls": 1,
+          "costUsd": 0.00012,
+          "reasoning": 0
+        },
+        "pricing": {
+          "source": "fixture",
+          "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+          "at": "2026-10-31T00:00:00Z"
+        }
+      },
+      {
+        "type": "usage",
+        "id": "pi-44/2",
+        "session": "pi-44",
+        "model": {
+          "provider": "arena",
+          "id": "arena-model",
+          "thinking": "off"
+        },
+        "kind": "message",
+        "meters": {
+          "input": 100,
+          "output": 20,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 120,
+          "turns": 1,
+          "toolCalls": 1,
+          "costUsd": 0.00012,
+          "reasoning": 0
+        },
+        "pricing": {
+          "source": "fixture",
+          "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+          "at": "2026-10-31T00:00:00Z"
+        }
+      },
+      {
+        "type": "usage",
+        "id": "pi-44/3",
+        "session": "pi-44",
+        "model": {
+          "provider": "arena",
+          "id": "arena-model",
+          "thinking": "off"
+        },
+        "kind": "message",
+        "meters": {
+          "input": 100,
+          "output": 20,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 120,
+          "turns": 1,
+          "toolCalls": 1,
+          "costUsd": 0.00012,
+          "reasoning": 0
+        },
+        "pricing": {
+          "source": "fixture",
+          "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+          "at": "2026-10-31T00:00:00Z"
+        }
+      },
+      {
+        "type": "usage",
+        "id": "pi-44/4",
+        "session": "pi-44",
+        "model": {
+          "provider": "arena",
+          "id": "arena-model",
+          "thinking": "off"
+        },
+        "kind": "message",
+        "meters": {
+          "input": 100,
+          "output": 20,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 120,
+          "turns": 1,
+          "toolCalls": 0,
+          "costUsd": 0.00012,
+          "reasoning": 0
+        },
+        "pricing": {
+          "source": "fixture",
+          "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+          "at": "2026-10-31T00:00:00Z"
+        }
+      },
+      {
+        "type": "usage",
+        "id": "pi-62/1",
+        "session": "pi-62",
+        "model": {
+          "provider": "arena",
+          "id": "arena-model",
+          "thinking": "off"
+        },
+        "kind": "message",
+        "meters": {
+          "input": 100,
+          "output": 20,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 120,
+          "turns": 1,
+          "toolCalls": 1,
+          "costUsd": 0.00012,
+          "reasoning": 0
+        },
+        "pricing": {
+          "source": "fixture",
+          "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+          "at": "2026-10-31T00:00:00Z"
+        }
+      },
+      {
+        "type": "usage",
+        "id": "pi-62/2",
+        "session": "pi-62",
+        "model": {
+          "provider": "arena",
+          "id": "arena-model",
+          "thinking": "off"
+        },
+        "kind": "message",
+        "meters": {
+          "input": 100,
+          "output": 20,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 120,
+          "turns": 1,
+          "toolCalls": 1,
+          "costUsd": 0.00012,
+          "reasoning": 0
+        },
+        "pricing": {
+          "source": "fixture",
+          "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+          "at": "2026-10-31T00:00:00Z"
+        }
+      },
+      {
+        "type": "usage",
+        "id": "parent/2",
+        "session": "parent",
+        "model": {
+          "provider": "arena",
+          "id": "arena-model",
+          "thinking": "off"
+        },
+        "kind": "message",
+        "meters": {
+          "input": 100,
+          "output": 20,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 120,
+          "turns": 1,
+          "toolCalls": 0,
+          "costUsd": 0.00012,
+          "reasoning": 0
+        },
+        "pricing": {
+          "source": "fixture",
+          "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+          "at": "2026-10-31T00:00:00Z"
+        }
+      },
+      {
+        "type": "usage",
+        "id": "pi-62/3",
+        "session": "pi-62",
+        "model": {
+          "provider": "arena",
+          "id": "arena-model",
+          "thinking": "off"
+        },
+        "kind": "message",
+        "meters": {
+          "input": 100,
+          "output": 20,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 120,
+          "turns": 1,
+          "toolCalls": 0,
+          "costUsd": 0.00012,
+          "reasoning": 0
+        },
+        "pricing": {
+          "source": "fixture",
+          "reference": "Scripted offline mock provider; synthetic rates, not a provider bill",
+          "at": "2026-10-31T00:00:00Z"
+        }
+      }
+    ],
+    "estimated": false,
+    "synthetic": true
+  }
+}

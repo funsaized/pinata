@@ -1,4 +1,4 @@
-// The run's socket server. It starts on demand (observe mode, /pinata watch), writes
+// The run's socket server. It starts on demand (observe mode, /pinata view --external), writes
 // link.json (socket path and token, 0600) into the run directory, and shuts down when the
 // run has settled and no clients remain. A connection whose first frame is not a valid
 // hello for this run, within HELLO_TIMEOUT_MS, is dropped.

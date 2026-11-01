@@ -362,8 +362,8 @@ export class ProcessBackend implements AgentBackend {
   }
 }
 
-// Follows a detached agent through its files. `skip` records were already reported by the
-// Pi that started it.
+// Always replay the outbox: the engine deduplicates against its durable run log.
+// `skip` is only a transcript hint from a clean detach, never an accounting cursor.
 export function followDetached(
   files: AgentFiles,
   identity: ProcessIdentity,
@@ -375,9 +375,14 @@ export function followDetached(
 ): AgentHandle {
   const live = launch.mode === "observe" && launch.transcript;
   let writes: Promise<void> = Promise.resolve();
-  const records = new Records(sink, (message) => {
-    if (live) writes = writes.then(() => appendJsonl(launch.transcript!, message)).catch(() => {});
-  });
+  const sourceId = `${identity.pid}:${identity.started}`;
+  const records = new Records(
+    (event) => sink({ ...event, source: { id: sourceId, record: count } }),
+    (message) => {
+      if (live && count > skip)
+        writes = writes.then(() => appendJsonl(launch.transcript!, message)).catch(() => {});
+    },
+  );
   const framer = new JsonlFramer();
   let offset = 0;
   let count = 0;
@@ -396,7 +401,7 @@ export function followDetached(
       offset = next.offset;
       for (const record of framer.push(next.lines.map((l) => l + "\n").join(""))) {
         count++;
-        records.push(record, count > skip);
+        records.push(record);
       }
     }));
   const tail = async () => {

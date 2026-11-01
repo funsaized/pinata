@@ -1,0 +1,57 @@
+{
+  "schema": 1,
+  "id": "pinata-arena-v1",
+  "mode": "simulated",
+  "track": "controlled-same-model",
+  "seed": 7,
+  "trials": 1,
+  "task": {
+    "id": "repair-ledger-v1",
+    "sha256": "b90840341a54e93a3449415c0a7c00033e6809d33694e1cc7256a936527de6d4"
+  },
+  "sourceCommit": "27156467565e31d2080a8cc9f200bb789eaca6a1",
+  "sourceDirty": true,
+  "sourceFilesSha256": {
+    "runner.ts": "2c48f203204895091b0a38076b7103d3c6a571274d91c0c540615268005cada1",
+    "protocol.ts": "d2eee3d4d199be862b860509e8705076c62f787393aaef45d022b03029ca1a51",
+    "task.ts": "14123131c20380d5b77412fc762c689f9928407d4368c6e2a246eb4fdba63ff3",
+    "sandbox.ts": "a35185d0c036c21f6f99321c55d66ad24cc9fafbac2887f9de2d0438b64f6f43",
+    "fixtures.ts": "2508c060928ef96b1d540ed6aa599bd865280a155f8ef868c32a81a1383dcf34",
+    "manifest.json": "171ee62be1710992c97688750c388f3f555a479793795f4e4f1726b1fa31cb2b"
+  },
+  "node": "v24.19.0",
+  "verifierImage": "sha256:daa74c183f7d8c1ba55ed79c76e912f50be8782ca9d2da640645f906dce474b8",
+  "verifierImagePin": "node:22.19.0-bookworm-slim@sha256:4a4884e8a44826194dff92ba316264f392056cbe243dcc9fd3551e71cea02b90",
+  "limits": {
+    "generationMs": 30000,
+    "verificationMs": 5000,
+    "costUsd": 1,
+    "outputBytes": 1048576
+  },
+  "contestants": [
+    {
+      "id": "pinata",
+      "name": "Piñata",
+      "version": "2.0.1",
+      "integration": "bundled-cli-mock-verified; live-uncalibrated",
+      "source": "https://github.com/funsaized/pinata/tree/9047a3d0f9d55e84a492e515fa01049ccf273dd4"
+    },
+    {
+      "id": "opencode",
+      "name": "OpenCode · native subagent",
+      "version": "2.2.5",
+      "integration": "bundled-cli-mock-verified; live-uncalibrated",
+      "source": "https://github.com/anomalyco/opencode/tree/9bbb8ce18c80f099e0e448775f59d965ead40a21"
+    },
+    {
+      "id": "pi-example",
+      "name": "Pi · official subagent example",
+      "version": "1.4.0",
+      "integration": "bundled-cli-mock-verified; live-uncalibrated",
+      "source": "https://github.com/earendil-works/pi/tree/4a080252f06caf63a525d7873c5d94d3c23887e0/packages/coding-agent/examples/extensions/subagent"
+    }
+  ],
+  "configured": null,
+  "simulatedNotice": "All lanes use the Piñata FakeBackend with scripted candidates and synthetic receipts. These are harness demonstrations, not competitive measurements.",
+  "budgetPolicy": "Observed receipts trigger cancellation after the threshold. Missing/unreported usage and in-flight calls can exceed it; this is not a provider billing cap."
+}

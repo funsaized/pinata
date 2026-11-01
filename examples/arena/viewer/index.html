@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Piñata · Coding arena</title>
+    <link rel="stylesheet" href="/style.css" />
+    <script type="module" src="/viewer.js"></script>
+  </head>
+  <body>
+    <header>
+      <a class="brand" href="/">piñata <span>/ coding arena</span></a>
+      <a href="/api/state">Run JSON ↗</a>
+    </header>
+    <main>
+      <section class="run-header" aria-label="Run configuration">
+        <div>
+          <p class="eyebrow">Task</p>
+          <h1 id="task-name">Loading run…</h1>
+        </div>
+        <dl id="run-meta"></dl>
+      </section>
+      <div class="notice" role="status">
+        <strong id="mode">CONNECTING</strong><span id="disclosure">Waiting for a run.</span>
+      </div>
+      <section class="control-bar" aria-label="Replay controls">
+        <strong id="run-status">Waiting for events</strong>
+        <div class="buttons">
+          <button id="replay">Replay</button><button id="play" disabled>Pause</button>
+          <label
+            >Speed
+            <select id="speed">
+              <option value="1">1×</option>
+              <option value="3" selected>3×</option>
+              <option value="10">10×</option>
+            </select></label
+          >
+          <button id="latest">Latest</button>
+        </div>
+        <label class="scrub"
+          ><span class="sr-only">Replay event</span
+          ><input id="scrub" type="range" min="0" max="0" value="0" /><span id="event-count"
+            >0 events</span
+          ></label
+        >
+      </section>
+      <section class="panel results-panel" aria-labelledby="results-title">
+        <div class="panel-head">
+          <h2 id="results-title">Results</h2>
+          <span id="attempt-count" class="muted"></span>
+        </div>
+        <div
+          class="table-wrap"
+          tabindex="0"
+          aria-label="Results table, scroll horizontally for all metrics"
+        >
+          <table>
+            <thead>
+              <tr>
+                <th>Implementation / version</th>
+                <th>Observed models</th>
+                <th>Cohort</th>
+                <th>Succeeded / attempts</th>
+                <th>Tokens</th>
+                <th>Retry messages</th>
+                <th>Total cost</th>
+                <th>Cost / success</th>
+                <th>Total time</th>
+              </tr>
+            </thead>
+            <tbody id="results"></tbody>
+          </table>
+        </div>
+        <p class="table-note">
+          Totals include failed, cancelled and timed-out attempts. Model mismatches are grouped
+          separately and excluded from the controlled comparison. Unknown usage stays unknown.
+        </p>
+      </section>
+      <section class="panel detail-panel" aria-labelledby="selected-name">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">Attempt details</p>
+            <h2 id="selected-name">Select an implementation</h2>
+          </div>
+          <label
+            >Attempt
+            <select id="attempt"></select
+          ></label>
+        </div>
+        <p id="attempt-status" class="attempt-status"></p>
+        <div id="attempt-metrics" class="attempt-metrics"></div>
+        <div class="detail-grid">
+          <section aria-labelledby="sessions-title">
+            <h3 id="sessions-title">Sessions</h3>
+            <div id="sessions" class="sessions"></div>
+          </section>
+          <section aria-labelledby="events-title">
+            <div class="panel-head">
+              <h3 id="events-title">Events</h3>
+              <span id="timeline-count" class="muted">0 events</span>
+            </div>
+            <ol id="timeline" class="timeline"></ol>
+          </section>
+        </div>
+        <div id="patch" class="patch"></div>
+      </section>
+      <footer>
+        <span id="provenance">Loading provenance…</span
+        ><span>Local viewer · no external assets</span>
+      </footer>
+    </main>
+  </body>
+</html>

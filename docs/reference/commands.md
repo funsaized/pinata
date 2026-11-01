@@ -1,40 +1,76 @@
 # Commands
 
-## In Pi
+## View runs and conversations
 
-These commands do not start a parent-model turn. `rerun` does start worker agents;
-steering from a conversation sends your message to its running agent.
+Use the same arguments inside Pi and in another terminal:
 
-| Command                      | Does                                                                          |
-| ---------------------------- | ----------------------------------------------------------------------------- |
-| `/pinata`                    | Status of the latest run, and runs a previous Pi left unsettled               |
-| `/pinata runs`               | Runs in this repository                                                       |
-| `/pinata open [run] <task>`  | The run workspace with an agent's conversation focused; Enter steers          |
-| `/pinata live [run]`         | The same workspace with the agent list focused; ↑/↓ select, Enter opens       |
-| `/pinata watch [run] [task]` | Starts the run's socket for `pinata view` (inside Herdr, opens a viewer pane) |
-| `/pinata mode lean\|observe` | Footprint mode for this session                                               |
-| `/pinata rerun <run>`        | Starts again the tasks lost when a Pi exited, with their dependents           |
-| `/pinata gc [confirm]`       | Retires 0.7.0 runs (preview unless `confirm`) and closes settled Herdr panes  |
+| In Pi                              | In a terminal                     | Opens                                                        |
+| ---------------------------------- | --------------------------------- | ------------------------------------------------------------ |
+| `/pinata view`                     | `pinata view`                     | Active work, or the latest saved run; waits if no run exists |
+| `/pinata view <run>`               | `pinata view <run>`               | A specific run                                               |
+| `/pinata view --task <task>`       | `pinata view --task <task>`       | A conversation in the default run                            |
+| `/pinata view <run> --task <task>` | `pinata view <run> --task <task>` | A specific conversation                                      |
 
-Prompt templates send an expanded request to the parent model: `/pinata-fix <change>`
-asks for a builder and reviewer; `/pinata-review [base|PR]` reviews existing changes.
-`/scout`, `/builder`, and `/reviewer` apply those personas to the current Pi.
-The package registers `/skill:subagents`. The bundled `engmgmt` skill is optional
-and must be loaded separately before `/skill:engmgmt` is available.
+`run` is a unique ID prefix or a run directory (quote paths containing spaces).
+An unqualified view picks up new runs automatically. Naming a run or task pins that
+selection. Browsing an older run or writing a steering draft also keeps your place.
+Inside Pi, active work from the current session takes priority; otherwise both interfaces
+prefer active repository runs, then the most recent saved run. Explicit IDs search all history.
 
-## The `pinata` command
+**Keyboard shortcut:** in Pi, Shift+↓ opens a running agent in the default run, or its
+first agent when none is running. Shift+↑ opens its last agent. These shortcuts do
+nothing when no agents are available. They open the conversation directly, pin that
+run, and preserve your parent draft; Esc returns to it.
 
-Installed with the package. It starts the `pi` binary (`PINATA_PI` names another one).
+Both interfaces use the same workspace: ↑/↓ selects an agent, Enter focuses its
+conversation, and Tab switches panes. In a conversation, ↑/↓ or the mouse wheel scrolls,
+PgUp/PgDn moves a page, End follows new output, and Enter starts a steering message.
+Shift+↑/↓ cycles through agent conversations in either pane, wrapping at either end.
+It stays on the same agent while you compose a steering message.
+Esc cancels a draft before closing. M toggles mascot motion; Space bonks it.
 
-| Command                                                     | Does                                                          |
-| ----------------------------------------------------------- | ------------------------------------------------------------- |
-| `pinata view [run] [task]`                                  | A viewer for a live run, or a replay of a finished one        |
-| `pinata logs [run] [task] [--follow] [--json]`              | Prints a run's log                                            |
-| `pinata run <job.json> [--mode observe] [--json] [--watch]` | Runs a job headless; exit 0, 1 failed, 2 invalid, 3 cancelled |
-| `pinata resume <run>`                                       | Continues a run that outlived its Pi                          |
-| `pinata agents list`                                        | Lists installed agent definitions                             |
-| `pinata agents show <name>`                                 | Shows one definition                                          |
-| `pinata agents validate`                                    | Validates definitions                                         |
-| `pinata gc [--confirm]`                                     | Same as `/pinata gc`                                          |
+For streaming and steering from another terminal, run `/pinata view --external` in the
+Pi session that owns the run. It prints the exact `pinata view` command; inside Herdr it
+opens a viewer pane. Add a run or `--task` to target it. Saved runs need no setup.
+Without a socket, the terminal viewer follows recorded output read-only; in lean mode,
+conversations are saved when agents finish. Observe mode records them live.
 
-`run` is a run id prefix or a run directory; without one, the newest run.
+`live [run]`, `open [run] <task>`, and `watch [run] [task]` remain compatibility aliases
+for the Pi slash command. New usage and completions use `view` and `view --external`.
+A positional argument to `view` always identifies a run: use `--task` for a task ID.
+
+## Other Pi commands
+
+| Command                       | Does                                                     |
+| ----------------------------- | -------------------------------------------------------- |
+| `/pinata` or `/pinata status` | Quick status and interrupted runs                        |
+| `/pinata runs`                | Repository run history                                   |
+| `/pinata mode lean\|observe`  | Footprint mode for this session                          |
+| `/pinata rerun <run>`         | Restart tasks lost when Pi exited, with their dependents |
+| `/pinata gc [--confirm]`      | Preview legacy retirement; close settled Herdr panes     |
+| `/pinata help`                | Command help                                             |
+
+These commands do not start a parent-model turn. `rerun` starts worker agents;
+steering sends a message to a running agent. Completion suggests run and task IDs.
+
+Prompt templates send a request to the parent model: `/pinata-fix <change>` asks for a
+builder and reviewer; `/pinata-review [base|PR]` reviews existing changes. `/scout`,
+`/builder`, and `/reviewer` apply those personas to the current Pi. The package registers
+`/skill:subagents`; the optional bundled `engmgmt` skill must be loaded separately.
+
+## Other terminal commands
+
+The installed `pinata` command starts the `pi` binary (`PINATA_PI` selects another one).
+
+| Command                                                     | Does                               |
+| ----------------------------------------------------------- | ---------------------------------- |
+| `pinata logs [run] [--task <task>] [--follow] [--json]`     | Print recorded events              |
+| `pinata run <job.json> [--mode observe] [--json] [--watch]` | Run a job headless                 |
+| `pinata resume <run>`                                       | Continue a run that outlived Pi    |
+| `pinata agents [list\|show <name>\|validate]`               | Inspect reusable agent definitions |
+| `pinata gc [--confirm]`                                     | Same cleanup as `/pinata gc`       |
+| `pinata help`                                               | Command help                       |
+
+Headless run exit codes: 0 succeeded, 1 failed, 2 invalid job, 3 cancelled.
+`--watch` enables an external viewer for a headless run. Recovery commands retain their
+separate meanings: `resume` continues a saved run; `rerun` restarts lost tasks.

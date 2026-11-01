@@ -7,6 +7,7 @@ import type { RunHandle } from "../core/engine.ts";
 import { markDelivered } from "../core/store.ts";
 import { statusText, progressLine } from "../ui/text.ts";
 import { compactRun, type CompactRun, type PinataHost } from "./host.ts";
+import { resultLines } from "./render.ts";
 
 export const RESULT_TYPE = "pinata-result";
 
@@ -49,7 +50,7 @@ export function deliverWhenDone(
 }
 
 export function registerDelivery(pi: ExtensionAPI): void {
-  pi.registerMessageRenderer<CompactRun>(RESULT_TYPE, (message) => {
+  pi.registerMessageRenderer<CompactRun>(RESULT_TYPE, (message, options) => {
     const r = message.details;
     if (!r)
       return new Text(
@@ -57,15 +58,6 @@ export function registerDelivery(pi: ExtensionAPI): void {
         1,
         0,
       );
-    const lines = [
-      `pinata ${r.run.slice(0, 8)} ${r.status} · $${r.costUsd.toFixed(4)} · ${Math.round(r.elapsedMs / 100) / 10}s`,
-    ];
-    for (const t of r.tasks)
-      lines.push(
-        `  ${t.status.padEnd(9)} ${t.role.padEnd(8)} ${t.id} — ${(t.reason ?? t.summary).slice(0, 140)}`,
-      );
-    if (r.nextOffset !== undefined)
-      lines.push(`  Showing ${r.tasks.length} of ${r.taskCount} tasks. ${r.more}`);
-    return new Text(lines.join("\n"), 1, 0);
+    return new Text(resultLines(r, options.expanded).join("\n"), 1, 0);
   });
 }

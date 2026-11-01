@@ -50,3 +50,27 @@ jobs:
       - name: Viewer runtimes (E5.6)
         if: runner.os != 'Windows'
         run: node bench/viewer.ts --runs 3
+
+  arena:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "24"
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts
+      - run: npm run arena:setup
+      - run: npm run test:arena
+        env:
+          ARENA_DOCKER_TEST: "1"
+      - run: npm run test:arena:browser -- --dir examples/arena/example-run --chrome google-chrome
+      - name: Build pinned real CLI adapters (no model calls)
+        run: node examples/arena/adapters/build.mjs --out /tmp/arena-adapter-image.json
+      - name: Real CLI session and provider ledger conformance
+        run: node examples/arena/adapters/mock-run.mjs --image-file /tmp/arena-adapter-image.json --out /tmp/arena-real-cli-smoke
+      - name: Real CLI mock viewer disclosure and replay
+        run: npm run test:arena:browser -- --dir /tmp/arena-real-cli-smoke --chrome google-chrome

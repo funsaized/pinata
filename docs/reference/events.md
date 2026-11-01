@@ -8,6 +8,14 @@ and usage; observe mode logs everything.
 Every event has an envelope: `v` (1), `seq` (increasing per run), `run`, `agent` (absent
 for run-level events) and `at` (epoch milliseconds).
 
+Detached events may carry `source: {id, record}`: a process identity and its outbox
+record number. The engine uses this position to discard replayed records after a
+host crash. Lean logs persist the position with a `usage` checkpoint containing
+the current attempt's usage, turns and tool calls; settlement saves the final
+position. No separate cursor file is trusted for accounting. Older logs without
+positions reconcile detached usage at settlement, so aggregate cost enforcement
+for that recovered attempt is delayed until its outcome is available.
+
 | `t`                | Fields                                                          | Lean |
 | ------------------ | --------------------------------------------------------------- | ---- |
 | `run_started`      | `tasks`, `mode`, `definitions?`                                 | yes  |
@@ -25,7 +33,7 @@ for run-level events) and `at` (epoch milliseconds).
 | `check_start`      | `check`                                                         | yes  |
 | `check_end`        | `check`, `passed`, `ms`                                         | yes  |
 | `checkout_changed` | (a reader's live checkout changed while it read)                | yes  |
-| `usage`            | `usage` (the agent's cumulative usage, at most 1/s)             | yes  |
+| `usage`            | `usage`, `turns?`, `toolCalls?` (current attempt, at most 1/s)  | yes  |
 | `agent_settled`    | `status`, `summary`, `reason?`, `usage`, `turns`, `toolCalls`   | yes  |
 | `telemetry`        | `sample {rssMB, heapUsedMB, elu, lateMs, processes?}` (observe) | no   |
 | `run_resumed`      | `reason` (a repair, a rerun, or a new Pi)                       | yes  |

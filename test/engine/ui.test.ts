@@ -2,12 +2,16 @@
 // test/live.test.mjs, run against RunViews instead of saved-run polls.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { visibleWidth } from "@earendil-works/pi-tui";
+import { TuiAltScreen, visibleWidth, type Terminal } from "@earendil-works/pi-tui";
 import { initTheme } from "@earendil-works/pi-coding-agent";
 import type { DetailSource } from "../../engine/ui/detail.ts";
 import type { AgentEvent, TaskSpec } from "../../engine/core/types.ts";
 import { replayView, type RunView } from "../../engine/core/view.ts";
-import { LiveScene, type SceneOptions, type SceneRun } from "../../engine/ui/live.ts";
+import {
+  RunWorkspace,
+  type WorkspaceOptions,
+  type WorkspaceRun,
+} from "../../engine/ui/workspace.ts";
 import { mascotFrame, mood } from "../../engine/ui/mascot.ts";
 import { footerLine } from "../../engine/ui/text.ts";
 import { PinataWidget, agentRow, widgetLines } from "../../engine/ui/widget.ts";
@@ -77,7 +81,7 @@ function sample(): RunView {
 }
 
 // Synthetic run states for UI tests only.
-function sceneRun(step = 0): SceneRun {
+function sceneRun(step = 0): WorkspaceRun {
   const phase = ((step % 6) + 6) % 6;
   const at = 1_000_000;
   const tasks: TaskSpec[] = [
@@ -133,33 +137,30 @@ const strip = (lines: string[]) => lines.map((l) => l.replace(/\x1b\[[0-9;]*m/g,
 test("widget rows render the expected lines at several widths", () => {
   const view = sample();
   assert.deepEqual(strip(widgetLines([view], 120, undefined, NOW)), [
-    "pinata 0f3c9a51 · 1/3 done · 1 running · 5.4k tok · $0.012",
-    "✓ scout    map  in 9.0s 2t 4⚒ 5.4k $0.012 — Mapped the parser and its tests",
-    "▸ builder  build  in 12.0s 1t 1⚒ — edit src/date.ts [2J",
-    "· reviewer review — queued",
+    "Pinata 0f3c9a51 · 1 running · 1 waiting · 1/3 finished",
+    "✓ map     Done · 9.0s — Mapped the parser and its tests",
+    "▸ build   Running · 12.0s — Editing src/date.ts [2J",
+    "· review  Waiting",
+    "Total: 5.4k tokens · $0.012 cost · View & steer: Shift+↑/↓ · /pinata view",
   ]);
-  assert.deepEqual(strip(widgetLines([view], 48, undefined, NOW)), [
-    "pinata 0f3c9a51 · 1/3 done · 1 running · 5.4k t…",
-    "✓ scout    map  in 9.0s 2t 4⚒ 5.4k $0.012",
-    "▸ builder  build  in 12.0s 1t 1⚒ — edit src/dat…",
-    "· reviewer review — queued",
-  ]);
-  assert.deepEqual(strip(widgetLines([view], 24, undefined, NOW)), [
-    "pinata 0f3c9a51 · 1/3 d…",
-    "✓ scout    map  in 9.0s…",
-    "▸ builder  build  in 12…",
-    "· reviewer review",
-  ]);
+  for (const columns of [24, 48]) {
+    const rows = strip(widgetLines([view], columns, undefined, NOW));
+    assert.match(rows[1], /map\s+Done/);
+    assert.match(rows[2], /build\s+Running/);
+    assert.match(rows[3], /review\s+Waiting/);
+    assert.match(rows[4], /^Total: .*tokens/);
+    assert.match(rows[5], /^View & steer:/);
+  }
   for (const width of [10, 24, 33, 48, 80, 120, 200])
     for (const line of widgetLines([view], width, undefined, NOW))
       assert(visibleWidth(line) <= width, `overflow at ${width}: ${line}`);
   // Terminal controls in model output never reach the terminal.
   assert(!agentRow(view.agents.build, 120, undefined, NOW).includes("\x1b"));
-  assert.equal(footerLine([view]), "pinata 1/3 · 1 running · $0.012");
+  assert.equal(footerLine([view]), "Pinata · 1 running · 1/3 finished · $0.012 cost");
 });
 
 test("celebrations require every successful task and verified builder integration", () => {
-  const kind = (run: SceneRun) => mood(run.view, run.integration).kind;
+  const kind = (run: WorkspaceRun) => mood(run.view, run.integration).kind;
   assert.equal(kind(sceneRun(2)), "review");
   assert.equal(kind(sceneRun(3)), "ready");
   assert.equal(kind(sceneRun(4)), "success");
@@ -210,13 +211,13 @@ const KEYS: Record<string, string> = {
 const keys = { matches: (data: string, id: string) => KEYS[id] === data };
 const theme = { fg: (_color: string, text: string) => text };
 
-function harness(options: Partial<SceneOptions> = {}) {
+function harness(options: Partial<WorkspaceOptions> = {}) {
   let now = 1000,
     closed = 0,
     renders = 0;
   const timers = new Map<symbol, { fn: () => void; ms: number }>();
   const tui = { terminal: { rows: 32 }, requestRender: () => renders++ };
-  const scene = new LiveScene({
+  const scene = new RunWorkspace({
     tui,
     theme,
     keys,
@@ -302,7 +303,7 @@ test("empty views, small terminals, scrolling, and clicks keep status and contro
   assert.equal(h.scene.error, null);
   assert.match(h.scene.render(100).join("\n"), /No runs yet/);
   const tasks = Array.from({ length: 30 }, (_, i) => spec(`task-${i}`, "reviewer"));
-  const run: SceneRun = {
+  const run: WorkspaceRun = {
     view: build(
       tasks,
       tasks.flatMap((t, i): Array<[string, Record<string, unknown>]> => [
@@ -350,13 +351,13 @@ test("empty views, small terminals, scrolling, and clicks keep status and contro
 });
 
 test("stale and failed reads cannot replace the selected run or update a disposed overlay", async () => {
-  let resolveFirst!: (run: SceneRun) => void;
-  const named = (run: SceneRun, id: string) => ({ ...run, view: { ...run.view, run: id } });
+  let resolveFirst!: (run: WorkspaceRun) => void;
+  const named = (run: WorkspaceRun, id: string) => ({ ...run, view: { ...run.view, run: id } });
   const h = harness({
     runs: ["first", "second"],
     readRun: (id) =>
       id === "first"
-        ? new Promise<SceneRun>((resolve) => (resolveFirst = resolve))
+        ? new Promise<WorkspaceRun>((resolve) => (resolveFirst = resolve))
         : Promise.resolve(named(sceneRun(1), "second")),
   });
   h.scene.handleInput("right");
@@ -373,8 +374,8 @@ test("stale and failed reads cannot replace the selected run or update a dispose
   assert.equal(h.scene.run!.view.run, "second");
   assert.match(h.scene.render(100).join("\n"), /Status unavailable/);
   assert(!h.scene.error!.includes("\x1b"));
-  let resolveLate!: (run: SceneRun) => void;
-  h.scene.readRun = () => new Promise<SceneRun>((resolve) => (resolveLate = resolve));
+  let resolveLate!: (run: WorkspaceRun) => void;
+  h.scene.readRun = () => new Promise<WorkspaceRun>((resolve) => (resolveLate = resolve));
   const pending = h.scene.refresh();
   const before = h.renders();
   h.scene.dispose();
@@ -382,6 +383,57 @@ test("stale and failed reads cannot replace the selected run or update a dispose
   await pending;
   assert.equal(h.renders(), before);
   assert.equal(h.timers.size, 0);
+});
+
+test("new runs replace a stale initial read but preserve historical selections and steering drafts", async (t) => {
+  const named = (id: string): WorkspaceRun => ({
+    ...sceneRun(1),
+    view: { ...sceneRun(1).view, run: id },
+  });
+  let release!: (run: WorkspaceRun) => void;
+  const h = harness({
+    runs: ["saved"],
+    followNewRuns: true,
+    readRun: (id) => (id === "saved" ? new Promise((resolve) => (release = resolve)) : named(id)),
+    detailSource: (id) => ({
+      run: id,
+      cwd: ".",
+      agents: () => named(id).view.order,
+      view: (agent) => named(id).view.agents[agent],
+      load: async () => ({ messages: [{ role: "user", content: `Run ${id} history` }] }),
+      steer: async () => {},
+    }),
+  });
+  t.after(() => h.scene.dispose());
+  h.scene.offer(named("first"));
+  release(named("saved"));
+  await h.scene.ready;
+  await flush();
+  assert.equal(h.scene.selected(), "first");
+  assert.equal(h.scene.run!.view.run, "first");
+  assert.match(strip(h.scene.render(120)).join("\n"), /Run first history/);
+  h.scene.offer(named("second"));
+  await h.scene.ready;
+  assert.equal(h.scene.selected(), "second");
+  h.scene.handleInput("right");
+  await h.scene.ready;
+  assert.equal(h.scene.selected(), "first");
+  h.scene.offer(named("third"));
+  assert.equal(h.scene.selected(), "first", "browsing an older run stays in place");
+  h.scene.handleInput("left");
+  h.scene.handleInput("left");
+  await h.scene.ready;
+  assert.equal(h.scene.selected(), "third");
+  h.scene.handleInput("\r");
+  h.scene.handleInput("\r");
+  h.scene.handleInput("keep this draft");
+  const detail = h.scene.detail;
+  h.scene.offer(named("fourth"));
+  assert.equal(h.scene.selected(), "third");
+  assert.equal(h.scene.detail, detail);
+  assert.equal(detail!.input!.getValue(), "keep this draft");
+  h.scene.offer(named("fourth"));
+  assert.deepEqual(h.scene.runs, ["fourth", "third", "second", "first", "saved"]);
 });
 
 test("renderer is bounded, deterministic, and has distinct animated and bonked poses", () => {
@@ -425,10 +477,36 @@ test("the workspace selects conversations, scrolls, steers, and preserves draft 
   assert.equal(h.scene.focus, "agents");
   assert.equal(h.scene.agent, "build", "initial selection is the running agent");
   assert.deepEqual([...subscriptions], ["build"]);
+  h.scene.handleInput("\x1b[1;2A");
+  await h.scene.ready;
+  assert.equal(h.scene.agent, "map");
+  assert.equal(h.scene.focus, "detail", "Shift+Up enters the previous conversation from the list");
+  h.scene.handleInput("\x1b[1;2A");
+  await h.scene.ready;
+  assert.equal(h.scene.agent, "review", "previous agent wraps to the end");
+  h.scene.handleInput("\x1b[1;2B");
+  await h.scene.ready;
+  assert.equal(h.scene.agent, "map", "next agent wraps to the start");
+  h.scene.handleInput("\x1b[1;2B");
+  await h.scene.ready;
+  assert.equal(h.scene.agent, "build");
+  h.scene.handleInput("\t");
   h.scene.handleInput("up");
   await h.scene.ready;
   assert.equal(h.scene.agent, "map");
   assert.deepEqual([...subscriptions], ["map"]);
+  h.scene.render(120);
+  const pane = h.scene.detailBounds!;
+  const wheel = (delta: number, x = pane.x, y = pane.y) =>
+    h.scene.handleMouse({ type: "wheel", x, y, wheelDelta: delta });
+  assert(wheel(-3)!.handled);
+  assert.equal(h.scene.detail!.offset, 3, "wheel scrolls the hovered chat even with list focus");
+  wheel(2);
+  assert.equal(h.scene.detail!.offset, 1);
+  wheel(1000);
+  assert.equal(h.scene.detail!.offset, 0, "scrolling down resumes following output");
+  assert(wheel(-3, 0, 0)!.handled, "overlay borders consume wheel events too");
+  assert.equal(h.scene.detail!.offset, 0);
   h.scene.handleInput("\r");
   assert.equal(h.scene.focus, "detail");
   h.scene.render(120);
@@ -448,6 +526,13 @@ test("the workspace selects conversations, scrolls, steers, and preserves draft 
   assert.equal(h.closed(), 0, "typing q does not close the workspace");
   h.scene.render(120);
   const other = h.scene.agentBounds.find((b) => b.agent === "map")!;
+  wheel(-3);
+  assert.equal(h.scene.detail!.offset, 3, "scrolling remains available while composing");
+  wheel(-1, other.x, other.y);
+  assert.equal(h.scene.detail!.input!.getValue(), "m q keep scope");
+  for (const key of ["\x1b[1;2A", "\x1b[1;2B"]) h.scene.handleInput(key);
+  assert.equal(h.scene.detail!.input!.getValue(), "m q keep scope");
+  assert.equal(h.scene.agent, "build", "keyboard navigation cannot redirect a steering draft");
   h.scene.handleMouse({ type: "click", button: "left", x: other.x, y: other.y });
   assert.equal(h.scene.agent, "build", "a click cannot redirect a draft");
   h.tui.terminal.rows = 12;
@@ -474,6 +559,81 @@ test("the workspace selects conversations, scrolls, steers, and preserves draft 
   h.scene.close();
   assert.equal(subscriptions.size, 0);
   assert.equal(h.timers.size, 0);
+});
+
+test("terminal wheel input scrolls the live conversation without moving the chat behind it", async (t) => {
+  let input!: (data: string) => void;
+  const terminal: Terminal = {
+    columns: 120,
+    rows: 32,
+    kittyProtocolActive: false,
+    start: (onInput) => {
+      input = onInput;
+    },
+    stop() {},
+    async drainInput() {},
+    write() {},
+    moveBy() {},
+    hideCursor() {},
+    showCursor() {},
+    clearLine() {},
+    clearFromCursor() {},
+    clearScreen() {},
+    setTitle() {},
+    setProgress() {},
+    setProgramStatus() {},
+  };
+  const tui = new TuiAltScreen(terminal, false, undefined, { wheelScrollLines: 3 });
+  const run = sceneRun(1);
+  const h = harness({
+    tui,
+    motion: false,
+    runs: [run.view.run],
+    readRun: () => run,
+    detailSource: () => ({
+      run: run.view.run,
+      cwd: ".",
+      agents: () => run.view.order,
+      view: (id) => run.view.agents[id],
+      load: async () => ({
+        messages: [{ role: "user", content: "Agent transcript\n".repeat(100) }],
+      }),
+    }),
+  });
+  t.after(() => {
+    h.scene.dispose();
+    tui.stop();
+  });
+  await h.scene.ready;
+  tui.addChild({
+    render: () => Array.from({ length: 100 }, (_, i) => `Parent chat ${i}`),
+    invalidate() {},
+  });
+  tui.start();
+  tui.renderNow();
+  const top = tui.viewportTop;
+  assert(top > 0, "the parent has scrollback");
+  const overlay = tui.showOverlay(h.scene, { width: "96%", maxHeight: "95%", anchor: "center" });
+  tui.renderNow();
+  const bounds = overlay.getBounds()!;
+  const pane = h.scene.detailBounds!;
+  const wheel = (button: number, x = pane.x, y = pane.y) => {
+    input(`\x1b[<${button};${bounds.col + x + 1};${bounds.row + y + 1}M`);
+    tui.renderNow();
+  };
+  wheel(64);
+  assert.equal(h.scene.detail!.offset, 3);
+  assert.equal(tui.viewportTop, top);
+  wheel(65);
+  assert.equal(h.scene.detail!.offset, 0);
+  wheel(65);
+  wheel(64, 0, 0);
+  assert.equal(h.scene.detail!.offset, 0);
+  assert.equal(tui.viewportTop, top, "scroll boundaries and overlay borders never leak");
+  overlay.hide();
+  tui.renderNow();
+  wheel(64);
+  assert(tui.viewportTop < top, "normal parent scrolling resumes after closing the overlay");
 });
 
 test("rapid selection during a transcript load never displays the previous agent's messages", async (t) => {
