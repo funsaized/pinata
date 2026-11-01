@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
@@ -415,7 +415,8 @@ test("log viewers keep their place with a stale socket and attach when a live so
 });
 
 test("the installed npm launcher parses view arguments without loading TypeScript from node_modules", async (t) => {
-  const dir = await tempDir(t);
+  // Child processes report the physical cwd (macOS /var resolves to /private/var).
+  const dir = await realpath(await tempDir(t));
   const installed = join(dir, "node_modules", "pi-pinata");
   await mkdir(join(installed, "engine", "viewer"), { recursive: true });
   await cp(join(ROOT, "bin"), join(installed, "bin"), { recursive: true });
