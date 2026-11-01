@@ -281,6 +281,12 @@ export class AgentDetail implements Component {
     this.onSwitch?.(this.agent);
   }
 
+  scrollBy(lines: number): void {
+    if (this.disposed) return;
+    this.offset = Math.max(0, this.offset - lines);
+    this.options.tui.requestRender();
+  }
+
   handleInput(data: string): void {
     const key = (binding: string) => this.options.keys.matches(data, binding);
     if (this.input) {

@@ -414,6 +414,70 @@ test("/pinata live opens an empty workspace without model calls, persists motion
   assert.match(a.notes.at(-1)!, /needs interactive Pi/);
 });
 
+test("an already-open live workspace picks up new runs; explicit run views stay pinned", async (t) => {
+  const { initTheme } = await import("@earendil-works/pi-coding-agent");
+  initTheme("dark");
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  t.after(() => release());
+  const a = await adapter(t, async (turn) => {
+    await gate;
+    return reader(turn);
+  });
+  let scene: any;
+  Object.assign(a.ctx, {
+    mode: "tui",
+    hasUI: true,
+    sessionManager: { getBranch: () => a.entries },
+  });
+  a.ctx.ui = {
+    notify: (text: string) => a.notes.push(text),
+    setWidget() {},
+    setStatus() {},
+    custom: (factory: any) =>
+      new Promise((done) => {
+        scene = factory(
+          { terminal: { rows: 30 }, requestRender() {} },
+          { fg: (_: string, text: string) => text },
+          { matches: () => false },
+          done,
+        );
+      }),
+  };
+  t.after(() => scene?.close());
+  const command = a.commands.get("pinata");
+  const opened = command.handler("live", a.ctx);
+  await until(() => !!scene, "the empty live workspace");
+  await scene.ready;
+  assert.equal(scene.run, null);
+  const running = a.call("pinata_run", { tasks: [spec("first")] });
+  await until(() => scene.run?.view.status === "running", "live to discover the new run");
+  await scene.ready;
+  const first = scene.selected();
+  assert.equal(scene.agent, "first");
+  assert(scene.detail, "the conversation attaches without reopening");
+  release();
+  assert(!(await running).isError);
+  await until(() => scene.run?.view.status === "succeeded", "the live run to settle");
+  const next = await a.call("pinata_run", { tasks: [spec("second")] });
+  assert(!next.isError);
+  assert.equal(scene.selected(), next.details.result.run, "latest follows the next run too");
+  await scene.ready;
+  assert.equal(scene.agent, "second");
+  scene.close();
+  await opened;
+  scene = null;
+  const pinned = command.handler(`live ${first}`, a.ctx);
+  await until(() => !!scene, "the pinned live workspace");
+  await scene.ready;
+  const third = await a.call("pinata_run", { tasks: [spec("third")] });
+  assert(!third.isError);
+  assert.equal(scene.selected(), first);
+  assert.deepEqual(scene.runs, [first]);
+  scene.close();
+  await pinned;
+});
+
 test("/pinata open replays a finished run from disk in a session that never ran it", async (t) => {
   const { initTheme } = await import("@earendil-works/pi-coding-agent");
   initTheme("dark");
