@@ -84,6 +84,7 @@ See [creating agents](docs/how-to/agents.md).
 - **Visible.** A widget above the editor shows each agent's status, time, and activity,
   plus total tokens and cost. `/pinata view` opens the run workspace with the animated piñata, agents,
   and conversations. Add `--task <task>` to focus an agent, then scroll or steer it.
+  Shift+↑/↓ jumps into agent conversations and cycles between them; Esc returns to Pi.
   The same workspace opens with `pinata view` in another terminal;
   `/pinata view --external` enables its live streaming and steering.
 - **Evidence you can inspect.** Writers use isolated git worktrees and engine-run checks.

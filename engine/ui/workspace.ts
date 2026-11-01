@@ -2,6 +2,7 @@
 // is fed RunViews pushed by the host instead of polling saved runs, and its animation timer
 // runs only while motion is on and an agent is working (or a bonk or cheer is playing).
 import type { RunView } from "../core/view.ts";
+import { matchesKey } from "@earendil-works/pi-tui";
 import { RIBBON_COLORS, colorize, mascotFrame, mood } from "./mascot.ts";
 import { GLYPHS, clean, duration, counts, runSummary, usageText, statusLabel } from "./text.ts";
 import type { Paint } from "./widget.ts";
@@ -25,6 +26,10 @@ export interface Keys {
 }
 
 export const FRAME_MS = 100;
+export const AGENT_SHORTCUTS = [
+  { key: "shift+up", step: -1, description: "View previous Pinata agent (when available)" },
+  { key: "shift+down", step: 1, description: "View next Pinata agent (when available)" },
+] as const;
 const BONK_S = 2;
 const CHEER_S = 3.5;
 const TWITCH_S = 0.9;
@@ -259,6 +264,13 @@ export class RunWorkspace {
     this.selectAgent(agents[Math.max(0, Math.min(agents.length - 1, index + step))]);
   }
 
+  cycleAgent(step: number): void {
+    const agents = this.run?.view.order ?? [];
+    if (this.disposed || this.detail?.input || !agents.length) return;
+    const index = agents.indexOf(this.agent ?? "");
+    this.selectAgent(agents[(Math.max(0, index) + step + agents.length) % agents.length], true);
+  }
+
   animate(): void {
     const now = this.now();
     const moving =
@@ -308,6 +320,8 @@ export class RunWorkspace {
     const key = (binding: string) => this.keys.matches(data, binding);
     // While composing, every key belongs to the input (including m, q, Space and Tab).
     if (this.detail?.input) return this.detail.handleInput(data);
+    const shortcut = AGENT_SHORTCUTS.find(({ key }) => matchesKey(data, key));
+    if (shortcut) return this.cycleAgent(shortcut.step);
     if (key("tui.select.cancel") || data === "q") return this.close();
     if (key("tui.input.tab") || data === "\t") {
       this.focus = this.focus === "agents" ? "detail" : "agents";
@@ -513,7 +527,7 @@ export class RunWorkspace {
       : this.focus === "agents"
         ? "↑↓ select agent · Enter open · Tab conversation"
         : "↑↓ scroll · PgUp/PgDn page · Enter steer · Ctrl+O tools · Tab agents";
-    const secondary = `Esc close · M motion ${this.motion ? "on" : "off"} · Space bonk${this.runs.length > 1 ? ` · ←→ run (${this.index + 1}/${this.runs.length}, agent list)` : ""}`;
+    const secondary = `Shift+↑↓ agent · Esc close · M motion ${this.motion ? "on" : "off"} · Space bonk${this.runs.length > 1 ? ` · ←→ run (${this.index + 1}/${this.runs.length}, agent list)` : ""}`;
     const content = [
       ...top,
       ...body,

@@ -9,6 +9,10 @@ summaries; Ctrl+O expands the details. Click the widget's first line or run:
 /pinata view
 ```
 
+For a quick jump from Pi, press Shift+↓ to open a running agent (or the first agent
+in the default run), or Shift+↑ to open the last one. With no agents available, the
+shortcut does nothing. Your parent draft stays in place, and Esc brings you back.
+
 The workspace shows an animated piñata, an agent list, and streaming conversations.
 You can open it before work starts: it picks up new runs automatically. If nothing is
 running, it opens the latest saved run. Naming a run pins it:
@@ -23,6 +27,8 @@ Use ↑/↓ to select an agent and Enter to focus its conversation. Tab switches
 the agent list and conversation; on narrow terminals each gets the full width.
 Scroll with the mouse wheel, ↑/↓, or PgUp/PgDn. End resumes following the latest output.
 Ctrl+O expands tool output. Esc returns to Pi. M toggles motion and Space bonks the mascot.
+Shift+↑/↓ cycles through conversations from either pane, wrapping at the ends. This also
+works in the terminal viewer. Agent switching is disabled while you type a steering draft.
 
 ## Steer a running agent
 

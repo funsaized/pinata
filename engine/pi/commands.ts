@@ -8,7 +8,7 @@ import { gcPanes } from "../herdr/panes.ts";
 import { legacyRoot, retireLegacy } from "../migrate/legacy.ts";
 import { runsRoot } from "../core/store.ts";
 import { repositoryRoot } from "./host.ts";
-import type { RunWorkspace } from "../ui/workspace.ts";
+import { AGENT_SHORTCUTS, type RunWorkspace } from "../ui/workspace.ts";
 import {
   connectViewer,
   clientDetail,
@@ -33,6 +33,7 @@ export const USAGE = [
   `/pinata view ${VIEW_ARGS} --external   view from another terminal or Herdr pane`,
   "/pinata rerun <run>          start again the tasks lost when Pi exited",
   "/pinata gc [--confirm]         retire 0.7.0 runs (preview; confirm acts) and close settled panes",
+  "Shift+↑/↓           enter or cycle agent conversations (when available); Esc returns",
 ].join("\n");
 
 // The run picker includes repository history and prefers active work from this session.
@@ -299,9 +300,32 @@ export async function pinataCommand(
 
 export function registerCommands(pi: ExtensionAPI, host: PinataHost): void {
   let cwd = process.cwd();
+  let entering = false;
   pi.on("session_start", (_event, ctx) => {
     cwd = ctx.cwd;
   });
+  for (const { key, step, description } of AGENT_SHORTCUTS)
+    pi.registerShortcut(key, {
+      description,
+      async handler(ctx) {
+        if (!ctx.hasUI || ctx.mode !== "tui" || !host.ui) return;
+        if (host.ui.scene) return host.ui.scene.cycleAgent(step);
+        if (entering) return;
+        entering = true;
+        try {
+          // Resolve only when pressed; no idle polling, and no empty overlay in a new repo.
+          const [view] = await viewRuns(host, ctx.cwd).catch(() => []);
+          if (!view?.order.length) return;
+          const task =
+            step > 0
+              ? (view.order.find((id) => view.agents[id].status === "running") ?? view.order[0])
+              : view.order.at(-1)!;
+          await host.ui.openView({ run: view.run, task }, ctx, runSource(host));
+        } finally {
+          entering = false;
+        }
+      },
+    });
   pi.registerCommand("pinata", {
     description: "View runs and conversations, check status, or manage pinata (no model turn)",
     getArgumentCompletions: (prefix) => commandCompletions(host, cwd, prefix),
