@@ -35,8 +35,6 @@ opens a viewer pane. Add a run or `--task` to target it. Saved runs need no setu
 Without a socket, the terminal viewer follows recorded output read-only; in lean mode,
 conversations are saved when agents finish. Observe mode records them live.
 
-`live [run]`, `open [run] <task>`, and `watch [run] [task]` remain compatibility aliases
-for the Pi slash command. New usage and completions use `view` and `view --external`.
 A positional argument to `view` always identifies a run: use `--task` for a task ID.
 
 ## Other Pi commands

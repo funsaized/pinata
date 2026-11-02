@@ -22,7 +22,6 @@ import {
   parseViewArgs,
   requireTask,
   VIEW_ARGS,
-  type ViewArgs,
 } from "../viewer/selection.ts";
 
 export const USAGE = [
@@ -174,24 +173,6 @@ function arity(args: string[], min: number, max: number, usage: string): void {
   if (args.length < min || args.length > max) throw new Error(`Usage: /pinata ${usage}`);
 }
 
-// Old names remain aliases, but canonical view arguments never guess task vs run.
-function viewArguments(sub: string, rest: string[], host: PinataHost): ViewArgs {
-  if (sub === "view") return parseViewArgs(rest, true);
-  if (sub === "live") {
-    arity(rest, 0, 1, `view ${VIEW_ARGS}`);
-    return { run: rest[0] };
-  }
-  if (sub === "open") {
-    arity(rest, 1, 2, `view ${VIEW_ARGS}`);
-    return { run: rest.length === 2 ? rest[0] : undefined, task: rest.at(-1) };
-  }
-  arity(rest, 0, 2, `view ${VIEW_ARGS} --external`);
-  const latest = [...host.handles.values()].at(-1);
-  return rest.length === 1 && latest?.view().agents[rest[0]]
-    ? { task: rest[0], external: true }
-    : { run: rest[0], task: rest[1], external: true };
-}
-
 // Repository GC: 0.7.0 run directories (preview unless confirmed), and inside Herdr the
 // workspaces of settled pinata work.
 export async function gcText(cwd: string, confirm: boolean): Promise<string> {
@@ -238,8 +219,8 @@ export async function pinataCommand(
       )
       .join("\n");
   }
-  if (["view", "live", "open", "watch"].includes(sub)) {
-    const target = viewArguments(sub, rest, host);
+  if (sub === "view") {
+    const target = parseViewArgs(rest, true);
     if (!target.external) {
       if (!host.ui) return "The view needs interactive Pi.";
       return (await host.ui.openView(target, ctx, runSource(host))) ?? "";
