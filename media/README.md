@@ -38,6 +38,11 @@ with a web-compatible pixel format and fast-start metadata. Media is excluded fr
 
 ## Source and verification
 
+To build the demo with your models, follow the [Relay tutorial](../docs/tutorials/relay.md).
+The [example](../examples/relay/README.md) provides starter modules, an editable job,
+expected output, and selected original evidence. The tutorial takes a fresh run
+through checks, reviews, and destination verification.
+
 [`pinata-demo-source.zip`](pinata-demo-source.zip) includes the original terminal
 capture, edit decision list, renderer, recording script, starter and finished fixtures,
 the run request, and saved check/review/integration evidence. Its README explains

@@ -100,7 +100,7 @@ test("an agent opened mid-run shows its whole history, then streams live", async
   );
   await detail.ready;
   const before = plain(detail.render(100));
-  assert.match(before, /▸ scout map/, "header");
+  assert.match(before, /▸ map \(scout\)/, "header");
   assert.match(before, /Task map \(scout\)/, "the brief, from the snapshot");
   assert.match(before, /read/, "the first turn's tool call");
   assert.match(before, /# Fixture/, "and its result");
@@ -111,7 +111,7 @@ test("an agent opened mid-run shows its whole history, then streams live", async
   const after = plain(detail.render(100));
   assert(seen.includes("text_delta"), `streamed: ${seen.join(",")}`);
   assert.match(after, /The parser lives in src\/date\.ts\./, "the streamed message");
-  assert.match(after, /✓ scout map/);
+  assert.match(after, /✓ map \(scout\)/);
   detail.handleInput("\x1b");
   assert.equal(closed, 1);
   assert(detail.disposed);
@@ -219,7 +219,7 @@ test("a finished run opens from its directory alone, read-only", async (t) => {
   );
   await detail.ready;
   const text = plain(detail.render(100));
-  assert.match(text, /✓ scout look/);
+  assert.match(text, /✓ look \(scout\)/);
   assert.match(text, /Task look \(scout\)/);
   assert.match(text, /# Fixture/);
   detail.handleInput("\r");

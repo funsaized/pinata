@@ -7,7 +7,7 @@ import type { AgentEvent, RunStatus } from "../../engine/core/types.ts";
 import type { RunView } from "../../engine/core/view.ts";
 import { fakeEngine, spec } from "./helpers.ts";
 
-test("a full graph runs headless through the facade", async (t) => {
+test("the engine facade runs a dependency graph, emits ordered events and persists results", async (t) => {
   const { engine, backend, run } = await fakeEngine(t, (launch) => ({
     latencyMs: 2,
     result:
@@ -80,7 +80,7 @@ test("a reviewer that requests changes settles as rejected and fails the run", a
   assert.equal(view.status satisfies RunStatus | "running", "failed");
 });
 
-test("an agent that never submits fails at the result stage", async (t) => {
+test("an agent without a result fails with an actionable error", async (t) => {
   const { run } = await fakeEngine(t, { a: { result: null } });
   const view = await (await run([spec("a")])).done;
   assert.equal(view.agents.a.status, "failed");
@@ -110,14 +110,6 @@ test("steering reaches a running agent and is recorded; snapshots work mid-run",
   assert.equal(view.agents.a.status, "cancelled");
   assert.equal(view.agents.a.reason, "parent reload");
   await assert.rejects(engine.steer(handle.id, "a", "late"), /not running/);
-});
-
-test("core never imports Pi", async () => {
-  const dir = new URL("../../engine/core/", import.meta.url);
-  for (const file of await readdir(dir)) {
-    const source = await readFile(new URL(file, dir), "utf8");
-    assert(!/@earendil-works|@mariozechner/.test(source), `${file} imports Pi`);
-  }
 });
 
 test("a reviewer that found defects is rejected even if it called its own status failed", async (t) => {

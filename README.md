@@ -16,6 +16,12 @@ Small engine. Sharp defaults. Your wiring.
 
 [Watch the 70-second demo](media/pinata-demo.mp4) · Ten real agents, four reviews, 23 passing tests.
 
+[Why use Pinata?](docs/explanation/why-pinata.md) Follow a real change from task to
+reviewed patch, inspect the evidence, and choose a first example.
+
+[Build Relay with your models](docs/tutorials/relay.md): start from the demo's module
+stubs, run ten agents, inspect their reviews, and verify the assembled application.
+
 ## Install
 
 In Pi's terminal (_manual_):
@@ -81,11 +87,12 @@ See [creating agents](docs/how-to/agents.md).
 
 - **Fast.** Agents share your Pi process by default. Startup, memory, and dispatch have
   [measured budgets](docs/maintainers/performance-v2.md), including tests at 64 active agents.
-- **Visible.** A widget above the editor shows every agent's state, time, tokens, cost and
-  current tool. `/pinata live` opens a rainbow-framed workspace with the animated piñata,
-  selectable agents, and streaming conversations. `/pinata open <task>` focuses that
-  agent's conversation so you can scroll or steer it. Tab switches panes.
-  `pinata view` follows a run from another terminal.
+- **Visible.** A widget above the editor shows each agent's status, time, and activity,
+  plus total tokens and cost. `/pinata view` opens the run workspace with the animated piñata, agents,
+  and conversations. Add `--task <task>` to focus an agent, then scroll or steer it.
+  Shift+↑/↓ jumps into agent conversations and cycles between them; Esc returns to Pi.
+  The same workspace opens with `pinata view` in another terminal;
+  `/pinata view --external` enables its live streaming and steering.
 - **Evidence you can inspect.** Writers use isolated git worktrees and engine-run checks.
   Add an independent reviewer when your workflow calls for one. The guarded handoff and
   exact integration helpers require an approving reviewer verdict on the exact artifact. Pinata hands off the exact artifact, base, checks and review;

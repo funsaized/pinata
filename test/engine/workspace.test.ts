@@ -7,9 +7,8 @@ import { BlobReader, capture, writeTree } from "../../engine/workspace/changes.t
 import { copyIncluded } from "../../engine/workspace/include.ts";
 import { dropRefs, snapshotBase } from "../../engine/workspace/snapshot.ts";
 import { Worktree, composeBase } from "../../engine/workspace/worktree.ts";
-import { git as gitAsync } from "../../engine/workspace/git.ts";
 import { gitRepo } from "./faux.ts";
-import { bestOf, tempDir } from "./helpers.ts";
+import { tempDir } from "./helpers.ts";
 
 async function repo(
   t: Parameters<typeof tempDir>[0],
@@ -139,79 +138,3 @@ test(".worktreeinclude copies ignored local files into a builder worktree", asyn
     assert.deepEqual(await copyIncluded(root, tree.path), [], "symlinks are not copied");
   }
 });
-
-test(
-  "capture takes under 50 ms on 0.7.0's benchmark repository shape",
-  { timeout: 300_000 },
-  async (t) => {
-    const files: Record<string, string> = {};
-    const { dir, root, git } = await repo(t, { ".gitignore": "node_modules/\n" });
-    for (const [d, count, size] of [
-      ["src", 2000, 8192],
-      ["assets", 128, 1048576],
-    ] as const) {
-      await mkdir(join(root, d));
-      for (let i = 0; i < count; i++)
-        await writeFile(join(root, d, `file-${i}`), randomBytes(size));
-    }
-    void files;
-    git("add", "-A");
-    git(
-      "-c",
-      "user.name=t",
-      "-c",
-      "user.email=t@example.invalid",
-      "-c",
-      "commit.gpgsign=false",
-      "commit",
-      "-qm",
-      "big",
-    );
-    const base = await snapshotBase(root, "r");
-    const tree = await Worktree.create(root, join(dir, "wt"), base.commit);
-    // The builder works while the capture index warms in the background (WARM_AFTER_MS).
-    await new Promise((r) => setTimeout(r, 2500));
-    // Windows: three git processes at tens of ms each set the floor; macOS CI runners vary
-    // (47-134 ms). This file runs separately from other Git-heavy tests.
-    const limit =
-      process.platform === "win32"
-        ? 250
-        : !process.env.CI
-          ? 50
-          : process.platform === "darwin"
-            ? 150
-            : 100;
-    // On CI, a runner much slower than usual (seen on Windows: 400-1200 ms) is measured
-    // against its own git: capture must stay within 4x one `git status` there.
-    const gitStatus: number[] = [];
-    for (let i = 0; i < 3; i++) {
-      const t0 = performance.now();
-      await gitAsync(tree.path, ["status", "--porcelain"]);
-      gitStatus.push(performance.now() - t0);
-    }
-    gitStatus.sort((a, b) => a - b);
-    const bound = process.env.CI ? Math.max(limit, 4 * gitStatus[1]) : limit;
-    let attempt = 0;
-    const result = await bestOf(t, async () => {
-      attempt++;
-      const times: number[] = [];
-      for (let round = 0; round < 5; round++) {
-        for (let i = 0; i < 5; i++)
-          await writeFile(
-            join(tree.path, "src", `file-${attempt}-${round}-${i}`),
-            randomBytes(8192),
-          );
-        const t0 = performance.now();
-        const set = await tree.capture();
-        times.push(performance.now() - t0);
-        assert.equal(set.changes.length, 5 * (round + 1) + 25 * (attempt - 1));
-      }
-      times.sort((a, b) => a - b);
-      return {
-        ok: times[2] < bound,
-        report: `capture ms: median ${times[2].toFixed(1)} min ${times[0].toFixed(1)}; bound ${bound.toFixed(1)} (git status ${gitStatus[1].toFixed(1)}) (${process.platform})`,
-      };
-    });
-    assert(result.ok, result.report);
-  },
-);

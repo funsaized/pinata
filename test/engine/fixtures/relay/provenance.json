@@ -1,0 +1,74 @@
+{
+  "archive": "media/pinata-demo-source.zip",
+  "archiveSha256": "088ea0cf5bd6dbb5b40b6d846daa2c865b2bb6d7bc04c4af0c53827af54c8e37",
+  "run": "0b81c2b4-9584-4046-a32d-4cb945857949",
+  "files": [
+    {
+      "path": ".gitignore",
+      "source": "finished/.gitignore",
+      "sha256": "141f2e2f776fbd862eec9c62cc59ac25ef89d21a1d4b07578ab781636fb77df4"
+    },
+    {
+      "path": "README.md",
+      "source": "finished/README.md",
+      "sha256": "dc3d2be621418604e08e8843edafb05733f1e506ecb7c3def0d394639234da76"
+    },
+    {
+      "path": "REQUIREMENTS.md",
+      "source": "finished/REQUIREMENTS.md",
+      "sha256": "509f83e21f389a87c3fc417df82ebd048970940ceaa425c83aed517c0ece737a"
+    },
+    {
+      "path": "bin/relay.mjs",
+      "source": "finished/bin/relay.mjs",
+      "sha256": "beaa686a58ad2500ce5a4d47f4c36bf552f61ec2632893ebfd19fe21ddb72815"
+    },
+    {
+      "path": "data/events.jsonl",
+      "source": "finished/data/events.jsonl",
+      "sha256": "17314e9d5f8b4dc7190085dac44f0dbe26e8400837b7eb36ac3bdc354e10189a"
+    },
+    {
+      "path": "package.json",
+      "source": "finished/package.json",
+      "sha256": "03587798cfc05bf06047d9bba48c4063e534f53c5dc7c8a89d86730385211205"
+    },
+    {
+      "path": "src/parse.mjs",
+      "source": "finished/src/parse.mjs",
+      "sha256": "811d1f0e9b4bb4213286a959f663f13dc3a9ee5bc99874ec0e5e62a0dc6abdec"
+    },
+    {
+      "path": "src/render.mjs",
+      "source": "finished/src/render.mjs",
+      "sha256": "3b1f979e67de860201df71df09a1eae5c9cb200032f880606874e50b6b087e96"
+    },
+    {
+      "path": "src/summarize.mjs",
+      "source": "finished/src/summarize.mjs",
+      "sha256": "fde7b6672434cdade2a74cf0d93108be411fa0f257e44ff20555a672b1645278"
+    },
+    {
+      "path": "test/cli.test.mjs",
+      "source": "finished/test/cli.test.mjs",
+      "sha256": "52bbc69c9d9ae615b71eb8e4f448e5edee9b004517b29f5f1d70182af0fc6ba2",
+      "sourceSha256": "f8400fdcb5631f5ad259e469498379f4ff6621f37714fc07a7161aac2f3db2a9",
+      "adaptation": "Check the JSON-quoted input path in CLI error diagnostics; include a backslash in the directory fixture on every platform."
+    },
+    {
+      "path": "test/parse.test.mjs",
+      "source": "finished/test/parse.test.mjs",
+      "sha256": "bd68136af665ffd4b05c745d7a8f4975597fbb65a3fe4839df3bbef097d74561"
+    },
+    {
+      "path": "test/render.test.mjs",
+      "source": "finished/test/render.test.mjs",
+      "sha256": "cc1e22444803b339e42537a848db4a56316e1c6398b217cb869fbdb63acac31b"
+    },
+    {
+      "path": "test/summarize.test.mjs",
+      "source": "finished/test/summarize.test.mjs",
+      "sha256": "f43841b83a8163b5f4279da122cbed08b6fa114b1f23bd2d80d03b8a2affaec2"
+    }
+  ]
+}

@@ -1,5 +1,5 @@
 // The pinata surfaces in Pi: the widget above the editor and the footer status while a run
-// started in this session is active, and the /pinata live overlay. They are driven by engine
+// started in this session is active, and the /pinata view overlay. They are driven by engine
 // events coalesced to at most 4 updates per second; an idle Pi runs no pinata timers.
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -9,10 +9,11 @@ import { readJsonl } from "../core/store.ts";
 import { focusWorkspace, type PaneResource } from "../herdr/client.ts";
 import { coalesce, type RunView } from "../core/view.ts";
 import { type DetailSource } from "../ui/detail.ts";
-import { LiveScene, type SceneRun } from "../ui/live.ts";
+import { RunWorkspace, type WorkspaceRun } from "../ui/workspace.ts";
 import { footerLine } from "../ui/text.ts";
 import { PinataWidget, widgetLines } from "../ui/widget.ts";
-import { verificationStatus } from "../verify/destination.ts";
+import { orderRuns, requireTask, type ViewArgs } from "../viewer/selection.ts";
+export { integrationStatus } from "../ui/integration.ts";
 
 export const WIDGET = "pinata";
 export const MOTION = "pinata-motion";
@@ -22,30 +23,6 @@ const OBSERVE_UPDATE_MS = 100;
 const DETAIL_MS = 50;
 
 export type UIContext = Pick<ExtensionContext, "ui" | "hasUI" | "mode" | "cwd" | "sessionManager">;
-
-// The integration journal's status for a run directory, or null before integration.
-export async function integrationStatus(dir: string): Promise<string | null> {
-  try {
-    const journal = JSON.parse(
-      await readFile(join(dir, "integration", "journal.json"), "utf8").catch(() => "null"),
-    );
-    if (journal?.status === "rolled_back") return "rolled_back";
-    if (journal && journal.schemaVersion !== 2) return "legacy_unverified";
-    const verification = await verificationStatus(dir);
-    if (verification) {
-      if (verification.freshness !== "current") return "historical";
-      if (verification.status === "verified")
-        return journal?.status === "verified" &&
-          journal.verification?.receipt === verification.receipt
-          ? "verified"
-          : "destination_checked";
-      return verification.status;
-    }
-    return journal?.status ?? null;
-  } catch {
-    return null;
-  }
-}
 
 // An agent's conversation: a live snapshot while it runs, its transcript once it settled (or
 // the snapshot again while the lean transcript is still being written).
@@ -67,10 +44,13 @@ export async function agentMessages(
 }
 
 export interface RunSource {
-  // Runs to offer in /pinata live, newest first: this session's, else the repository's.
+  // Runs to offer in /pinata view, newest first: this session's, else the repository's.
   runs(ctx: UIContext): Promise<string[]>;
-  read(run: string, ctx: UIContext): Promise<SceneRun>;
+  resolve?(run: string, ctx: UIContext): Promise<string>;
+  read(run: string, ctx: UIContext): Promise<WorkspaceRun>;
   detail?(run: string, ctx: UIContext): Promise<DetailSource>;
+  watch?(scene: RunWorkspace, ctx: UIContext): void;
+  dispose?(): void;
 }
 
 export class PinataUI {
@@ -81,7 +61,7 @@ export class PinataUI {
   private widget: PinataWidget | null = null;
   private installed = false;
   private shown = false;
-  scene: LiveScene | null = null;
+  scene: RunWorkspace | null = null;
   get detail() {
     return this.scene?.detail ?? null;
   }
@@ -142,12 +122,13 @@ export class PinataUI {
 
   refresh(): void {
     const scene = this.scene;
-    const followed = scene && this.followed.get(scene.selected() ?? "");
-    if (followed)
-      scene.offer({
-        view: followed.handle.view(),
-        integration: this.integration.get(followed.handle.id) ?? null,
-      });
+    // Offer in start order so an unqualified live view discovers new runs newest-last.
+    if (scene)
+      for (const { handle } of this.followed.values())
+        scene.offer({
+          view: handle.view(),
+          integration: this.integration.get(handle.id) ?? null,
+        });
     const ctx = this.ctx;
     if (!ctx?.hasUI) return;
     const active = this.active();
@@ -166,7 +147,7 @@ export class PinataUI {
                 paint: theme,
                 views: () => this.active(),
                 motion: () => this.motion,
-                open: () => void this.openLive("", ctx).catch(() => {}),
+                open: () => void this.openView({}, ctx).catch(() => {}),
               });
               return this.widget;
             },
@@ -200,54 +181,61 @@ export class PinataUI {
     this.widget?.update();
   }
 
-  // /pinata live [run]: the run workspace. Plain status outside the interactive TUI.
-  async openLive(
-    arg: string,
-    ctx: UIContext,
-    source?: RunSource,
-    agent?: string,
-  ): Promise<string | null> {
+  // Both command entry points use the shared workspace; selectors pin the target.
+  async openView(args: ViewArgs, ctx: UIContext, source?: RunSource): Promise<string | null> {
     this.bind(ctx);
-    if (ctx.mode !== "tui")
-      return "The animated view needs interactive Pi. Use /pinata for plain status.";
+    if (ctx.mode !== "tui") return "The view needs interactive Pi. Use /pinata for plain status.";
     if (this.opening) return null;
     this.opening = true;
     const epoch = this.epoch;
+    const read = async (run: string): Promise<WorkspaceRun> => {
+      const live = this.followed.get(run);
+      if (live) return { view: live.handle.view(), integration: this.integration.get(run) ?? null };
+      if (!source) throw new Error(`Unknown run ${run}`);
+      return source.read(run, ctx);
+    };
     try {
-      const all = source ? await source.runs(ctx) : [...this.followed.keys()].reverse();
-      const runs = arg ? all.filter((r) => r.startsWith(arg)) : all;
-      if (arg && runs.length !== 1)
-        return runs.length ? `Several runs start with ${arg}` : `No pinata run starts with ${arg}`;
+      let runs: string[];
+      if (args.run && source?.resolve) runs = [await source.resolve(args.run, ctx)];
+      else {
+        const all = source
+          ? await source.runs(ctx)
+          : orderRuns([...this.followed.values()].map((f) => f.handle.view())).map((v) => v.run);
+        runs = args.run ? all.filter((r) => r.startsWith(args.run!)) : all;
+        if (args.run && runs.length !== 1)
+          throw new Error(
+            runs.length ? `Run prefix ${args.run} is ambiguous` : `Unknown run ${args.run}`,
+          );
+      }
+      if (args.task) {
+        if (!runs.length) throw new Error("No pinata runs in this repository.");
+        runs = [runs[0]];
+        requireTask((await read(runs[0])).view, args.task);
+      }
       if (epoch !== this.epoch) return null;
       await ctx.ui.custom<void>(
         (tui, theme, keys, done) => {
           this.scene?.dispose();
-          this.scene = new LiveScene({
+          this.scene = new RunWorkspace({
             tui,
             theme,
             keys,
             done: () => done(undefined),
             runs,
-            readRun: async (run) => {
-              const live = this.followed.get(run);
-              if (live)
-                return {
-                  view: live.handle.view(),
-                  integration: this.integration.get(run) ?? null,
-                };
-              if (!source) throw new Error(`Unknown run ${run}`);
-              return source.read(run, ctx);
-            },
+            followNewRuns: !args.run && !args.task,
+            readRun: read,
             detailSource: async (run) => {
               const live = this.followed.get(run);
               if (live) return this.detailSource(run, live.handle.dir, live.handle.view(), ctx.cwd);
               if (source?.detail) return source.detail(run, ctx);
               throw new Error("No conversation source is available for this run");
             },
-            agent,
+            agent: args.task,
             motion: this.motion,
             setMotion: (enabled) => this.setMotion(enabled),
           });
+          source?.watch?.(this.scene, ctx);
+          this.refresh();
           return this.scene;
         },
         { overlay: true, overlayOptions: { width: "96%", maxHeight: "95%", anchor: "center" } },
@@ -257,6 +245,7 @@ export class PinataUI {
       this.opening = false;
       this.scene?.dispose();
       this.scene = null;
+      source?.dispose?.();
     }
   }
 
@@ -293,26 +282,6 @@ export class PinataUI {
         await focusWorkspace(pane);
       },
     };
-  }
-
-  // Both commands enter the same workspace; open starts with conversation focus.
-  async openDetail(
-    found: { id: string; dir: string; view: RunView },
-    agent: string,
-    ctx: UIContext,
-  ): Promise<string | null> {
-    if (!found.view.agents[agent])
-      return `Run ${found.id.slice(0, 8)} has no task ${agent} (tasks: ${found.view.order.join(", ")})`;
-    return this.openLive(
-      found.id,
-      ctx,
-      {
-        runs: async () => [found.id],
-        read: async () => ({ view: found.view, integration: await integrationStatus(found.dir) }),
-        detail: async () => this.detailSource(found.id, found.dir, found.view, ctx.cwd),
-      },
-      agent,
-    );
   }
 
   // Session end: close the overlays, stop following, and clear the widget and footer.

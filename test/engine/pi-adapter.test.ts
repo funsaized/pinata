@@ -49,6 +49,7 @@ async function adapter(t: TestContext, respond: (turn: FauxTurn) => any) {
     );
   const tools = new Map<string, any>();
   const commands = new Map<string, any>();
+  const shortcuts = new Map<string, any>();
   const handlers: Record<string, Array<(e: any, ctx: any) => any>> = {};
   const messages: Array<{ message: any; options: any }> = [];
   const notes: string[] = [];
@@ -58,6 +59,7 @@ async function adapter(t: TestContext, respond: (turn: FauxTurn) => any) {
       entries.push({ type: "custom", customType, data }),
     registerTool: (tool: any) => tools.set(tool.name, tool),
     registerCommand: (name: string, options: any) => commands.set(name, options),
+    registerShortcut: (key: string, options: any) => shortcuts.set(key, options),
     registerMessageRenderer() {},
     on: (event: string, handler: any) => (handlers[event] ??= []).push(handler),
     sendMessage: (message: any, options: any) => messages.push({ message, options }),
@@ -74,7 +76,7 @@ async function adapter(t: TestContext, respond: (turn: FauxTurn) => any) {
   };
   const call = (name: string, params: unknown, signal?: AbortSignal, updates: any[] = []) =>
     tools.get(name).execute("call-1", params, signal, (u: any) => updates.push(u), ctx);
-  return { world, tools, commands, handlers, messages, notes, entries, ctx, call };
+  return { world, tools, commands, shortcuts, handlers, messages, notes, entries, ctx, call };
 }
 
 const reader = (turn: FauxTurn) =>
@@ -98,6 +100,11 @@ test("the extension registers the tools and the command", async (t) => {
   ]);
   assert(a.commands.has("pinata"));
   assert(a.handlers.session_shutdown?.length);
+  assert.deepEqual([...a.shortcuts.keys()], ["shift+up", "shift+down"]);
+  for (const tool of a.tools.values()) {
+    assert.equal(typeof tool.renderCall, "function", tool.name);
+    assert.equal(typeof tool.renderResult, "function", tool.name);
+  }
 });
 
 test("children never get pinata tools (recursion guard)", () => {
@@ -116,6 +123,72 @@ test("children never get pinata tools (recursion guard)", () => {
   assert.deepEqual(registered, []);
 });
 
+test("agent shortcuts open available conversations, stay quiet without runs, and preserve the parent draft", async (t) => {
+  const { initTheme } = await import("@earendil-works/pi-coding-agent");
+  initTheme("dark");
+  let modelCalls = 0;
+  const a = await adapter(t, (turn) => {
+    modelCalls++;
+    return reader(turn);
+  });
+  let scene: any;
+  let opened = 0;
+  const parentDraft = "Finish my unfinished request";
+  Object.assign(a.ctx, { mode: "tui", hasUI: true, sessionManager: { getBranch: () => [] } });
+  Object.assign(a.ctx.ui, {
+    setWidget() {},
+    setStatus() {},
+    getEditorText: () => parentDraft,
+    setEditorText: () => assert.fail("view navigation must not overwrite the parent draft"),
+    custom: (factory: any) =>
+      new Promise((done) => {
+        opened++;
+        scene = factory(
+          { terminal: { rows: 32 }, requestRender() {} },
+          { fg: (_: string, x: string) => x },
+          { matches: (data: string, id: string) => id === "tui.select.cancel" && data === "\x1b" },
+          done,
+        );
+      }),
+  });
+  const next = a.shortcuts.get("shift+down").handler;
+  const previous = a.shortcuts.get("shift+up").handler;
+  await next(a.ctx);
+  await previous(a.ctx);
+  assert.equal(opened, 0);
+  assert.equal(modelCalls, 0);
+  assert.deepEqual(a.notes, []);
+  await a.call("pinata_run", { tasks: [spec("one"), spec("two")] });
+  const calls = modelCalls;
+  const pending = next(a.ctx);
+  const duplicate = next(a.ctx);
+  for (let i = 0; !scene && i < 400; i++) await new Promise((r) => setTimeout(r, 5));
+  assert(scene);
+  await scene.ready;
+  assert.equal(scene.agent, "one");
+  assert.equal(scene.focus, "detail");
+  assert.equal(scene.followNewRuns, false, "keyboard entry pins the selected run");
+  assert.equal(opened, 1, "rapid entry does not stack overlays");
+  scene.handleInput("\x1b[1;2B");
+  await scene.ready;
+  assert.equal(scene.agent, "two");
+  scene.handleInput("\x1b");
+  await Promise.all([pending, duplicate]);
+  scene = undefined;
+  const reopened = previous(a.ctx);
+  for (let i = 0; !scene && i < 400; i++) await new Promise((r) => setTimeout(r, 5));
+  assert(scene);
+  await scene.ready;
+  assert.equal(scene.agent, "two", "Shift+Up enters the last agent");
+  scene.close();
+  await reopened;
+  assert.equal(modelCalls, calls, "navigation makes no model calls");
+  assert.equal(a.ctx.ui.getEditorText(), parentDraft);
+  a.ctx.mode = "rpc";
+  await next(a.ctx);
+  assert.equal(opened, 2, "shortcuts only act in the interactive TUI");
+});
+
 test("pinata_run runs in the foreground, streams progress and returns compact results", async (t) => {
   const a = await adapter(t, reader);
   const updates: any[] = [];
@@ -127,6 +200,22 @@ test("pinata_run runs in the foreground, streams progress and returns compact re
   );
   assert(!out.isError, JSON.stringify(out));
   const r = out.details.result;
+  const beforeRender = JSON.stringify(out);
+  const rendered = a.tools
+    .get("pinata_run")
+    .renderResult(
+      out,
+      { expanded: false, isPartial: false },
+      { fg: (_: string, text: string) => text },
+      { args: {} },
+    )
+    .render(100)
+    .join("\n");
+  assert.match(rendered, /3\/3 finished/);
+  assert.match(rendered, /✓ one · Done/);
+  assert.match(rendered, /View results: \/pinata view/);
+  assert(!rendered.includes('"tasks":'), "collapsed results are readable summaries");
+  assert.equal(JSON.stringify(out), beforeRender, "rendering preserves structured model results");
   assert.equal(r.status, "succeeded");
   assert.deepEqual(
     r.tasks.map((x: any) => [x.id, x.status, x.brief]),
@@ -136,7 +225,7 @@ test("pinata_run runs in the foreground, streams progress and returns compact re
       ["plan", "succeeded", "plan brief"],
     ],
   );
-  assert(updates.length >= 1 && /pinata [0-9a-f]{8} · /.test(updates.at(-1).content[0].text));
+  assert(updates.length >= 1 && /Pinata [0-9a-f]{8} · /.test(updates.at(-1).content[0].text));
   const summary = (await a.call("pinata_status", {})).details.result;
   assert.equal(summary.run, r.run);
   const full = (
@@ -285,7 +374,7 @@ test("/pinata reports runs, modes and runs a crashed Pi left unsettled", async (
   const command = a.commands.get("pinata");
   await command.handler("", a.ctx);
   assert.match(a.notes.at(-1)!, /Interrupted \(Pi exited before they settled\): 00000000/);
-  assert.match(a.notes.at(-1)!, /✓ scout\s+done/);
+  assert.match(a.notes.at(-1)!, /✓ done \(scout\)/);
   await command.handler("runs", a.ctx);
   assert.equal(a.notes.at(-1)!.split("\n").length, 2);
   await command.handler("mode observe", a.ctx);
@@ -342,7 +431,7 @@ test("the widget and footer follow a run in the TUI and clear when it settles; i
   assert.equal(widgets[0].options.placement, "aboveEditor");
   assert(renders >= 1, "the widget re-renders as events arrive");
   assert(
-    statuses.some((s) => /^pinata \d\/2/.test(s ?? "")),
+    statuses.some((s) => /^Pinata · .*\d\/2 finished/.test(s ?? "")),
     `footer: ${JSON.stringify(statuses)}`,
   );
   // Settled: the coalesced update clears the widget and the footer, and the ears stop.
@@ -352,7 +441,7 @@ test("the widget and footer follow a run in the TUI and clear when it settles; i
   assert(widget.disposed && !widget.animating);
 });
 
-test("/pinata live opens an empty workspace without model calls, persists motion, and closes on shutdown", async (t) => {
+test("/pinata view opens an empty workspace without model calls, persists motion, and closes on shutdown", async (t) => {
   const { initTheme } = await import("@earendil-works/pi-coding-agent");
   initTheme("dark");
   const a = await adapter(t, () => {
@@ -388,13 +477,13 @@ test("/pinata live opens an empty workspace without model calls, persists motion
   };
   const command = a.commands.get("pinata");
   assert(
-    !command.getArgumentCompletions("li").some((o: any) => o.value === "live demo"),
-    "live demo is not offered",
+    !(await command.getArgumentCompletions("vi")).some((o: any) => o.value === "view demo"),
+    "only canonical commands are offered",
   );
-  await command.handler("live demo", a.ctx);
-  assert.match(a.notes.at(-1)!, /No pinata run starts with demo/);
+  await command.handler("view demo", a.ctx);
+  assert.match(a.notes.at(-1)!, /Unknown run demo/);
   assert.equal(shown.length, 0);
-  const pending = command.handler("live", a.ctx);
+  const pending = command.handler("view", a.ctx);
   await opened;
   await scene.ready;
   assert.equal(scene.run, null);
@@ -410,11 +499,75 @@ test("/pinata live opens an empty workspace without model calls, persists motion
   assert(scene.disposed, "shutdown closes the overlay");
   assert.equal(scene.frameTimer, null);
   a.ctx.mode = "rpc";
-  await command.handler("live", a.ctx);
+  await command.handler("view", a.ctx);
   assert.match(a.notes.at(-1)!, /needs interactive Pi/);
 });
 
-test("/pinata open replays a finished run from disk in a session that never ran it", async (t) => {
+test("an already-open live workspace picks up new runs; explicit run views stay pinned", async (t) => {
+  const { initTheme } = await import("@earendil-works/pi-coding-agent");
+  initTheme("dark");
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  t.after(() => release());
+  const a = await adapter(t, async (turn) => {
+    await gate;
+    return reader(turn);
+  });
+  let scene: any;
+  Object.assign(a.ctx, {
+    mode: "tui",
+    hasUI: true,
+    sessionManager: { getBranch: () => a.entries },
+  });
+  a.ctx.ui = {
+    notify: (text: string) => a.notes.push(text),
+    setWidget() {},
+    setStatus() {},
+    custom: (factory: any) =>
+      new Promise((done) => {
+        scene = factory(
+          { terminal: { rows: 30 }, requestRender() {} },
+          { fg: (_: string, text: string) => text },
+          { matches: () => false },
+          done,
+        );
+      }),
+  };
+  t.after(() => scene?.close());
+  const command = a.commands.get("pinata");
+  const opened = command.handler("view", a.ctx);
+  await until(() => !!scene, "the empty live workspace");
+  await scene.ready;
+  assert.equal(scene.run, null);
+  const running = a.call("pinata_run", { tasks: [spec("first")] });
+  await until(() => scene.run?.view.status === "running", "live to discover the new run");
+  await scene.ready;
+  const first = scene.selected();
+  assert.equal(scene.agent, "first");
+  assert(scene.detail, "the conversation attaches without reopening");
+  release();
+  assert(!(await running).isError);
+  await until(() => scene.run?.view.status === "succeeded", "the live run to settle");
+  const next = await a.call("pinata_run", { tasks: [spec("second")] });
+  assert(!next.isError);
+  assert.equal(scene.selected(), next.details.result.run, "latest follows the next run too");
+  await scene.ready;
+  assert.equal(scene.agent, "second");
+  scene.close();
+  await opened;
+  scene = null;
+  const pinned = command.handler(`view ${first}`, a.ctx);
+  await until(() => !!scene, "the pinned live workspace");
+  await scene.ready;
+  const third = await a.call("pinata_run", { tasks: [spec("third")] });
+  assert(!third.isError);
+  assert.equal(scene.selected(), first);
+  assert.deepEqual(scene.runs, [first]);
+  scene.close();
+  await pinned;
+});
+
+test("/pinata view --task replays a finished run from disk in a session that never ran it", async (t) => {
   const { initTheme } = await import("@earendil-works/pi-coding-agent");
   initTheme("dark");
   const first = await adapter(t, reader);
@@ -452,7 +605,7 @@ test("/pinata open replays a finished run from disk in a session that never ran 
   const command = second.commands.get("pinata");
   await command.handler("runs", second.ctx);
   assert.match(second.notes.at(-1)!, new RegExp(run.slice(0, 8)));
-  const pending = command.handler(`open ${run.slice(0, 8)} look`, second.ctx);
+  const pending = command.handler(`view ${run.slice(0, 8)} --task look`, second.ctx);
   for (let i = 0; !detail && i < 400; i++) await new Promise((r) => setTimeout(r, 5));
   assert(detail, second.notes.join("\n"));
   await detail.ready;
@@ -461,7 +614,7 @@ test("/pinata open replays a finished run from disk in a session that never ran 
   // oxlint-disable-next-line no-control-regex
   const ansi = /\x1b\[[0-9;]*m|\x1b\][^\x07]*\x07/g;
   const text = detail.render(100).join("\n").replace(ansi, "");
-  assert.match(text, /✓ scout look/);
+  assert.match(text, /✓ look \(scout\)/);
   assert.match(text, /Task look \(scout\)/);
   assert.match(text, /README\.md/);
   assert.match(text, /AGENTS/);
@@ -469,7 +622,7 @@ test("/pinata open replays a finished run from disk in a session that never ran 
   detail.handleInput("\x1b");
   await pending;
   detail = null;
-  const live = command.handler(`live ${run.slice(0, 8)}`, second.ctx);
+  const live = command.handler(`view ${run.slice(0, 8)}`, second.ctx);
   for (let i = 0; !detail && i < 400; i++) await new Promise((r) => setTimeout(r, 5));
   assert(detail, second.notes.join("\n"));
   await detail.ready;
@@ -481,11 +634,20 @@ test("/pinata open replays a finished run from disk in a session that never ran 
   assert.match(detail.detail.notice, /read-only/);
   detail.handleInput("\x1b");
   await live;
-  await command.handler("open nope", second.ctx);
+  await command.handler("view --task nope", second.ctx);
   assert.match(second.notes.at(-1)!, /no task nope/);
+  detail = null;
+  const shortcut = second.shortcuts.get("shift+down").handler(second.ctx);
+  for (let i = 0; !detail && i < 400; i++) await new Promise((r) => setTimeout(r, 5));
+  assert(detail, "a shortcut can open saved agents from a previous session");
+  await detail.ready;
+  assert.equal(detail.agent, "look");
+  assert.equal(detail.focus, "detail");
+  detail.close();
+  await shortcut;
 });
 
-test("modes: lean by default with the socket on /pinata watch; observe starts it with the run", async (t) => {
+test("modes: lean by default with the socket on /pinata view --external; observe starts it with the run", async (t) => {
   const { validateConfig } = await import("../../engine/pi/config.ts");
   const { IpcClient } = await import("../../engine/ipc/client.ts");
   assert.equal(validateConfig({}).config.mode, "lean");
@@ -495,6 +657,10 @@ test("modes: lean by default with the socket on /pinata watch; observe starts it
   const gate = new Promise<void>((resolve) => (release = resolve));
   let finish!: () => void;
   const later = new Promise<void>((resolve) => (finish = resolve));
+  t.after(() => {
+    release();
+    finish();
+  });
   const a = await adapter(t, async (turn) => {
     if (turn.agent === "slow" && turn.round === 0) await gate;
     if (turn.agent === "seen" && turn.round === 0) await later;
@@ -504,8 +670,8 @@ test("modes: lean by default with the socket on /pinata watch; observe starts it
   const started = await a.call("pinata_run", { tasks: [spec("slow")], background: true });
   const { run, dir } = started.details.result;
   assert(!existsSync(join(dir, "link.json")), "lean mode starts no socket");
-  await command.handler("watch slow", a.ctx);
-  assert.match(a.notes.at(-1)!, /pinata view [0-9a-f]{8} slow/);
+  await command.handler("view --external --task slow", a.ctx);
+  assert.match(a.notes.at(-1)!, /pinata view [0-9a-f-]{36} --task slow/);
   const viewer = await IpcClient.connect(dir);
   assert.equal(viewer.view?.run, run);
   assert.equal(viewer.view?.mode, "lean");

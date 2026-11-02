@@ -95,6 +95,7 @@ export interface Envelope {
   run: string;
   agent?: string;
   at: number;
+  source?: { id: string; record: number };
 }
 
 export interface ToolRecord {
@@ -127,7 +128,7 @@ export type EventBody =
   | { t: "check_start"; check: string }
   | { t: "check_end"; check: string; passed: boolean; ms: number }
   | { t: "checkout_changed" } // a live-checkout reader saw the checkout change mid-run
-  | { t: "usage"; usage: Usage } // lean-mode usage tick: the agent's cumulative usage
+  | { t: "usage"; usage: Usage; turns?: number; toolCalls?: number } // current attempt checkpoint
   | {
       t: "agent_settled";
       status: AgentStatus;
@@ -156,7 +157,7 @@ export type AgentEvent = Envelope & EventBody;
 export type EventType = EventBody["t"];
 
 // What a backend emits; the engine adds the envelope.
-export type AgentEventInput = EventBody;
+export type AgentEventInput = EventBody & Pick<Envelope, "source">;
 
 // Results submitted through `submit_result`.
 export type Severity = "critical" | "high" | "medium" | "low" | "info";

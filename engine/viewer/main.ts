@@ -1,17 +1,11 @@
 // `pinata view`: a Pi extension that opens the viewer full-screen in interactive Pi, attached
 // to a run's socket. bin/pinata.mjs starts Pi with only this extension and PINATA_VIEW set.
-import { existsSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { join } from "node:path";
-import { IpcClient } from "../ipc/client.ts";
-import { LogClient } from "../sources/log.ts";
+import { connectViewer } from "./client.ts";
 import { ViewerScreen } from "./screen.ts";
-
-export interface ViewSpec {
-  runs: string[]; // live run directories, newest first
-  task?: string;
-  cwd: string;
-}
+import { resolveView, type ViewSpec, type ViewArgs } from "./selection.ts";
+export type { ViewSpec } from "./selection.ts";
 
 // The viewer benchmark (E5.6) sets PINATA_VIEW_READY: when the first snapshot is on screen,
 // the viewer writes the time and its memory there.
@@ -33,7 +27,11 @@ export function markReady(screen: ViewerScreen, tui: { requestRender(): void }):
   });
 }
 
-export async function openViewer(ctx: ExtensionContext, spec: ViewSpec): Promise<void> {
+export async function openViewer(
+  ctx: ExtensionContext,
+  request: ViewSpec | (ViewArgs & { cwd: string }),
+): Promise<void> {
+  const spec = "runs" in request ? request : await resolveView(request, request.cwd);
   let themed = false;
   await ctx.ui.custom<void>(
     (tui, theme, keys, done) => {
@@ -43,12 +41,11 @@ export async function openViewer(ctx: ExtensionContext, spec: ViewSpec): Promise
         keys,
         done: () => done(undefined),
         runs: spec.runs,
+        root: spec.root,
         cwd: spec.cwd,
         task: spec.task,
         connect: async (dir) => {
-          // A run without a socket opens from its log (the post-mortem viewer).
-          if (!existsSync(join(dir, "link.json"))) return LogClient.open(dir, { follow: true });
-          const client = await IpcClient.connect(dir);
+          const client = await connectViewer(dir);
           // The parent Pi's theme, for this session only (a Theme instance is not saved).
           const match = !themed && client.theme ? ctx.ui.getTheme(client.theme) : undefined;
           if (match) {
@@ -61,14 +58,14 @@ export async function openViewer(ctx: ExtensionContext, spec: ViewSpec): Promise
       markReady(screen, tui);
       return screen;
     },
-    { overlay: true, overlayOptions: { width: "100%", maxHeight: "100%", anchor: "center" } },
+    { overlay: true, overlayOptions: { width: "96%", maxHeight: "95%", anchor: "center" } },
   );
 }
 
 export default function viewer(pi: ExtensionAPI): void {
   const raw = process.env.PINATA_VIEW;
   if (!raw) return;
-  const spec = JSON.parse(raw) as ViewSpec;
+  const spec = JSON.parse(raw) as ViewSpec | (ViewArgs & { cwd: string });
   pi.on("session_start", (_event, ctx) => {
     if (ctx.mode !== "tui") return;
     // Let the TUI finish starting, then show the viewer; closing it exits Pi.

@@ -9,10 +9,10 @@
 
 `/pinata` shows the latest run and lists runs a previous Pi left unsettled. For one task's
 full result, or its transcript, ask Pi (it uses `pinata_status`), open it with
-`/pinata open <run> <task>`, or print its log:
+`/pinata view <run> --task <task>`, or print its log:
 
 ```sh
-pinata logs <run> <task>
+pinata logs <run> --task <task>
 ```
 
 ## When Pi exited during a run
@@ -62,7 +62,7 @@ lock or reset the destination to force a retry.
 
 ```text
 /pinata gc
-/pinata gc confirm
+/pinata gc --confirm
 ```
 
 Without `confirm`, retirement of 0.7.0 run directories is a preview (see below).

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { FingerprintCache } from "../../engine/workspace/live.ts";
 
-test("fingerprints are shared: a burst of requests costs at most two measurements", async () => {
+test("concurrent fingerprint requests share measurements while respecting freshness", async () => {
   let n = 0;
   const cache = new FingerprintCache(async () => {
     await new Promise((r) => setTimeout(r, 20));
