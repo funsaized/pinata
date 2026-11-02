@@ -127,14 +127,15 @@ test("requires exactly one input path and prints usage to stderr", async (t) => 
 test("unreadable paths exit 2 with a useful stderr diagnostic and no report", async (t) => {
   const directory = await makeTempDir(t);
   const missingPath = join(directory, "missing.jsonl");
-  const directoryPath = join(directory, "not-a-file");
-  await mkdir(directoryPath);
+  // Include a backslash even on POSIX to exercise JSON-escaped diagnostics.
+  const directoryPath = join(directory, "not-a-file\\nested");
+  await mkdir(directoryPath, { recursive: true });
 
   for (const inputPath of [missingPath, directoryPath]) {
     const result = runCli([inputPath], directory);
     assert.equal(result.status, 2);
     assert.equal(result.stdout, "");
     assert.match(result.stderr, /cannot read/);
-    assert.ok(result.stderr.includes(inputPath));
+    assert.ok(result.stderr.startsWith(`relay: cannot read ${JSON.stringify(inputPath)}:`));
   }
 });

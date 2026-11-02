@@ -1,4 +1,4 @@
-# Recorded Relay source and evidence keep their original bytes and checksums.
+# Preserve recorded Relay formatting; provenance documents the portable test correction.
 examples/relay/starter/**
 examples/relay/finished/**
 examples/relay/evidence/**

@@ -51,7 +51,9 @@
     {
       "path": "finished/test/cli.test.mjs",
       "source": "finished/test/cli.test.mjs",
-      "sha256": "f8400fdcb5631f5ad259e469498379f4ff6621f37714fc07a7161aac2f3db2a9"
+      "sha256": "52bbc69c9d9ae615b71eb8e4f448e5edee9b004517b29f5f1d70182af0fc6ba2",
+      "sourceSha256": "f8400fdcb5631f5ad259e469498379f4ff6621f37714fc07a7161aac2f3db2a9",
+      "adaptation": "Check the JSON-quoted input path in CLI error diagnostics; include a backslash in the directory fixture on every platform."
     },
     {
       "path": "finished/test/parse.test.mjs",

@@ -65,7 +65,7 @@ test("Relay offline lesson is portable, catches the deliberate fault, and refuse
     assert.equal(job.config.models[role].provider, "REPLACE_WITH_APPROVED_PROVIDER");
 });
 
-test("Relay recorded evidence retains source bytes and binds reviews to the checked artifacts", async () => {
+test("Relay fixtures match provenance and recorded reviews bind the checked artifacts", async () => {
   const provenance = await json("evidence/provenance.json");
   for (const entry of provenance.files) {
     const hash = createHash("sha256")
