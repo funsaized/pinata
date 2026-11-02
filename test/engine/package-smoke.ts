@@ -4,7 +4,7 @@
 // the tools.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -36,11 +36,20 @@ async function main() {
       "agents/reviewer.md",
       "examples/agents/planner.md",
       "examples/agents/researcher.md",
+      "examples/relay/setup.mjs",
+      "examples/relay/job.json",
+      "examples/relay/starter/src/parse.mjs",
+      "examples/relay/verify.mjs",
+      "examples/relay/expected-report.md",
     ])
       assert(files.includes(need), `missing ${need}`);
     assert.equal(files.filter((f) => f.startsWith("prompts/")).length, 5);
     assert(
-      !files.some((f) => /^(test|bench|node_modules|\.github)\/|PLAN\.md|\.log$|\.env/.test(f)),
+      !files.some((f) =>
+        /^(test|bench|node_modules|\.github)\/|(?:^|\/)node_modules\/|PLAN\.md|\.log$|\.env/.test(
+          f,
+        ),
+      ),
       "development files in tarball",
     );
     const prefix = join(dir, "prefix");
@@ -58,6 +67,15 @@ async function main() {
       dir,
     );
     const installed = join(prefix, "node_modules", "pi-pinata");
+    const relay = join(dir, "relay starter");
+    const setup = spawnSync(
+      process.execPath,
+      [join(installed, "examples", "relay", "setup.mjs"), relay],
+      { encoding: "utf8" },
+    );
+    assert.equal(setup.status, 0, setup.stderr || setup.stdout);
+    assert.match(await readFile(join(relay, "src", "parse.mjs"), "utf8"), /Not implemented/);
+    assert.equal(JSON.parse(await readFile(join(relay, "job.json"), "utf8")).tasks.length, 10);
     const repo = join(dir, "repo");
     const agent = join(dir, "agent");
     await mkdir(repo, { recursive: true });

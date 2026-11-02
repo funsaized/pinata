@@ -1,210 +1,242 @@
-// The external viewer's screen: a run picker, an agent picker and the agent detail view
-// (the same component as in Pi), fed by a socket connection to the run. It follows newly
-// started agents until the user picks one, and keeps the last state when the run goes away.
-import { truncateToWidth } from "@earendil-works/pi-tui";
-import type { AgentEvent } from "../core/types.ts";
-import type { RunView } from "../core/view.ts";
-import type { Update } from "../ipc/client.ts";
-import { AgentDetail, type DetailSource } from "../ui/detail.ts";
-import type { Keys } from "../ui/live.ts";
-import { GLYPHS, progressLine, short } from "../ui/text.ts";
-import type { Paint } from "../ui/widget.ts";
+// External data adapter for the shared run workspace. The UI and input handling live in
+// ui/workspace.ts; this controller owns socket/log connections and repository discovery.
+import { RunWorkspace, type WorkspaceOptions, type WorkspaceRun } from "../ui/workspace.ts";
+import { integrationStatus } from "../ui/integration.ts";
+import { RunCatalog, requireTask, type RunRecord } from "./selection.ts";
 
-// What the screen needs from a connection: IpcClient (live, over the socket) or LogClient
-// (a run read from its directory).
-export interface ViewerClient {
-  readonly source: "socket" | "log";
-  view: RunView | null;
-  theme: string | null;
-  closed: boolean;
-  on(listener: (update: Update) => void): () => void;
-  messages(
-    agent: string,
-  ): Promise<{ messages: unknown[]; streaming?: { text: string; thinking: string } }>;
-  steer(agent: string, text: string, as: "steer" | "followUp"): void;
-  close(): void;
-}
+import { clientDetail, reconnectViewer, type ViewerClient } from "./client.ts";
+export type { ViewerClient } from "./client.ts";
 
-export interface ViewerOptions {
-  tui: { requestRender(): void; terminal?: { rows: number } };
-  theme: Paint;
-  keys: Keys;
-  done: () => void;
-  // Live runs to pick from (run directories), and how to connect to one.
+export interface ViewerOptions extends Pick<
+  WorkspaceOptions,
+  "tui" | "theme" | "keys" | "done" | "motion"
+> {
   runs: string[];
+  root?: string;
   connect(dir: string): Promise<ViewerClient>;
   cwd: string;
   task?: string;
+  pollMs?: number;
 }
-
-const HEADER_ROWS = 2;
 
 export class ViewerScreen {
   readonly options: ViewerOptions;
+  readonly workspace: RunWorkspace;
   client: ViewerClient | null = null;
-  detail: AgentDetail | null = null;
-  index = 0;
-  following = true;
   status = "connecting…";
   disposed = false;
+  ready: Promise<void>;
+  private readonly catalog = new RunCatalog();
+  private readonly records = new Map<string, RunRecord>();
+  private readonly initialClients = new Map<string, ViewerClient>();
   private stop: (() => void) | null = null;
   private generation = 0;
-  ready: Promise<void>;
+  private pending: { run: string; promise: Promise<ViewerClient> } | null = null;
+  private timer: ReturnType<typeof setTimeout> | undefined;
+  private integration: string | null = null;
 
   constructor(options: ViewerOptions) {
     this.options = options;
-    this.following = !options.task;
-    this.ready = this.attach(0);
+    this.workspace = new RunWorkspace({
+      ...options,
+      runs: [],
+      agent: options.task,
+      followNewRuns: !!options.root && !options.task,
+      done: () => {
+        this.dispose();
+        options.done();
+      },
+      readRun: (id) => this.read(id),
+      detailSource: async (id) => {
+        const client = await this.connect(id);
+        this.workspace.offer({ view: client.view!, integration: this.integration });
+        return clientDetail(client, this.records.get(id)!.dir, this.options.cwd);
+      },
+    });
+    this.ready = this.initialize();
   }
 
-  get view(): RunView | null {
-    return this.client?.view ?? null;
+  get detail() {
+    return this.workspace.detail;
+  }
+  get view() {
+    return this.workspace.run?.view ?? null;
   }
 
-  // Connects to the run at `index` of the picker (re-attaching drops the old connection).
-  async attach(index: number): Promise<void> {
-    const generation = ++this.generation;
-    this.detach();
-    this.index = index;
-    this.status = "connecting…";
+  private setStatus(status: string): void {
+    this.status = status;
+    this.workspace.connection = status;
     this.options.tui.requestRender();
-    let client: ViewerClient;
+  }
+
+  private async initialize(): Promise<void> {
     try {
-      client = await this.options.connect(this.options.runs[index]);
+      const records = this.options.root
+        ? await this.catalog.list(this.options.root)
+        : await Promise.all(
+            this.options.runs.map(async (dir) => {
+              try {
+                return await this.catalog.read(dir);
+              } catch {
+                // A socket can be ready before the first buffered run events reach disk.
+                const client = await this.options.connect(dir);
+                if (!client.view) {
+                  client.close();
+                  throw new Error(`No run state in ${dir}`);
+                }
+                if (this.disposed) client.close();
+                else this.initialClients.set(client.view.run, client);
+                return { dir, view: client.view };
+              }
+            }),
+          );
+      if (this.disposed) return;
+      if (this.options.task) {
+        if (!records.length) throw new Error("No pinata runs in this repository.");
+        requireTask(records[0].view, this.options.task);
+      }
+      for (const record of records) this.records.set(record.view.run, record);
+      this.workspace.runs.push(...records.map((r) => r.view.run));
+      this.workspace.agent = this.options.task ?? null;
+      this.workspace.focus = this.options.task ? "detail" : "agents";
+      if (records.length) await this.workspace.refresh();
+      else this.setStatus("Waiting for a run");
     } catch (error) {
-      if (generation === this.generation) {
-        this.status = (error as Error).message;
+      if (!this.disposed) {
+        this.workspace.error = (error as Error).message;
         this.options.tui.requestRender();
       }
-      return;
     }
-    if (this.disposed || generation !== this.generation) return client.close();
-    this.client = client;
-    this.status = client.source === "socket" ? "live" : "from the run's log";
-    const view = client.view!;
-    const first =
-      (this.options.task && view.agents[this.options.task] && this.options.task) ||
-      view.order.find((id) => view.agents[id].status === "running") ||
-      view.order[0];
-    this.detail = new AgentDetail({
-      tui: this.innerTui(),
-      theme: this.options.theme,
-      keys: this.options.keys,
-      done: () => this.close(),
-      source: this.source(client),
-      agent: first,
-    });
-    this.detail.onSwitch = () => (this.following = false);
-    this.stop = client.on((update) => {
-      if (update.kind === "events") this.follow(update.events);
-      if (update.kind === "closed") this.status = "disconnected (the run settled or Pi exited)";
-      if (update.kind === "error") this.status = update.message;
-      this.options.tui.requestRender();
-    });
-    await this.detail.ready;
+    this.schedule();
   }
 
-  // Follows the newest agent that starts, until the user picks one.
-  private follow(events: AgentEvent[]): void {
-    if (!this.following || !this.detail) return;
-    const started = events.filter((e) => e.t === "agent_started").at(-1);
-    if (started?.agent && started.agent !== this.detail.agent) this.detail.select(started.agent);
+  private async read(id: string): Promise<WorkspaceRun> {
+    const client = await this.connect(id);
+    return { view: client.view!, integration: this.integration };
   }
 
-  private innerTui() {
-    const tui = this.options.tui;
-    return {
-      requestRender: () => tui.requestRender(),
-      get terminal() {
-        return { rows: Math.max(6, (tui.terminal?.rows ?? 32) - HEADER_ROWS) };
-      },
-    };
+  private connect(id: string): Promise<ViewerClient> {
+    if (this.pending?.run === id) return this.pending.promise;
+    if (this.client?.view?.run === id) return Promise.resolve(this.client);
+    this.detach();
+    const generation = this.generation;
+    this.setStatus("connecting…");
+    const promise = (async () => {
+      const record = this.records.get(id);
+      if (!record) throw new Error(`Unknown run ${id}`);
+      const client = this.initialClients.get(id) ?? (await this.options.connect(record.dir));
+      this.initialClients.delete(id);
+      if (this.disposed || generation !== this.generation) {
+        client.close();
+        throw new Error("Run selection changed");
+      }
+      if (client.view?.run !== id) {
+        client.close();
+        throw new Error("Viewer source belongs to another run");
+      }
+      this.client = client;
+      const integration = await integrationStatus(record.dir);
+      if (this.disposed || generation !== this.generation) throw new Error("Run selection changed");
+      this.integration = integration;
+      this.setStatus(client.source === "socket" ? "live" : "from the run's log · read-only");
+      this.stop = client.on((update) => {
+        if (this.disposed || generation !== this.generation) return;
+        if (update.kind === "events" || update.kind === "snapshot")
+          this.workspace.offer({ view: client.view!, integration: this.integration });
+        if (update.kind === "closed")
+          this.setStatus(
+            client.source === "socket"
+              ? "disconnected · recorded output"
+              : "from the run's log · read-only",
+          );
+        if (update.kind === "error") this.setStatus(update.message);
+      });
+      return client;
+    })();
+    this.pending = { run: id, promise };
+    void promise
+      .finally(() => {
+        if (this.pending?.promise === promise) this.pending = null;
+      })
+      .catch(() => {});
+    return promise;
   }
 
-  private source(client: ViewerClient): DetailSource {
-    const run = client.view!.run;
-    return {
-      run,
-      cwd: this.options.cwd,
-      agents: () => client.view?.order ?? [],
-      view: (agent) => client.view?.agents[agent],
-      load: (agent) => client.messages(agent),
-      subscribe: (agent, onEvent) =>
-        client.on((update) => {
-          if (update.kind !== "events") return;
-          for (const e of update.events) if (e.agent === agent) onEvent(e);
-        }),
-      ...(client.source === "socket" && {
-        steer: async (agent: string, text: string, as: "steer" | "followUp") => {
-          if (client.closed) throw new Error("The viewer is disconnected");
-          client.steer(agent, text, as);
-        },
-      }),
-    };
+  private schedule(): void {
+    if (this.disposed) return;
+    this.timer = setTimeout(() => {
+      this.timer = undefined;
+      void this.discover().finally(() => this.schedule());
+    }, this.options.pollMs ?? 1000);
+    this.timer.unref?.();
+  }
+
+  // Reads only changed metadata; conversation streaming uses the selected client's events.
+  async discover(): Promise<void> {
+    if (this.disposed) return;
+    try {
+      if (this.options.root) {
+        const records = await this.catalog.list(this.options.root);
+        if (this.disposed) return;
+        for (const record of [...records].reverse()) {
+          const fresh = !this.records.has(record.view.run);
+          this.records.set(record.view.run, record);
+          if (fresh) this.workspace.offer({ view: record.view, integration: null });
+        }
+      }
+      const id = this.workspace.selected();
+      const record = id && this.records.get(id);
+      if (!record || this.disposed) return;
+      const integration = await integrationStatus(record.dir);
+      if (this.disposed || id !== this.workspace.selected()) return;
+      if (integration !== this.integration && this.client?.view?.run === id) {
+        this.integration = integration;
+        this.workspace.offer({ view: this.client.view, integration });
+      }
+      // An already-open log viewer can gain streaming/steering after view --external.
+      if (this.client && !this.detail?.input && (await reconnectViewer(this.client, record.dir))) {
+        if (this.disposed || id !== this.workspace.selected()) return;
+        this.detach();
+        await this.workspace.reloadSource();
+      }
+    } catch (error) {
+      if (!this.disposed) this.setStatus((error as Error).message);
+    }
   }
 
   handleInput(data: string): void {
-    if (this.options.keys.matches(data, "tui.input.tab") && !this.detail?.input) {
-      if (this.options.runs.length > 1)
-        void this.attach((this.index + 1) % this.options.runs.length);
-      return;
-    }
-    if (this.detail) this.detail.handleInput(data);
-    else if (this.options.keys.matches(data, "tui.select.cancel")) this.close();
+    this.workspace.handleInput(data);
   }
-
+  handleMouse(event: Parameters<RunWorkspace["handleMouse"]>[0]) {
+    return this.workspace.handleMouse(event);
+  }
   render(width: number): string[] {
-    const theme = this.options.theme;
-    const view = this.view;
-    const runs =
-      this.options.runs.length > 1
-        ? ` (run ${this.index + 1}/${this.options.runs.length}, Tab)`
-        : "";
-    const head = view
-      ? `pinata view · ${progressLine(view)}${runs}`
-      : `pinata view · ${short(this.options.runs[this.index]?.split(/[\\/]/).at(-1) ?? "")}${runs}`;
-    const agents = view
-      ? view.order
-          .map((id) => {
-            const label = `${GLYPHS[view.agents[id].status]} ${id}`;
-            return id === this.detail?.agent ? theme.fg("accent", `[${label}]`) : label;
-          })
-          .join("  ")
-      : "";
-    const state =
-      this.status === "live"
-        ? theme.fg("success", this.following ? "live · following" : "live")
-        : theme.fg("warning", this.status);
-    const lines = [
-      truncateToWidth(`${theme.fg("accent", head)}  ${state}`, width),
-      truncateToWidth(agents, width),
-    ];
-    return [...lines, ...(this.detail ? this.detail.render(width) : [])];
+    return this.workspace.render(width);
   }
-
   invalidate(): void {
-    this.detail?.invalidate();
+    this.workspace.invalidate();
   }
 
   private detach(): void {
+    this.generation++;
     this.stop?.();
     this.stop = null;
-    this.detail?.dispose();
-    this.detail = null;
     this.client?.close();
     this.client = null;
+    this.pending = null;
   }
 
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
-    this.generation++;
+    clearTimeout(this.timer);
+    this.workspace.dispose();
     this.detach();
+    for (const client of this.initialClients.values()) client.close();
+    this.initialClients.clear();
   }
 
   close(): void {
-    if (this.disposed) return;
-    this.dispose();
-    this.options.done();
+    this.workspace.close();
   }
 }

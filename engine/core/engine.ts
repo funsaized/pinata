@@ -195,6 +195,15 @@ export interface RunHandle {
   results(): ReadonlyMap<string, Settled>;
 }
 
+function usageRemainder(total: Usage, observed: Usage): Usage {
+  return Object.fromEntries(
+    Object.entries(total).map(([key, value]) => [
+      key,
+      Math.max(0, value - observed[key as keyof Usage]),
+    ]),
+  ) as unknown as Usage;
+}
+
 interface AgentState {
   task: Task;
   status: "queued" | "running" | AgentStatus;
@@ -203,6 +212,9 @@ interface AgentState {
   budget?: AgentBudget;
   provider?: string;
   usageAt: number;
+  // Current attempt, including events recovered before reattachment.
+  observed: { usage: Usage; turns: number; toolCalls: number };
+  source?: AgentEventInput["source"];
   repairs?: number;
   // Resume: follow the agent an earlier Pi started instead of starting it.
   reattach?: boolean;
@@ -407,8 +419,25 @@ export function createEngine(options: EngineOptions): Engine {
   function onAgentEvent(run: RunState, id: string, state: AgentState, event: AgentEventInput) {
     // Late events from an aborted loop never change a settled agent.
     if (state.status !== "running") return;
-    const added = state.budget?.observe(event);
-    emit(run, id, event);
+    // The position and its accounting are persisted together in the run log. A
+    // detached process may replay its entire outbox after an unclean host exit.
+    if (event.source) {
+      if (state.source?.id === event.source.id && event.source.record <= state.source.record)
+        return;
+      state.source = event.source;
+    }
+    const added = state.budget
+      ? state.budget.observe(event)
+      : event.t === "message_end"
+        ? event.usage
+        : undefined;
+    if (event.t === "turn_start") state.observed.turns++;
+    if (event.t === "tool_start") state.observed.toolCalls++;
+    if (added) state.observed.usage = addUsage(state.observed.usage, added);
+    // Lean logs checkpoint positions only alongside complete accounting. A retained
+    // steer/retry must not advance past usage events omitted between usage ticks.
+    const { source: _source, ...body } = event;
+    emit(run, id, run.mode === "lean" ? body : event);
     if (event.t === "message_end" && event.role === "assistant" && state.provider) {
       if (event.stopReason === "error" && isRateLimit(event.error))
         limiter.rateLimited(state.provider);
@@ -422,7 +451,11 @@ export function createEngine(options: EngineOptions): Engine {
       const now = clock.now();
       if (now - state.usageAt >= 1000) {
         state.usageAt = now;
-        emit(run, id, { t: "usage", usage: state.budget!.usage });
+        emit(run, id, {
+          t: "usage",
+          ...state.observed,
+          ...(event.source && { source: event.source }),
+        });
       }
       const cap = run.limits.costUsd;
       if (cap !== undefined && run.usage.cost > cap && !run.controller.signal.aborted)
@@ -476,8 +509,8 @@ export function createEngine(options: EngineOptions): Engine {
         // process is stopped through the handle.
         if (signal.aborted && !following) throw signal.reason;
         // A reattached agent enforced its own budgets while no Pi was watching.
-        if (!following)
-          state.budget ??= new AgentBudget(
+        if (!following && !state.budget) {
+          state.budget = new AgentBudget(
             {
               maxTurns: prepared.launch.budgets.maxTurns,
               maxToolCalls: prepared.launch.budgets.maxToolCalls,
@@ -485,7 +518,25 @@ export function createEngine(options: EngineOptions): Engine {
             },
             (reason) => controller.abort(new StopSignal(reason, "failed")),
           );
-        const sink = (e: AgentEventInput) => onAgentEvent(run, id, state, e);
+          // A result-only retry after reattachment shares this attempt's budget.
+          Object.assign(state.budget, state.observed);
+        }
+        // Older logs have totals but no durable source position. Reconcile those
+        // detached outboxes from their final outcome instead of charging a replay.
+        const legacy =
+          following &&
+          !state.source &&
+          (Object.values(state.observed.usage).some((n) => n > 0) ||
+            state.observed.turns > 0 ||
+            state.observed.toolCalls > 0);
+        let sourced = false;
+        const sink = (e: AgentEventInput) => {
+          if (e.source) {
+            sourced = true;
+            if (legacy) return;
+          }
+          onAgentEvent(run, id, state, e);
+        };
         if (following) {
           const handle = backend.reattach
             ? await backend.reattach(prepared.launch, sink, signal)
@@ -510,6 +561,19 @@ export function createEngine(options: EngineOptions): Engine {
         }
         trace(run.id, id, "following");
         outcome = await state.handle.done;
+        if (following && (!sourced || legacy)) {
+          // Detached outcomes include records already consumed by the previous host. Only
+          // their unobserved remainder is new spend; missing processes keep recovered usage.
+          const missing = usageRemainder(outcome.usage, state.observed.usage);
+          run.usage = addUsage(run.usage, missing);
+          state.observed = {
+            usage: addUsage(state.observed.usage, missing),
+            turns: Math.max(state.observed.turns, outcome.turns),
+            toolCalls: Math.max(state.observed.toolCalls, outcome.toolCalls),
+          };
+        }
+        if (following && run.limits.costUsd !== undefined && run.usage.cost > run.limits.costUsd)
+          cancelRun(run, new StopSignal("cost limit reached", "cancelled"));
         trace(run.id, id, `done ${outcome.stopReason}`);
         if (signal.aborted) {
           const why = stopReason(signal);
@@ -547,9 +611,9 @@ export function createEngine(options: EngineOptions): Engine {
     const { retry: _retry, ...final } = verdict;
     const settled: Settled = {
       ...final,
-      usage: state.budget?.usage ?? outcome?.usage ?? ZERO_USAGE,
-      turns: state.budget?.turns ?? outcome?.turns ?? 0,
-      toolCalls: state.budget?.toolCalls ?? outcome?.toolCalls ?? 0,
+      usage: state.budget?.usage ?? state.observed.usage,
+      turns: state.budget?.turns ?? state.observed.turns,
+      toolCalls: state.budget?.toolCalls ?? state.observed.toolCalls,
       ...(outcome?.model && { model: outcome.model }),
     };
     settle(run, id, settled);
@@ -591,6 +655,7 @@ export function createEngine(options: EngineOptions): Engine {
       usage: settled.usage,
       turns: settled.turns,
       toolCalls: settled.toolCalls,
+      ...(state.source && { source: state.source }),
     });
     const { blocked } = run.scheduler.settle(id, settled.status === "succeeded");
     for (const b of blocked) {
@@ -673,9 +738,8 @@ export function createEngine(options: EngineOptions): Engine {
       : run.controller.signal.aborted && stopReason(run.controller.signal).status === "cancelled"
         ? "cancelled"
         : "failed";
-    let usage = ZERO_USAGE;
-    for (const s of run.settledResults.values()) usage = addUsage(usage, s.usage);
-    emit(run, undefined, { t: "run_settled", status, usage });
+    // Results are invalidated on repair; the view retains effort from every attempt.
+    emit(run, undefined, { t: "run_settled", status, usage: run.current.usage });
     const view = run.current;
     void (async () => {
       // Settle hooks of the last agent are tracked right after it settles; let them register.
@@ -715,7 +779,15 @@ export function createEngine(options: EngineOptions): Engine {
       data: p.opts.data ?? {},
       controller,
       agents: new Map(
-        p.tasks.map((t) => [t.id, { task: t, status: "queued" as const, usageAt: 0 }]),
+        p.tasks.map((t) => [
+          t.id,
+          {
+            task: t,
+            status: "queued" as const,
+            usageAt: 0,
+            observed: { usage: ZERO_USAGE, turns: 0, toolCalls: 0 },
+          },
+        ]),
       ),
       graph,
       seq: -1,
@@ -847,6 +919,13 @@ export function createEngine(options: EngineOptions): Engine {
       for (const task of topological(tasks)) {
         const agent = before.agents[task.id];
         const state = run.agents.get(task.id)!;
+        state.source = agent?.source;
+        if (agent)
+          state.observed = {
+            usage: usageRemainder(agent.usage, agent.previous?.usage ?? ZERO_USAGE),
+            turns: agent.turns - (agent.previous?.turns ?? 0),
+            toolCalls: agent.toolCalls - (agent.previous?.toolCalls ?? 0),
+          };
         if (!agent || agent.status === "queued") continue;
         if (agent.status === "running") {
           state.reattach = true;
@@ -899,6 +978,8 @@ export function createEngine(options: EngineOptions): Engine {
         s.status = "queued";
         s.handle = undefined;
         s.budget = undefined;
+        s.observed = { usage: ZERO_USAGE, turns: 0, toolCalls: 0 };
+        s.source = undefined;
         run.settledResults.delete(name);
         emit(run, name, { t: "agent_queued", task: taskSpec(s.task) });
       }
@@ -990,6 +1071,8 @@ export function createEngine(options: EngineOptions): Engine {
         s.status = "queued";
         s.handle = undefined;
         s.budget = undefined;
+        s.observed = { usage: ZERO_USAGE, turns: 0, toolCalls: 0 };
+        s.source = undefined;
         run.settledResults.delete(name);
         emit(run, name, { t: "agent_queued", task: taskSpec(s.task) });
       }

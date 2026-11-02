@@ -6,8 +6,10 @@ model quality, remote-provider latency, or production throughput.
 
 The v1.1.0 baseline is commit `7aec388`; v2 uses resolved definitions. Both ran the
 default scenarios on the same machine. Raw reports are committed under `bench/baselines`:
-`1.1.0-linux-node.json`, `2.0.0-linux-node.json`, `2.0.0-linux-pi.json`, and
-`2.0.0-linux-scale.json`.
+[v1.1 / Node](../../bench/baselines/1.1.0-linux-node.json),
+[v2 / Node](../../bench/baselines/2.0.0-linux-node.json),
+[v2 / Pi](../../bench/baselines/2.0.0-linux-pi.json), and
+[v2 scale](../../bench/baselines/2.0.0-linux-scale.json).
 
 | Measurement                                | v1.1 / Node | v2 / Node | v2 / Pi binary |
 | ------------------------------------------ | ----------: | --------: | -------------: |

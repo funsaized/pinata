@@ -1,0 +1,184 @@
+diff --git a/src/render.mjs b/src/render.mjs
+index 1063fa1..839928a 100644
+--- a/src/render.mjs
++++ b/src/render.mjs
+@@ -1,2 +1,44 @@
+-export function renderReport() { throw new Error("Not implemented"); }
++function escapeTableCell(value) {
++  return String(value)
++    .replaceAll("\\", "\\\\")
++    .replaceAll("|", "\\|")
++    .replace(/\r/g, "\\r")
++    .replace(/\n/g, "\\n");
++}
+ 
++function escapeLineBreaks(value) {
++  return String(value).replace(/\r/g, "\\r").replace(/\n/g, "\\n");
++}
++
++export function renderReport(summary, errors = []) {
++  const lines = [
++    "# Relay incident report",
++    "",
++    `Events: ${summary.total} | Failures: ${summary.failures} | Invalid lines: ${errors.length}`,
++    "",
++    "| Service | Events | Failures | Error rate | p95 (ms) |",
++    "| --- | ---: | ---: | ---: | ---: |",
++  ];
++
++  for (const service of summary.services) {
++    lines.push(
++      `| ${escapeTableCell(service.service)} | ${service.count} | ${service.failures} | ${(service.errorRate * 100).toFixed(1)}% | ${service.p95Ms.toFixed(1)} |`,
++    );
++  }
++
++  if (summary.services.length === 0) {
++    lines.push("No valid events.");
++  }
++
++  if (errors.length > 0) {
++    lines.push(
++      "",
++      "## Invalid lines",
++      ...errors.map(
++        (error) => `- Line ${error.line}: ${escapeLineBreaks(error.message)}`,
++      ),
++    );
++  }
++
++  return `${lines.join("\n")}\n`;
++}
+diff --git a/test/render.test.mjs b/test/render.test.mjs
+new file mode 100644
+index 0000000..f0b96a3
+--- /dev/null
++++ b/test/render.test.mjs
+@@ -0,0 +1,128 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++
++import { renderReport } from "../src/render.mjs";
++
++test("renders the report summary and formatted service rows", () => {
++  const summary = {
++    total: 4,
++    failures: 1,
++    services: [
++      {
++        service: "api",
++        count: 2,
++        failures: 1,
++        errorRate: 0.5,
++        p95Ms: 850.66,
++      },
++      {
++        service: "worker",
++        count: 2,
++        failures: 0,
++        errorRate: 0,
++        p95Ms: 19,
++      },
++    ],
++  };
++
++  assert.equal(
++    renderReport(summary),
++    "# Relay incident report\n" +
++      "\n" +
++      "Events: 4 | Failures: 1 | Invalid lines: 0\n" +
++      "\n" +
++      "| Service | Events | Failures | Error rate | p95 (ms) |\n" +
++      "| --- | ---: | ---: | ---: | ---: |\n" +
++      "| api | 2 | 1 | 50.0% | 850.7 |\n" +
++      "| worker | 2 | 0 | 0.0% | 19.0 |\n",
++  );
++});
++
++test("renders empty summaries and ends with exactly one newline", () => {
++  const report = renderReport({ total: 0, failures: 0, services: [] });
++
++  assert.equal(
++    report,
++    "# Relay incident report\n" +
++      "\n" +
++      "Events: 0 | Failures: 0 | Invalid lines: 0\n" +
++      "\n" +
++      "| Service | Events | Failures | Error rate | p95 (ms) |\n" +
++      "| --- | ---: | ---: | ---: | ---: |\n" +
++      "No valid events.\n",
++  );
++  assert.ok(report.endsWith("\n"));
++  assert.ok(!report.endsWith("\n\n"));
++  assert.doesNotMatch(report, /## Invalid lines/);
++});
++
++test("escapes pipes, line breaks, and backslashes in service names", () => {
++  const report = renderReport({
++    total: 1,
++    failures: 1,
++    services: [
++      {
++        service: "front|end\nworker\r\npath\\svc",
++        count: 1,
++        failures: 1,
++        errorRate: 1,
++        p95Ms: 0,
++      },
++    ],
++  });
++
++  assert.ok(report.includes("| front\\|end\\nworker\\r\\npath\\\\svc | 1 | 1 | 100.0% | 0.0 |\n"));
++  const tableRows = report
++    .split("\n")
++    .filter((line) => line.startsWith("| front"));
++  assert.equal(tableRows.length, 1);
++  assert.equal(tableRows[0].replace(/\\\|/g, "").split("|").length, 7);
++});
++
++test("appends every invalid line in order and preserves line numbers", () => {
++  const report = renderReport(
++    { total: 1, failures: 0, services: [] },
++    [
++      { line: 2, message: "invalid JSON" },
++      { line: 8, message: "bad\nrecord\rvalue" },
++    ],
++  );
++
++  assert.ok(report.includes("Events: 1 | Failures: 0 | Invalid lines: 2\n"));
++  assert.ok(
++    report.endsWith(
++      "No valid events.\n" +
++        "\n" +
++        "## Invalid lines\n" +
++        "- Line 2: invalid JSON\n" +
++        "- Line 8: bad\\nrecord\\rvalue\n",
++    ),
++  );
++});
++
++test("does not mutate its arguments and renders deterministically", () => {
++  const summary = Object.freeze({
++    total: 2,
++    failures: 1,
++    services: Object.freeze([
++      Object.freeze({
++        service: "api",
++        count: 2,
++        failures: 1,
++        errorRate: 0.5,
++        p95Ms: 12.34,
++      }),
++    ]),
++  });
++  const errors = Object.freeze([
++    Object.freeze({ line: 3, message: "invalid status" }),
++  ]);
++  const beforeSummary = structuredClone(summary);
++  const beforeErrors = structuredClone(errors);
++
++  const first = renderReport(summary, errors);
++  assert.equal(renderReport(summary, errors), first);
++  assert.deepEqual(summary, beforeSummary);
++  assert.deepEqual(errors, beforeErrors);
++  assert.ok(first.includes("| api | 2 | 1 | 50.0% | 12.3 |\n"));
++});

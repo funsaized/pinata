@@ -22,8 +22,8 @@ Full human reference: `../../docs/` (read only if this is not enough).
 as failed tool results. A completed call can still report failed tasks: read the
 statuses.
 
-Commands (no model turn): `/pinata` (status), `/pinata runs`, `/pinata open [run] <task>`,
-`/pinata live`, `/pinata watch`, `/pinata mode lean|observe`, `/pinata rerun <run>`, `/pinata gc`.
+Commands (no model turn): `/pinata` (status), `/pinata runs`, `/pinata view [run] [--task <task>]`,
+`/pinata view --external`, `/pinata mode lean|observe`, `/pinata rerun <run>`, `/pinata gc`.
 
 ## Task
 

@@ -96,12 +96,13 @@ test("a viewer attaches mid-run, follows new agents, steers, detaches and re-att
   // The planner starts once the scout settles; the viewer follows it.
   await until(() => viewer.detail?.agent === "second", "following the new agent");
   await viewer.detail!.ready;
-  await until(() => /Done\./.test(viewer.render(100).join("\n")), "the planner's streamed text");
-  const screen = viewer.render(100).join("\n").replace(ansi, "");
-  assert.match(screen, /pinata view · pinata [0-9a-f]{8} · 1\/2 done/);
-  assert.match(screen, /✓ first/);
-  assert.match(screen, /\[▸ second\]/);
-  // Steer the running planner through the socket.
+  await until(() => /Done\./.test(viewer.render(120).join("\n")), "the planner's streamed text");
+  const screen = viewer.render(120).join("\n").replace(ansi, "");
+  assert.match(screen, /Pinata [0-9a-f]{8} · 1 running · 1\/2 finished/);
+  assert.match(screen, /✓.*first/);
+  assert.match(screen, /▸.*second/);
+  // Focus the conversation, then steer the running planner through the socket.
+  viewer.handleInput("\r");
   viewer.handleInput("\r");
   for (const ch of "Prefer small steps") viewer.handleInput(ch);
   viewer.handleInput("\r");

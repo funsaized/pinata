@@ -51,7 +51,7 @@ export default function (pi: ExtensionAPI) {
           if (!ui) return;
           ui.follow(handle, engine);
           const first = handle.view().order[0];
-          void ui.openDetail({ id: handle.id, dir: handle.dir, view: handle.view() }, first, ctx);
+          void ui.openView({ run: handle.id, task: first }, ctx);
         },
       });
       // The open detail view must show the agent's brief and its streamed answer.

@@ -5,6 +5,8 @@ things up, and explanation to understand.
 
 ## Tutorials
 
+- [Build Relay with your models](tutorials/relay.md): run the ten-agent demo job,
+  inspect checks and reviews, and verify the assembled application.
 - [First run](tutorials/first-run.md): two read-only scouts, and where to see them.
 - [Build and review](tutorials/build-and-review.md): a builder, an independent reviewer,
   integration and rollback.
@@ -25,6 +27,7 @@ things up, and explanation to understand.
 
 ## Reference
 
+- [Relay example](reference/relay.md): files, setup command, task graph, output, and provenance.
 - [Tools](reference/tools.md): the model-facing tools, tasks and results.
 - [Commands](reference/commands.md): `/pinata …` in Pi and the `pinata` command.
 - [Configuration](reference/config.md)
@@ -33,6 +36,10 @@ things up, and explanation to understand.
 
 ## Explanation
 
+- [Why use Pinata?](explanation/why-pinata.md): useful workflows, a real demo, and what
+  the tests and measurements establish.
+- [What Relay shows about safeguards](explanation/relay-safeguards.md): failed checks,
+  independent review, and destination verification in the recorded run.
 - [Architecture](explanation/architecture.md)
 - [Trust and safety](explanation/trust.md)
 
@@ -43,6 +50,7 @@ things up, and explanation to understand.
 - [Publication](maintainers/publication.md)
 - [GitHub Packages](maintainers/github-packages.md)
 
-The test suite checks documentation links, command forms, and example fixtures.
+The test suite checks relative documentation links and validates example jobs and configs.
+Command behavior is exercised by the adapter, headless, and viewer tests.
 Commands marked _manual_ need credentials, a running service, or explicit action
 authorization; documentation tests do not execute every command shown here.

@@ -1,5 +1,28 @@
 # Changelog
 
+## 2.0.2 (2026-11-02)
+
+- Preserve cumulative cost, tokens, turns, and tool calls across repairs, reruns,
+  resume, and reattachment. Reconcile detached usage without double counting and
+  enforce the aggregate cost limit while invalidating stale results and approvals.
+- Replace the coding arena with a Relay starter and editable real-model job, expected
+  output, original evidence, a build/review/integration tutorial, reference, and
+  safeguards explanation. Keep the completed implementation in CI fixtures and
+  make model prerequisites explicit across examples and walkthroughs.
+- Fail quality evaluations after saving reports when thresholds are missed. Require
+  successful benchmark tasks and valid measurements, including on timing retries.
+- Unify run and conversation viewing as `/pinata view [run] [--task <task>]` and
+  `pinata view [run] [--task <task>]`, using the same workspace and controls.
+  Bare views discover new runs; explicit run or task selections stay pinned.
+- Use `/pinata view --external` to enable a terminal viewer or open a Herdr pane.
+  Remove the former `live`, `open`, and `watch` slash commands.
+- Follow recorded output when a socket is unavailable and connect automatically when
+  it appears. Standardize run lookup, validation, completion, and `logs --task` selection.
+- Add Shift+Up/Down conversation shortcuts, preserve steering drafts during navigation,
+  and keep failures and verification limitations visible in compact status output.
+- Prune redundant backend and cosmetic tests, consolidate prompt coverage, and replace
+  misleading timing and filesystem assertions with checks of actual behavior.
+
 ## 2.0.1 (2026-10-31)
 
 - Share one rainbow-framed workspace between `/pinata live` and `/pinata open`,

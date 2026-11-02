@@ -36,11 +36,11 @@ test("the text reporter prints one line per state change; JSONL prints events; t
   const text: string[] = [];
   await printLogs({ dir: handle.dir }, (l) => text.push(l));
   const body = text.map((l) => l.slice(9)); // drop the HH:MM:SS clock
-  assert.match(body[0], /^pinata [0-9a-f]{8} started: 2 tasks \(lean\)$/);
-  assert(body.some((l) => l.startsWith("▸ scout a started (fake, ")));
-  assert(body.some((l) => l.startsWith("✓ scout a succeeded")));
-  assert(body.some((l) => /^✗ planner b failed .*boom/.test(l)));
-  assert.match(body.at(-1)!, /^pinata [0-9a-f]{8} failed in /);
+  assert.match(body[0], /^Pinata [0-9a-f]{8} · Started 2 agents · lean mode$/);
+  assert(body.some((l) => l.startsWith("▸ a (scout) · Running · fake · ")));
+  assert(body.some((l) => l.startsWith("✓ a (scout) · Done")));
+  assert(body.some((l) => /^✗ b \(planner\) · Failed .*boom/.test(l)));
+  assert.match(body.at(-1)!, /^Pinata [0-9a-f]{8} · Failed · 2\/2 finished · 1 failed/);
   const json: string[] = [];
   await printLogs({ dir: handle.dir, json: true }, (l) => json.push(l));
   assert.equal(json.length, (await readEvents(handle.dir)).length);
@@ -152,15 +152,16 @@ test("the post-mortem viewer opens a finished run from its directory alone", asy
     },
     done: () => closed++,
     runs: [handle.dir],
+    task: "a",
     connect: (dir) => LogClient.open(dir, { follow: true }),
     cwd: handle.dir,
   });
   await viewer.ready;
-  assert.equal(viewer.status, "from the run's log");
+  assert.match(viewer.status, /from the run's log/);
   // oxlint-disable-next-line no-control-regex
   const ansi = /\x1b\[[0-9;]*m|\x1b\][^\x07]*\x07/g;
   const screen = viewer.render(100).join("\n").replace(ansi, "");
-  assert.match(screen, /✓ scout a/);
+  assert.match(screen, /✓ a \(scout\)/);
   assert.match(screen, /Map the parser/);
   assert.match(screen, /It lives in src\/date\.ts\./);
   viewer.handleInput("\r");

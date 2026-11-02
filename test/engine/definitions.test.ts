@@ -106,7 +106,7 @@ test("repository definitions replace personal defaults; duplicates and preset ov
   assert.throws(() => discoverAgents(root, personal), /reserved preset/);
 });
 
-test("custom writers and reviewers obey ownership, authorization and review binding", () => {
+test("custom writers require authorization and reviewer results bind to the exact target", () => {
   const writer = definition("implementer", "worktree", ["read", "write"]);
   const reviewer = definition("auditor", "review-target");
   const resolved = resolveTasks(

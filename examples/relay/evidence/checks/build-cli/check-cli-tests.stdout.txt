@@ -1,0 +1,13 @@
+✔ reads one UTF-8 file and prints a complete sorted report (37.538207ms)
+✔ accepts an empty file and exits successfully with the empty report (25.856623ms)
+✔ reports invalid records but retains valid records and exits with code 1 (22.549944ms)
+✔ requires exactly one input path and prints usage to stderr (46.092242ms)
+✔ unreadable paths exit 2 with a useful stderr diagnostic and no report (49.115642ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 5
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 220.050006

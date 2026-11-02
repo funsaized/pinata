@@ -3,6 +3,11 @@
 Use these examples when writing job files for [`pinata run`](../docs/how-to/headless.md)
 or integrations. For everyday delegation, use the [chat assignments](README.md).
 
+All jobs run real agents with your configured model credentials and spend tokens.
+Replace template models, paths, and checks with ones that fit your repository, and
+set limits before launching. For a prepared starter and complete walkthrough, use
+[Relay](../docs/tutorials/relay.md).
+
 Task objects belong in a job's `tasks` array; they are not complete jobs. See the
 [tool reference](../docs/reference/tools.md) and [configuration](../docs/reference/config.md).
 The planner and researcher tasks require installing the optional

@@ -24,6 +24,7 @@ test("example configs and job files satisfy the engine's contracts", async () =>
     "examples/job.json",
     "examples/scout-job.json",
     "examples/tutorial-build-job.json",
+    "examples/relay/job.json",
     "examples/jobs.md",
   ];
   for (const file of jobs) {

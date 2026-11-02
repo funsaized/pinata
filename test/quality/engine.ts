@@ -32,7 +32,7 @@ import {
   visibleTests,
 } from "./fixtures.mjs";
 import { evaluate } from "./oracle.mjs";
-import { qualityGate, summarize } from "./report.mjs";
+import { qualityGate, summarize, writeQualityReport } from "./report.mjs";
 import { FROZEN_FILES, frozen, score } from "./score.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -345,8 +345,7 @@ const out = {
 };
 const file =
   process.env.PINATA_EVAL_OUT ?? join(ROOT, "bench", "results", `quality-engine-${out.date}.json`);
-await mkdir(dirname(file), { recursive: true });
-await writeFile(file, JSON.stringify(out, null, 2) + "\n");
+process.exitCode = await writeQualityReport(file, out);
 console.log(
   JSON.stringify(
     {

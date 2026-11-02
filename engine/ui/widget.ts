@@ -3,9 +3,19 @@
 // mascot's ears, and runs only while an agent is working and motion is on.
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { AgentView, RunView } from "../core/view.ts";
-import type { Timers } from "./live.ts";
+import type { Timers } from "./workspace.ts";
 import { mood } from "./mascot.ts";
-import { GLYPHS, clean, duration, money, short, tokens } from "./text.ts";
+import {
+  GLYPHS,
+  clean,
+  duration,
+  elapsed,
+  counts,
+  runSummary,
+  usageText,
+  statusLabel,
+  agentActivity,
+} from "./text.ts";
 
 // The subset of Pi's Theme the widget uses, so tests can pass a plain one.
 export interface Paint {
@@ -18,13 +28,6 @@ export interface Paint {
 }
 
 export const plain: Paint = { fg: (_c, t) => t };
-
-const BADGES: Record<string, string> = {
-  "in-process": "in",
-  process: "proc",
-  "herdr-pi": "herdr",
-  fake: "fake",
-};
 
 const COLORS: Record<AgentView["status"], Parameters<Paint["fg"]>[0]> = {
   queued: "dim",
@@ -44,35 +47,23 @@ export function fit(text: string, max: number): string {
   return max <= 0 ? "" : truncateToWidth(text, max, "…");
 }
 
-function activity(agent: AgentView): string {
-  if (agent.status === "running") return clean(agent.activity) || "working";
-  if (agent.status === "queued") return "queued";
-  return clean(agent.reason ?? agent.summary) || agent.status;
-}
-
-// One row: glyph, role, id, backend badge, elapsed, turns, tool calls, tokens, cost, activity.
+// Keep the widget to identity, status, time and current activity. Metrics live in view.
 export function agentRow(
   agent: AgentView,
   columns: number,
   paint: Paint = plain,
   now = Date.now(),
+  nameWidth = clean(agent.id).length,
 ): string {
-  const elapsed =
-    agent.startedAt === undefined ? "" : duration((agent.settledAt ?? now) - agent.startedAt);
-  const facts = [
-    BADGES[agent.backend ?? ""] ?? "",
-    elapsed,
-    agent.turns ? `${agent.turns}t` : "",
-    agent.toolCalls ? `${agent.toolCalls}⚒` : "",
-    agent.usage.totalTokens ? tokens(agent.usage.totalTokens) : "",
-    agent.usage.cost ? money(agent.usage.cost) : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
-  const head = `${GLYPHS[agent.status]} ${agent.role.padEnd(8)} ${agent.id}`;
-  const fixed = facts ? `${head}  ${facts}` : head;
+  const size = Math.min(nameWidth, Math.max(4, Math.floor(columns * 0.4)));
+  const name = fit(clean(agent.id), size).padEnd(size);
+  const head = `${GLYPHS[agent.status]} ${name}  ${statusLabel(agent.status)}`;
+  const time =
+    agent.startedAt !== undefined && columns >= 45 ? ` · ${duration(elapsed(agent, now))}` : "";
+  const fixed = head + time;
   const rest = columns - width(fixed) - 3;
-  const tail = rest > 4 ? ` — ${fit(activity(agent), rest)}` : "";
+  const activity = agentActivity(agent);
+  const tail = rest > 4 && activity ? ` — ${fit(activity, rest)}` : "";
   const line = fit(fixed + tail, columns);
   const glyphEnd = GLYPHS[agent.status].length;
   return (
@@ -94,14 +85,21 @@ export function widgetLines(
   ears = "",
 ): string[] {
   const lines: string[] = [];
+  const hint = "View & steer: Shift+↑/↓ · /pinata view";
   for (const view of views) {
     const agents = view.order.map((id) => view.agents[id]);
-    const active = agents.filter((a) => a.status === "running").length;
-    const done = agents.filter((a) => a.status !== "running" && a.status !== "queued").length;
     const prefix = lines.length ? "" : ears;
-    const header = `${prefix}pinata ${short(view.run)} · ${done}/${agents.length} done${active ? ` · ${active} running` : ""} · ${tokens(view.usage.totalTokens)} tok · ${money(view.usage.cost)}`;
+    const header = prefix + runSummary(view.run, view.status, counts(view), agents.length);
     lines.push(paint.fg("accent", fit(header, columns)));
-    for (const agent of agents) lines.push(agentRow(agent, columns, paint, now));
+    const names = Math.max(0, ...agents.map((a) => clean(a.id).length));
+    for (const agent of agents) lines.push(agentRow(agent, columns, paint, now, names));
+    const total = `Total: ${usageText(view.usage)}`;
+    const withHint = `${total} · ${hint}`;
+    const last = view === views.at(-1);
+    lines.push(
+      paint.fg("muted", fit(last && width(withHint) <= columns ? withHint : total, columns)),
+    );
+    if (last && width(withHint) > columns) lines.push(paint.fg("dim", fit(hint, columns)));
   }
   return lines;
 }
@@ -111,7 +109,7 @@ export interface WidgetOptions {
   paint: Paint;
   views: () => readonly RunView[];
   motion: () => boolean;
-  // Opens /pinata live (a click on the first line).
+  // Opens /pinata view (a click on the first line).
   open?: () => void;
   timers?: Timers;
   now?: () => number;
