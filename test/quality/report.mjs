@@ -1,3 +1,14 @@
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
+
+// Save the evidence before returning the process status, including failed trials.
+export async function writeQualityReport(file, report) {
+  report.summary.quality = qualityGate(report.summary);
+  await mkdir(dirname(file), { recursive: true });
+  await writeFile(file, JSON.stringify(report, null, 2) + "\n");
+  return report.summary.quality.passed ? 0 : 1;
+}
+
 export function summarize(rows) {
   const controls = rows.filter((r) => r.seededBuilder);
   const reviews = controls.map((r) => ({

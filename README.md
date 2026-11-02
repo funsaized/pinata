@@ -16,6 +16,12 @@ Small engine. Sharp defaults. Your wiring.
 
 [Watch the 70-second demo](media/pinata-demo.mp4) · Ten real agents, four reviews, 23 passing tests.
 
+[Why use Pinata?](docs/explanation/why-pinata.md) Follow a real change from task to
+reviewed patch, inspect the evidence, and choose a first example.
+
+[Try the Relay tutorial](docs/tutorials/relay.md): run the demo application, catch
+and correct a defect, and inspect its review evidence without calling a model.
+
 ## Install
 
 In Pi's terminal (_manual_):
@@ -126,11 +132,3 @@ recipes. Startup, memory, context size, and dispatch costs are measured in the b
 The [documentation index](docs/README.md) lists everything, including maintainer docs.
 
 MIT licensed.
-
-### Coding arena
-
-The [coding arena](https://github.com/funsaized/pinata/tree/master/examples/arena)
-is repository-only evaluation tooling. It records subagent sessions, usage, patches
-and independent checks in a local viewer. Scripted demos and real-CLI mock runs test
-the harness; they are not comparative model results. The arena is excluded from the
-npm package and has its own setup and test commands.

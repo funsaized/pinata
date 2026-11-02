@@ -70,6 +70,13 @@ function parse(argv: string[]): Args {
   }
   if (!["faux", "loopback"].includes(args.provider))
     throw new Error(`Unknown benchmark provider: ${args.provider}; use faux or loopback`);
+  if (!["node", "pi", "tui"].includes(args.host))
+    throw new Error(`Unknown benchmark host: ${args.host}; use node, pi or tui`);
+  if (!Number.isFinite(args.tokenDelayMs) || args.tokenDelayMs < 0)
+    throw new Error("--token-delay must be a finite, nonnegative number");
+  const known = new Set(scenarios().map((s) => s.name));
+  for (const name of args.scenarios)
+    if (!known.has(name)) throw new Error(`Unknown benchmark scenario: ${name}`);
   return args;
 }
 
@@ -97,7 +104,53 @@ export interface Budget {
 function metric(result: ScenarioResult, path: string): number | null {
   let value: any = result;
   for (const key of path.split(".")) value = value?.[key];
-  return typeof value === "number" ? value : null;
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+// Completion is required even outside --ci. Fast failures and partial measurements
+// must never look like fast successful runs.
+export function executionFailures(
+  scenario: Scenario,
+  result: ScenarioResult,
+  budgets: Budget[] = [],
+): string[] {
+  const failures: string[] = [];
+  const fail = (reason: string) => failures.push(`${scenario.name}: ${reason}`);
+  if (result.target !== "engine" || result.scenario !== scenario.name)
+    fail("result does not identify the requested scenario");
+  if (result.agents !== scenario.tasks.length) fail("reported task count differs from workload");
+  if (
+    result.statuses.succeeded !== scenario.tasks.length ||
+    Object.entries(result.statuses).some(
+      ([status, count]) =>
+        !Number.isInteger(count) || count < 0 || (status !== "succeeded" && count !== 0),
+    )
+  )
+    fail(`not every task succeeded (${JSON.stringify(result.statuses)})`);
+  for (const note of result.notes ?? [])
+    if (/^(error:|agent:|skipped:|loopback errors:)/.test(note)) fail(note);
+  const dependents = scenario.tasks.filter((t) => t.after?.length).length;
+  const statistics = [
+    ["spawnMs", scenario.tasks.length],
+    ["toolCallMs", scenario.tasks.length - dependents],
+    ["dependentMs", dependents],
+    ["dependentRequestMs", dependents],
+    ...(result.setupMs !== undefined && result.setupMs !== null
+      ? [["setupMs", scenario.tasks.length]]
+      : []),
+  ] as Array<[string, number]>;
+  for (const [name, count] of statistics) {
+    if (!count) continue;
+    if (metric(result, `${name}.n`) !== count) fail(`${name} must measure all ${count} tasks`);
+    for (const percentile of ["p50", "p95", "p99", "max"])
+      if (metric(result, `${name}.${percentile}`) === null)
+        fail(`${name}.${percentile} is missing or invalid`);
+  }
+  for (const name of ["memoryPerAgentMB", "peakRssMB", "cpuMs", "wallMs"])
+    if (metric(result, name) === null) fail(`${name} is missing or invalid`);
+  for (const budget of budgets.filter((b) => b.scenario === scenario.name))
+    if (metric(result, budget.metric) === null) fail(`${budget.metric} is missing or invalid`);
+  return [...new Set(failures)];
 }
 
 export function overBudget(results: ScenarioResult[], budgets: Budget[], factor: number) {
@@ -107,28 +160,31 @@ export function overBudget(results: ScenarioResult[], budgets: Budget[], factor:
       (r) => r.target === "engine" && r.scenario === budget.scenario,
     )) {
       const value = metric(result, budget.metric);
-      if (value !== null && value > budget.max * factor)
+      if (value === null)
+        failures.push(`${result.scenario} ${budget.metric} is missing or invalid`);
+      else if (value > budget.max * factor)
         failures.push(`${result.scenario} ${budget.metric} = ${value} > ${factor}x ${budget.max}`);
     }
   return failures;
 }
 
-async function main() {
-  const args = parse(process.argv.slice(2));
+export async function main(argv = process.argv.slice(2), run = runScenario): Promise<number> {
+  const args = parse(argv);
   const selected = scenarios().filter((s) =>
     args.scenarios.length ? args.scenarios.includes(s.name) : !s.name.startsWith("scale-"),
   );
   if (!selected.length) throw new Error(`No scenario matches ${args.scenarios.join(", ")}`);
+  const budgets: Budget[] = args.ci
+    ? JSON.parse(await readFile(join(ROOT, "bench", "budgets.json"), "utf8")).budgets
+    : [];
   const results: ScenarioResult[] = [];
-  for (const scenario of selected) {
-    // A scenario that fails is recorded and the rest still run.
+  // Preserve failed attempts as results so reports survive execution errors.
+  async function attempt(scenario: Scenario): Promise<ScenarioResult> {
     try {
-      const result = await runScenario(scenario, args);
-      results.push(result);
-      console.log(JSON.stringify(result));
+      return await run(scenario, args);
     } catch (error) {
       console.error(`${scenario.name}: ${(error as Error).stack}`);
-      results.push({
+      return {
         scenario: scenario.name,
         target: "engine",
         provider: args.provider,
@@ -145,8 +201,13 @@ async function main() {
         cpuMs: null,
         wallMs: 0,
         notes: [`error: ${(error as Error).message}`],
-      });
+      };
     }
+  }
+  for (const scenario of selected) {
+    const result = await attempt(scenario);
+    results.push(result);
+    console.log(JSON.stringify(result));
   }
   const date = new Date().toISOString().slice(0, 10);
   const report = {
@@ -163,26 +224,33 @@ async function main() {
       tokenDelayMs: args.tokenDelayMs,
     },
     results,
+    validation: null as { passed: boolean; failures: string[] } | null,
   };
   const out = args.out ?? join(ROOT, "bench", "results", `${platform()}-${date}.json`);
   await mkdir(dirname(out), { recursive: true });
   await writeFile(out, JSON.stringify(report, null, 2) + "\n");
   console.log(`wrote ${out}`);
-  const errors = results.filter((r) => r.notes?.some((n) => n.startsWith("error:")));
   if (args.ci) {
-    const budgets: Budget[] = JSON.parse(
-      await readFile(join(ROOT, "bench", "budgets.json"), "utf8"),
-    ).budgets;
     // Shared runners are noisy: a scenario over budget runs up to twice more, and the best
     // attempt counts. Every attempt is noted in the report.
     for (let i = 0; i < results.length; i++) {
       const result = results[i];
-      if (result.target !== "engine" || !overBudget([result], budgets, 2).length) continue;
       const scenario = selected.find((s) => s.name === result.scenario)!;
+      if (
+        !scenario ||
+        executionFailures(scenario, result, budgets).length ||
+        !overBudget([result], budgets, 2).length
+      )
+        continue;
       const attempts = [overBudget([result], budgets, 2).join("; ")];
       for (let retry = 0; retry < 2; retry++) {
-        const again = await runScenario(scenario, args).catch(() => null);
-        if (!again) continue;
+        const again = await attempt(scenario);
+        const invalid = executionFailures(scenario, again, budgets);
+        if (invalid.length) {
+          attempts.push(invalid.join("; "));
+          results[i] = again;
+          break;
+        }
         const over = overBudget([again], budgets, 2);
         attempts.push(over.join("; ") || "within budget");
         if (!over.length) {
@@ -194,10 +262,16 @@ async function main() {
       console.error(`${result.scenario}: CI attempts: ${attempts.join(" | ")}`);
     }
     await writeFile(out, JSON.stringify(report, null, 2) + "\n");
-    const failures = overBudget(results, budgets, 2);
-    for (const failure of failures) console.error(`over budget: ${failure}`);
-    if (failures.length || errors.length) process.exitCode = 1;
-  } else if (errors.length) process.exitCode = 1;
+  }
+  const failures = results.flatMap((result, i) => {
+    const invalid = executionFailures(selected[i], result, budgets);
+    return invalid.length ? invalid : overBudget([result], budgets, 2);
+  });
+  report.validation = { passed: failures.length === 0, failures };
+  await writeFile(out, JSON.stringify(report, null, 2) + "\n");
+  for (const failure of failures) console.error(`benchmark failed: ${failure}`);
+  return failures.length ? 1 : 0;
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) await main();
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1])
+  process.exitCode = await main();

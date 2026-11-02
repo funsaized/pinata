@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Replace the coding arena with a portable Relay example: offline checks, an editable
+  live job, expected output, original evidence, and separate tutorials, how-to,
+  reference, and safeguards explanation.
+- Fail quality evaluations after saving reports when thresholds are missed. Require
+  successful benchmark tasks and valid measurements, including on timing retries.
 - Unify run and conversation viewing as `/pinata view [run] [--task <task>]` and
   `pinata view [run] [--task <task>]`, using the same workspace and controls.
   Bare views discover new runs; explicit run or task selections stay pinned.

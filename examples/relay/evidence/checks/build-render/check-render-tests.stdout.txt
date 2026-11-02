@@ -1,0 +1,13 @@
+✔ renders the report summary and formatted service rows (0.648026ms)
+✔ renders empty summaries and ends with exactly one newline (0.187268ms)
+✔ escapes pipes, line breaks, and backslashes in service names (0.137229ms)
+✔ appends every invalid line in order and preserves line numbers (0.222169ms)
+✔ does not mutate its arguments and renders deterministically (0.713036ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 5
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 45.812213

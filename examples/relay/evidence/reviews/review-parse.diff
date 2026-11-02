@@ -1,0 +1,240 @@
+diff --git a/src/parse.mjs b/src/parse.mjs
+index a78eaa9..8869699 100644
+--- a/src/parse.mjs
++++ b/src/parse.mjs
+@@ -1,2 +1,82 @@
+-export function parseEvents() { throw new Error("Not implemented"); }
++const ISO_TIMESTAMP = /^(\d{4})-(\d{2})-(\d{2})[Tt](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?(?:[Zz]|([+-])(\d{2})(?::?(\d{2}))?)$/;
++
++function isValidTimestamp(value) {
++  if (typeof value !== "string") return false;
++
++  const match = ISO_TIMESTAMP.exec(value);
++  if (match === null) return false;
++
++  const year = Number(match[1]);
++  const month = Number(match[2]);
++  const day = Number(match[3]);
++  const hour = Number(match[4]);
++  const minute = Number(match[5]);
++  const second = match[6] === undefined ? 0 : Number(match[6]);
++  const offsetHour = match[9] === undefined ? 0 : Number(match[9]);
++  const offsetMinute = match[10] === undefined ? 0 : Number(match[10]);
++
++  if (month < 1 || month > 12 || hour > 23 || minute > 59 || second > 59) return false;
++  if (offsetHour > 23 || offsetMinute > 59) return false;
++
++  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
++  const daysInMonth = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
++  return day >= 1 && day <= daysInMonth[month - 1];
++}
++
++function validateEvent(value) {
++  if (value === null || typeof value !== "object" || Array.isArray(value)) {
++    return "record must be a JSON object";
++  }
++  if (typeof value.service !== "string" || value.service.length === 0) {
++    return "service must be a nonempty string";
++  }
++  if (!isValidTimestamp(value.at)) {
++    return "at must be a valid ISO timestamp with a timezone";
++  }
++  if (!Number.isInteger(value.status) || value.status < 100 || value.status > 599) {
++    return "status must be an integer from 100 through 599";
++  }
++  if (typeof value.latencyMs !== "number" || !Number.isFinite(value.latencyMs) || value.latencyMs < 0) {
++    return "latencyMs must be a finite nonnegative number";
++  }
++  return null;
++}
++
++export function parseEvents(text) {
++  if (typeof text !== "string") {
++    throw new TypeError("parseEvents expects a string");
++  }
++
++  const events = [];
++  const errors = [];
++  const lines = text.split(/\r\n|\n|\r/);
++
++  for (let index = 0; index < lines.length; index += 1) {
++    const line = lines[index];
++    if (line.trim() === "") continue;
++
++    let value;
++    try {
++      value = JSON.parse(line);
++    } catch {
++      errors.push({ line: index + 1, message: "line is not valid JSON" });
++      continue;
++    }
++
++    const validationError = validateEvent(value);
++    if (validationError !== null) {
++      errors.push({ line: index + 1, message: validationError });
++      continue;
++    }
++
++    events.push({
++      service: value.service,
++      at: value.at,
++      status: value.status,
++      latencyMs: value.latencyMs,
++    });
++  }
++
++  return { events, errors };
++}
+ 
+diff --git a/test/parse.test.mjs b/test/parse.test.mjs
+new file mode 100644
+index 0000000..463ab0d
+--- /dev/null
++++ b/test/parse.test.mjs
+@@ -0,0 +1,146 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++
++import { parseEvents } from "../src/parse.mjs";
++
++function jsonLine(value) {
++  return JSON.stringify(value);
++}
++
++const validEvent = {
++  service: "checkout",
++  at: "2024-03-01T12:34:56.789Z",
++  status: 200,
++  latencyMs: 12.5,
++};
++
++test("parses valid records, blank lines, CRLF, and a final newline", () => {
++  const input = `\r\n${jsonLine(validEvent)}\r\n \t\r\n${jsonLine({
++    ...validEvent,
++    service: "billing",
++    at: "2024-02-29T23:59:00-04:30",
++    status: 599,
++    latencyMs: 0,
++  })}\r\n`;
++
++  assert.deepEqual(parseEvents(input), {
++    events: [
++      validEvent,
++      {
++        service: "billing",
++        at: "2024-02-29T23:59:00-04:30",
++        status: 599,
++        latencyMs: 0,
++      },
++    ],
++    errors: [],
++  });
++});
++
++test("preserves physical line numbers and keeps parsing after malformed records", () => {
++  const input = [
++    jsonLine(validEvent),
++    "{not json}",
++    "   ",
++    jsonLine({ ...validEvent, service: "", status: 200 }),
++    jsonLine({ ...validEvent, service: "search" }),
++    "",
++  ].join("\n");
++
++  const result = parseEvents(input);
++  assert.deepEqual(result.events, [validEvent, { ...validEvent, service: "search" }]);
++  assert.deepEqual(result.errors.map(({ line }) => line), [2, 4]);
++  assert.match(result.errors[0].message, /JSON/);
++  assert.match(result.errors[1].message, /service/);
++});
++
++test("accepts timezone-qualified ISO timestamps and calendar leap days", () => {
++  const timestamps = [
++    "2024-02-29T00:00:00Z",
++    "2000-02-29T23:59:59+05:30",
++    "2023-12-31T23:59-0400",
++    "2024-01-01T00:00+02",
++  ];
++  const input = timestamps.map((at) => jsonLine({ ...validEvent, at })).join("\n");
++
++  assert.deepEqual(parseEvents(input), {
++    events: timestamps.map((at) => ({ ...validEvent, at })),
++    errors: [],
++  });
++});
++
++test("rejects invalid, impossible, or timezone-less timestamps", () => {
++  const timestamps = [
++    "not-a-date",
++    "2024-02-30T12:00:00Z",
++    "2023-02-29T12:00:00Z",
++    "2024-13-01T12:00:00Z",
++    "2024-04-31T12:00:00Z",
++    "2024-01-01T24:00:00Z",
++    "2024-01-01T12:60:00Z",
++    "2024-01-01T12:00:60Z",
++    "2024-01-01T12:00:00",
++    "2024-01-01T12:00:00+24:00",
++  ];
++  const result = parseEvents(timestamps.map((at) => jsonLine({ ...validEvent, at })).join("\n"));
++
++  assert.deepEqual(result.events, []);
++  assert.deepEqual(result.errors.map(({ line }) => line), timestamps.map((_, index) => index + 1));
++  assert.ok(result.errors.every(({ message }) => /at/.test(message)));
++});
++
++test("requires an object and validates service, status, and latency without coercion", () => {
++  const invalidRecords = [
++    null,
++    [],
++    "record",
++    { ...validEvent, service: "" },
++    { ...validEvent, service: 42 },
++    { ...validEvent, status: 99 },
++    { ...validEvent, status: 600 },
++    { ...validEvent, status: 200.5 },
++    { ...validEvent, status: "200" },
++    { ...validEvent, latencyMs: -0.1 },
++    { ...validEvent, latencyMs: "12.5" },
++  ];
++  const lines = invalidRecords.map(jsonLine);
++  lines.push('{"service":"checkout","at":"2024-03-01T12:34:56.789Z","status":200,"latencyMs":1e400}');
++  const result = parseEvents(lines.join("\n"));
++
++  assert.deepEqual(result.events, []);
++  assert.equal(result.errors.length, lines.length);
++  assert.deepEqual(result.errors.map(({ line }) => line), lines.map((_, index) => index + 1));
++});
++
++test("accepts numeric boundary values and emits only the public event fields", () => {
++  const input = jsonLine({
++    service: "api",
++    at: "2024-01-01T00:00:00Z",
++    status: 100,
++    latencyMs: 0,
++    ignored: "extra property",
++  }) + "\n" + jsonLine({
++    service: "api",
++    at: "2024-01-01T00:00:00Z",
++    status: 599,
++    latencyMs: Number.MAX_VALUE,
++  });
++
++  assert.deepEqual(parseEvents(input), {
++    events: [
++      { service: "api", at: "2024-01-01T00:00:00Z", status: 100, latencyMs: 0 },
++      { service: "api", at: "2024-01-01T00:00:00Z", status: 599, latencyMs: Number.MAX_VALUE },
++    ],
++    errors: [],
++  });
++});
++
++test("empty and whitespace-only input returns no events or errors", () => {
++  assert.deepEqual(parseEvents(""), { events: [], errors: [] });
++  assert.deepEqual(parseEvents(" \t\r\n\n"), { events: [], errors: [] });
++});
++
++test("rejects non-string input rather than coercing it", () => {
++  assert.throws(() => parseEvents(123), TypeError);
++  assert.throws(() => parseEvents(null), TypeError);
++});
