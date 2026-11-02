@@ -1,4 +1,4 @@
-// Create a disposable exercise without installing packages or calling a model.
+// Create the starter repository for a real-model Relay run.
 import { spawnSync } from "node:child_process";
 import { cp, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
@@ -12,12 +12,12 @@ function git(cwd, args) {
     throw new Error(result.error?.message ?? result.stderr ?? "Git failed");
 }
 
-export async function setup(destination, { finished = false } = {}) {
+export async function setup(destination) {
   const cwd = resolve(destination);
   // mkdir without recursive/force refuses existing directories, files and symlinks.
   // Never reuse or reset a user's checkout.
   await mkdir(cwd);
-  const source = join(HERE, finished ? "finished" : "starter");
+  const source = join(HERE, "starter");
   for (const entry of await readdir(source))
     await cp(join(source, entry), join(cwd, entry), {
       recursive: true,
@@ -56,19 +56,12 @@ export async function setup(destination, { finished = false } = {}) {
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
     const args = process.argv.slice(2);
-    const destinations = args.filter((arg) => !arg.startsWith("--"));
-    if (
-      destinations.length !== 1 ||
-      args.some((arg) => arg.startsWith("--") && arg !== "--finished")
-    )
-      throw new Error("Usage: node setup.mjs <new-directory> [--finished]");
-    const finished = args.includes("--finished");
-    const cwd = await setup(destinations[0], { finished });
-    console.log(`Created ${finished ? "finished" : "starter"} Relay exercise: ${cwd}`);
+    if (args.length !== 1 || args[0].startsWith("--"))
+      throw new Error("Usage: node setup.mjs <new-directory>");
+    const cwd = await setup(args[0]);
+    console.log(`Created Relay starter: ${cwd}`);
     console.log(
-      finished
-        ? "Open that directory, then run npm test and npm run verify. No model access is needed."
-        : "Open that directory and edit job.json to choose your model and spending limit. Running pinata run job.json --watch spends model tokens; setup has made no model calls.",
+      "Open that directory, choose your models and limits in job.json, then run pinata run job.json --watch. The job uses your configured model credentials and spends tokens.",
     );
   } catch (error) {
     console.error(`Relay setup: ${error.message}`);

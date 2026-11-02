@@ -1,16 +1,15 @@
 # Relay example reference
 
 Relay is a dependency-free Node CLI that turns JSONL service events into a Markdown
-incident report. [The example directory](../../examples/relay/) contains its portable
-exercise and selected evidence from the 2026-10-31 recording.
+incident report. [The example directory](../../examples/relay/) contains a starter
+and job for building it with your models, plus evidence from the 2026-10-31 recording.
 
 ## Files
 
 | Path within `examples/relay/` | Purpose                                                                                               |
 | ----------------------------- | ----------------------------------------------------------------------------------------------------- |
 | `starter/`                    | Recorded module stubs, requirements, and sample events.                                               |
-| `finished/`                   | Recorded implementation and 23 tests.                                                                 |
-| `setup.mjs`                   | Copies a fixture into a new directory and initializes a Git repository.                               |
+| `setup.mjs`                   | Copies the starter into a new directory and initializes a Git repository.                             |
 | `job.json`                    | Headless task graph with model placeholders and worker limits. Setup copies it to the new repository. |
 | `expected-report.md`          | Exact stdout for `data/events.jsonl`.                                                                 |
 | `verify.mjs`                  | Runs the CLI, requires exit 0 and empty stderr, and compares stdout with the expected report.         |
@@ -22,7 +21,6 @@ Commands on this page are _manual_. From the Pinata repository root:
 
 ```sh
 node examples/relay/setup.mjs <new-directory>
-node examples/relay/setup.mjs <new-directory> --finished
 ```
 
 The parent directory must exist. Relative destinations are resolved from the shell's
@@ -31,11 +29,11 @@ requires Node 22.19+ and Git, creates an initial fixture commit using a fixture 
 and makes no model calls or package installations. If setup fails partway through,
 it leaves the new directory available for inspection; retry with a new directory.
 
-The default is the starter. `--finished` copies the recorded working implementation.
-Both modes add the job, expected output, verifier, LF line-ending attributes, an
+Setup adds the job, expected output, verifier, LF line-ending attributes, an
 `npm run verify` script, and an exact-output acceptance clause to `REQUIREMENTS.md`.
-The fixtures omit recording-specific `.pi` configuration. Their only source change
-is the CLI test portability correction described below.
+The starter omits recording-specific `.pi` configuration. Running the job requires
+Pi, Pinata, model credentials, and replacing its model placeholders. Follow the
+[Relay tutorial](../tutorials/relay.md) to build, review, and integrate the application.
 
 ## Job graph
 
@@ -74,18 +72,14 @@ The historical run is `0b81c2b4-9584-4046-a32d-4cb945857949`. It used Pinata 2.0
 release candidate, Pi 1.4.0, and Node 26.7.0 on Linux. The coordinator used OpenAI
 `gpt-6.1-sol`; workers used `gpt-6-luna`. See the [recording notes](../../media/README.md).
 
-[provenance.json](../../examples/relay/evidence/provenance.json) maps copied files to
-the source archive and records each distributed file's SHA-256 hash. The finished
-CLI test has one portability correction: it checks the JSON-quoted path printed in
-stderr, including escaped Windows backslashes, and exercises a backslash on POSIX
-too. Its entry retains the original `sourceSha256` and describes the `adaptation`;
-`sha256` identifies the corrected test. The application and historical evidence
-retain their archived bytes. Check-output files have `.txt`
-names for distribution; their contents are unchanged. The parser event excerpt
-preserves selected original lines and sequence numbers. Its previews are truncated
-by the original event logger; it is not a full transcript or reconstruction.
+[provenance.json](../../examples/relay/evidence/provenance.json) maps the distributed
+starter and evidence files to the source archive and records their SHA-256 hashes.
+These files retain their archived bytes. Check-output files have `.txt` names for
+distribution; their contents are unchanged. The parser event excerpt preserves
+selected original lines and sequence numbers. Its previews are truncated by the
+original event logger; it is not a full transcript or reconstruction.
 
 Absolute paths inside evidence JSON identify the original recording environment.
 They are historical references, not paths to configure or execute on your computer.
-The runnable fixtures and generated job have no dependency on that environment.
+The starter and generated job have no dependency on that environment.
 The full capture remains in [the source archive](../../media/pinata-demo-source.zip).

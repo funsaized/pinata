@@ -21,18 +21,18 @@ building an incident-report CLI from JSONL service events:
 4. The coordinator applies the reviewed changes and verifies the combined checkout.
 
 The recorded destination run passed 23 tests and produced the expected CLI report.
-The [portable Relay exercise](../../examples/relay/README.md) includes the starter
-and finished projects, a ready-to-edit job, expected output, and selected task,
-check, review, and integration evidence. The [source archive](../../media/pinata-demo-source.zip)
+The [Relay example](../../examples/relay/README.md) includes starter modules, a
+ready-to-edit job, expected output, and selected task, check, review, and integration
+evidence. The [source archive](../../media/pinata-demo-source.zip)
 also retains the original terminal capture. [Recording notes](../../media/README.md) identify
 the models, versions, and edits to the video. The video is accelerated; 70 seconds
 is its playback length, not the job's completion time.
 
-Follow the [offline tutorial](../tutorials/relay.md) to run the result without model
-access, introduce and correct a boundary error, and inspect its recorded reviews.
-Then use the [live guide](../how-to/run-relay.md) to build a fresh copy with your own
-models and limits. [The safeguards explanation](relay-safeguards.md) follows the
-original parser failure, correction, independent review, and destination checks.
+Follow the [Relay tutorial](../tutorials/relay.md) to build a fresh copy with your
+own models and limits, inspect its reviews, and verify the result. This uses real
+model calls and spends tokens. [The safeguards explanation](relay-safeguards.md)
+follows the original parser failure, correction, independent review, and destination
+checks.
 
 This is evidence of one completed workflow. It does not establish a general success
 rate, typical cost, or a speedup from adding agents.

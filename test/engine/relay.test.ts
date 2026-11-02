@@ -17,6 +17,7 @@ import { fauxWorld } from "./faux.ts";
 import { tempDir } from "./helpers.ts";
 
 const ROOT = fileURLToPath(new URL("../../examples/relay/", import.meta.url));
+const FIXTURE = fileURLToPath(new URL("./fixtures/relay", import.meta.url));
 const json = async (file: string) => JSON.parse(await readFile(join(ROOT, file), "utf8"));
 const node = (cwd: string, ...args: string[]) => {
   const env = { ...process.env };
@@ -39,24 +40,21 @@ async function files(dir: string): Promise<Record<string, string>> {
   );
 }
 
-test("Relay offline lesson is portable, catches the deliberate fault, and refuses overwrites", async (t) => {
+test("Relay setup creates a portable model-ready starter and refuses overwrites", async (t) => {
   const dir = join(await tempDir(t, "pinata-relay-"), "exercise with spaces");
   const setupScript = join(ROOT, "setup.mjs");
-  const created = node(ROOT, setupScript, dir, "--finished");
+  const created = node(ROOT, setupScript, dir);
   assert.equal(created.status, 0, created.stderr);
-  const checked = node(dir, "--test", "--test-reporter=tap");
-  assert.equal(checked.status, 0, checked.stdout + checked.stderr);
-  assert.match(checked.stdout, /# tests 23/);
-  assert.equal(node(dir, "verify.mjs").status, 0);
+  const unfinished = node(dir, "bin/relay.mjs", "data/events.jsonl");
+  assert.equal(unfinished.status, 1);
+  assert.match(unfinished.stderr, /Not implemented/);
+  assert.equal(node(dir, "verify.mjs").status, 1);
   const file = join(dir, "src", "summarize.mjs");
-  const correct = await readFile(file, "utf8");
-  await writeFile(file, correct.replace("event.status >= 500", "event.status > 500"));
-  assert.equal(node(dir, "--test", "test/summarize.test.mjs").status, 1);
-  await writeFile(file, correct);
-  assert.equal(node(dir, "--test", "test/summarize.test.mjs").status, 0);
-  assert.equal(node(dir, "verify.mjs").status, 0);
+  const edited = "// User work must survive another setup attempt.\n";
+  await writeFile(file, edited);
   await assert.rejects(setup(dir), { code: "EEXIST" });
-  assert.equal(await readFile(file, "utf8"), correct);
+  assert.equal(await readFile(file, "utf8"), edited);
+  assert.equal(node(ROOT, setupScript, dir, "--finished").status, 1);
   const job = JSON.parse(await readFile(join(dir, "job.json"), "utf8"));
   assert.equal(jobParams(job, join(dir, "job.json")).cwd, dir);
   assert.equal(job.config.worktreeRoot, undefined);
@@ -67,12 +65,17 @@ test("Relay offline lesson is portable, catches the deliberate fault, and refuse
 
 test("Relay fixtures match provenance and recorded reviews bind the checked artifacts", async () => {
   const provenance = await json("evidence/provenance.json");
-  for (const entry of provenance.files) {
-    const hash = createHash("sha256")
-      .update(await readFile(join(ROOT, entry.path)))
-      .digest("hex");
-    assert.equal(hash, entry.sha256, entry.path);
-  }
+  const fixtureProvenance = JSON.parse(await readFile(join(FIXTURE, "provenance.json"), "utf8"));
+  for (const [root, manifest] of [
+    [ROOT, provenance],
+    [FIXTURE, fixtureProvenance],
+  ])
+    for (const entry of manifest.files) {
+      const hash = createHash("sha256")
+        .update(await readFile(join(root, entry.path)))
+        .digest("hex");
+      assert.equal(hash, entry.sha256, entry.path);
+    }
   for (const component of ["parse", "summarize", "render", "cli"]) {
     const builder = await json(`evidence/results/build-${component}.json`);
     const reviewer = await json(`evidence/results/review-${component}.json`);
@@ -99,7 +102,7 @@ test("Relay fixtures match provenance and recorded reviews bind the checked arti
 
 test("Relay job builds, reviews and verifies the destination through the engine with scripted responses", async (t) => {
   const starter = await files(join(ROOT, "starter"));
-  const finished = await files(join(ROOT, "finished"));
+  const finished = await files(FIXTURE);
   for (const name of ["verify.mjs", "expected-report.md"])
     starter[name] = await readFile(join(ROOT, name), "utf8");
   const job = await json("job.json");

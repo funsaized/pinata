@@ -19,8 +19,8 @@ Small engine. Sharp defaults. Your wiring.
 [Why use Pinata?](docs/explanation/why-pinata.md) Follow a real change from task to
 reviewed patch, inspect the evidence, and choose a first example.
 
-[Try the Relay tutorial](docs/tutorials/relay.md): run the demo application, catch
-and correct a defect, and inspect its review evidence without calling a model.
+[Build Relay with your models](docs/tutorials/relay.md): start from the demo's module
+stubs, run ten agents, inspect their reviews, and verify the assembled application.
 
 ## Install
 

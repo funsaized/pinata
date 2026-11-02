@@ -1,7 +1,10 @@
 # Run jobs headless
 
 `pinata run` runs a job file without an interactive Pi, for scripts and CI. It starts the
-`pi` binary in print mode with only pinata's headless extension.
+`pi` binary in print mode with only pinata's headless extension. Its agents call
+real models and spend tokens. Install Pi and Pinata, configure credentials, and
+choose available models and limits before running a job. For a prepared project
+and walkthrough, use [Relay](../tutorials/relay.md).
 
 ## Write a job file
 

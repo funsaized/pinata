@@ -3,6 +3,12 @@
 In this tutorial a builder changes a file in its own worktree, an independent reviewer
 approves the exact change, and pinata applies it to your checkout. Then you roll it back.
 
+You need Pi with Pinata installed, Git, working model credentials, and a repository
+with a known bug and an existing test command. The coordinator, builder, and reviewer
+use real models and spend tokens; configure [role models and limits](../reference/config.md)
+before starting. The duration bug below is illustrative: substitute your actual
+paths, bug, and checks. For a ready-made starter, follow [Relay](relay.md).
+
 ## 1. Ask for the change
 
 ```text
