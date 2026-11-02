@@ -1,7 +1,10 @@
 # Changelog
 
-## Unreleased
+## 2.0.2 (2026-11-02)
 
+- Preserve cumulative cost, tokens, turns, and tool calls across repairs, reruns,
+  resume, and reattachment. Reconcile detached usage without double counting and
+  enforce the aggregate cost limit while invalidating stale results and approvals.
 - Replace the coding arena with a Relay starter and editable real-model job, expected
   output, original evidence, a build/review/integration tutorial, reference, and
   safeguards explanation. Keep the completed implementation in CI fixtures and
@@ -15,6 +18,10 @@
   Remove the former `live`, `open`, and `watch` slash commands.
 - Follow recorded output when a socket is unavailable and connect automatically when
   it appears. Standardize run lookup, validation, completion, and `logs --task` selection.
+- Add Shift+Up/Down conversation shortcuts, preserve steering drafts during navigation,
+  and keep failures and verification limitations visible in compact status output.
+- Prune redundant backend and cosmetic tests, consolidate prompt coverage, and replace
+  misleading timing and filesystem assertions with checks of actual behavior.
 
 ## 2.0.1 (2026-10-31)
 
