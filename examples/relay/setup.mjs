@@ -1,10 +1,9 @@
 // Create the starter repository for a real-model Relay run.
 import { spawnSync } from "node:child_process";
-import { cp, mkdir, readdir, readFile, realpath, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { cp, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
+const HERE = import.meta.dirname;
 
 function git(cwd, args) {
   const result = spawnSync("git", ["-C", cwd, ...args], { encoding: "utf8" });
@@ -53,7 +52,7 @@ export async function setup(destination) {
   return cwd;
 }
 
-if (process.argv[1] && (await realpath(process.argv[1])) === fileURLToPath(import.meta.url)) {
+if (import.meta.main) {
   try {
     const args = process.argv.slice(2);
     if (args.length !== 1 || args[0].startsWith("--"))
