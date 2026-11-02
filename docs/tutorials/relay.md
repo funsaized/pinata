@@ -135,8 +135,8 @@ Events: 4 | Failures: 1 | Invalid lines: 0
 | worker | 2 | 0 | 0.0% | 19.0 |
 ```
 
-Your implementation and test count may differ from the recording. The requirements,
-expected output, and fresh check/review evidence determine whether your run succeeded.
+Use the requirements, expected output, checks, and reviews to judge whether your
+run succeeded.
 
 ## Start another attempt
 
@@ -145,5 +145,5 @@ Keep the earlier run if you want to compare its checks, cost, or review findings
 Setup refuses existing paths, so it never resets previous work.
 
 For the file and job contracts, see [Relay reference](../reference/relay.md).
-[What Relay shows about safeguards](../explanation/relay-safeguards.md) explains the
-recorded check failure, independent review, and destination verification.
+[How Relay checks the work](../explanation/relay-safeguards.md) explains the
+builder checks, independent review, and destination verification.

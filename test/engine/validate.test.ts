@@ -26,7 +26,7 @@ const builder = (id: string, ownership: string[], extra: Partial<TaskSpec> = {})
   task(id, "builder", { ownership, checks: [{ id: "c", argv: ["true"] }], ...extra });
 const reviewer = (id: string, extra: Partial<TaskSpec>) => task(id, "reviewer", extra);
 
-test("input contracts reject path escapes, unknown roles and builder-only fields (0.7.0)", () => {
+test("input contracts reject path escapes, unknown roles and builder-only fields", () => {
   assert.throws(() => validateTask(builder("x", ["../outside"])), /Unsafe/);
   assert.throws(() => validateTask(task("x", "unknown" as never)), /Unknown persona/);
   assert.throws(
@@ -43,7 +43,7 @@ test("input contracts reject path escapes, unknown roles and builder-only fields
   );
 });
 
-test("review targets are exactly one of reviewOf, reviewBase or reviewPr (0.7.0)", () => {
+test("review targets are exactly one of reviewOf, reviewBase or reviewPr", () => {
   const base = { id: "r", role: "reviewer" as const, task: "Review", acceptance: ["Evidence"] };
   assert.throws(
     () => validateTask({ ...base, reviewOf: "x", reviewBase: "HEAD" }),
@@ -114,7 +114,7 @@ test("ids, checks, models, limits and backends are validated", () => {
   assert.equal(validateLimits().concurrency, 16);
 });
 
-test("relative paths and ownership follow 0.7.0 rules, plus Windows forms", () => {
+test("relative paths and ownership handle POSIX and Windows forms", () => {
   for (const bad of [
     "",
     "/abs",

@@ -42,5 +42,5 @@ test("prereleases publish to next, stable versions to latest", () => {
   assert.equal(distTag("1.0.0-next.0"), "next");
   assert.equal(distTag("1.0.0-next.12"), "next");
   assert.equal(distTag("1.0.0"), "latest");
-  assert.equal(distTag("0.7.0"), "latest");
+  assert.equal(distTag("0.0.1"), "latest");
 });

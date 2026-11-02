@@ -458,7 +458,7 @@ test("stale reviews, corrupted changes and changed check logs cannot be handed o
   await assert.rejects(handoff(handle.dir), /log .* stale or corrupt/);
 });
 
-test("interrupted application resumes, later edits prevent rollback, and legacy journals are not promoted", async (t) => {
+test("interrupted application resumes, later edits prevent rollback, and journals without destination state are not promoted", async (t) => {
   const { world, handle } = await integrated(
     t,
     { "a.txt": "a" },
@@ -478,8 +478,8 @@ test("interrupted application resumes, later edits prevent rollback, and legacy 
   journal.schemaVersion = 1;
   delete journal.destination;
   await writeFile(path, JSON.stringify(journal));
-  await assert.rejects(integrate(handle.dir), /Legacy journal/);
-  await assert.rejects(rollback(handle.dir), /Legacy journal/);
+  await assert.rejects(integrate(handle.dir), /no recorded destination state/);
+  await assert.rejects(rollback(handle.dir), /no recorded destination state/);
   assert.equal(await integrationStatus(handle.dir), "legacy_unverified");
 });
 

@@ -1,4 +1,4 @@
-// Builder setup (port of 0.7.0's resolveSetup, provision and reuseDependencies): detect the
+// Builder setup: detect the
 // install command from root lockfiles, run it once per worktree and lockfile state, and reuse
 // prepared npm dependencies across worktrees through a content-checked cache.
 import { createHash, randomUUID } from "node:crypto";

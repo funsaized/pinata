@@ -1,5 +1,4 @@
-// Upgrading a repository with 0.7.0 runs (E9.2): GC retires them with 0.7.0's rules, keeps
-// their artifacts, and never touches engine runs or anything still in use.
+// Cleanup preserves artifacts and active work; event-log runs are handled separately.
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -12,7 +11,7 @@ import { tempDir } from "./helpers.ts";
 
 const id = (n: number) => `00000000-0000-4000-8000-00000000000${n}`;
 
-test("0.7.0 runs are retired with 0.7.0's GC rules; artifacts and engine runs are kept", async (t) => {
+test("manifest-based run cleanup preserves artifacts and event-log runs", async (t) => {
   const dir = await tempDir(t);
   const repo = join(dir, "repo");
   const fixture = gitRepo(repo, { "a.txt": "old\n" });
@@ -59,7 +58,7 @@ test("0.7.0 runs are retired with 0.7.0's GC rules; artifacts and engine runs ar
   const coordinated = await legacy(6, [{ role: "scout", status: "succeeded" }], {
     background: { runner: { pid: process.pid } },
   });
-  // An engine run is not 0.7.0's.
+  // A run with an event log is excluded from manifest-based cleanup.
   await mkdir(join(root, id(7)), { recursive: true });
   await writeFile(join(root, id(7), "events.jsonl"), "");
   await writeFile(join(root, id(7), "manifest.json"), "{}");
@@ -90,13 +89,13 @@ test("0.7.0 runs are retired with 0.7.0's GC rules; artifacts and engine runs ar
   void coordinated;
 });
 
-test("0.7.0 config keys that no longer apply produce a one-line notice", () => {
+test("ignored config keys produce a one-line notice", () => {
   const { notices } = validateConfig({ herdr: "/usr/bin/herdr" });
   assert.equal(notices.length, 1);
   assert(!notices[0].includes("\n"));
 });
 
-test("0.7.0's limits.startupMs gives a notice instead of an error", () => {
+test("limits.startupMs gives a notice instead of an error", () => {
   const { config, notices } = validateConfig({ limits: { startupMs: 30_000, taskMs: 60_000 } });
   assert.equal(config.limits.taskMs, 60_000);
   assert.deepEqual(notices.length, 1);

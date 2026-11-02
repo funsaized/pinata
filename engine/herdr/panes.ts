@@ -89,7 +89,7 @@ export async function gcPanes(runsRoot: string, options: HerdrOptions = {}): Pro
       continue;
     }
     if (!matches.length) {
-      keep(`no run ${prefix} in this repository (another repository's, or a 0.7.0 pane)`);
+      keep(`no run ${prefix} in this repository (the pane may belong to another repository)`);
       continue;
     }
     const dir = join(runsRoot, matches[0]);

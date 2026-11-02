@@ -1,25 +1,56 @@
 # Choose a backend
 
-A backend decides where an agent's Pi session runs.
+A backend decides where an agent's Pi session runs. All backends provide the same
+widget, detail view, steering, verification, and results.
 
-| Backend      | Where                                   | Startup to first request | Memory per agent | Survives Pi exiting |
-| ------------ | --------------------------------------- | ------------------------ | ---------------- | ------------------- |
-| `in-process` | inside your Pi (default)                | about 2–10 ms            | about 1–2 MB     | no                  |
-| `process`    | a `pi --mode rpc` child per agent       | about 0.4–0.5 s          | about 145 MB     | with `survive`      |
-| `herdr-pi`   | an interactive Pi in its own Herdr pane | about 0.7–0.8 s          | about 157 MB     | yes                 |
+## Choose for your workload
 
-Measured on the reference Linux machine for the 1.0 release.
+### `in-process`: everyday work and parallel tasks
 
-## Pick one
+Use the default for code searches, reviews, and routine builds, especially with many
+parallel agents. Sessions share Pi's process, keeping startup time and memory use
+low. A fatal crash in an agent can take Pi down, and agents stop when Pi exits.
 
-- For one task: `"backend": "process"` in the task.
-- For every task: `"backend": "process"` in [configuration](../reference/config.md).
-- For a run that must outlive Pi: `pinata_run` with `background: true` and `survive: true`.
-  In-process agents can't survive, so they run as detached processes; the next Pi picks the
-  run up, and if Pi exits first a headless host finishes it.
+### `process`: isolate agent crashes
 
-All backends give the same widget rows, detail view, steering, verification and results.
-An agent crash takes your Pi down only with the `in-process` backend; use `process` for agents you expect to
-misbehave.
+Choose `process` for agents whose sessions might crash, such as when testing an
+extension. Each gets a separate `pi --mode rpc` process, so its crash does not bring
+down your Pi. This costs more startup time and memory. Enable `survive` below if
+the run must outlive Pi.
 
-`herdr-pi` needs Pi running inside Herdr; see [Herdr](herdr.md).
+### `herdr-pi`: work directly in an agent's pane
+
+Choose `herdr-pi` to interact with agents in their own Pi terminals. Each gets a Herdr
+pane; what you type is recorded as steering and is visible to its reviewer.
+You must be running Pi inside Herdr; see
+[Herdr setup and controls](herdr.md).
+
+## Set the backend
+
+Ask Pi in plain language, for example:
+
+```text
+Use the process backend for the builder in this run. Keep the scouts and
+reviewers in-process.
+```
+
+Pi sets `"backend": "process"` on that task. Use `config.backend` for a whole run,
+or `backend` in your [configuration](../reference/config.md) for a saved default.
+Task settings take precedence.
+
+## Keep a run going after Pi exits
+
+For a job you want to leave running, ask Pi:
+
+```text
+Run this job in the background and keep it running if I close Pi.
+```
+
+Pi uses `pinata_run` with `background: true` and `survive: true`. Background alone
+does not keep the run alive; use `survive` for Herdr runs too. In-process agents
+become detached processes. A headless host continues the run after Pi exits; the
+next Pi in the repository picks it up. See [recovery](recover.md).
+
+For startup and memory measurements on your machine, see
+[measure performance](../maintainers/performance.md). For how sessions and detached
+runs work, see [architecture](../explanation/architecture.md#backends).

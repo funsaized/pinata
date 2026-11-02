@@ -1,8 +1,6 @@
-// Retiring 0.7.0 run directories (E9.2), with 0.7.0's GC rules: a preview by default; never
-// a locked, active or uncertain run, or one whose background coordinator still runs; a
-// 0.7.0 pane is closed only while it is still the pane 0.7.0 recorded and its shell is
-// idle; a worktree is removed only when it holds nothing that is not elsewhere (clean, or a
-// builder's changes that integration verified and the checkout still holds byte for byte).
+// Cleanup for manifest-based runs without an event log. Preview by default; skip
+// locked, active or uncertain runs and runs with a live coordinator. Close only
+// recorded, idle panes. Remove worktrees only when they contain no unique changes.
 // Run artifacts (manifest, task evidence) are always kept; a retired run gets retired.json.
 import { existsSync } from "node:fs";
 import { lstat, readdir, readFile, writeFile } from "node:fs/promises";
@@ -96,7 +94,9 @@ export async function retireLegacy(
     try {
       if (!(await lstat(dir)).isDirectory()) throw new Error("not a real directory");
       if (existsSync(join(dir, "coordinator.lock")))
-        throw new Error("the run is locked; unlock its stopped 0.7.0 coordinator first");
+        throw new Error(
+          "the run is locked; check that its coordinator has stopped before removing the lock",
+        );
       const m = JSON.parse(await readFile(join(dir, "manifest.json"), "utf8")) as Manifest;
       if (m.id !== name) throw new Error("the run id differs from its directory");
       if (!m.tasks.every((t) => TERMINAL.includes(t.status)))
@@ -109,7 +109,7 @@ export async function retireLegacy(
           if (!attempt.resource || attempt.closed) continue;
           const pane = attempt.resource.pane_id;
           if (!insideHerdr()) {
-            retain(pane, "a 0.7.0 pane may still be open; run inside Herdr to close it");
+            retain(pane, "a recorded pane may still be open; run inside Herdr to close it");
             keep = true;
             continue;
           }
@@ -185,7 +185,7 @@ export async function retireLegacy(
   return items;
 }
 
-// The repository's git common dir, where 0.7.0 kept its runs too.
+// The repository's Git common directory.
 export async function legacyRoot(cwd: string): Promise<string> {
   const common = line(await git(cwd, ["rev-parse", "--path-format=absolute", "--git-common-dir"]));
   return join(common, "pinata");

@@ -1,6 +1,6 @@
 // Persona text for each role, from prompts/<role>.md. The prompt-template frontmatter and
-// argument placeholders are removed, and the closing paragraph about 0.7.0's JSON envelope
-// is replaced: engine agents report through submit_result.
+// argument placeholders are removed. The closing result instructions are replaced
+// so engine agents report through submit_result.
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { Role } from "../core/types.ts";

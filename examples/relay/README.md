@@ -10,10 +10,9 @@ and integrate the result. You need Pi, Pinata, Node 22.19+, Git, and working mod
 credentials. The run spends tokens; Relay needs no package installation.
 
 - [Relay reference](../../docs/reference/relay.md) describes the files, setup command,
-  job graph, expected output, and evidence provenance.
-- [What Relay shows about safeguards](../../docs/explanation/relay-safeguards.md)
+  job graph, and expected output.
+- [How Relay checks the work](../../docs/explanation/relay-safeguards.md)
   explains builder checks, independent review, and destination verification.
 
 [expected-report.md](expected-report.md) is the exact sample output.
-[evidence](evidence/) contains selected historical results from the original run.
-Your run produces its own checks and reviews; the recording does not approve it.
+Each run produces its own check logs, reviews, and destination verification.

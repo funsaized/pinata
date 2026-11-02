@@ -43,7 +43,7 @@ export async function printLogs(
   signal?: AbortSignal,
 ): Promise<void> {
   if (!existsSync(join(args.dir, "events.jsonl")))
-    throw new Error(`${args.dir} has no engine log (events.jsonl); 0.7.0 runs are not supported`);
+    throw new Error(`${args.dir} has no engine log (events.jsonl)`);
   const reporter = args.json
     ? new JsonReporter(write, { task: args.task })
     : new TextReporter(write, { task: args.task });
@@ -53,7 +53,7 @@ export async function printLogs(
   });
 }
 
-// A job file in 0.7.0's shape (examples/*.json), as pinata_run parameters.
+// A job file (examples/*.json), mapped to pinata_run parameters.
 export interface Job {
   cwd?: string;
   approval?: string;
@@ -204,7 +204,7 @@ export default function headless(pi: ExtensionAPI): void {
     },
   });
   pi.registerCommand("pinata-gc", {
-    description: "Retire 0.7.0 runs and close settled panes (headless)",
+    description: "Preview run cleanup and close finished panes (headless)",
     handler: async (raw, ctx) => {
       try {
         const { confirm } = JSON.parse(raw) as { confirm?: boolean };

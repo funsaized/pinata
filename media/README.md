@@ -1,53 +1,17 @@
 # Pinata artwork and demo
 
 [`pinata-hero-v2.png`](pinata-hero-v2.png) is the README illustration.
-[`pinata-demo.mp4`](pinata-demo.mp4) is a 70-second edit of a real ten-agent run
-building **Relay**,
-a dependency-free incident-report CLI from JSONL service events.
+[`pinata-demo.mp4`](pinata-demo.mp4) shows ten agents building Relay, an incident-report
+CLI for JSONL service events.
 
-The team consists of two scouts, three parallel module builders with independent
-reviewers, and a dependent CLI builder with its own reviewer. The coordinator then
-applies the reviewed changes locally and runs the full test suite and CLI example.
-All 23 tests passed after integration, and the CLI example produced the expected
-report. The fixture covers input validation, percentile aggregation, Markdown escaping,
-CLI error handling, and their tests.
+Two scouts investigate the requirements. Three builders implement modules in
+parallel, each with an independent reviewer. A CLI builder waits for those reviews,
+then gets its own review. The coordinator applies the changes and runs the tests
+and CLI example.
 
-## Recording
-
-Recorded on 2026-10-31 with the pi-pinata 2.0.1 release candidate, Pi 1.4.0,
-and Node 26.7.0 on Linux. The coordinator uses OpenAI `gpt-6.1-sol` with low
-thinking. Workers use `gpt-6-luna`: low for scouts, medium for builders, high for
-reviewers. All workers use the in-process backend. Each builder has its own
-external Git worktree.
-
-The terminal capture is genuine Pi output from a 116×30 PTY using the built-in dark
-theme. The run ID is `0b81c2b4-9584-4046-a32d-4cb945857949`. Agent conversations,
-review verdicts, checks, and integration results are not synthesized. Relay is a
-purpose-built disposable fixture; its final changes are left unstaged and uncommitted.
-An earlier take was stopped because the recorder inherited `NO_COLOR`; the video
-and source archive use the fresh color-enabled run.
-
-The edit keeps the real Pi session visible, accelerates reading and implementation
-by 8–15×, and pauses on key states for explanation. Numbered outlines highlight
-parallel builders, the failed assertion, passing tests, the review verdict, and
-the destination result. Pauses and playback speeds are labeled.
-
-Chapter headings, captions, numbered outlines, terminal crops, and speed badges are editorial.
-Waiting and repeated output are cut. The export is silent H.264, 1600×1000 at 15 fps,
-with a web-compatible pixel format and fast-start metadata. Media is excluded from npm.
-
-## Source and verification
-
-To build the demo with your models, follow the [Relay tutorial](../docs/tutorials/relay.md).
-The [example](../examples/relay/README.md) provides starter modules, an editable job,
-expected output, and selected original evidence. The tutorial takes a fresh run
-through checks, reviews, and destination verification.
-
-[`pinata-demo-source.zip`](pinata-demo-source.zip) includes the original terminal
-capture, edit decision list, renderer, recording script, starter and finished fixtures,
-the run request, and saved check/review/integration evidence. Its README explains
-how to render the edit offline and run the finished fixture’s tests. No credentials
-are included.
+The video is an accelerated, 70-second edit of a real Pi session. Its playback time
+is not the time needed to complete the job. To run it yourself, follow the
+[Relay tutorial](../docs/tutorials/relay.md).
 
 ## Illustration
 

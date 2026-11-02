@@ -1,4 +1,4 @@
-// Subjects for reviews of existing changes (port of 0.7.0's subject.mjs). A review compares
+// Subjects for reviews of existing changes. A review compares
 // two commits: the head is the checkout as the run started (uncommitted changes included) or a
 // fetched pull request; the base is where those changes began. The verdict binds to both.
 import { createHash } from "node:crypto";

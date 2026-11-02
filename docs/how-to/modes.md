@@ -16,4 +16,4 @@ pinata has two footprint modes. Choose with `mode` in [configuration](../referen
 | Widget refresh | at most 4/s                          | at most 10/s                                   |
 
 Use `observe` when you want to follow a run from another terminal or study it afterwards;
-its overhead is small (measured: CPU +0–6%, same wall time). Use `lean` otherwise.
+use `lean` otherwise.
