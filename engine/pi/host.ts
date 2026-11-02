@@ -633,14 +633,14 @@ export class PinataHost {
     return resumed;
   }
 
-  // Resumes one run directory (the headless host continuing a run that outlived its Pi).
-  async resumeDir(dir: string, ctx: ExtensionContext): Promise<RunHandle> {
+  // Resume a surviving run, or explicitly load a settled run for repair.
+  async resumeDir(dir: string, ctx: ExtensionContext, settled = false): Promise<RunHandle> {
     const record = await readRunRecord(dir);
     if (!record.resume) throw new Error(`${dir} cannot be resumed (no resume record)`);
     const owner = record.resume.owner;
     if (owner && owner.pid !== process.pid && (await alive(owner)))
       throw new Error(`Run ${record.id.slice(0, 8)} is owned by a running Pi (pid ${owner.pid})`);
-    return this.resumeRecord(dir, record, ctx, "continued without Pi");
+    return this.resumeRecord(dir, record, ctx, "continued without Pi", settled);
   }
 
   private async resumeRecord(
@@ -648,18 +648,26 @@ export class PinataHost {
     record: RunRecord,
     ctx: ExtensionContext,
     reason: string,
+    settled = false,
   ): Promise<RunHandle> {
     const resume = record.resume!;
     validateSnapshots(record.definitions);
     // Claim the run first, so another Pi starting now leaves it alone.
     await writeRunRecord(dir, { ...record, resume: { ...resume, owner: await this.owner() } });
-    const handle = await this.engine(ctx).resume(dir, {
-      cwd: record.root,
-      limits: resume.limits,
-      allowWrites: record.allowWrites,
-      data: { ...resume.data },
-      reason,
-    });
+    const handle = await this.engine(ctx)
+      .resume(dir, {
+        cwd: record.root,
+        limits: resume.limits,
+        allowWrites: record.allowWrites,
+        data: { ...resume.data },
+        reason,
+        settled,
+      })
+      .catch(async (error) => {
+        // A rejected load must not leave a live owner blocking subsequent recovery.
+        await writeRunRecord(dir, record);
+        throw error;
+      });
     this.handles.set(handle.id, handle);
     this.roots.set(handle.id, record.root);
     if (resume.survive) this.survivors.add(handle.id);

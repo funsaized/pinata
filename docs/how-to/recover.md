@@ -42,7 +42,11 @@ For work that should continue when you close Pi, ask for a background run with
 
 Read the failure or review findings first. For a builder, ask Pi to repair the
 task using that feedback. `pinata_repair` continues in the same worktree and runs
-the review again, up to `limits.repairs`. For other tasks, start a new run with a
+the review again, up to `limits.repairs`. This also works for a finished run from
+`pinata run` or an earlier Pi session: Pi loads its saved configuration and worktree
+on demand. Repair counts and accumulated usage carry across sessions. A run still
+owned by another live Pi, or stopped by cancellation or a run limit, cannot be
+reopened this way. For other tasks, start a new run with a
 corrected request.
 
 ## Cancel work
