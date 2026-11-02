@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFile, readdir, writeFile } from "node:fs/promises";
+import { readFile, readdir, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -41,8 +41,12 @@ async function files(dir: string): Promise<Record<string, string>> {
 }
 
 test("Relay setup creates a portable model-ready starter and refuses overwrites", async (t) => {
-  const dir = join(await tempDir(t, "pinata-relay-"), "exercise with spaces");
-  const setupScript = join(ROOT, "setup.mjs");
+  const parent = await tempDir(t, "pinata-relay-");
+  const dir = join(parent, "exercise with spaces");
+  // macOS's temporary root is a symlink; CLI entry detection must resolve it.
+  const linkedRoot = join(parent, "linked example");
+  await symlink(ROOT, linkedRoot, process.platform === "win32" ? "junction" : "dir");
+  const setupScript = join(linkedRoot, "setup.mjs");
   const created = node(ROOT, setupScript, dir);
   assert.equal(created.status, 0, created.stderr);
   const unfinished = node(dir, "bin/relay.mjs", "data/events.jsonl");
