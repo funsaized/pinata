@@ -1,91 +1,94 @@
-# Recover, rerun and clean up
+# Recover, rerun, and clean up
 
 ## Find out what happened
+
+Ask Pi to show the latest run and explain any failed or unfinished tasks. You can
+also check the run list directly:
 
 ```text
 /pinata
 /pinata runs
 ```
 
-`/pinata` shows the latest run and lists runs a previous Pi left unsettled. For one task's
-full result, or its transcript, ask Pi (it uses `pinata_status`), open it with
-`/pinata view <run> --task <task>`, or print its log:
+`/pinata` shows the latest run and unfinished work from earlier sessions. Ask Pi
+for a task's full result or transcript (`pinata_status`), open it with
+`/pinata view <run> --task <task>`, or read its log:
 
 ```sh
 pinata logs <run> --task <task>
 ```
 
-## When Pi exited during a run
+## Continue after Pi exits
 
-The next Pi in the repository resumes unsettled runs that no running Pi owns:
+Open Pi in the same repository. It resumes unfinished runs that no other Pi
+session owns.
 
-- detached agents (`survive`, process or herdr-pi) are followed again, including any that
-  finished while Pi was away; their results are verified and the graph continues;
-- in-process agents cannot outlive Pi: they settle as `cancelled` with "Pi exited before
-  this agent settled", and their dependents are blocked.
+Pinata reconnects to detached agents, including those that finished while Pi was
+closed. It verifies their results and continues the remaining tasks. In-process
+agents stop when Pi exits. Their tasks become `cancelled`, and dependent tasks
+are blocked.
 
-Start the lost tasks and their dependents again with:
+To restart those tasks and their dependents, ask Pi to rerun the interrupted work
+or use:
 
 ```text
 /pinata rerun <run>
 ```
 
-## A task failed or a review asked for changes
+For work that should continue when you close Pi, ask for a background run with
+`survive: true`. See [backends](backends.md#keep-a-run-going-after-pi-exits).
 
-Read its reason first. For a builder, ask Pi to repair it with the reviewer's findings
-(`pinata_repair`): it continues in its worktree and is reviewed again, within
-`limits.repairs`. Otherwise start a new run with a corrected task.
+## Repair a failed task
 
-## Cancel
+Read the failure or review findings first. For a builder, ask Pi to repair the
+task using that feedback. `pinata_repair` continues in the same worktree and runs
+the review again, up to `limits.repairs`. For other tasks, start a new run with a
+corrected request.
 
-Ask Pi to cancel a run or one agent (`pinata_cancel`), or press Esc during a foreground
-run. Agents in their own processes are stopped with everything they started.
+## Cancel work
 
-## Undo an integration
+Ask Pi to cancel a run or one agent (`pinata_cancel`), or press Esc during a
+foreground run. Cancelling an agent in a separate process also stops the processes
+it started.
 
-Ask Pi to roll back (`pinata_rollback`). It restores the files from the integration
-journal only where they still match what was integrated, and only while destination HEAD
-and index still match their application-time identities. After a commit or staging change,
-the orchestrator must reconcile explicitly; Pinata will not restore an older journal over it.
+## Undo applied changes
 
-A 1.0 integration journal lacks destination identity. It remains readable as
-`legacy_unverified` but cannot be replayed or rolled back automatically. Obtain
-`pinata_changes` and reconcile its recorded before/after states yourself.
+Ask Pi to roll back the integration (`pinata_rollback`). Rollback restores files
+only if they still match the applied changes. Git HEAD and the staging area must
+also be unchanged since the changes were applied.
 
-Apply, verify and rollback share `pinata-integration.lock` in the destination's Git
-directory. A crash may leave it behind. Inspect its owner PID/time, confirm no destination
-operation is running, and inspect the journal before removing that specific lock. Then
-retry; affected paths must still match a journal before/after state. Never remove a live
-lock or reset the destination to force a retry.
+If you have committed, staged, or edited files since then, ask Pi to reconcile the
+changes. If the integration record lacks the destination state needed for rollback,
+use `pinata_changes` to inspect the recorded changes and reconcile them manually.
+
+Apply, verify, and rollback share `pinata-integration.lock` in the destination's
+Git directory. After a crash, check the lock's process ID and timestamp, confirm
+no integration or verification is running, and inspect the integration record
+before removing the lock. Then retry. Files must still match their recorded state;
+do not remove an active lock or reset the checkout to force a retry.
 
 ## Clean up
+
+Ask Pi to clean up finished Herdr workspaces, or run:
 
 ```text
 /pinata gc
 /pinata gc --confirm
 ```
 
-Without `confirm`, retirement of 0.7.0 run directories is a preview (see below).
-Inside Herdr, both commands close pinata workspaces whose work has settled.
-`confirm` also performs the listed legacy retirements.
-Engine runs keep their logs and results; delete `<git common dir>/pinata/<run>` yourself
-when you no longer need one. Modern worktrees are retained separately: preserve
-any wanted changes, then use `git worktree remove <path>` for each unused
-worktree. Run metadata records its location; deleting logs does not remove it.
-The same legacy cleanup from a shell:
+Inside Herdr, both commands close workspaces for finished tasks. Any other proposed
+cleanup is shown as a preview; review it before adding `--confirm`. Pinata skips
+locked, active, or uncertain runs, keeps manifests and evidence, and removes
+worktrees only when their changes are already preserved elsewhere.
+
+Run logs and results stay in `<git common dir>/pinata/<run>`. Delete a run directory
+when you no longer need its records. Worktrees are separate: preserve any changes
+you want, then use `git worktree remove <path>`. Each run records its worktree paths;
+deleting its logs does not remove its worktrees.
+
+The same cleanup commands work from a shell:
 
 ```sh
 pinata gc
 pinata gc --confirm
 ```
-
-## Upgrade from 0.7.0
-
-0.7.0's run directories (with `manifest.json`) are read by nothing in this version.
-`pinata gc --confirm` retires them with 0.7.0's rules: never a locked, active or uncertain
-run, or one whose coordinator still runs; a 0.7.0 pane only while it is still the recorded,
-idle pane; a worktree only when it holds nothing that is not elsewhere. Their manifests and
-evidence are kept, and each gets `retired.json`.
-
-Configuration keys that no longer apply (`pi`, `herdr`, `session`, `workspaceReuse`,
-`limits.startupMs`) produce a one-line notice and are ignored.

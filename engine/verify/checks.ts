@@ -1,6 +1,5 @@
 // Runs builder checks and evidence checks: argv without a shell, the approved environment,
-// a timeout with process-tree kill, and bounded, hashed logs (port of 0.7.0's runChecks and
-// environment()). Checks override claims: a failed check fails the builder.
+// a timeout with process-tree kill, and bounded, hashed logs. A failed check fails the builder.
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createWriteStream, existsSync, statSync } from "node:fs";
@@ -301,7 +300,7 @@ function evidence(
   };
 }
 
-// Runs checks in order and stops at the first failure, as 0.7.0 does.
+// Runs checks in order and stops at the first failure.
 export async function runChecks(
   checks: readonly Check[],
   options: CheckOptions,

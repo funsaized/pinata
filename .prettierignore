@@ -1,6 +1,5 @@
-# Preserve recorded Relay formatting; provenance documents the portable test correction.
+# Preserve Relay fixture formatting.
 examples/relay/starter/**
 test/engine/fixtures/relay/**
-examples/relay/evidence/**
 # Exact CLI stdout, including Markdown table spacing, is part of the exercise.
 examples/relay/expected-report.md

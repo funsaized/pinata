@@ -713,7 +713,7 @@ export class PinataHost {
         const live = this.handles.get(dir.slice(root.length + 1));
         views.push(live ? live.view() : await replay(dir));
       } catch {
-        // 0.7.0 run directories have no events.jsonl; E9.2 handles them.
+        // Run directories without events.jsonl are handled by cleanup.
       }
     }
     return views.filter((v) => v.run);

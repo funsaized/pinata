@@ -123,7 +123,7 @@ directories and, on Windows, the system variables), plus `passEnv` names and
 `PINATA_AGENT=1`. `passEnv` entries match `^[A-Z][A-Z0-9_]*$` and may not start with
 `PINATA_` or `HERDR_`.
 
-## Retired keys
+## Ignored keys
 
-0.7.0's `pi`, `herdr`, `session`, `workspaceReuse` and `limits.startupMs` are ignored with a
-one-line notice.
+`pi`, `herdr`, `session`, `workspaceReuse`, and `limits.startupMs` have no effect.
+Pinata ignores them and prints a notice.

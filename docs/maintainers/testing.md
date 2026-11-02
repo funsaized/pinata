@@ -16,11 +16,8 @@ job through review and destination integration with scripted provider responses.
 The package smoke also creates a starter from the installed tarball. These CI checks
 make no paid model calls; user-facing examples use real models.
 
-`test/engine/fixtures/relay/` holds the recorded completed implementation and 23 tests
-used by the scripted job. It is excluded from the npm package. Its `provenance.json`
-records original archive paths and distributed hashes, including the CLI test's
-portable JSON-quoted path assertion. The public provenance manifest covers the starter
-and historical evidence under `examples/relay/`.
+`test/engine/fixtures/relay/` holds the implementation and tests used by the
+scripted job. It is excluded from the npm package.
 
 ## What the harness covers
 
@@ -63,8 +60,8 @@ scripts prepend `node_modules/.bin`, so `npm run bench -- --host pi` can select 
 development dependency's Node CLI. Set `PINATA_PI` to the native binary's absolute
 path when measuring the Bun runtime, as CI does, and check each result's `host`.
 The report's top-level `meta.pi` comes from PATH and may differ from `PINATA_PI`.
-Benchmarks write ignored JSON reports to `bench/results/`; retain comparison evidence in
-`bench/baselines/`. Every benchmark invocation requires all requested tasks to succeed,
+Benchmarks write ignored JSON reports to `bench/results/`. Every invocation requires
+all requested tasks to succeed,
 complete launch/dependency samples, and finite nonnegative core measurements.
 `--ci` additionally requires each applicable budget metric and fails a measured value
 above twice its budget (`bench/budgets.json`). A complete over-budget scenario gets up
@@ -123,8 +120,7 @@ The report includes component scores, false approvals and rejections, missing
 verdicts and usage, per-task costs, fixture hashes, and an explicit quality result.
 It writes to `bench/results/quality-engine-<date>.json` or `PINATA_EVAL_OUT`, and prints
 the temporary evidence directory. This evaluator is manual and is not invoked by
-the live-smoke workflow or `npm test`. No quality-evaluation reports are retained in
-the committed `bench/baselines` directory.
+the live-smoke workflow or `npm test`.
 
 After saving the report, the evaluator exits 0 when `summary.quality.passed` is true
 and 1 when it is false. Wrong or unsupported factual answers, failed builder oracle

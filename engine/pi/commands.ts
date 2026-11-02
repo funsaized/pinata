@@ -31,7 +31,7 @@ export const USAGE = [
   `/pinata view ${VIEW_ARGS}   inspect runs and conversations`,
   `/pinata view ${VIEW_ARGS} --external   view from another terminal or Herdr pane`,
   "/pinata rerun <run>          start again the tasks lost when Pi exited",
-  "/pinata gc [--confirm]         retire 0.7.0 runs (preview; confirm acts) and close settled panes",
+  "/pinata gc [--confirm]         preview run cleanup and close finished panes; --confirm applies cleanup",
   "Shift+↑/↓           enter or cycle agent conversations (when available); Esc returns",
 ].join("\n");
 
@@ -173,14 +173,14 @@ function arity(args: string[], min: number, max: number, usage: string): void {
   if (args.length < min || args.length > max) throw new Error(`Usage: /pinata ${usage}`);
 }
 
-// Repository GC: 0.7.0 run directories (preview unless confirmed), and inside Herdr the
+// Repository GC: manifest-based run directories (preview unless confirmed), and Herdr
 // workspaces of settled pinata work.
 export async function gcText(cwd: string, confirm: boolean): Promise<string> {
   const root = await repositoryRoot(cwd);
   const lines: string[] = [];
   for (const item of await retireLegacy(await legacyRoot(root), { confirm }))
     lines.push(
-      `0.7.0 ${item.run.slice(0, 8)} ${item.what === "run" ? "" : `${item.what}: `}${item.action}${item.reason ? ` (${item.reason})` : ""}`,
+      `run ${item.run.slice(0, 8)} ${item.what === "run" ? "" : `${item.what}: `}${item.action}${item.reason ? ` (${item.reason})` : ""}`,
     );
   if (insideHerdr())
     for (const e of await gcPanes(await runsRoot(root)))

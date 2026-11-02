@@ -20,7 +20,7 @@ const USAGE = `Usage:
   pinata run <job.json> [--mode observe] [--json] [--watch]   run a job headless
       exit codes: 0 succeeded, 1 failed, 2 invalid job, 3 cancelled
   pinata resume <run>                      continue a run that outlived its Pi
-  pinata gc [--confirm]                    retire 0.7.0 runs (preview by default) and settled panes
+  pinata gc [--confirm]                    preview run cleanup and close finished panes
 
 run: a run id prefix or a run directory. view prefers active work, then the latest saved run;
 with no runs it waits for one. --task selects a conversation and pins its run.

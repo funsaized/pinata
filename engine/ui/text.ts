@@ -34,7 +34,7 @@ export function statusLabel(status: string): string {
     verifying: "Checking checkout",
     destination_checked: "Checkout checked",
     historical: "Historical record",
-    legacy_unverified: "Older record · not verified",
+    legacy_unverified: "Record · not verified",
   };
   return labels[status] ?? clean(status).replaceAll("_", " ");
 }

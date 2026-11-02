@@ -1,69 +1,41 @@
-# What Relay shows about safeguards
+# How Relay checks the work
 
-Relay makes three different questions visible: does a component pass its checks,
-does an independent reader approve that exact change, and does the assembled
-application work in the destination? Each needs its own evidence.
+Relay separates three questions: does each component pass its checks, does a
+reviewer approve the change, and does the assembled application work? Each step
+checks something different.
 
-## A failed check gives the builder something concrete to correct
+## Builder checks
 
-The recorded parser builder ran `node --test test/parse.test.mjs` and received a
-failure. In the [event excerpt](../../examples/relay/evidence/parser-check-events.jsonl),
-sequence 627 has `ok: false` and names the failing physical-line-number test.
-Sequences 724–725 record an edit to `test/parse.test.mjs`; sequence 773 records a
-successful rerun. The excerpt records two replaced blocks, but does not contain
-the full before-and-after edit, so it cannot establish every detail of the correction.
+Each module builder owns its source and test files. When it finishes, Pinata runs
+the assigned test command in the builder's worktree. For the parser, that command
+is `node --test test/parse.test.mjs`.
 
-This was a builder-initiated check before submission. The recorded failure did not
-occur in the supervisor's final check, and it was not a reviewer rejection. After
-submission, sequences 871–872 show the engine running its assigned `parse-tests`
-check independently and recording a pass. The
-[builder result](../../examples/relay/evidence/results/build-parse.json) preserves
-that check's exit code and log hashes.
+A failed check fails the task and blocks dependent work. The builder's claim that
+tests passed cannot override the result. Read the check log, then ask Pi to repair
+the task using the failure details.
 
-Pinata does not accept a builder's assertion that its checks passed as a substitute
-for running the configured commands. An engine-run check failure fails the builder
-and blocks dependent work. In a new [Relay run](../tutorials/relay.md), inspect any
-failed check before asking for a repair. That run's logs tell you what the builder
-actually changed; the historical events above describe only the recording.
+## Independent review
 
-## A passing check still needs judgment
+The reviewer reads the patch, requirements, tests, and recorded check results.
+Tests can pass while missing a requirement, so review also looks for gaps in
+coverage and incorrect assumptions.
 
-Tests can miss a requirement, and a builder can write an incorrect test. The parser's
-independent reviewer inspected the changed source, test coverage, diff, and engine
-evidence. Its [review result](../../examples/relay/evidence/results/review-parse.json)
-contains an approving verdict tied to the builder's fingerprint.
+An approval is tied to the exact change through its fingerprint. If the builder
+repairs the patch, the reviewer must check the new version before it can be applied.
 
-The fingerprint identifies the checked artifact. Changing the artifact invalidates
-that approval and calls for a fresh review. This binding prevents reusing an old
-approval for different code; it cannot make a reviewer infallible. The recorded
-approval belongs to the recorded artifact, not arbitrary edits to a tutorial copy.
+## Destination checks
 
-## Component approval does not verify the combined checkout
+The CLI builder waits for all three module reviews, then gets its own review.
+After the coordinator applies the approved changes, the job runs the full test
+suite and `verify.mjs` in the destination checkout.
 
-Relay's CLI builder waited for the three module reviews, then received its own
-review. The coordinator applied the reviewed artifacts and ran the full suite and
-CLI example in the destination. The
-[destination receipt](../../examples/relay/evidence/destination.json) records
-`status: verified`, `application: exact`, and `review: builder-artifacts-only`.
-The [destination test output](../../examples/relay/evidence/check-all-tests.stdout.txt)
-records 23 passing tests; the [CLI output](../../examples/relay/evidence/check-cli-demo.stdout.txt)
-records the sample report.
+The verifier compares CLI output with `expected-report.md`. Both files stay outside
+builder ownership, so builders cannot change the expected answer to match a bug.
 
-Those fields have separate meanings: the approved artifacts were applied exactly,
-the destination checks passed, and the reviews still describe individual builder
-artifacts. They do not claim an independent review of every interaction in the
-combined tree. Later edits make that destination result historical.
+A destination result with `status: verified` means those checks passed.
+`application: exact` means the approved changes are present exactly. Reviews still
+describe the individual builder patches; changes made while combining them need
+their own checks and review. Later edits make the earlier verification out of date.
 
-The portable job adds an exact-output verifier, kept outside builder ownership, so
-a successful sample invocation must also produce the expected report. This check
-is new exercise infrastructure; it was not part of the original recording.
-
-## What this establishes
-
-The recording demonstrates one completed build with inspectable check, review, and
-integration evidence. A fresh model run produces new evidence and can fail or
-require repairs. Neither the recording nor a passing synthetic test
-suite establishes a general model success rate or guarantees that all defects are caught.
-
-For the operating boundaries, see [trust and safety](trust.md). For a new run, use
-[the Relay tutorial](../tutorials/relay.md).
+Follow the [Relay tutorial](../tutorials/relay.md) to run this workflow. The
+[trust guide](trust.md) explains permissions and the limits of these checks.

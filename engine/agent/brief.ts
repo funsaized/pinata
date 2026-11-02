@@ -1,6 +1,6 @@
 import { writes, type AgentDefinition } from "../core/definitions.ts";
 // The system-prompt contract (identical for siblings of a role) and the task brief (the first
-// user message), ported from 0.7.0's brief() in lib/worker.mjs. Results go through
+// user message). Results go through
 // submit_result, never JSON in assistant text.
 import type { AgentResult, Check, Role, Task } from "../core/types.ts";
 import { personaText } from "./personas.ts";

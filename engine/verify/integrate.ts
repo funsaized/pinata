@@ -160,7 +160,7 @@ function entriesFor(evidence: VerifiedChanges): JournalEntry[] {
 async function journalHead(root: string, journal: Journal): Promise<void> {
   need(
     journal.schemaVersion === 2 && journal.destination,
-    "Legacy journal has no destination identity; reconcile manually using pinata_changes",
+    "Journal has no recorded destination state; reconcile manually using pinata_changes",
   );
   need(
     (await headCommit(root)) === journal.destination.head,

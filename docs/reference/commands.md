@@ -45,7 +45,7 @@ A positional argument to `view` always identifies a run: use `--task` for a task
 | `/pinata runs`                | Repository run history                                   |
 | `/pinata mode lean\|observe`  | Footprint mode for this session                          |
 | `/pinata rerun <run>`         | Restart tasks lost when Pi exited, with their dependents |
-| `/pinata gc [--confirm]`      | Preview legacy retirement; close settled Herdr panes     |
+| `/pinata gc [--confirm]`      | Preview run cleanup; close finished Herdr panes          |
 | `/pinata help`                | Command help                                             |
 
 These commands do not start a parent-model turn. `rerun` starts worker agents;

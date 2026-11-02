@@ -34,7 +34,7 @@ export class AgentBudget {
     return added;
   }
 
-  // Finishing on the last permitted turn is valid; starting another is not (0.7.0 semantics).
+  // Finishing on the last permitted turn is valid; starting another is not.
   private check() {
     if (this.exceeded) return;
     let reason: string | null = null;

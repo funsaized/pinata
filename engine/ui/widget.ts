@@ -115,7 +115,7 @@ export interface WidgetOptions {
   now?: () => number;
 }
 
-// The widget component for ctx.ui.setWidget (0.7.0's companion, now with agent rows).
+// The widget component for ctx.ui.setWidget, with one row per agent.
 export class PinataWidget {
   private readonly options: WidgetOptions;
   private readonly timers: Timers;

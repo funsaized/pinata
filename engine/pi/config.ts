@@ -1,6 +1,6 @@
-// Pinata configuration, layered like 0.7.0: ~/.pi/agent/pinata.json, then
+// Pinata configuration layers: ~/.pi/agent/pinata.json, then
 // <repo>/.pi/pinata.json, then the run's own config. models, fallbacks and limits merge per
-// entry; other keys are replaced whole. Adds `mode` and `backend`.
+// entry; other keys are replaced whole.
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -28,7 +28,7 @@ export interface PinataConfig {
   backend: BackendKind;
 }
 
-// Keys 0.7.0 used that the engine ignores, with the notice shown once.
+// Ignored configuration keys, with a notice shown once.
 export const RETIRED: Record<string, string> = {
   pi: "config.pi is ignored: agents run inside this Pi.",
   herdr: "config.herdr is ignored: the herdr-pi backend uses the herdr on PATH.",
@@ -54,7 +54,7 @@ const KEYS = [
 ];
 const MERGED = ["models", "fallbacks", "limits", "toolProviders"];
 
-// 0.7.0 limits that no longer apply: a notice, and dropped before validation.
+// Ignored limits: emit a notice and remove them before validation.
 const RETIRED_LIMITS: Record<string, string> = {
   startupMs: "config.limits.startupMs is ignored: agents need no pane or worker startup window.",
 };
@@ -197,7 +197,7 @@ export function layeredConfig(runConfig: unknown = {}, root?: string): Layered {
   };
 }
 
-// Model candidates for a task, in 0.7.0's order: the first of the task's model, the role's,
+// Model candidates for a task: the first of the task's model, the role's,
 // the default and the parent session's, then the role's fallbacks.
 export function modelCandidates(
   config: PinataConfig,

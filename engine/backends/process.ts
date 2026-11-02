@@ -1,4 +1,4 @@
-// The process backend: each agent is a `pi` child with 0.7.0's flags, the agent extension,
+// The process backend: each agent is a `pi` child with the agent extension,
 // and its persona, options and brief in files under <run>/agents/<task>/. Its JSON event
 // stream maps to AgentEvents through the same mapper as in-process sessions; the result
 // arrives in submit_result's tool result details (`pinataResult`).
@@ -60,7 +60,7 @@ export interface ProcessOptions {
   onSpawn?: (task: string, pid: number) => void;
 }
 
-// 0.7.0's piArgs: an isolated child with only the agent's loadout.
+// An isolated child with only the agent's tools and extensions.
 export function piArgs(
   launch: AgentLaunch,
   files: { persona: string },

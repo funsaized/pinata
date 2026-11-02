@@ -1,4 +1,4 @@
-// The Herdr CLI, as pinata uses it (ported from 0.7.0's lib/herdr.mjs): workspaces created
+// The Herdr CLI: workspaces created
 // without focus, ownership checked before any control, readiness and shell kind from
 // `pane process-info` only (no /proc or ps), and commands quoted for the pane's shell.
 import { execFile } from "node:child_process";

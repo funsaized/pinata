@@ -1,6 +1,6 @@
 import { writes, reviews, type AgentDefinition } from "./definitions.ts";
-// Per-role result schemas for the `submit_result` tool, ported from 0.7.0's envelope() and
-// validateResult(). The schema is the tool's parameter schema; semantic rules that a schema
+// Per-role result schemas for the `submit_result` tool. The schema is the tool's
+// parameter schema; semantic rules that a schema
 // cannot express are checked here and returned to the model as a tool error.
 import { Type, type TSchema } from "typebox";
 import type { AgentResult, Role } from "./types.ts";

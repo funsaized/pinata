@@ -1,6 +1,6 @@
 // Process supervision for agents in their own processes: identity (pid + the OS's start
 // time, so a reused pid is never mistaken for an agent), liveness, and stopping a process
-// with everything it started. Ported from 0.7.0's lib/core.mjs identities.
+// with everything it started.
 import { execFile, type ChildProcess } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { killTree } from "../verify/checks.ts";
