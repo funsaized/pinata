@@ -80,7 +80,7 @@ export const AGENT_STATUSES = [
 export type AgentStatus = (typeof AGENT_STATUSES)[number];
 export type RunStatus = "succeeded" | "failed" | "cancelled";
 
-// Where a failure happened, as in 0.7.0's outcome.failureStage.
+// Where a failure happened.
 export type FailureStage = "workspace" | "launch" | "process" | "result" | "verification";
 
 export interface WorkspaceRef {
@@ -351,7 +351,7 @@ export function addUsage(a: Usage, b: Partial<Usage> | undefined): Usage {
   };
 }
 
-// 0.7.0's limits (lib/core.mjs LIMITS), plus the engine's global concurrency cap.
+// Run limits and the engine's global concurrency cap.
 export const LIMITS = {
   concurrency: 16,
   taskMs: 1_200_000,
@@ -379,7 +379,7 @@ export interface Limits {
   costUsd?: number;
 }
 
-// Pi tools granted to each role (0.7.0 ROLE_TOOLS). Result-only repair is inspection-only.
+// Pi tools granted to each role. Result-only repair is inspection-only.
 export const ROLE_TOOLS: Record<Role | "repair", string[]> = {
   scout: ["read", "grep", "find", "ls"],
   research: [

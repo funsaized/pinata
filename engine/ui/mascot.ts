@@ -1,4 +1,4 @@
-// The pinata mascot (ported from 0.7.0's lib/mascot.mjs): a tiny voxel donkey, rasterized into
+// The pinata mascot: a tiny voxel donkey, rasterized into
 // colored braille. No assets, subprocesses or model calls. Geometry is built once per process.
 import type { RunView } from "../core/view.ts";
 export const RIBBON_COLORS = [203, 214, 220, 78, 81, 141];
@@ -152,7 +152,7 @@ export interface Mood {
 
 const LIMIT = /limit reached|budget exceeded|deadline exceeded/;
 
-// The mascot's mood for a run (0.7.0's mood(), fed by a RunView). `integration` comes from
+// The mascot's mood for a run. `integration` comes from
 // the run's integration journal when one exists.
 export function mood(view: RunView | null | undefined, integration?: string | null): Mood {
   if (!view) return { kind: "idle", text: "Ready when you are." };

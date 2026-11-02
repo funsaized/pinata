@@ -1,6 +1,6 @@
 // Copies the gitignored files that .worktreeinclude names (gitignore syntax, the convention
-// Claude Code uses) from the user's checkout into a new worktree (port of 0.7.0's
-// copyIncluded). Only files ignored in the worktree are copied, so they never become part of
+// Claude Code uses) from the user's checkout into a new worktree. Only files ignored
+// in the worktree are copied, so they never become part of
 // a capture, a deliverable or an integration.
 import { chmod, constants, copyFile, lstat, mkdir } from "node:fs/promises";
 import { dirname } from "node:path";

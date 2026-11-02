@@ -1,5 +1,5 @@
 // The run's base for builders: HEAD plus the checkout's tracked and untracked (not ignored)
-// changes, recorded as a commit on top of HEAD (port of 0.7.0's snapshotBase). It works on a
+// changes, recorded as a commit on top of HEAD. It works on a
 // copy of the user's index, so the real index is untouched, and a private ref
 // (refs/pinata/<run>/base) keeps the commit alive for repairs and integration.
 import { mkdtemp, rm } from "node:fs/promises";

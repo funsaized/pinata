@@ -81,7 +81,7 @@ function git(cwd: string, args: string[]): Promise<string> {
   });
 }
 
-// `<git common dir>/pinata`, shared by every worktree of the repository (as in 0.7.0).
+// `<git common dir>/pinata`, shared by every worktree of the repository.
 export async function runsRoot(cwd: string): Promise<string> {
   const common = await git(cwd, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
   return join(await realpath(common), "pinata");

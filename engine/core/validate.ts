@@ -1,6 +1,5 @@
 import { agentName, writes, reviews, validateSnapshots, type Definitions } from "./definitions.ts";
-// Task and graph validation, ported from 0.7.0's lib/core.mjs (validateTask, validateChecks,
-// validateModel, relative, owns) and lib/run.mjs (validateGraph). Errors name the task and field.
+// Task and graph validation. Errors name the task and field.
 import {
   BACKENDS,
   COST_MAX,
@@ -233,7 +232,7 @@ export function ancestors(
 }
 
 export interface GraphRules {
-  // Builders need an approval recorded by the caller (0.7.0 consent semantics).
+  // Builders need an approval recorded by the caller.
   allowWrites?: boolean;
   definitions?: Definitions;
   // Tasks already in the run when adding more.

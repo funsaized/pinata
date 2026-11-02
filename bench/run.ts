@@ -1,5 +1,5 @@
 import { scaleScenarios } from "./scenarios/scale.ts";
-// Benchmark runner: comparable JSON for the engine against retained release baselines.
+// Benchmark runner: JSON measurements of engine overhead.
 //
 //   node bench/run.ts                              engine, faux provider, all scenarios
 //   node bench/run.ts --provider loopback          engine over the loopback provider
