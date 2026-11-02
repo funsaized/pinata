@@ -3,7 +3,9 @@
 Relay is the small example application built in Pinata's demo video. It reads JSONL
 service events and prints an incident report with event counts, failures, and p95
 latency. Its source is here: [starter](starter/) contains incomplete modules, and
-[finished](finished/) contains the recorded implementation and 23 tests.
+[finished](finished/) contains the recorded implementation and 23 tests, with a
+[documented portability correction](../../docs/reference/relay.md#evidence-provenance)
+to the CLI test's path assertion.
 
 Choose a path:
 

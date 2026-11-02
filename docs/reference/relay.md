@@ -33,8 +33,9 @@ it leaves the new directory available for inspection; retry with a new directory
 
 The default is the starter. `--finished` copies the recorded working implementation.
 Both modes add the job, expected output, verifier, LF line-ending attributes, an
-`npm run verify` script, and an exact-output acceptance clause to `REQUIREMENTS.md`. The source fixtures themselves
-retain their archived bytes. Their recording-specific `.pi` configuration is omitted.
+`npm run verify` script, and an exact-output acceptance clause to `REQUIREMENTS.md`.
+The fixtures omit recording-specific `.pi` configuration. Their only source change
+is the CLI test portability correction described below.
 
 ## Job graph
 
@@ -74,7 +75,12 @@ release candidate, Pi 1.4.0, and Node 26.7.0 on Linux. The coordinator used Open
 `gpt-6.1-sol`; workers used `gpt-6-luna`. See the [recording notes](../../media/README.md).
 
 [provenance.json](../../examples/relay/evidence/provenance.json) maps copied files to
-the source archive and records their SHA-256 hashes. Check-output files have `.txt`
+the source archive and records each distributed file's SHA-256 hash. The finished
+CLI test has one portability correction: it checks the JSON-quoted path printed in
+stderr, including escaped Windows backslashes, and exercises a backslash on POSIX
+too. Its entry retains the original `sourceSha256` and describes the `adaptation`;
+`sha256` identifies the corrected test. The application and historical evidence
+retain their archived bytes. Check-output files have `.txt`
 names for distribution; their contents are unchanged. The parser event excerpt
 preserves selected original lines and sequence numbers. Its previews are truncated
 by the original event logger; it is not a full transcript or reconstruction.
