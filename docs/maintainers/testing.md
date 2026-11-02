@@ -11,7 +11,7 @@ devDependency's CLI against a local loopback provider.
 
 The default suite also exercises quality-report exit codes, benchmark completion and
 measurement gates, and the Relay example. Relay tests cover starter setup in a path
-with spaces, refusal to overwrite existing work, evidence hashes, and the complete
+with spaces, refusal to overwrite existing work, and the complete
 job through review and destination integration with scripted provider responses.
 The package smoke also creates a starter from the installed tarball. These CI checks
 make no paid model calls; user-facing examples use real models.
@@ -28,14 +28,19 @@ and historical evidence under `examples/relay/`.
 | ------------------------------------- | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | Engine contracts                      | `test/engine/helpers.ts`, engine, scheduler, limiter, budget, result, and log tests          | Deterministic state transitions, dependencies, cancellation, bounds, and persistence with a fake backend.                  |
 | Real sessions with scripted responses | `test/engine/faux.ts`, `worlds.ts`, backend, builder, check, integration, and survival tests | Pi sessions and tools, process and detached backends, isolated worktrees, review, repair, integration, and crash recovery. |
-| User-facing surfaces                  | Adapter, headless, viewer, UI, docs, and example tests                                       | Commands, rendering, streaming, job/config validation, relative links, and documented command forms.                       |
+| User-facing surfaces                  | Adapter, headless, viewer, UI, docs, and example tests                                       | Commands, rendering, streaming, job/config validation, and relative links.                                                 |
 | Distribution                          | Release tests, `pi-smoke.ts`, `package-smoke.ts`                                             | Package contents and metadata, extension discovery, prompts, tool calls, and integration through the installed artifact.   |
 
-`scripts/test.mjs` separates scheduler and workspace timing tests from the other
-engine tests to reduce fixture contention. Each test has a five-minute timeout.
+Shared backend behavior belongs in `backends.test.ts`, which runs the same contracts
+against in-process, process, and detached transports. `in-process.test.ts` covers
+runtime caching and checkout-change detection specific to that backend. UI tests
+focus on status accuracy, conversation controls, selection races, and resource cleanup.
+
+`scripts/test.mjs` runs the scheduler latency checks after the other engine tests
+to reduce fixture contention. Each test has a five-minute timeout.
 Release-script tests run on Linux and macOS. Herdr integration cases are conditional
-on an available Herdr session. `test/engine/live.test.ts` tests local fingerprint
-caching; the paid smoke is the separate `live-smoke.ts` entry point.
+on an available Herdr session. `fingerprint.test.ts` covers checkout fingerprint caching;
+the paid smoke is the separate `live-smoke.ts` entry point.
 
 The [CI workflow](../../.github/workflows/ci.yml) runs the checks and tests on Linux,
 macOS, and Windows with Node 22.19 and 24. It also runs the Pi and package smokes,

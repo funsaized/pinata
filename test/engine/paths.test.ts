@@ -73,15 +73,20 @@ test("writes are refused through symlinks or junctions and outside ownership", a
   );
 });
 
-test("case sensitivity is probed per volume", async (t) => {
+test("ownership matching follows the filesystem's observed case behavior", async (t) => {
   const root = await tempDir(t, "pinata-Case-");
-  const expected =
-    process.platform === "linux"
-      ? false
-      : process.platform === "win32"
-        ? true
-        : caseInsensitive(root);
-  assert.equal(caseInsensitive(root), expected);
+  await writeFile(join(root, "Owned.txt"), "first", { flag: "wx" });
+  let insensitive = false;
+  try {
+    await writeFile(join(root, "owned.txt"), "second", { flag: "wx" });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    insensitive = true;
+  }
+  assert.equal(caseInsensitive(root), insensitive);
+  if (insensitive) assert.equal(checkWrite(root, root, "owned.txt", ["Owned.txt"]), "owned.txt");
+  else
+    assert.throws(() => checkWrite(root, root, "owned.txt", ["Owned.txt"]), /outside.*ownership/);
 });
 
 test("a write root given through a symlinked directory matches the real cwd an agent sees", async (t) => {

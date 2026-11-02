@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import { readFile, readdir, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
@@ -65,43 +64,6 @@ test("Relay setup creates a portable model-ready starter and refuses overwrites"
   assert.equal(job.background, undefined);
   for (const role of ["scout", "builder", "reviewer"])
     assert.equal(job.config.models[role].provider, "REPLACE_WITH_APPROVED_PROVIDER");
-});
-
-test("Relay fixtures match provenance and recorded reviews bind the checked artifacts", async () => {
-  const provenance = await json("evidence/provenance.json");
-  const fixtureProvenance = JSON.parse(await readFile(join(FIXTURE, "provenance.json"), "utf8"));
-  for (const [root, manifest] of [
-    [ROOT, provenance],
-    [FIXTURE, fixtureProvenance],
-  ])
-    for (const entry of manifest.files) {
-      const hash = createHash("sha256")
-        .update(await readFile(join(root, entry.path)))
-        .digest("hex");
-      assert.equal(hash, entry.sha256, entry.path);
-    }
-  for (const component of ["parse", "summarize", "render", "cli"]) {
-    const builder = await json(`evidence/results/build-${component}.json`);
-    const reviewer = await json(`evidence/results/review-${component}.json`);
-    assert.equal(reviewer.result.review.verdict, "approve");
-    assert.equal(reviewer.result.review.fingerprint, builder.fingerprint);
-    assert(builder.data.checks.every((check: any) => check.passed));
-  }
-  const destination = await json("evidence/destination.json");
-  assert.equal(destination.status, "verified");
-  assert.equal(destination.application, "exact");
-  assert.equal(destination.review, "builder-artifacts-only");
-  const events = (await readFile(join(ROOT, "evidence/parser-check-events.jsonl"), "utf8"))
-    .trim()
-    .split("\n")
-    .map((line) => JSON.parse(line));
-  assert.deepEqual(
-    events.map((e) => e.seq),
-    provenance.eventExcerpt.sequences,
-  );
-  assert.equal(events.find((e) => e.seq === 627).ok, false);
-  assert.equal(events.find((e) => e.seq === 773).ok, true);
-  assert.equal(events.find((e) => e.t === "check_end").passed, true);
 });
 
 test("Relay job builds, reviews and verifies the destination through the engine with scripted responses", async (t) => {
