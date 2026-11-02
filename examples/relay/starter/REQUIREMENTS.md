@@ -1,0 +1,11 @@
+# Relay: incident reports from JSONL events
+Build a dependency-free Node CLI for an on-call engineer.
+
+Modules and exact interfaces:
+1. src/parse.mjs exports parseEvents(text). Return {events, errors}. Accept blank lines, CRLF, final newline. Each nonblank line must be a JSON object with nonempty string service, ISO timestamp at, integer status 100..599, finite nonnegative latencyMs. Return valid events as {service, at, status, latencyMs}; do not mutate inputs. Errors are {line, message} with physical 1-based line numbers; a malformed line does not discard other lines. Reject impossible or invalid dates; valid at dates include Z or a numeric UTC offset. No coercion of strings into numbers.
+2. src/summarize.mjs exports summarize(events). Return {total, failures, services}. Failure = status >=500. services sorted by service name ascending (code-unit order). Each service = {service, count, failures, errorRate, p95Ms}; errorRate = failures/count, p95 uses nearest rank ceil(.95*n)-1 from sorted latencies. Empty gives {total:0,failures:0,services:[]}. Input order/content must stay unchanged. All events supplied already validated.
+3. src/render.mjs exports renderReport(summary, errors=[]). Return Markdown ending one newline: heading '# Relay incident report', 'Events: N | Failures: N | Invalid lines: N', then table with Service, Events, Failures, Error rate, p95 (ms). Rate one decimal percent, latency one decimal. Escape pipe and newline characters in service names so rows remain intact. Empty services includes 'No valid events.'. If errors nonempty, append '## Invalid lines' and one bullet per error with physical line and message. Report deterministic, do not mutate summary.
+4. bin/relay.mjs reads exactly one UTF-8 input file, invokes modules, prints report. Missing/extra path or unreadable file: useful stderr, exit 2. Valid input with errors: still print report and exit 1. Entirely valid input including empty file exits 0. No network, no dependencies. Import module errors should not be swallowed as input errors.
+
+Each builder adds meaningful node:test cases to its owned test file. CLI tests exercise a real subprocess and temporary files. npm test must pass on combined output. Scope is this disposable repository only. Do not stage, commit, push, publish, or install dependencies.
+

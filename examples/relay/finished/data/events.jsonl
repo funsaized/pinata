@@ -1,0 +1,5 @@
+{"service": "api", "at": "2026-10-31T12:00:00Z", "status": 200, "latencyMs": 42}
+{"service": "api", "at": "2026-10-31T12:01:00Z", "status": 503, "latencyMs": 850}
+{"service": "worker", "at": "2026-10-31T12:00:00Z", "status": 200, "latencyMs": 11}
+{"service": "worker", "at": "2026-10-31T12:02:00Z", "status": 200, "latencyMs": 19}
+

@@ -1,0 +1,9 @@
+{
+  "name": "relay-demo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "demo": "node bin/relay.mjs data/events.jsonl"
+  }
+}

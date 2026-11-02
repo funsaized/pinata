@@ -1,0 +1,44 @@
+{
+  "task": "review-summarize",
+  "status": "succeeded",
+  "summary": "Approved. The implementation matches the summarize contract: it counts statuses >= 500, groups services, sorts names using JavaScript code-unit ordering, calculates nearest-rank p95 from a copied latency array, returns the required empty shape, and does not mutate the input. Added tests cover empty input, failure threshold, Unicode ordering, p95 boundaries and duplicates, and input immutability. No substantive defects found.",
+  "result": {
+    "status": "succeeded",
+    "summary": "Approved. The implementation matches the summarize contract: it counts statuses >= 500, groups services, sorts names using JavaScript code-unit ordering, calculates nearest-rank p95 from a copied latency array, returns the required empty shape, and does not mutate the input. Added tests cover empty input, failure threshold, Unicode ordering, p95 boundaries and duplicates, and input immutability. No substantive defects found.",
+    "changedFiles": [],
+    "checks": [
+      {
+        "name": "Review of REQUIREMENTS.md, summarize diff/source/tests, and predecessor findings",
+        "status": "passed",
+        "detail": "Verified the actual changed files against the full summarize contract; inspected surrounding module/package context and the scout contract/test findings."
+      },
+      {
+        "name": "Engine-run summarize test evidence",
+        "status": "passed",
+        "detail": "Inspected recorded `node --test test/summarize.test.mjs` output and result evidence: 5 tests passed, 0 failed; engine check exit code 0."
+      }
+    ],
+    "findings": [],
+    "brief": "No unresolved findings. Full combined `npm test` was not run as part of this independent, scoped review; the assigned summarize test command has recorded passing engine evidence.",
+    "review": {
+      "verdict": "approve",
+      "taskId": "build-summarize",
+      "fingerprint": "2f32e689f73c3d333a29f052798b326d74138a9c022c3cd8742c60e00bd03627"
+    },
+    "blockers": []
+  },
+  "usage": {
+    "input": 14552,
+    "output": 1713,
+    "cacheRead": 32384,
+    "cacheWrite": 0,
+    "totalTokens": 48649,
+    "cost": 0.00263554
+  },
+  "turns": 5,
+  "toolCalls": 20,
+  "model": {
+    "provider": "openai",
+    "id": "gpt-6-luna"
+  }
+}

@@ -5,6 +5,8 @@ things up, and explanation to understand.
 
 ## Tutorials
 
+- [Inspect and check Relay](tutorials/relay.md): run the demo application offline,
+  see a check fail, correct it, and inspect the recorded evidence.
 - [First run](tutorials/first-run.md): two read-only scouts, and where to see them.
 - [Build and review](tutorials/build-and-review.md): a builder, an independent reviewer,
   integration and rollback.
@@ -13,6 +15,8 @@ things up, and explanation to understand.
 
 ## How-to guides
 
+- [Build Relay with live models](how-to/run-relay.md): configure and run the portable
+  example job, resolve failures, and integrate the reviewed changes.
 - [Create agents](how-to/agents.md)
 - [Choose a mode](how-to/modes.md): lean or observe.
 - [Choose a backend](how-to/backends.md): in-process, process or herdr-pi.
@@ -25,6 +29,7 @@ things up, and explanation to understand.
 
 ## Reference
 
+- [Relay example](reference/relay.md): files, setup command, task graph, output, and provenance.
 - [Tools](reference/tools.md): the model-facing tools, tasks and results.
 - [Commands](reference/commands.md): `/pinata …` in Pi and the `pinata` command.
 - [Configuration](reference/config.md)
@@ -33,6 +38,10 @@ things up, and explanation to understand.
 
 ## Explanation
 
+- [Why use Pinata?](explanation/why-pinata.md): useful workflows, a real demo, and what
+  the tests and measurements establish.
+- [What Relay shows about safeguards](explanation/relay-safeguards.md): failed checks,
+  independent review, and destination verification in the recorded run.
 - [Architecture](explanation/architecture.md)
 - [Trust and safety](explanation/trust.md)
 

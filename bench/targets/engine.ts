@@ -252,7 +252,8 @@ export async function runEngine(
       if (loopback) firstRequest = Object.fromEntries(loopback.firstRequest);
     }
     const result = summarize(scenario, raw, firstRequest, provider);
-    if (loopback?.errors.length) result.notes!.push(`loopback errors: ${loopback.errors.length}`);
+    if (loopback?.errors.length)
+      result.notes!.push(...loopback.errors.map((error) => `loopback errors: ${error}`));
     return result;
   } finally {
     await loopback?.close();

@@ -1,0 +1,85 @@
+{
+  "task": "build-parse",
+  "status": "succeeded",
+  "summary": "Implemented JSONL event parsing with per-line validation, strict date/calendar checks, physical line error reporting, and continued processing after invalid records. Added eight parser tests covering valid input, blank lines, CRLF/final newlines, malformed records, date/time boundaries, field validation, non-coercion, and empty/non-string inputs.",
+  "result": {
+    "status": "succeeded",
+    "summary": "Implemented JSONL event parsing with per-line validation, strict date/calendar checks, physical line error reporting, and continued processing after invalid records. Added eight parser tests covering valid input, blank lines, CRLF/final newlines, malformed records, date/time boundaries, field validation, non-coercion, and empty/non-string inputs.",
+    "changedFiles": [
+      "src/parse.mjs",
+      "test/parse.test.mjs"
+    ],
+    "checks": [
+      {
+        "name": "node --test test/parse.test.mjs",
+        "status": "passed",
+        "detail": "8 tests passed; 0 failed."
+      }
+    ],
+    "findings": [],
+    "blockers": []
+  },
+  "data": {
+    "fingerprintVersion": 2,
+    "verificationId": "e8bb370b-f3d6-4459-9eb9-bf50b5f37161",
+    "changes": {
+      "base": "f52e1eeb8349f107ce6b634b02d2073b774b8e1e",
+      "tree": "cfee49033f66cf8321d8bcff2d2ae61b89c38e84",
+      "changes": [
+        {
+          "path": "src/parse.mjs",
+          "status": "M",
+          "oldMode": "100644",
+          "newMode": "100644",
+          "oldBlob": "a78eaa9a8e50c004d8f24e78bdd966ccb9672c43",
+          "newBlob": "88696997b22e9790af89859547df1ac9b4cf29ca"
+        },
+        {
+          "path": "test/parse.test.mjs",
+          "status": "A",
+          "oldMode": "000000",
+          "newMode": "100644",
+          "oldBlob": "0000000000000000000000000000000000000000",
+          "newBlob": "463ab0dfd1cb7b6cafc332265c4bc7ef40e55d48"
+        }
+      ]
+    },
+    "checks": [
+      {
+        "id": "parse-tests",
+        "argv": [
+          "node",
+          "--test",
+          "test/parse.test.mjs"
+        ],
+        "cwd": "/tmp/pinata-demo-v201-color/worktrees/1aae46c36223b987/0b81c2b4-9584-4046-a32d-4cb945857949/build-parse",
+        "code": 0,
+        "signal": null,
+        "reason": null,
+        "passed": true,
+        "ms": 75,
+        "stdout": "/tmp/pinata-demo-v201-color/relay/.git/pinata/0b81c2b4-9584-4046-a32d-4cb945857949/checks/build-parse/check-parse-tests.stdout.log",
+        "stderr": "/tmp/pinata-demo-v201-color/relay/.git/pinata/0b81c2b4-9584-4046-a32d-4cb945857949/checks/build-parse/check-parse-tests.stderr.log",
+        "stdoutSha256": "befe4b56b3c2880f8335dcd0b3d2a5624b0135f15680554c3aad0acd17907e03",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    ],
+    "worktree": "/tmp/pinata-demo-v201-color/worktrees/1aae46c36223b987/0b81c2b4-9584-4046-a32d-4cb945857949/build-parse",
+    "baseCommit": "98bb68ba31c92ae2a2cc7aff9b929e148565cabe"
+  },
+  "fingerprint": "3ad4b4a168f6be4727bf95f99a7c4ed5bbb61fc8166abd2c48c5253d8f00aee4",
+  "usage": {
+    "input": 17226,
+    "output": 7163,
+    "cacheRead": 62976,
+    "cacheWrite": 0,
+    "totalTokens": 87365,
+    "cost": 0.00593386
+  },
+  "turns": 7,
+  "toolCalls": 14,
+  "model": {
+    "provider": "openai",
+    "id": "gpt-6-luna"
+  }
+}

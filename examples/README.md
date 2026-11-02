@@ -1,5 +1,21 @@
 # Examples
 
+## Choose a starting point
+
+| You want to…                                       | Start here                                                | What to expect                                                                                  |
+| -------------------------------------------------- | --------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Inspect a completed project before calling a model | [Relay tutorial](../docs/tutorials/relay.md)              | A portable finished project, a failure/correction exercise, and recorded check/review evidence. |
+| Build a complete example with your models          | [Relay live guide](../docs/how-to/run-relay.md)           | A starter repository and editable job with explicit model choices and worker limits.            |
+| Try delegation in your own repository              | [First run](../docs/tutorials/first-run.md)               | Two read-only scouts and findings with file references.                                         |
+| Fix one well-defined bug                           | [Build and review](../docs/tutorials/build-and-review.md) | An isolated patch, engine-run checks, independent review, then local integration.               |
+| Adapt a job for scripts or CI                      | [Task and job examples](jobs.md)                          | JSON templates; replace paths, ownership, checks, and model choices.                            |
+
+The live workflows use your configured models and spend tokens. The [Relay example](relay/README.md)
+can be inspected and its finished tests run without model access. For the
+evidence behind these workflows, see [why use Pinata](../docs/explanation/why-pinata.md).
+
+## Agent recipes
+
 The presets are scout, builder, and reviewer. [planner](agents/planner.md) and
 [researcher](agents/researcher.md) are optional definitions: copy them to
 `.pi/pinata/agents/` or your personal Pi agent directory before running jobs that use

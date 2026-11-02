@@ -1,4 +1,6 @@
-# Recorded arena evidence is immutable; formatting candidates would invalidate hashes.
-examples/arena/example-run/**
-
-examples/arena/mock-example-run/**
+# Recorded Relay source and evidence keep their original bytes and checksums.
+examples/relay/starter/**
+examples/relay/finished/**
+examples/relay/evidence/**
+# Exact CLI stdout, including Markdown table spacing, is part of the exercise.
+examples/relay/expected-report.md

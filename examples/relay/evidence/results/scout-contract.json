@@ -1,0 +1,34 @@
+{
+  "task": "scout-contract",
+  "status": "succeeded",
+  "summary": "Mapped the required module contracts and current integration state; implementation files are stubs and no tests currently exist.",
+  "result": {
+    "status": "succeeded",
+    "summary": "Mapped the required module contracts and current integration state; implementation files are stubs and no tests currently exist.",
+    "changedFiles": [],
+    "checks": [
+      {
+        "name": "Read requirements and module entry points",
+        "status": "passed",
+        "detail": "Inspected REQUIREMENTS.md, package.json, README.md, src modules, CLI entry point, and test directory listing."
+      }
+    ],
+    "brief": "Observed: REQUIREMENTS.md lines 4–10 define the full contract and dependency order. `src/parse.mjs` line 1 is a throwing stub, `src/summarize.mjs` line 1 is a throwing stub, `src/render.mjs` line 1 is a throwing stub, and `bin/relay.mjs` line 2 throws; there is no implementation to trace yet. The intended integration is parseEvents(text) -> {events, errors}, summarize(events) -> summary, renderReport(summary, errors) -> Markdown, with CLI handling file/exit behavior (REQUIREMENTS.md lines 5–8). Assign builder/test ownership per module; add the real-subprocess/temp-file CLI tests explicitly required at line 10. package.json lines 5–8 provides only `npm test` (`node --test`) and demo; project is ESM (`type: module`) and has no dependencies or lockfile. No test files were found.\n\nInterface risks to preserve during integration: parser must reject impossible dates and non-numeric coercions while retaining physical line numbers and isolating malformed records (REQUIREMENTS.md line 5); summary must sort by code-unit service order and use nearest-rank p95 without mutating events (line 6); renderer escaping must prevent service names with pipes/newlines breaking Markdown rows and output must end exactly in a newline (line 7); CLI must distinguish invalid input (exit 1) from argument/read failures (exit 2), and must not swallow import/module failures as input errors (line 8). Next inspection/validation: implement/test each pure module against the exact shapes first, then wire CLI and exercise subprocess exit codes, stderr/stdout, empty file, malformed-plus-valid lines, and unreadable/missing/extra paths; run combined `npm test`.",
+    "findings": [],
+    "blockers": []
+  },
+  "usage": {
+    "input": 16545,
+    "output": 1036,
+    "cacheRead": 13824,
+    "cacheWrite": 0,
+    "totalTokens": 31405,
+    "cost": 0.00231074
+  },
+  "turns": 5,
+  "toolCalls": 16,
+  "model": {
+    "provider": "openai",
+    "id": "gpt-6-luna"
+  }
+}
