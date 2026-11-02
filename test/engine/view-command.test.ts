@@ -207,18 +207,12 @@ test("view defaults, explicit history lookup, directories, and completion agree 
       return null;
     },
   } as unknown as PinataUI;
-  await pinataCommand(host, `live ${ids[0]}`, ctx);
-  await pinataCommand(host, `open ${ids[0]} feed`, ctx);
-  await pinataCommand(host, "open feed", ctx);
-  assert.deepEqual(selected, [
-    { run: ids[0] },
-    { run: ids[0], task: "feed" },
-    { run: undefined, task: "feed" },
-  ]);
-  assert.equal(
-    await pinataCommand(host, `watch ${ids[0]} feed`, ctx),
-    await pinataCommand(host, `view ${ids[0]} --task feed --external`, ctx),
-  );
+  await pinataCommand(host, `view ${ids[0]}`, ctx);
+  await pinataCommand(host, `view ${ids[0]} --task feed`, ctx);
+  await pinataCommand(host, "view --task feed", ctx);
+  assert.deepEqual(selected, [{ run: ids[0] }, { run: ids[0], task: "feed" }, { task: "feed" }]);
+  for (const command of [`live ${ids[0]}`, `open ${ids[0]} feed`, `watch ${ids[0]} feed`])
+    await assert.rejects(pinataCommand(host, command, ctx), /Unknown command/);
   for (const command of [
     "runs extra",
     "status extra",
