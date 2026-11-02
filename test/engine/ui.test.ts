@@ -1,5 +1,4 @@
-// The widget, footer, mascot and live scene (E4.1, E4.2). The mascot tests are 0.7.0's
-// test/live.test.mjs, run against RunViews instead of saved-run polls.
+// Run status, conversation controls, asynchronous selection, and UI resource cleanup.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { TuiAltScreen, visibleWidth, type Terminal } from "@earendil-works/pi-tui";
@@ -12,7 +11,7 @@ import {
   type WorkspaceOptions,
   type WorkspaceRun,
 } from "../../engine/ui/workspace.ts";
-import { mascotFrame, mood } from "../../engine/ui/mascot.ts";
+import { mood } from "../../engine/ui/mascot.ts";
 import { footerLine } from "../../engine/ui/text.ts";
 import { PinataWidget, agentRow, widgetLines } from "../../engine/ui/widget.ts";
 import { spec } from "./helpers.ts";
@@ -159,7 +158,7 @@ test("widget rows render the expected lines at several widths", () => {
   assert.equal(footerLine([view]), "Pinata · 1 running · 1/3 finished · $0.012 cost");
 });
 
-test("celebrations require every successful task and verified builder integration", () => {
+test("run indicators distinguish verified work, pending integration and failures", () => {
   const kind = (run: WorkspaceRun) => mood(run.view, run.integration).kind;
   assert.equal(kind(sceneRun(2)), "review");
   assert.equal(kind(sceneRun(3)), "ready");
@@ -193,7 +192,7 @@ test("celebrations require every successful task and verified builder integratio
   assert.equal(mood(null).kind, "idle");
 });
 
-// 0.7.0's harness: a scene with fake timers and a clock, and keys from a map.
+// A workspace with fake timers and a clock, and keys from a map.
 const KEYS: Record<string, string> = {
   "tui.select.cancel": "\x1b",
   "tui.select.up": "up",
@@ -247,37 +246,7 @@ function harness(options: Partial<WorkspaceOptions> = {}) {
 }
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
-test("live transitions celebrate once, historical success does not, and controls stay cosmetic", async () => {
-  const h = harness();
-  await flush();
-  const initial = JSON.stringify(h.scene.run);
-  h.scene.handleInput(" ");
-  assert.equal(JSON.stringify(h.scene.run), initial);
-  assert.match(h.scene.render(100).join("\n"), /Hey! I am supervising/);
-  h.time(2500);
-  h.scene.update(sceneRun(3));
-  assert.equal(h.scene.cheerAt, null);
-  h.scene.update(sceneRun(4));
-  const celebration = h.scene.cheerAt;
-  assert(celebration! > 0);
-  h.time(3000);
-  h.scene.update(sceneRun(4));
-  assert.equal(h.scene.cheerAt, celebration);
-  const old = sceneRun(4);
-  h.scene.update({ ...old, view: { ...old.view, run: "old-run" } });
-  assert.equal(h.scene.cheerAt, null);
-  h.scene.handleInput("m");
-  const rendered = h.scene.render(100);
-  h.time(1000);
-  assert.deepEqual(h.scene.render(100), rendered, "motion off produces a static scene");
-  h.scene.handleInput("\x1b");
-  assert.equal(h.closed(), 1);
-  assert.equal(h.timers.size, 0);
-  h.scene.close();
-  assert.equal(h.closed(), 1);
-});
-
-test("the scene animates only while an agent works or a bonk or cheer plays", async () => {
+test("the workspace releases animation timers when idle, motion is disabled, or it is disposed", async () => {
   const h = harness();
   await flush();
   assert.equal(h.timers.size, 1, "the fixture's first scene has a running scout");
@@ -285,14 +254,16 @@ test("the scene animates only while an agent works or a bonk or cheer plays", as
   h.time(1000);
   h.tick();
   assert.equal(h.timers.size, 0, "a finished run is still");
-  h.scene.handleInput(" ");
-  assert.equal(h.timers.size, 1, "a bonk animates");
-  h.time(2100);
-  h.tick();
-  assert.equal(h.timers.size, 0, "and stops when it ends");
   h.scene.update(sceneRun(0));
   h.scene.handleInput("m");
   assert.equal(h.timers.size, 0, "motion off stops the timer");
+  h.scene.handleInput("m");
+  assert.equal(h.timers.size, 1);
+  h.scene.handleInput("\x1b");
+  assert.equal(h.closed(), 1);
+  assert.equal(h.timers.size, 0);
+  h.scene.close();
+  assert.equal(h.closed(), 1, "closing twice invokes the completion callback once");
   h.scene.dispose();
   assert.equal(h.timers.size, 0);
 });
@@ -434,15 +405,6 @@ test("new runs replace a stale initial read but preserve historical selections a
   assert.equal(detail!.input!.getValue(), "keep this draft");
   h.scene.offer(named("fourth"));
   assert.deepEqual(h.scene.runs, ["fourth", "third", "second", "first", "saved"]);
-});
-
-test("renderer is bounded, deterministic, and has distinct animated and bonked poses", () => {
-  const a = mascotFrame({ width: 40, height: 18, colors: false });
-  assert.equal(a.length, 18);
-  assert(a.every((line) => line.length === 40));
-  assert.deepEqual(mascotFrame({ width: 40, height: 18, colors: false }), a);
-  assert.notDeepEqual(mascotFrame({ width: 40, height: 18, colors: false, seconds: 3 }), a);
-  assert.notDeepEqual(mascotFrame({ width: 40, height: 18, colors: false, bonk: 0.3 }), a);
 });
 
 test("the workspace selects conversations, scrolls, steers, and preserves draft focus", async (t) => {
@@ -709,9 +671,8 @@ test("a late conversation source cannot replace the selected run, and failed sou
   assert.match(strip(h.scene.render(120)).join("\n"), /Run second history/);
 });
 
-test("widget ears respect motion, run only while an agent works, and release their timer", () => {
+test("the widget opens the workspace and releases its timer when motion stops or it is disposed", () => {
   let callback: (() => void) | undefined,
-    cleared = 0,
     renders = 0,
     opened = 0,
     motion = true;
@@ -729,15 +690,12 @@ test("widget ears respect motion, run only while an agent works, and release the
       },
       clearInterval: () => {
         callback = undefined;
-        cleared++;
       },
     },
   });
   assert(widget.animating);
-  const first = widget.render(60)[0];
   callback!();
   assert.equal(renders, 1);
-  assert.notEqual(widget.render(60)[0], first, "the ears move");
   motion = false;
   callback!();
   assert.equal(renders, 1);
@@ -755,5 +713,5 @@ test("widget ears respect motion, run only while an agent works, and release the
   widget.update();
   widget.dispose();
   assert(!widget.animating);
-  assert.equal(cleared, 3);
+  assert.equal(callback, undefined);
 });

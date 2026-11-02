@@ -104,7 +104,7 @@ async function until(condition: () => boolean | Promise<boolean>, what: string, 
   }
 }
 
-test("job files keep 0.7.0's shape; exit codes map run outcomes", () => {
+test("job paths resolve relative to the file, mode overrides config, and outcomes map to exit codes", () => {
   const params = jobParams(
     { cwd: "../repo", approval: "ok", config: { mode: "lean" }, tasks: [spec("scout")] },
     "/work/jobs/job.json",

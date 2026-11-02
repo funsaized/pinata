@@ -90,7 +90,7 @@ test("codemode scripts cannot bypass the guard", async (t) => {
   assert(!existsSync(join(world.repo, "c.txt")));
 });
 
-test("the guard: loadout, read-only roles and ownership", () => {
+test("the guard rejects unavailable tools and writes from read-only agents", () => {
   const scout = {
     run: "r",
     task: "s",

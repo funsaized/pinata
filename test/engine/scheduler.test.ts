@@ -49,7 +49,7 @@ function shape() {
 const TOLERANCE = process.env.CI ? 2 : 1;
 const P99_LIMIT = process.env.CI ? 5 : TOLERANCE;
 
-test("dependents launch within 1 ms (p99) of their predecessor settling, at 64 agents", async (t) => {
+test("dependent dispatch meets local and CI latency budgets on a 64-task graph", async (t) => {
   const result = await bestOf(t, async () => {
     const gaps: number[] = [];
     // One warm-up run, then five measured runs of the same 64-agent graph.

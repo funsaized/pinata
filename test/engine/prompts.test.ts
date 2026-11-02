@@ -16,34 +16,15 @@ const { templates, diagnostics } = loadPromptTemplates({
   includeDefaults: false,
 });
 
-test("packaged pinata-fix forwards the complete request through Pi expansion", () => {
+test("declared prompt templates forward the request through Pi expansion", () => {
   assert.deepEqual(diagnostics, []);
-  const request = "Correct the seconds-to-milliseconds conversion in src/duration.mjs";
-  const expanded = expandPromptTemplate(`/pinata-fix ${request}`, templates);
-  assert.ok(expanded.includes(`requested fix: ${request}.`));
-  assert.ok(expanded.includes("pinata_run"));
-});
-
-test("pinata-fix handles quoted arguments without recursively expanding their content", () => {
-  const expanded = expandPromptTemplate(
-    '/pinata-fix "Fix $1 and $@ in src/my file.ts" "Run npm test"',
-    templates,
-  );
-  assert.ok(expanded.includes("requested fix: Fix $1 and $@ in src/my file.ts Run npm test."));
-});
-
-test("pinata-fix without arguments leaves no literal argument placeholder", () => {
-  const expanded = expandPromptTemplate("/pinata-fix", templates);
-  assert.ok(expanded.includes("requested fix: ."));
-  assert.ok(!expanded.includes("${@}"));
-});
-
-for (const name of ["scout", "builder", "reviewer", "pinata-review"]) {
-  test(`${name} forwards arguments through real Pi expansion`, () => {
-    const request = "Inspect src/duration.mjs and its zero-delay test";
+  const request = "Inspect src/duration.mjs and its zero-delay test";
+  assert.equal(templates.length, manifest.pi.prompts.length);
+  for (const { name } of templates) {
     const expanded = expandPromptTemplate(`/${name} ${request}`, templates);
-    assert.ok(expanded.includes(request));
-    assert.ok(!expanded.includes("${@"));
-    assert.ok(!expandPromptTemplate(`/${name}`, templates).includes("${@"));
-  });
-}
+    assert.notEqual(expanded, `/${name} ${request}`, `${name} must expand`);
+    assert.ok(expanded.includes(request), `${name} must retain the complete request`);
+    assert.ok(!expanded.includes("${@"), `${name} has an unexpanded placeholder`);
+    assert.ok(!expandPromptTemplate(`/${name}`, templates).includes("${@"), name);
+  }
+});

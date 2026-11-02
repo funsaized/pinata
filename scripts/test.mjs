@@ -4,9 +4,9 @@ import { readdirSync } from "node:fs";
 import { join } from "node:path";
 
 // The release script tests run where releases run (Linux, macOS); on Windows `npm` is a .cmd.
-// Scheduler and workspace tests measure latency. Run them separately after the other
-// engine tests so parallel fixtures do not compete with their unchanged timing budgets.
-const timed = ["scheduler.test.ts", "workspace.test.ts"];
+// Run the scheduler latency check after the other engine tests so parallel fixtures
+// do not compete with its timing budget.
+const timed = ["scheduler.test.ts"];
 const engine = readdirSync("test/engine", { recursive: true })
   .filter((file) => file.endsWith(".test.ts") && !timed.includes(file))
   .sort()

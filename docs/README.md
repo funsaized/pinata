@@ -50,6 +50,7 @@ things up, and explanation to understand.
 - [Publication](maintainers/publication.md)
 - [GitHub Packages](maintainers/github-packages.md)
 
-The test suite checks documentation links, command forms, and example fixtures.
+The test suite checks relative documentation links and validates example jobs and configs.
+Command behavior is exercised by the adapter, headless, and viewer tests.
 Commands marked _manual_ need credentials, a running service, or explicit action
 authorization; documentation tests do not execute every command shown here.
