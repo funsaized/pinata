@@ -86,8 +86,8 @@ Directories are private (0700).
 Working checkouts live separately at `<worktreeRoot>/<repository-id>/<run>/<task>`;
 see [worktree location](../reference/config.md#worktree-location) for platform defaults.
 The absolute paths are frozen in `run.json`'s `resume.data.prep.worktreePaths` before
-agents start. Resume and repair reuse them even if configuration changes. Legacy
-records without that field continue using `<run>/worktrees/<task>`.
+agents start. Resume and repair reuse them even if configuration changes. Records
+without saved paths use `<run>/worktrees/<task>`; existing worktrees are not moved.
 
 The `run.json` record uses schema version 2 and contains a table of agent definitions keyed
 by digest. Tasks reference that table; `run_started` carries the same snapshots. Resume,

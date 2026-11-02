@@ -12,7 +12,7 @@ Scout, builder, and reviewer come in the box. These are lightweight definitions 
 
 [![piñata: small core, parallel agents](media/pinata-hero-v2.png)](media/pinata-demo.mp4)
 
-[Watch the demo](media/pinata-demo.mp4) · Ten real agents, four reviews, 23 passing tests.
+[Watch the demo](media/pinata-demo.mp4) · Ten agents build and review a CLI.
 
 [Why use Pinata?](docs/explanation/why-pinata.md) Follow a real change from task to
 reviewed patch, inspect the evidence, and choose a first example.
@@ -167,7 +167,7 @@ See the [configuration reference](docs/reference/config.md) for all settings and
 ## What it's like to use
 
 - **Fast.** Agents share your Pi process by default. Startup, memory, and dispatch have
-  [measured budgets](docs/maintainers/performance-v2.md), including tests at 64 active agents.
+  [performance budgets](docs/maintainers/performance.md), including tests at 64 active agents.
 - **Visible.** The widget above Pi's editor shows each agent's status, elapsed time,
   and activity, plus total tokens and cost. Open `/pinata view` to read conversations
   and steer agents. Shift+↑/↓ moves between conversations; Esc returns to Pi.

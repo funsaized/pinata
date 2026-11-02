@@ -21,13 +21,13 @@ things up, and explanation to understand.
 - [Use pinata inside Herdr](how-to/herdr.md)
 - [Run jobs headless](how-to/headless.md): scripts and CI.
 - [Give builders their dependencies](how-to/dependencies.md)
-- [Recover, rerun and clean up](how-to/recover.md), including upgrading from 0.7.0.
+- [Recover, rerun and clean up](how-to/recover.md)
 - [Enable research](how-to/research.md)
 - [Set up on Windows and macOS](how-to/platforms.md)
 
 ## Reference
 
-- [Relay example](reference/relay.md): files, setup command, task graph, output, and provenance.
+- [Relay example](reference/relay.md): files, setup command, task graph, and expected output.
 - [Tools](reference/tools.md): the model-facing tools, tasks and results.
 - [Commands](reference/commands.md): `/pinata …` in Pi and the `pinata` command.
 - [Configuration](reference/config.md)
@@ -38,15 +38,15 @@ things up, and explanation to understand.
 
 - [Why use Pinata?](explanation/why-pinata.md): useful workflows, a real demo, and what
   the tests and measurements establish.
-- [What Relay shows about safeguards](explanation/relay-safeguards.md): failed checks,
-  independent review, and destination verification in the recorded run.
+- [How Relay checks the work](explanation/relay-safeguards.md): failed checks,
+  independent review, and destination verification.
 - [Architecture](explanation/architecture.md)
 - [Trust and safety](explanation/trust.md)
 
 ## Maintainers
 
 - [Testing](maintainers/testing.md)
-- [Performance evidence](maintainers/performance-v2.md)
+- [Measure performance](maintainers/performance.md)
 - [Publication](maintainers/publication.md)
 - [GitHub Packages](maintainers/github-packages.md)
 

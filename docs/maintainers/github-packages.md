@@ -21,12 +21,13 @@ The [sync workflow](../../.github/workflows/sync-github-package.yml) checks npm'
 To mirror a release immediately:
 
 ```sh
-gh workflow run sync-github-package.yml --ref master -f version=0.2.0
+PUBLISHED_VERSION="<version>"
+gh workflow run sync-github-package.yml --ref master -f version="$PUBLISHED_VERSION"
 gh run list --workflow sync-github-package.yml --limit 5
 gh run watch RUN_ID --exit-status
 ```
 
-Replace `0.2.0` with the published version and `RUN_ID` with the dispatched run.
+Replace `<version>` with the published version and `RUN_ID` with the dispatched run.
 Use `-f version=latest` to resolve npm's current `latest` tag. You can also use
 **Actions → Sync npm package to GitHub → Run workflow** in the repository.
 
@@ -35,7 +36,7 @@ The final log should contain:
 ```json
 {
   "package": "@funsaized/pi-pinata",
-  "version": "0.2.0",
+  "version": "<published-version>",
   "published": true,
   "verified": true
 }

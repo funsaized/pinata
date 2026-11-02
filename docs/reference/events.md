@@ -12,7 +12,7 @@ Detached events may carry `source: {id, record}`: a process identity and its out
 record number. The engine uses this position to discard replayed records after a
 host crash. Lean logs persist the position with a `usage` checkpoint containing
 the current attempt's usage, turns and tool calls; settlement saves the final
-position. No separate cursor file is trusted for accounting. Older logs without
+position. No separate cursor file is trusted for accounting. Logs without
 positions reconcile detached usage at settlement, so aggregate cost enforcement
 for that recovered attempt is delayed until its outcome is available.
 

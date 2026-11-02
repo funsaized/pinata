@@ -23,13 +23,14 @@ and merge the reviewed release into `master` through a pull request with green C
 Then tag the merge commit and push only the tag:
 
 ```sh
-npm version 1.0.1 --no-git-tag-version
+RELEASE_VERSION="<version>"
+npm version "$RELEASE_VERSION" --no-git-tag-version
 # Commit on a release branch, open a PR, and merge it once CI is green.
 git fetch origin
-git push origin origin/master:refs/tags/v1.0.1
+git push origin "origin/master:refs/tags/v${RELEASE_VERSION}"
 ```
 
-Use the intended version for future releases. A `vX.Y.Z` tag publishes to npm's
+Replace `<version>` with the release version and use it throughout these commands. A `vX.Y.Z` tag publishes to npm's
 `latest`; a `vX.Y.Z-next.N` tag publishes to `next` only and creates a GitHub
 prerelease. CI runs unit tests and formatting/lint
 checks, validates the tag, lockfile, package identity, and packed paths, then
@@ -44,7 +45,7 @@ For a failed run, inspect its result before retrying. The workflow can also be
 manually dispatched against an existing release tag:
 
 ```sh
-gh workflow run release.yml --ref master -f tag=v1.0.1
+gh workflow run release.yml --ref master -f tag="v${RELEASE_VERSION}"
 ```
 
 A version already on npm is accepted only when its integrity matches the local
@@ -93,7 +94,7 @@ After reviewing the exact packed artifact, version, staged diff (if committing),
 and action-specific authorization:
 
 ```sh
-npm publish ./pi-pinata-1.0.1.tgz --access public
+npm publish "./pi-pinata-${RELEASE_VERSION}.tgz" --access public
 ```
 
 Use the actual inspected tarball and version, not a stale filename. Follow npm's
@@ -104,11 +105,11 @@ authorized actions.
 Verify registry metadata, then inspect a fresh download of the published version:
 
 ```sh
-npm view pi-pinata@1.0.1 version dist.integrity repository maintainers --json
+npm view "pi-pinata@${RELEASE_VERSION}" version dist.integrity repository maintainers --json
 RELEASE_CHECK=$(mktemp -d)
-npm pack pi-pinata@1.0.1 --pack-destination "$RELEASE_CHECK" --ignore-scripts
-tar -tzf "$RELEASE_CHECK/pi-pinata-1.0.1.tgz"
-npm install --prefix "$RELEASE_CHECK/install" --ignore-scripts "$RELEASE_CHECK/pi-pinata-1.0.1.tgz"
+npm pack "pi-pinata@${RELEASE_VERSION}" --pack-destination "$RELEASE_CHECK" --ignore-scripts
+tar -tzf "$RELEASE_CHECK/pi-pinata-${RELEASE_VERSION}.tgz"
+npm install --prefix "$RELEASE_CHECK/install" --ignore-scripts "$RELEASE_CHECK/pi-pinata-${RELEASE_VERSION}.tgz"
 PI_CODING_AGENT_DIR="$RELEASE_CHECK/pi-agent" pi install "$RELEASE_CHECK/install/node_modules/pi-pinata" --no-approve
 node "$RELEASE_CHECK/install/node_modules/pi-pinata/bin/pinata.mjs" help
 ```
