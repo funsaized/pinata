@@ -10,10 +10,17 @@ release script tests. It needs no Pi installed: process-backend tests run the Pi
 devDependency's CLI against a local loopback provider.
 
 The default suite also exercises quality-report exit codes, benchmark completion and
-measurement gates, and the portable Relay exercise. Relay tests cover setup in a path
-with spaces, refusal to overwrite an existing directory, a failing/corrected component
-check, evidence hashes, and the complete job through review and destination integration
-with scripted provider responses. They make no paid model calls.
+measurement gates, and the Relay example. Relay tests cover starter setup in a path
+with spaces, refusal to overwrite existing work, evidence hashes, and the complete
+job through review and destination integration with scripted provider responses.
+The package smoke also creates a starter from the installed tarball. These CI checks
+make no paid model calls; user-facing examples use real models.
+
+`test/engine/fixtures/relay/` holds the recorded completed implementation and 23 tests
+used by the scripted job. It is excluded from the npm package. Its `provenance.json`
+records original archive paths and distributed hashes, including the CLI test's
+portable JSON-quoted path assertion. The public provenance manifest covers the starter
+and historical evidence under `examples/relay/`.
 
 ## What the harness covers
 
@@ -139,8 +146,8 @@ The offline regression tests cover these thresholds and the report/exit-code con
 
 The user-facing [why use Pinata guide](../explanation/why-pinata.md) connects the
 existing evidence to a first useful workflow. The [Relay tutorial](../tutorials/relay.md)
-provides the offline path and the [live guide](../how-to/run-relay.md) covers configurable
-model runs. The remaining improvements above are follow-up work.
+covers a complete run with the user's models, checks, reviews, and destination
+verification. The remaining improvements above are follow-up work.
 
 ## Definition and scale regression checks
 

@@ -2,9 +2,10 @@
 
 ## Unreleased
 
-- Replace the coding arena with a portable Relay example: offline checks, an editable
-  live job, expected output, original evidence, and separate tutorials, how-to,
-  reference, and safeguards explanation.
+- Replace the coding arena with a Relay starter and editable real-model job, expected
+  output, original evidence, a build/review/integration tutorial, reference, and
+  safeguards explanation. Keep the completed implementation in CI fixtures and
+  make model prerequisites explicit across examples and walkthroughs.
 - Fail quality evaluations after saving reports when thresholds are missed. Require
   successful benchmark tasks and valid measurements, including on timing retries.
 - Unify run and conversation viewing as `/pinata view [run] [--task <task>]` and

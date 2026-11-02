@@ -1,5 +1,10 @@
 # View and steer agents
 
+Start a run with your configured models using [First run](first-run.md) or
+[Relay](relay.md), then follow it here. Those runs require model credentials and
+spend tokens. Viewing saved results makes no model calls; steering a running agent
+can lead to further model requests.
+
 The widget above Pi's editor shows each agent's name, status, elapsed time, and current
 activity, with total tokens and cost underneath. Waiting agents have not started;
 finished agents include successes, failures, and cancellations. Tool results use short

@@ -22,10 +22,9 @@ that check's exit code and log hashes.
 
 Pinata does not accept a builder's assertion that its checks passed as a substitute
 for running the configured commands. An engine-run check failure fails the builder
-and blocks dependent work. The [offline tutorial](../tutorials/relay.md) lets you
-introduce a small boundary error and see a real test fail, then correct the code.
-That tutorial fault is deliberately constructed; the historical parser events above
-are the actual recording.
+and blocks dependent work. In a new [Relay run](../tutorials/relay.md), inspect any
+failed check before asking for a repair. That run's logs tell you what the builder
+actually changed; the historical events above describe only the recording.
 
 ## A passing check still needs judgment
 
@@ -62,10 +61,9 @@ is new exercise infrastructure; it was not part of the original recording.
 ## What this establishes
 
 The recording demonstrates one completed build with inspectable check, review, and
-integration evidence. The offline exercise makes the result and a failure/correction
-cycle reproducible without model access. A fresh live run produces new evidence and
-can fail or require repairs. Neither the recording nor a passing synthetic test
+integration evidence. A fresh model run produces new evidence and can fail or
+require repairs. Neither the recording nor a passing synthetic test
 suite establishes a general model success rate or guarantees that all defects are caught.
 
 For the operating boundaries, see [trust and safety](trust.md). For a new run, use
-[the live Relay guide](../how-to/run-relay.md).
+[the Relay tutorial](../tutorials/relay.md).

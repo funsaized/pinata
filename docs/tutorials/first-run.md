@@ -3,6 +3,11 @@
 In this tutorial you run two read-only scouts in a repository, watch them in
 Pi, and read their results. Nothing is changed in your checkout.
 
+You need Pi with Pinata installed and working model credentials. The coordinator
+and scouts use your configured models and spend tokens; choose role models and
+limits in [configuration](../reference/config.md) before starting. For a prepared
+repository and a complete coding job, follow [Relay](relay.md).
+
 ## 1. Start Pi in a repository
 
 Any Git repository works. Start Pi there (_manual_):
