@@ -2,25 +2,28 @@
 
 **Pi stays small. Your subagent system should too.**
 
-Pinata is a fast, lightly opinionated subagent layer for Pi. You define agents, piñata delegates
-work, boundaries, and verifies results. Pi keeps the harness small and lets you make it yours. Pinata follows that lead.
+Pinata is a fast, lightly opinionated subagent layer for Pi. Ask it to investigate code,
+split a change between builders, or review a patch. Agents bring back findings, changes,
+and check results you can inspect. Pi keeps the harness small and lets you make it yours.
+Pinata follows that lead.
 
-**Scout**, **builder**, and **reviewer** come in the box. These are lightweight definitions meant for common development tasks. _Planner_ and _researcher_ are
+**Scout**, **builder**, and **reviewer** come in the box. Each is a small agent definition
+for a common development task. _Planner_ and _researcher_ are
 [examples to steal and make your own](docs/how-to/agents.md).
 
 [![piñata: small core, parallel agents](media/pinata-hero-v2.png)](media/pinata-demo.mp4)
 
 [Watch the demo](media/pinata-demo.mp4) · Ten agents build and review a CLI.
 
-[Why use Pinata?](docs/explanation/why-pinata.md) Follow a real change from task to
-reviewed patch, inspect the evidence, and choose a first example.
+[Why use Pinata?](docs/explanation/why-pinata.md) See where delegation helps and choose
+a first task.
 
 [Build Relay with your models](docs/tutorials/relay.md): start from the demo's module
 stubs, run ten agents, inspect their reviews, and verify the assembled application.
 
 ## Install
 
-In Pi's terminal (_manual_):
+Run in your terminal (_manual_):
 
 ```sh
 pi install npm:pi-pinata
@@ -62,6 +65,41 @@ Pi picks the agents, writes their briefs, and decides who waits for whom. Start 
 | `scout`    | Finds where the behavior lives.                              |
 | `builder`  | Makes owned changes in an isolated worktree and runs checks. |
 | `reviewer` | Reviews a specific change and challenges its assumptions.    |
+
+## Turn a goal into a job
+
+A job is a plan Pinata can execute: tasks, agents, dependencies, owned files, and
+checks. You can have a capable coordinating model read Pinata's
+[task format](docs/reference/tools.md#task) and [job format](docs/how-to/headless.md#write-a-job-file),
+inspect your repository, and write that plan for you.
+
+Use a stronger model in Pi to break down a difficult change, choose the agents and
+their models, and decide what can run in parallel. Give smaller, well-defined tasks
+to models suited to that work. The coordinator can use the built-in agents or
+create [custom definitions](docs/how-to/agents.md) where specific instructions help.
+
+For example, ask Pi:
+
+```text
+Plan and implement CSV export for this CLI using Pinata. Read Pinata's task and
+job formats and inspect the existing code and tests. Choose the agents, their
+models, file ownership, dependencies, and checks. Save the plan as job.json and
+explain the task graph. Use my configured models and limits.
+
+Run the job, inspect the results, and repair failed builders using their check
+or review findings. Require independent review, then integrate locally and run
+the checks for the combined change. Do not commit or push.
+```
+
+The saved job makes the plan easy to inspect, edit, and run from a terminal or CI
+with `pinata run job.json`. Pi can also coordinate tasks interactively with
+`pinata_run`. Pinata schedules the dependencies and records the results; the
+coordinator handles follow-up decisions, repairs, and integration. Headless runs
+leave builder changes in their worktrees until that integration step.
+
+Use jobs for features split across modules, migrations across packages, parallel
+code reviews, or investigations that feed a plan. See [job examples and use cases](examples/jobs.md)
+or [build Relay](docs/tutorials/relay.md) for a complete ten-agent job.
 
 ## Custom agents
 
@@ -164,23 +202,23 @@ See the [configuration reference](docs/reference/config.md) for all settings and
 
 ## What it's like to use
 
-- **Fast.** Agents share your Pi process by default. Startup, memory, and dispatch have
+- Agents share your Pi process by default. Startup, memory, and dispatch have
   [performance budgets](docs/maintainers/performance.md), including tests at 64 active agents.
-- **Visible.** The widget above Pi's editor shows each agent's status, elapsed time,
+- The widget above Pi's editor shows each agent's status, elapsed time,
   and activity, plus total tokens and cost. Open `/pinata view` to read conversations
   and steer agents. Shift+↑/↓ moves between conversations; Esc returns to Pi.
   Use `/pinata view --external` to enable live viewing and steering from another terminal.
   See [watching agents](docs/tutorials/watching-agents.md).
-- **Verifiable.** Writers work in isolated Git worktrees. Pinata checks their actual
+- Writers work in isolated Git worktrees. Pinata checks their actual
   changes against the task's owned paths and runs the task's checks. The handoff and
   integration helpers require an independent reviewer to approve the exact change.
   Integration applies it to your checkout without staging or committing; checks in
   your checkout are recorded separately. See [build and review](docs/tutorials/build-and-review.md).
-- **Recoverable.** Runs, results, and logs are saved on disk. Agents launched with
+- Runs, results, and logs are saved on disk. Agents launched with
   `survive: true` keep running when Pi exits; the next Pi session in the repository
   resumes the run. Use `/pinata rerun <run>` to restart tasks lost in a crash.
   See [recovery](docs/how-to/recover.md).
-- **Scriptable.** `pinata run job.json` runs a job without an interactive Pi session.
+- `pinata run job.json` runs a job without an interactive Pi session.
   It supports plain or JSONL output and exit codes for CI. See [headless runs](docs/how-to/headless.md).
 
 ## Keep it small
@@ -190,8 +228,8 @@ agent definitions, prompts, and recipes. Each run saves the definitions it used,
 can inspect its instructions alongside its results. Tool extensions load only
 for agents that need them.
 
-The benchmark suite tracks
-startup, memory, context size, and dispatch costs as the project grows.
+The benchmark suite tracks startup, memory, context size, and dispatch costs as the
+project grows.
 
 ## Documentation
 
@@ -199,6 +237,7 @@ startup, memory, context size, and dispatch costs as the project grows.
 | ------------------------------------------ | ------------------------------------------------------------------------------------ |
 | Run my first agents                        | [First run](docs/tutorials/first-run.md)                                             |
 | Create or customize an agent               | [Creating agents](docs/how-to/agents.md)                                             |
+| Turn a goal into a job                     | [Jobs and use cases](examples/jobs.md)                                               |
 | Set models, limits, or repository defaults | [Configuration](docs/reference/config.md)                                            |
 | Build, review and apply a change           | [Build and review](docs/tutorials/build-and-review.md)                               |
 | Watch agents work                          | [Watching agents](docs/tutorials/watching-agents.md)                                 |

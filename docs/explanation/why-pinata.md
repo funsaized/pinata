@@ -34,9 +34,9 @@ what checks, reviews, and destination verification each establish.
 | Split a larger change        | [Parallel builders](../../examples/jobs/parallel-builders-job.json) with separate file ownership and checks for the combined result. |
 | Follow work or recover a run | [The run viewer](../tutorials/watching-agents.md) and [recovery commands](../how-to/recover.md).                                     |
 
-The [trust guide](trust.md) explains permissions and boundaries. Worktrees and file
-ownership checks do not make an agent an OS sandbox. The coordinator decides when
-to apply changes, and a reviewer can still miss a defect.
+The [trust guide](trust.md) explains permissions and boundaries. Agents run with
+your operating-system permissions, within Pinata's tool and file-ownership rules.
+The coordinator decides when to apply changes, and a reviewer can still miss a defect.
 
 ## Check it on your project
 

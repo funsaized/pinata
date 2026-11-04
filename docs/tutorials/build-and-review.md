@@ -1,13 +1,13 @@
 # Build and review
 
-In this tutorial a builder changes a file in its own worktree, an independent reviewer
-approves the exact change, and pinata applies it to your checkout. Then you roll it back.
+Fix a bug, get an independent review, and apply the patch to your checkout. The
+builder works in its own Git worktree, so you can inspect the result before applying
+it. At the end, you will try rolling the change back.
 
-You need Pi with Pinata installed, Git, working model credentials, and a repository
-with a known bug and an existing test command. The coordinator, builder, and reviewer
-use real models and spend tokens; configure [role models and limits](../reference/config.md)
-before starting. The duration bug below is illustrative: substitute your actual
-paths, bug, and checks. For a ready-made starter, follow [Relay](relay.md).
+You need Pi with Pinata installed, Git, model credentials, and a repository with a
+known bug and a test command. Set [models and limits](../reference/config.md) before
+starting; the run spends tokens. Replace the duration bug below with your own paths,
+bug, and checks, or use [Relay](relay.md) for a ready-made starter.
 
 ## 1. Ask for the change
 
@@ -17,10 +17,9 @@ and its existing test file. Add a regression test and run npm test. Have an
 independent reviewer check the patch. Stop after review; do not integrate yet.
 ```
 
-`/pinata-fix` prepares a builder task and a reviewer task (`reviewOf` the builder). Pi
-records the write scope you authorized in `approval`. Builders write files and run
-commands with your permissions. A separate confirmation is needed only when the
-required work goes beyond your existing authorization.
+Pi prepares a builder and a reviewer, and records the write scope you authorized in
+`approval`. The builder writes files and runs commands with your permissions. Pi
+only needs another confirmation if the work goes beyond that authorization.
 
 The builder's task names its `ownership` (`src/duration.mjs` and its test file)
 and its `checks` (`npm test`). The engine rejects changes outside those paths.
@@ -29,51 +28,51 @@ the run started.
 
 ## 2. Verification and review
 
-When the builder finishes, pinata captures exactly what changed, compares it with what the
-builder reported, fails the task for changes outside ownership, and runs the checks
-in the worktree. A failed check fails the builder, whatever it claimed.
+When the builder finishes, Pinata captures the patch, compares it with the builder's
+report, checks ownership, and runs the tests in the worktree. Changes outside the
+owned paths or a failed check fail the task.
 
-The reviewer then reads the diff of that exact change. An approval is bound to the change's
-fingerprint: if the change moves, the approval no longer counts.
+The reviewer reads that exact patch and its check results. Approval is tied to the
+patch's fingerprint, so a changed patch needs a new review.
 
-If the reviewer asks for changes, the task settles as `rejected`. Ask Pi to repair it:
+If the reviewer asks for changes, the review task finishes as `rejected`. Ask Pi to repair it:
 
 ```text
 Repair the builder with the reviewer's findings.
 ```
 
-`pinata_repair` runs the builder again in the same worktree with the feedback, and the
-reviewer reviews the new change.
+Pi uses `pinata_repair` to continue the builder in the same worktree, then reruns
+its checks and review. Keep the original run ID when repairing and integrating:
+the builder's approval must be recorded in that run. See [recovery](../how-to/recover.md).
 
 ## 3. Integrate
 
-With an approving review:
+Once the reviewer approves, ask Pi:
 
 ```text
 Apply the reviewed changes locally and run npm test in this checkout.
 Do not stage, commit, or push.
 ```
 
-The orchestrator decides when and how to integrate; neither subagents nor the engine
-integrate automatically. `pinata_changes` returns the reviewed artifacts, their actual
-base commits and trees, check logs, and patches without changing your checkout.
+Pi coordinates integration. It can inspect
+the reviewed patch and check logs with `pinata_changes`, then use `pinata_integrate`
+to apply the patch and run the configured `integratedChecks`. Nothing is staged or committed.
+Pi remains responsible for any later commit within your authorization.
 
-For an exact application, the orchestrator can call `pinata_integrate`. It applies the
-approved changes without staging or committing and runs the job's `integratedChecks`.
-Unrelated commits may advance HEAD while a builder works. Each affected file must still
-match its recorded before-state; overlapping changes are refused before any file is written.
+You can make unrelated commits while the builder works. The files being changed must
+still match their recorded starting contents; Pinata refuses overlapping changes before
+writing any files. If they conflict, Pi must reconcile the changes and arrange fresh
+checks and independent review.
 
-When reconciliation is needed, the orchestrator uses the handoff and its normal repository
-tools to resolve it, then arranges fresh checks and independent review of the resulting
-change. `pinata_verify` runs destination checks without applying anything. It records the
-actual HEAD and content tree, and reports whether the approved output is present exactly
-or differs. Passing checks alone does not prove that the feature was integrated correctly.
-
-Builder checks and reviews always describe their original base and result. They do not
-become reviews of a new combined tree. No configured destination checks means
-`applied_unverified` for integration or `not_run` for verification, never a passing check.
-Later checkout changes make a previous verification historical. Committing remains the
-orchestrator's responsibility within your authorization.
+Check the integration result: `verified` means the approved patch is present exactly
+and the destination checks passed;
+`applied_unverified` means the patch was applied with no destination checks configured.
+`pinata_verify` can run those checks separately without applying a patch. It records
+the checkout state and whether the approved changes are present exactly. Assess
+the combined change with both destination checks and independent review.
+Later edits make earlier verification historical. See
+[integration evidence](../reference/tools.md#integration-evidence) for the recorded
+bases, trees, logs, and verification statuses, including `not_run` when checks are omitted.
 
 ## 4. Roll back
 
@@ -82,7 +81,7 @@ Roll back the latest pinata integration.
 ```
 
 `pinata_rollback` restores the files from the integration journal, as long as you have not
-edited them, staged changes, or advanced HEAD since application. Otherwise the orchestrator
-must reconcile the journal explicitly.
+edited them, staged changes, or advanced HEAD since application. Otherwise Pi must
+reconcile the recorded changes with your checkout explicitly.
 
 Next: [watching agents](watching-agents.md).

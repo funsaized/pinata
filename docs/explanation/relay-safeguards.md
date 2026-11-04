@@ -1,8 +1,8 @@
 # How Relay checks the work
 
-Relay separates three questions: does each component pass its checks, does a
-reviewer approve the change, and does the assembled application work? Each step
-checks something different.
+Relay checks each builder's work, gets an independent review, and then tests the
+assembled CLI against a fixed expected report. Together, these steps cover the
+individual modules and the program they form.
 
 ## Builder checks
 
@@ -10,9 +10,9 @@ Each module builder owns its source and test files. When it finishes, Pinata run
 the assigned test command in the builder's worktree. For the parser, that command
 is `node --test test/parse.test.mjs`.
 
-A failed check fails the task and blocks dependent work. The builder's claim that
-tests passed cannot override the result. Read the check log, then ask Pi to repair
-the task using the failure details.
+A failed check fails the task and blocks dependent work. The engine's result
+determines the outcome. Read the check log, then ask Pi to repair the task using
+the failure details.
 
 ## Independent review
 
@@ -26,8 +26,8 @@ repairs the patch, the reviewer must check the new version before it can be appl
 ## Destination checks
 
 The CLI builder waits for all three module reviews, then gets its own review.
-After the coordinator applies the approved changes, the job runs the full test
-suite and `verify.mjs` in the destination checkout.
+When the coordinator applies the approved changes with `pinata_integrate`, Pinata
+runs the job's destination checks: the full test suite and `verify.mjs`.
 
 The verifier compares CLI output with `expected-report.md`. Both files stay outside
 builder ownership, so builders cannot change the expected answer to match a bug.

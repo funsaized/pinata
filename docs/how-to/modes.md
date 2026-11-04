@@ -1,7 +1,7 @@
 # Choose a mode
 
-pinata has two footprint modes. Choose with `mode` in [configuration](../reference/config.md)
-(per user, per repository or per run) or for the rest of the session:
+Keep the default `lean` mode for everyday work. Choose `observe` when you want a
+live external viewer and more detail saved for later inspection:
 
 ```text
 /pinata mode observe
@@ -15,5 +15,7 @@ pinata has two footprint modes. Choose with `mode` in [configuration](../referen
 | Telemetry      | tokens and cost                      | plus memory, event-loop use and lag, every 2 s |
 | Widget refresh | at most 4/s                          | at most 10/s                                   |
 
-Use `observe` when you want to follow a run from another terminal or study it afterwards;
-use `lean` otherwise.
+The command changes the mode for the rest of the Pi session. To save a default,
+set `mode` in your personal or repository [configuration](../reference/config.md),
+or use a run's `config` for a single job. See [watching agents](../tutorials/watching-agents.md)
+to open the viewer.

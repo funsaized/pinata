@@ -1,12 +1,13 @@
-# Use pinata inside Herdr
+# Use Pinata inside Herdr
 
-When Pi runs inside a [Herdr](https://herdr.dev) pane, pinata can show agents in their own
-Herdr workspaces. Nothing changes outside Herdr.
+Run Pi inside [Herdr](https://herdr.dev) to watch a job in a separate workspace or
+give each agent its own interactive Pi terminal. These pane features only apply
+inside Herdr.
 
 ## Watch a run in a pane
 
-Start the run's viewer with `/pinata view --external` (or run in `observe` mode, which starts it with
-the run). Inside Herdr, pinata opens the viewer in a new workspace labelled
+Start the viewer with `/pinata view --external`, or choose `observe` mode to open
+it when the run starts. Pinata opens a new workspace labelled
 `pinata-<run>-view`, without taking focus. The workspace closes when the run settles.
 
 Outside Herdr, `/pinata view --external` prints the command to run in another terminal:
@@ -26,8 +27,10 @@ Choose the `herdr-pi` backend for a task (`"backend": "herdr-pi"`) or for every 
 - when the agent settles, pinata verifies its result and closes the workspace;
 - a finished run shows a Herdr notification.
 
-herdr-pi agents keep running when Pi exits; the next Pi in the same repository resumes the
-run.
+Herdr agents keep running when Pi exits; the next Pi in the same repository resumes
+the run. To continue the whole task graph while Pi is closed, also request
+`background: true` and `survive: true`. See
+[keeping a run going](backends.md#keep-a-run-going-after-pi-exits).
 
 ## Clean up
 
@@ -39,5 +42,5 @@ and lists every workspace it keeps with the reason. It only considers workspaces
 
 Pane commands are quoted for the pane's shell, as Herdr reports it (`pane process-info`):
 POSIX shells, fish, PowerShell and cmd. A pane with another shell is refused with a clear
-error. Environment for agents is passed with `herdr workspace create --env`, not through the
-shell.
+error. Pinata passes the agents' environment directly through
+`herdr workspace create --env`.
