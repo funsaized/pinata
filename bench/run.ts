@@ -13,7 +13,9 @@ import { arch, cpus, platform, release, totalmem } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import type { Scenario, ScenarioResult } from "./lib.ts";
+import { piCommand } from "../test/engine/pi-smoke.ts";
 import { fanout } from "./scenarios/fanout.ts";
 import { chain } from "./scenarios/chain.ts";
 import { stress } from "./scenarios/stress.ts";
@@ -74,6 +76,10 @@ function parse(argv: string[]): Args {
     throw new Error(`Unknown benchmark host: ${args.host}; use node, pi or tui`);
   if (!Number.isFinite(args.tokenDelayMs) || args.tokenDelayMs < 0)
     throw new Error("--token-delay must be a finite, nonnegative number");
+  if (!["in-process", "process", "herdr-pi"].includes(process.env.BENCH_BACKEND ?? "in-process"))
+    throw new Error(`Unknown benchmark backend: ${process.env.BENCH_BACKEND}`);
+  if (!["lean", "observe"].includes(process.env.BENCH_MODE ?? "lean"))
+    throw new Error(`Unknown benchmark mode: ${process.env.BENCH_MODE}`);
   const known = new Set(scenarios().map((s) => s.name));
   for (const name of args.scenarios)
     if (!known.has(name)) throw new Error(`Unknown benchmark scenario: ${name}`);
@@ -81,8 +87,22 @@ function parse(argv: string[]): Args {
 }
 
 function version(argv: string[]) {
-  const r = spawnSync(argv[0], argv.slice(1), { encoding: "utf8" });
+  const r = spawnSync(argv[0], argv.slice(1), { encoding: "utf8", timeout: 10_000 });
   return r.status === 0 ? r.stdout.trim().split("\n")[0] : "unavailable";
+}
+
+async function source() {
+  const git = (...args: string[]) => {
+    const r = spawnSync("git", ["-C", ROOT, ...args], { encoding: "utf8", timeout: 10_000 });
+    return r.status === 0 ? r.stdout.trim() : null;
+  };
+  const status = git("status", "--porcelain", "--untracked-files=normal");
+  const lock = await readFile(join(ROOT, "package-lock.json")).catch(() => null);
+  return {
+    commit: git("rev-parse", "--verify", "HEAD"),
+    dirty: status === null ? null : status.length > 0,
+    lockfileSha256: lock ? createHash("sha256").update(lock).digest("hex") : null,
+  };
 }
 
 async function runScenario(scenario: Scenario, args: Args): Promise<ScenarioResult> {
@@ -178,13 +198,18 @@ export async function main(argv = process.argv.slice(2), run = runScenario): Pro
     ? JSON.parse(await readFile(join(ROOT, "bench", "budgets.json"), "utf8")).budgets
     : [];
   const results: ScenarioResult[] = [];
-  // Preserve failed attempts as results so reports survive execution errors.
+  const attempts: Record<string, ScenarioResult[]> = {};
+  // Capture provenance before the workload or report output can change the checkout.
+  const startedAt = new Date().toISOString();
+  const revision = await source();
+  // Preserve every attempt, including over-budget measurements replaced by a passing retry.
   async function attempt(scenario: Scenario): Promise<ScenarioResult> {
+    let result: ScenarioResult;
     try {
-      return await run(scenario, args);
+      result = await run(scenario, args);
     } catch (error) {
       console.error(`${scenario.name}: ${(error as Error).stack}`);
-      return {
+      result = {
         scenario: scenario.name,
         target: "engine",
         provider: args.provider,
@@ -203,27 +228,42 @@ export async function main(argv = process.argv.slice(2), run = runScenario): Pro
         notes: [`error: ${(error as Error).message}`],
       };
     }
+    (attempts[scenario.name] ??= []).push(structuredClone(result));
+    return result;
   }
   for (const scenario of selected) {
     const result = await attempt(scenario);
     results.push(result);
     console.log(JSON.stringify(result));
   }
-  const date = new Date().toISOString().slice(0, 10);
+  const date = startedAt.slice(0, 10);
   const report = {
+    schemaVersion: 1,
     meta: {
       date,
+      startedAt,
+      source: revision,
+      scope: "synthetic orchestration; not live-model quality, real-job duration or speedup",
       os: platform(),
       release: release(),
       arch: arch(),
       cpus: cpus().length,
       memoryGB: Math.round(totalmem() / 1073741824),
       node: process.version,
-      pi: version(["pi", "--version"]),
+      pi: version([...piCommand(), "--version"]),
       provider: args.provider,
+      host: args.host,
+      backend: process.env.BENCH_BACKEND ?? "in-process",
+      mode: process.env.BENCH_MODE === "observe" ? "observe" : "lean",
       tokenDelayMs: args.tokenDelayMs,
+      runnerGcExposed: typeof globalThis.gc === "function",
+      scenarios: selected.map((s) => s.name),
+      ci: args.ci,
+      budgetFactor: 2,
+      budgets,
     },
     results,
+    attempts,
     validation: null as { passed: boolean; failures: string[] } | null,
   };
   const out = args.out ?? join(ROOT, "bench", "results", `${platform()}-${date}.json`);
@@ -231,8 +271,9 @@ export async function main(argv = process.argv.slice(2), run = runScenario): Pro
   await writeFile(out, JSON.stringify(report, null, 2) + "\n");
   console.log(`wrote ${out}`);
   if (args.ci) {
-    // Shared runners are noisy: a scenario over budget runs up to twice more, and the best
-    // attempt counts. Every attempt is noted in the report.
+    // Shared runners are noisy: retry complete over-budget scenarios up to twice. Use the
+    // first passing retry, or retain the initial result if all complete attempts are over.
+    // An execution failure stops retries and fails the run. All measurements remain above.
     for (let i = 0; i < results.length; i++) {
       const result = results[i];
       const scenario = selected.find((s) => s.name === result.scenario)!;
