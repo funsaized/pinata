@@ -60,7 +60,11 @@ if (import.meta.main) {
     const cwd = await setup(args[0]);
     console.log(`Created Relay starter: ${cwd}`);
     console.log(
-      "Open that directory, choose your models and limits in job.json, then run pinata run job.json --watch. The job uses your configured model credentials and spends tokens.",
+      "Open that directory and choose your models and limits in job.json. Setup made no model calls; running the job spends tokens.",
+    );
+    console.log(`Tutorial: ${resolve(HERE, "../../docs/tutorials/relay.md")}`);
+    console.log(
+      "The module stubs are unfinished, so node verify.mjs will fail until you integrate the implementation.",
     );
   } catch (error) {
     console.error(`Relay setup: ${error.message}`);

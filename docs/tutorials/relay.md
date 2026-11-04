@@ -4,31 +4,75 @@ Build the incident-report CLI from Pinata's demo using your own models. Ten agen
 investigate the requirements, build separate modules, and review the changes. You
 then apply the patches and check the finished program against an expected report.
 
-You need Pi, Pinata, Node 22.19+, Git, and working model credentials. The agents spend
-tokens; the example itself needs no package installation.
+You need Pi 1.1.0 or later, Node 22.19 or later, Git, and models configured
+and authenticated in Pi. The agents spend tokens, so check your provider's pricing
+and the job limits before running. The exercise itself has no dependencies to
+install.
 
 ## 1. Create your starter repository
 
-From the Pinata repository root:
+Install Pinata if you have not already, then find its installed path:
 
 ```sh
-node examples/relay/setup.mjs ../relay-demo
-cd ../relay-demo
+pi install npm:pi-pinata
+pi list
 ```
+
+Copy the absolute path shown for `pi-pinata` into a shell variable. For example,
+in a POSIX shell, replace the path below with your own:
+
+```sh
+PINATA_PACKAGE="/absolute/path/to/pi-pinata"
+```
+
+In PowerShell, use `$PINATA_PACKAGE="C:/absolute/path/to/pi-pinata"` instead.
+Now create a new directory and check that the installed command can find its agents:
+
+```sh
+node "$PINATA_PACKAGE/examples/relay/setup.mjs" ./relay-demo
+cd relay-demo
+node "$PINATA_PACKAGE/bin/pinata.mjs" agents list
+```
+
+The destination must not already exist. With a source checkout, you can set
+`PINATA_PACKAGE` to the checkout's absolute path instead and use the same commands.
 
 Setup creates an independent Git repository with module stubs, requirements, sample
 data, `expected-report.md`, `verify.mjs`, and a ready-to-edit `job.json`. It makes an
-initial commit.
+initial commit without calling a model. The starter contains stubs: `node verify.mjs`
+is expected to fail until the implementation is integrated, and an empty test
+run is not evidence that the exercise is complete.
 
 ## 2. Choose your models and limits
 
-Edit `job.json`. Replace the `provider` and `id` placeholders in `config.models.scout`,
-`.builder`, and `.reviewer` with available models you have configured in Pi. Using
-the same model for all three is a simple first run.
+List the models available to Pi in your terminal:
 
-Review `config.limits`: the template allows three concurrent agents, a $1 reported
-worker-cost limit, five minutes per task, and twenty minutes per job. Adjust these
-starting limits to suit your models and provider.
+```sh
+pi --offline --list-models
+```
+
+Edit `job.json`. Replace the `provider` and `id` placeholders in `config.models.scout`,
+`.builder`, and `.reviewer` with exact values for models available and authenticated
+in your Pi setup. Copy the `provider` and `model` columns into the respective
+`provider` and `id` fields. To check a choice without refreshing credentials, run
+`pi auth check --provider <provider> --model <model> --no-refresh` with your
+values in place of the brackets. If the result is `not_ready`, finish
+authentication before running the job.
+
+All three entries are placeholders, so each must be replaced before running.
+Using the same model for all three is a simple first run; choose one suited to
+coding and review. Model availability, quality, and price depend on your provider.
+
+Review `config.limits`: the template allows three concurrent agents, a $2 reported
+worker-cost limit, five minutes per task, and twenty minutes per job. It also sets
+35 turns and 100 tool calls per agent, with up to two repairs per task. Adjust
+these starting limits to suit your models and provider. The role fallback lists
+are empty; configure alternatives if you need them.
+
+The cost limit cancels the run after recorded worker usage exceeds it. It is not
+a price quote or a guaranteed spending cap: parallel requests already in flight
+can overshoot it, and coordinator tokens are not counted. Check your provider's
+pricing and usage as well as the run totals.
 
 The `approval` field records the work you authorize. Pinata requires and saves this
 note for jobs with builders. Each builder's `ownership` list sets which files it can
@@ -40,16 +84,23 @@ See [configuration](../reference/config.md) for role models and fallback setting
 ## 3. Run and watch
 
 ```sh
-pinata run job.json --watch
+node "$PINATA_PACKAGE/bin/pinata.mjs" run job.json --watch
 ```
+
+These commands invoke the CLI from Pi's installed package; no separate global
+installation is needed. If `pinata` is already on your shell's PATH, you can use
+it in place of `node "$PINATA_PACKAGE/bin/pinata.mjs"`.
 
 The graph has two scouts, three module builders with reviewers, then a CLI builder
 and reviewer. The CLI waits for the module reviews. The command prints progress and
 a command for viewing the run from another terminal. Save the run ID from its output.
+In that terminal, set `PINATA_PACKAGE` again and change into the same `relay-demo`
+repository (for example, `cd relay-demo` from its parent directory) before running
+these commands:
 
 ```sh
-pinata view <run-id>
-pinata logs <run-id>
+node "$PINATA_PACKAGE/bin/pinata.mjs" view <run-id>
+node "$PINATA_PACKAGE/bin/pinata.mjs" logs <run-id>
 ```
 
 When the command succeeds, the tasks, reviews, and configured task checks have passed.
@@ -70,7 +121,8 @@ Stop before integration.
 
 Check that each builder has both passing checks and a review approval tied to its
 current artifact fingerprint. You can inspect individual tasks with
-`pinata logs <run-id> --task build-parse` and `pinata logs <run-id> --task review-parse`.
+`node "$PINATA_PACKAGE/bin/pinata.mjs" logs <run-id> --task build-parse` and
+`node "$PINATA_PACKAGE/bin/pinata.mjs" logs <run-id> --task review-parse`.
 
 If a check or review failed, inspect its evidence before asking Pi for a repair:
 
