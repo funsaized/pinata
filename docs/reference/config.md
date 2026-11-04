@@ -14,7 +14,10 @@ Pinata applies settings in this order, with later values taking priority:
 
 `PI_CODING_AGENT_DIR`, when set, replaces `~/.pi/agent`. The `models`, `fallbacks`,
 `limits`, and `toolProviders` objects merge by entry. For example, setting
-`limits.concurrency` keeps the other limits. Other keys are replaced.
+`limits.concurrency` keeps the other limits. Each named model or tool provider is
+replaced as a whole, so provide its complete record; fallback arrays replace the
+array for that agent. Other keys are replaced, including the entire `passEnv` list.
+For example, a run-level `passEnv` must repeat any project-level names it still needs.
 
 For example, put this in `.pi/pinata.json` to limit each run in this repository
 to four agents at once and skip dependency setup for a project that needs none:
@@ -55,9 +58,12 @@ A task uses the first model defined in this list:
 
 If that model is unknown or has no configured authentication, Pinata tries
 `fallbacks[agent]` in order, or the definition's fallbacks when none are configured.
+Set `fallbacks[agent]` to `[]` to disable that definition's fallbacks. Selection
+checks the model registry and configured authentication before starting the agent;
+a task failure or provider error after startup does not trigger model fallback.
 `thinking` accepts `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`.
 Both `models` and `fallbacks` accept any installed agent name. See
-[creating agents](../how-to/agents.md) for definition defaults and tool providers.
+[agent definitions](agents.md) for definition defaults and tool providers.
 
 ## Limits
 
@@ -144,7 +150,8 @@ Setup gets the agents' environment plus `PINATA_ROOT` (your checkout). See
 Agents' checks and setup inherit an allowlist (path, home, user, shell, locale, temp
 directories and, on Windows, the system variables), plus `passEnv` names and
 `PINATA_AGENT=1`. `passEnv` entries match `^[A-Z][A-Z0-9_]*$` and may not start with
-`PINATA_` or `HERDR_`.
+`PINATA_`, `HERDR_`, or `PI_`. `NODE_OPTIONS`, `LD_PRELOAD`, and
+`DYLD_INSERT_LIBRARIES` are also rejected.
 
 ## Ignored keys
 

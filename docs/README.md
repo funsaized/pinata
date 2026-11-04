@@ -4,6 +4,10 @@ Start with [two scouts in your own repository](tutorials/first-run.md), or
 [build Relay](tutorials/relay.md) to try a complete coding job. Both show what to
 ask, where to watch the agents, and how to inspect their results.
 
+After a tutorial, [compose tasks into a run](how-to/compose-tasks.md) to connect
+agent work, then [customize Pinata](how-to/customize.md) to reuse instructions or
+add tools.
+
 Use the how-to guides for a specific task and the reference pages for exact fields
 and commands. The explanations cover how Pinata works and what its checks establish.
 
@@ -19,7 +23,9 @@ and commands. The explanations cover how Pinata works and what its checks establ
 
 ## How-to guides
 
+- [Compose tasks into a run](how-to/compose-tasks.md): connect assignments, checks, and reviews.
 - [Create agents](how-to/agents.md): save instructions you want to reuse.
+- [Customize Pinata](how-to/customize.md): choose agent definitions, settings, or custom tools.
 - [Design a job](../examples/jobs.md#let-a-coordinator-design-the-job): have a coordinator
   turn your goal into agents, tasks, dependencies, and checks.
 - [Choose a mode](how-to/modes.md): lean or observe.
@@ -34,6 +40,7 @@ and commands. The explanations cover how Pinata works and what its checks establ
 ## Reference
 
 - [Relay example](reference/relay.md): files, setup command, task graph, and expected output.
+- [Agent definitions](reference/agents.md): fields, model selection, tools, and saved runs.
 - [Tools](reference/tools.md): the model-facing tools, tasks and results.
 - [Commands](reference/commands.md): `/pinata …` in Pi and the `pinata` command.
 - [Configuration](reference/config.md): models, limits, and defaults for your repository.
@@ -46,6 +53,7 @@ and commands. The explanations cover how Pinata works and what its checks establ
   the tests and measurements establish.
 - [How Relay checks the work](explanation/relay-safeguards.md): failed checks,
   independent review, and destination verification.
+- [Extensibility](explanation/extensibility.md): how definitions, Pi resources, and tool providers fit together.
 - [Architecture](explanation/architecture.md)
 - [Trust and safety](explanation/trust.md)
 
