@@ -74,12 +74,39 @@ export interface CompactTask {
   engineChecks?: { passed: number; failed: number; notRun: number; noChecksReason?: string };
   checkoutChanged?: boolean;
   truncated?: boolean;
+  recovery?: ReviewRecovery;
   artifact?: {
     scope: "builder-artifact";
     baseCommit: string;
     baseTree: string;
     resultTree: string;
     fingerprint: string;
+  };
+}
+
+export interface ReviewRecovery {
+  tool: "pinata_repair";
+  arguments: { run: string; task: string; feedback: string };
+  instruction: string;
+  afterSuccess: Array<{ tool: "pinata_changes" | "pinata_integrate"; arguments: { run: string } }>;
+}
+
+export function reviewRecovery(id: string, view: RunView): ReviewRecovery | undefined {
+  const task = view.tasks.find((task) => task.id === id);
+  if (view.agents[id]?.status !== "rejected" || !task?.reviewOf) return;
+  return {
+    tool: "pinata_repair",
+    arguments: {
+      run: view.run,
+      task: task.reviewOf,
+      feedback: `Address the change requests from ${id}: ${view.agents[id].summary?.slice(0, 1600) ?? "Inspect the full review findings."}`,
+    },
+    instruction:
+      "Read the full review findings and include concrete defects in feedback. Repair the target builder in this original run; its checks and reviewers run again and blocked dependents can continue. Keep this run ID through handoff and integration; do not substitute a standalone review or the latest run. After every required task succeeds, inspect changes and integrate within the user's authorized scope.",
+    afterSuccess: [
+      { tool: "pinata_changes", arguments: { run: view.run } },
+      { tool: "pinata_integrate", arguments: { run: view.run } },
+    ],
   };
 }
 
@@ -113,6 +140,8 @@ export function compactTask(id: string, view: RunView, settled: Settled | undefi
     summary: (a.summary ?? "").slice(0, 1600),
   };
   if ((a.summary?.length ?? 0) > 1600) out.truncated = true;
+  const recovery = reviewRecovery(id, view);
+  if (recovery) out.recovery = recovery;
   if (r?.data) out.data = r.data;
   if (r?.sources) out.sources = r.sources;
   if (a.reason && a.reason !== a.summary) out.reason = a.reason;
