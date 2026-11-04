@@ -40,6 +40,15 @@ For work that should continue when you close Pi, ask for a background run with
 
 ## Repair a failed task
 
+For a rejected builder review, keep the original run ID throughout recovery.
+The review result's `recovery` field identifies the target builder and supplies a
+`pinata_repair` call. Read the full findings and include them in the feedback.
+Repair the builder, not the reviewer. Its checks and independent review run again;
+previously blocked downstream tasks can then finish. Once every required task
+succeeds, inspect with `pinata_changes` and integrate with `pinata_integrate`, both
+using that original run ID. A separate standalone review cannot replace the
+original run's approval. Do not switch to the latest run during this sequence.
+
 Read the failure or review findings first. For a builder, ask Pi to repair the
 task using that feedback. `pinata_repair` continues in the same worktree and runs
 the review again, up to `limits.repairs`. This also works for a finished run from
