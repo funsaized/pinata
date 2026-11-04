@@ -21,7 +21,7 @@ initial commit.
 
 Edit `job.json`. Replace the `provider` and `id` placeholders in `config.models.scout`,
 `.builder`, and `.reviewer` with available models you have configured in Pi. Using
-the same model for all three is a simple first run. 
+the same model for all three is a simple first run.
 
 Review `config.limits`: the template allows three concurrent agents, a $1 reported
 worker-cost limit, five minutes per task, and twenty minutes per job. These are
@@ -31,7 +31,7 @@ The `approval` field is a note recording what you authorize by running this job.
 Pinata requires a nonempty note for jobs with builders and saves it with the run.
 It does not turn that text into permissions or send it to the builders as an
 instruction. Each builder's `ownership` list sets which files it can edit: its
-module and tests. 
+module and tests.
 
 See [configuration](../reference/config.md) for role models and fallback settings.
 
@@ -50,9 +50,16 @@ pinata view <run-id>
 pinata logs <run-id>
 ```
 
-A successful run means the tasks and their configured checks succeeded. The changes
-are still in builder worktrees. Headless execution does not integrate them or run
-the destination checks automatically.
+A successful `pinata run` means all tasks, including reviews and configured task
+checks, succeeded. It does not mean the changes have been applied to your checkout
+or verified there. Builder changes remain in their worktrees until you integrate
+them separately.
+
+This is how the current headless command works. A future iteration may allow for automatic integration in headless mode: The job's
+`integratedChecks` defines the destination checks to run during integration; it
+does not trigger integration or run those checks when the task graph finishes.
+Use Pi's `pinata_integrate` tool in step 5 to apply the approved changes and run
+those checks.
 
 ## 4. Inspect checks and reviews
 
@@ -77,12 +84,11 @@ independent review. Stop before integration.
 ```
 
 Pi can use `pinata_repair`; changes require a fresh review of the new artifact.
-For a model/authentication or cost-limit error, fix that configuration before retrying.
-See [recovery](../how-to/recover.md) for rerunning work that did not finish.
+See [recovery](../how-to/recover.md) for details on rerunning work that did not finish.
 
 ## 5. Integrate and verify
 
-After checking the results, ask Pi:
+After checking and if results are passing, ask Pi:
 
 ```text
 Inspect Relay run <run-id>, its builder checks, patches, and independent reviews.
@@ -121,12 +127,6 @@ Events: 4 | Failures: 1 | Invalid lines: 0
 
 Use the requirements, expected output, checks, and reviews to judge whether your
 run succeeded.
-
-## Start another attempt
-
-Run setup again with a new destination name, then edit that copy's model and limits.
-Keep the earlier run if you want to compare its checks, cost, or review findings.
-Setup refuses existing paths, so it never resets previous work.
 
 For the file and job contracts, see [Relay reference](../reference/relay.md).
 [How Relay checks the work](../explanation/relay-safeguards.md) explains the

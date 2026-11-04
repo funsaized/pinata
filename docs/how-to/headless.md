@@ -52,9 +52,16 @@ on stderr.
 | 2         | the job file is invalid       |
 | 3         | the run was cancelled         |
 
-For writers, record the authorized scope in `approval`. Builders’ changes stay in
-their worktrees even when all tasks pass. Integrate from an interactive Pi; the
-headless command does not apply them or run destination checks automatically.
+For writers, record the authorized scope in `approval`. Exit code 0 means all
+tasks and their configured task checks succeeded; it does not mean the destination
+checkout has been updated or verified. Builders’ changes stay in their worktrees
+until a separate integration step.
+
+The current `pinata run` command has no automatic integration flag or job option.
+Setting `integratedChecks` only defines the checks to use during integration; it
+does not cause them to run when the task graph finishes. From an interactive Pi,
+use `pinata_integrate` to apply approved builder changes and run those checks in
+the destination checkout.
 
 ## Read a run's log
 
