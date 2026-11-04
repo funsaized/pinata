@@ -1,7 +1,7 @@
 // The packed package inside the real Pi: `npm pack`, install the tarball into a temporary
-// prefix, and load it with `pi -e <package dir>` (a temporary package; never `pi install`).
-// Pi must discover the tools, skills and prompts, and a faux-provider job must run through
-// the tools.
+// prefix, and register it with `pi install <package dir>` in an isolated Pi configuration.
+// Pi must discover the tools, skills and prompts, the packaged CLI must work without a
+// global `pinata` command, and a faux-provider job must run through the tools.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -76,6 +76,11 @@ async function main() {
     assert.equal(setup.status, 0, setup.stderr || setup.stdout);
     assert.match(await readFile(join(relay, "src", "parse.mjs"), "utf8"), /Not implemented/);
     assert.equal(JSON.parse(await readFile(join(relay, "job.json"), "utf8")).tasks.length, 10);
+    const unfinished = spawnSync(process.execPath, [join(relay, "verify.mjs")], {
+      encoding: "utf8",
+    });
+    assert.equal(unfinished.status, 1);
+    assert.match(unfinished.stderr, /Not implemented/);
     const repo = join(dir, "repo");
     const agent = join(dir, "agent");
     await mkdir(repo, { recursive: true });
@@ -114,6 +119,39 @@ async function main() {
     };
     delete env.PINATA_AGENT;
     delete env.PINATA_LEGACY;
+    const [piBinary, ...piArgs] = piCommand();
+    const register = spawnSync(piBinary, [...piArgs, "install", installed, "--no-approve"], {
+      cwd: repo,
+      env,
+      encoding: "utf8",
+      timeout: 30_000,
+    });
+    assert.equal(register.status, 0, register.stderr || register.stdout);
+    const listed = spawnSync(piBinary, [...piArgs, "list"], {
+      cwd: repo,
+      env,
+      encoding: "utf8",
+      timeout: 30_000,
+    });
+    assert.equal(listed.status, 0, listed.stderr || listed.stdout);
+    assert(listed.stdout.includes(installed), listed.stdout);
+    const cli = spawnSync(
+      process.execPath,
+      [join(installed, "bin", "pinata.mjs"), "agents", "list"],
+      {
+        cwd: relay,
+        env,
+        encoding: "utf8",
+        timeout: 30_000,
+      },
+    );
+    assert.equal(cli.status, 0, cli.stderr || cli.stdout);
+    assert.deepEqual(
+      JSON.parse(cli.stdout)
+        .map((agent: { name: string }) => agent.name)
+        .sort(),
+      ["builder", "reviewer", "scout"],
+    );
     const pi = rpc(
       [
         ...piCommand(),
@@ -121,13 +159,9 @@ async function main() {
         "rpc",
         "--no-session",
         "--offline",
-        "--no-extensions",
-        "--no-skills",
-        "--no-prompt-templates",
+        "--no-mcp",
         "--no-themes",
         "--no-context-files",
-        "--extension",
-        installed,
         "--extension",
         join(ROOT, "test", "engine", "fixtures", "faux-extension.ts"),
         "--provider",
@@ -155,6 +189,17 @@ async function main() {
         assert(names.includes(name), `missing command ${name}: ${names.join(", ")}`);
       for (const name of ["planner", "research", "researcher", "skill:engmgmt"])
         assert(!names.includes(name), `${name} must be opt-in`);
+      const before = pi.records.length;
+      const inspectId = pi.send({ type: "prompt", message: "/pinata runs" });
+      const inspected = await pi.wait((r) => r.type === "response" && r.id === inspectId);
+      assert.equal(inspected.success, true, JSON.stringify(inspected));
+      const notice = await pi.wait(
+        (r) => r.type === "extension_ui_request" && r.method === "notify",
+        10_000,
+        before,
+      );
+      assert.match(notice.message, /No pinata runs in this repository/);
+      assert(!pi.records.slice(before).some((r) => r.type === "agent_start"));
       await mkdir(join(agent, "pinata", "agents"), { recursive: true });
       for (const name of ["planner", "researcher"])
         await copyFile(

@@ -1,12 +1,22 @@
 # Events
 
-Every run writes its events to `<git common dir>/pinata/<run>/events.jsonl`, one JSON object
-per line (schema version 1). The widget, the detail view, the viewer, `pinata logs` and
-resume all read the same events through one reducer. Lean mode logs the lifecycle events
-and usage; observe mode logs everything.
+Read `events.jsonl` when you need the recorded sequence of a run. It lives at
+`<git common dir>/pinata/<run>/events.jsonl`, with one JSON object per line and
+schema version 1. The widget, viewer, `pinata logs`, and recovery all use these
+events through the same reducer. Lean mode saves lifecycle events and usage;
+observe mode saves every event.
 
-Every event has an envelope: `v` (1), `seq` (increasing per run), `run`, `agent` (absent
-for run-level events) and `at` (epoch milliseconds).
+## Common fields
+
+| Field   | Meaning                                         |
+| ------- | ----------------------------------------------- |
+| `v`     | Schema version, currently `1`.                  |
+| `seq`   | Sequence number, increasing within the run.     |
+| `run`   | Run ID.                                         |
+| `agent` | Task ID; absent for events about the whole run. |
+| `at`    | Timestamp in epoch milliseconds.                |
+
+## Detached event recovery
 
 Detached events may carry `source: {id, record}`: a process identity and its outbox
 record number. The engine uses this position to discard replayed records after a
@@ -15,6 +25,8 @@ the current attempt's usage, turns and tool calls; settlement saves the final
 position. No separate cursor file is trusted for accounting. Logs without
 positions reconcile detached usage at settlement, so aggregate cost enforcement
 for that recovered attempt is delayed until its outcome is available.
+
+## Event types
 
 | `t`                | Fields                                                          | Lean |
 | ------------------ | --------------------------------------------------------------- | ---- |
@@ -41,6 +53,8 @@ for that recovered attempt is delayed until its outcome is available.
 
 `usage` is `{input, output, cacheRead, cacheWrite, totalTokens, cost}`; `cost` is in dollars.
 
+## Related files and definition snapshots
+
 Results are saved separately in `results/<task>.json`, transcripts in
 `transcripts/<task>.jsonl` (Pi messages), and the run's parameters in `run.json`.
 
@@ -52,6 +66,6 @@ The event schema is version 1.
 
 `run.json` uses schema version 2 and stores the same definition table plus
 resolved runtime configuration and extension entry identities. Resume validates snapshot
-digests rather than rediscovering definitions.
+digests and reuses the saved definitions.
 Stored results keep engine checks and artifact fingerprints separate from agent-reported
 checks. Destination verification records remain separate from both.

@@ -1,5 +1,14 @@
 # Recover, rerun, and clean up
 
+Find the run first, then choose the recovery action for its state:
+
+| What happened                       | What to do                                                           |
+| ----------------------------------- | -------------------------------------------------------------------- |
+| Pi closed while work was running    | Reopen Pi in the same repository; rerun tasks that were cancelled.   |
+| A builder check or review failed    | Repair the builder in the original run, then collect a fresh review. |
+| An applied patch needs to be undone | Roll back the integration if the checkout has not changed.           |
+| Work is finished                    | Clean up panes and preserved worktrees.                              |
+
 ## Find out what happened
 
 Ask Pi to show the latest run and explain any failed or unfinished tasks. You can
@@ -40,14 +49,22 @@ For work that should continue when you close Pi, ask for a background run with
 
 ## Repair a failed task
 
-Read the failure or review findings first. For a builder, ask Pi to repair the
-task using that feedback. `pinata_repair` continues in the same worktree and runs
-the review again, up to `limits.repairs`. This also works for a finished run from
-`pinata run` or an earlier Pi session: Pi loads its saved configuration and worktree
+Read the failed check or review findings, then ask Pi to repair the builder with
+that feedback. Keep the original run ID throughout recovery. For a rejected review,
+the result's `recovery` field identifies the builder and supplies a `pinata_repair`
+call targeting that builder.
+
+`pinata_repair` continues in the same worktree, up to `limits.repairs`. The builder's
+checks and independent review run again, and blocked downstream tasks can then
+finish. Once every required task succeeds, inspect with `pinata_changes` and apply
+with `pinata_integrate`, both using the original run ID. Integration requires the
+approval recorded in that run, even if you have started other reviews since.
+
+Repair also works for a finished run from `pinata run` or an earlier Pi session:
+Pi loads its saved configuration and worktree
 on demand. Repair counts and accumulated usage carry across sessions. A run still
 owned by another live Pi, or stopped by cancellation or a run limit, cannot be
-reopened this way. For other tasks, start a new run with a
-corrected request.
+reopened this way. For other tasks, start a new run with a corrected request.
 
 ## Cancel work
 
@@ -88,7 +105,7 @@ worktrees only when their changes are already preserved elsewhere.
 Run logs and results stay in `<git common dir>/pinata/<run>`. Delete a run directory
 when you no longer need its records. Worktrees are separate: preserve any changes
 you want, then use `git worktree remove <path>`. Each run records its worktree paths;
-deleting its logs does not remove its worktrees.
+its worktrees remain on disk after you delete the logs.
 
 The same cleanup commands work from a shell:
 

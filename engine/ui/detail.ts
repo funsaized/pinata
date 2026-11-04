@@ -88,6 +88,7 @@ export class AgentDetail implements Component {
   input: Input | null = null;
   inputAs: "steer" | "followUp" = "steer";
   notice: string | null = null;
+  loadError: string | null = null;
   disposed = false;
   private chat = new Container();
   private rendered = 0;
@@ -124,6 +125,7 @@ export class AgentDetail implements Component {
     this.partial = { text: "", thinking: "" };
     this.offset = 0;
     this.notice = null;
+    this.loadError = null;
     this.input = null;
     this.unsubscribe = this.options.source.subscribe?.(agent, (e) => this.apply(e)) ?? null;
     this.ready = this.sync();
@@ -218,7 +220,8 @@ export class AgentDetail implements Component {
         this.dirty = false;
         const generation = this.generation;
         const snapshot = await this.options.source.load(this.agent).catch((error: Error) => {
-          if (!this.disposed && generation === this.generation) this.notice = clean(error.message);
+          if (!this.disposed && generation === this.generation)
+            this.loadError = clean(error.message);
           return null;
         });
         if (this.disposed) return;
@@ -227,6 +230,7 @@ export class AgentDetail implements Component {
           continue;
         }
         if (!snapshot) continue;
+        this.loadError = null;
         if (this.streaming) {
           this.chat.removeChild(this.streaming);
           this.streaming = null;
@@ -311,6 +315,7 @@ export class AgentDetail implements Component {
       this.expanded = !this.expanded;
       for (const tool of this.tools) tool.setExpanded(this.expanded);
     } else if (key("tui.input.submit")) this.openInput();
+    else if (data === "r" && this.loadError) this.ready = this.sync();
     else if (data === "o" && this.hasPane()) {
       this.notice = "Opening the agent's Herdr pane…";
       void this.options.source.openPane!(this.agent).then(
@@ -327,13 +332,24 @@ export class AgentDetail implements Component {
     );
   }
 
+  get canSteer(): boolean {
+    return (
+      !!this.options.source.steer && this.options.source.view(this.agent)?.status === "running"
+    );
+  }
+
+  get steeringHint(): string {
+    if (this.canSteer) return "Enter steer";
+    if (!this.options.source.steer) return "Read-only";
+    return "Agent not running";
+  }
+
   private openInput(): void {
-    const status = this.options.source.view(this.agent)?.status;
     if (!this.options.source.steer) {
-      this.notice = "This view is read-only: the run is read from disk.";
+      this.notice = "This view is read-only: it cannot send guidance.";
       return;
     }
-    if (status !== "running") {
+    if (!this.canSteer) {
       this.notice = "Only a running agent can be steered.";
       return;
     }
@@ -355,7 +371,8 @@ export class AgentDetail implements Component {
       void this.options.source.steer!(agent, text, as).then(
         () => {
           if (this.disposed || generation !== this.generation) return;
-          this.notice = as === "steer" ? "Steered." : "Follow-up queued.";
+          // Socket sources return after sending; they do not acknowledge delivery.
+          this.notice = as === "steer" ? "Guidance sent." : "Follow-up sent.";
           this.options.tui.requestRender();
         },
         (error: Error) => {
@@ -419,27 +436,33 @@ export class AgentDetail implements Component {
     const scrolled = this.offset ? ` · ${this.offset} lines up` : "";
     const footer = this.input
       ? (this.input.render(width)[0] ?? "")
-      : this.notice
-        ? theme.fg("warning", truncateToWidth(this.notice, width))
-        : this.options.embedded
-          ? theme.fg(
-              "muted",
-              truncateToWidth(
-                `${this.offset ? `Paused · ${this.offset} lines up · End to follow` : "Following latest output"} · ${this.expanded ? "tools expanded" : "tools collapsed"}${this.hasPane() ? " · O open Herdr pane" : ""}`,
+      : this.loadError
+        ? theme.fg("warning", truncateToWidth(`r retry · ${this.loadError}`, width))
+        : this.notice
+          ? theme.fg("warning", truncateToWidth(this.notice, width))
+          : this.options.embedded
+            ? theme.fg(
+                "muted",
+                truncateToWidth(
+                  `${this.offset ? `Paused · ${this.offset} lines up · End to follow` : "Following latest output"} · ${this.expanded ? "tools expanded" : "tools collapsed"}${this.hasPane() ? " · O open Herdr pane" : ""}`,
+                  width,
+                ),
+              )
+            : truncateToWidth(
+                [
+                  this.canSteer
+                    ? keyHint("tui.input.submit", "steer")
+                    : theme.fg("muted", this.steeringHint),
+                  keyHint("tui.select.cancel", "close"),
+                  keyHint("tui.select.up", "scroll"),
+                  keyHint("tui.editor.cursorRight", "agent"),
+                  keyHint("app.tools.expand", "tools"),
+                  ...(this.hasPane()
+                    ? [theme.fg("dim", "o") + theme.fg("muted", " open pane")]
+                    : []),
+                ].join("  ") + theme.fg("muted", scrolled),
                 width,
-              ),
-            )
-          : truncateToWidth(
-              [
-                keyHint("tui.select.up", "scroll"),
-                keyHint("tui.editor.cursorRight", "agent"),
-                keyHint("tui.input.submit", "steer"),
-                keyHint("app.tools.expand", "tools"),
-                ...(this.hasPane() ? [theme.fg("dim", "o") + theme.fg("muted", " open pane")] : []),
-                keyHint("tui.select.cancel", "close"),
-              ].join("  ") + theme.fg("muted", scrolled),
-              width,
-            );
+              );
     const lines = (
       compact
         ? total <= 1

@@ -6,10 +6,11 @@ npm is the release source. The GitHub mirror downloads an already-published
 `pi-pinata` version and publishes it as `@funsaized/pi-pinata`. GitHub requires
 the scope; the name on npm stays `pi-pinata`.
 
-The mirror changes only `package.json`'s name and JSON formatting. It checks
-file contents, executable bits, and the remaining metadata before publication,
-then downloads the GitHub package and checks them again. It does not rebuild
-from the current branch, run package lifecycle scripts, or publish to npm.
+The mirror downloads the npm artifact, changes only the name and JSON formatting
+in `package.json`, and publishes it to GitHub. It checks file contents, executable
+bits, and the remaining metadata both before publication and after downloading the
+GitHub copy. It uses the published artifact without rebuilding the current branch
+or running package lifecycle scripts, and never publishes to npm.
 
 The [release workflow](../../.github/workflows/release.yml) calls this mirror
 automatically after publishing and verifying each npm release.
@@ -75,7 +76,8 @@ pi install npm:@funsaized/pi-pinata
 This configures npm's registry mapping for the scope and installs into your
 personal Pi configuration. Restart Pi or run `/reload`. Do not install both
 copies into the same Pi configuration: they provide the same skill and prompt
-names. Use [platforms](../how-to/platforms.md) to remove the old source and check collisions.
+names. Follow the [removal instructions](publication.md#removal) for the old source
+before switching.
 
 ## Tags and missed versions
 
@@ -84,10 +86,9 @@ A newly mirrored version gets GitHub's `latest` tag only if it is npm's current
 backfill cannot move `latest` backwards. If npm explicitly marks a prerelease
 as `latest`, the mirror follows that choice.
 
-The daily job copies the current `latest`, not every version published since
-its last run. Dispatch missed versions individually. Existing versions are
-verified without changing tags. This is a version-content mirror, not a copy
-of all npm dist-tags or deprecations.
+The daily job copies the version currently tagged `latest`. Dispatch missed
+versions individually. Existing versions are verified with their tags unchanged.
+Manage other dist-tags and deprecations separately from this artifact mirror.
 
 ## Recover a failure
 
@@ -102,8 +103,10 @@ of all npm dist-tags or deprecations.
 - If upstream adds `publishConfig`, the mirror stops for review rather than
   risk publishing to a registry selected by package metadata.
 
-The helper and its offline regression check live in the repository checkout,
-not the published package. Run `node --test test/github-package.test.mjs` to
+## Test the mirror locally
+
+The helper and its offline regression check live in the repository checkout and
+are excluded from the published package. Run `node --test test/github-package.test.mjs` to
 check first publication, repeat runs, authentication failures, input validation,
 backfill tags, and mismatched artifacts without contacting a registry.
 

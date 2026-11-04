@@ -1,31 +1,59 @@
 # First run
 
-In this tutorial you run two read-only scouts in a repository, watch them in
-Pi, and read their results. Nothing is changed in your checkout.
+Send two scouts into your repository to investigate error handling and tests.
+You will watch them work and get findings with file references. They leave your
+files unchanged.
 
-You need Pi with Pinata installed and working model credentials. The coordinator
-and scouts use your configured models and spend tokens; choose role models and
-limits in [configuration](../reference/config.md) before starting. For a prepared
-repository and a complete coding job, follow [Relay](relay.md).
+You need Pi 1.1.0 or later, Node 22.19 or later, Git, and a model configured
+and authenticated in Pi. Install Pinata from your terminal, then reload Pi:
+
+```sh
+node --version
+pi --version
+git --version
+pi install npm:pi-pinata
+pi list
+pi --offline --list-models
+```
+
+This exercise sends requests to your configured models and uses tokens. Check
+provider pricing and your [models and limits](../reference/config.md) before
+starting. If you want a prepared repository and a complete coding job, follow
+[Relay](relay.md).
 
 ## 1. Start Pi in a repository
 
-Any Git repository works. Start Pi there (_manual_):
+Choose a Git repository whose code you are comfortable sending to your model
+provider. Start Pi in that repository:
 
 ```sh
 pi
 ```
+
+In the fresh Pi session, enter `/pinata runs` to confirm the command is available.
+Before the first run in this repository, it reports `No pinata runs in this
+repository.` If the command is missing, use `/reload` or restart Pi. This
+inspection does not send a request to a model.
+
+If the model list was empty, use `/login` in Pi to authenticate with a provider.
+Then use `/model` to select an authenticated model. The scouts inherit the current
+Pi model unless a configured model or agent definition takes precedence; see
+[model selection](../reference/config.md#models).
 
 ## 2. Ask for scouts
 
 ```text
 Start two scouts in the background: scout-errors maps how errors are handled;
 scout-tests maps the tests. Run them in parallel. Bring back relevant files and
-gaps in coverage, with file and line references. Do not change files.
+gaps in coverage, with file and line references. Do not change files. Set the
+run's limits to concurrency 2 and costUsd 1. Stop if the limit is reached;
+do not increase it.
 ```
 
-Pi calls `pinata_run` with two tasks using `agent: "scout"`. They run in parallel;
-Pi combines their findings when both finish.
+Pi can delegate the two questions to scouts with `pinata_run`. They investigate
+in parallel, and Pi can combine their findings when they finish. The $1 limit is
+a reported worker-cost threshold: in-flight requests can overshoot it, and it
+excludes coordinator tokens.
 
 ## 3. Watch them
 
@@ -45,8 +73,9 @@ Press Esc to return. [Watching agents](watching-agents.md) covers the detail vie
 
 ## 4. Read the results
 
-When the run settles, Pi gets compact results: each task's status, summary and brief. Ask
-Pi to explain them, or look yourself:
+When the run finishes, Pi receives each task's status, summary, and brief. Ask it
+to explain the findings and gaps in coverage; follow the file references to check
+them against the code. You can also inspect the run yourself:
 
 ```text
 /pinata
@@ -57,10 +86,11 @@ Pi to explain them, or look yourself:
 sends anything to the model. Everything is kept in `<git common dir>/pinata/<run>`: the
 event log, each task's result and transcript.
 
-## What you learned
+## What to try next
 
-- Scouts read your live checkout, uncommitted edits included.
-- Independent tasks can run in parallel.
-- Runs are visible while they work and inspectable afterwards.
+Give the scouts two questions about code you are changing. They read your live
+checkout, including uncommitted edits, so their findings can help with work already
+in progress. Independent tasks run in parallel; their results stay available after
+the run finishes.
 
 Next: [build and review a change](build-and-review.md).

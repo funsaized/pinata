@@ -61,6 +61,38 @@ function view(t: { after: (fn: () => void) => void }, detail: AgentDetail) {
   return detail;
 }
 
+test("a standalone detail view can retry a failed transcript load", async (t) => {
+  let fail = true;
+  const detail = view(
+    t,
+    new AgentDetail({
+      tui: { requestRender() {} },
+      theme,
+      keys,
+      done() {},
+      agent: "map",
+      source: {
+        run: "fixture",
+        cwd: ".",
+        agents: () => ["map"],
+        view: () => undefined,
+        load: async () => {
+          if (fail) throw new Error("Transcript unavailable");
+          return { messages: [{ role: "user", content: "Recovered history" }] };
+        },
+      },
+    }),
+  );
+  await detail.ready;
+  assert.match(plain(detail.render(40)), /r retry/);
+  fail = false;
+  detail.handleInput("r");
+  await detail.ready;
+  assert.equal(detail.loadError, null);
+  assert.match(plain(detail.render(40)), /Recovered history/);
+  assert(!plain(detail.render(40)).includes("r retry"));
+});
+
 test("an agent opened mid-run shows its whole history, then streams live", async (t) => {
   const paused = gate();
   let reached = false;
@@ -112,6 +144,8 @@ test("an agent opened mid-run shows its whole history, then streams live", async
   assert(seen.includes("text_delta"), `streamed: ${seen.join(",")}`);
   assert.match(after, /The parser lives in src\/date\.ts\./, "the streamed message");
   assert.match(after, /✓ map \(scout\)/);
+  assert.match(after, /Agent not running/);
+  assert(!after.includes("steer"), "finished agents do not advertise steering");
   detail.handleInput("\x1b");
   assert.equal(closed, 1);
   assert(detail.disposed);
@@ -169,17 +203,19 @@ test("scrolling, switching agents and steering; a reviewer sees the builder was 
   // A queued reviewer cannot be steered.
   detail.handleInput("right");
   assert.equal(detail.agent, "review");
+  assert.match(plain(detail.render(80)), /Agent not running/);
   detail.handleInput("\r");
   assert.match(detail.notice!, /Only a running agent/);
   detail.handleInput("left");
   assert.equal(detail.agent, "build");
+  assert.match(plain(detail.render(80)), /steer/);
   // Enter opens the input; Enter sends the steer to the running builder.
   detail.handleInput("\r");
   assert(detail.input);
   for (const ch of "Keep a.txt short") detail.handleInput(ch);
   detail.handleInput("\r");
   assert.equal(detail.input, null);
-  await until(() => detail.notice === "Steered.", "the steer");
+  await until(() => detail.notice === "Guidance sent.", "the steer");
   paused.open();
   const done = await handle.done;
   assert.equal(done.status, "succeeded", JSON.stringify(done.agents));
@@ -222,6 +258,7 @@ test("a finished run opens from its directory alone, read-only", async (t) => {
   assert.match(text, /✓ look \(scout\)/);
   assert.match(text, /Task look \(scout\)/);
   assert.match(text, /# Fixture/);
+  assert.match(text, /Read-only/);
   detail.handleInput("\r");
   assert.match(detail.notice!, /read-only/);
 });
