@@ -39,7 +39,7 @@ const working = (view: RunView | undefined) =>
   !!view && view.order.some((id) => view.agents[id].status === "running");
 
 export interface WorkspaceOptions {
-  tui: { requestRender(): void; terminal?: { rows: number } };
+  tui: { requestRender(force?: boolean): void; terminal?: { rows: number } };
   theme: Paint;
   keys: Keys;
   done: () => void;
@@ -330,10 +330,17 @@ export class RunWorkspace {
       this.setMotion(this.motion);
       this.animate();
     } else if (data === " ") this.bonk();
-    else if (data === "r" && (this.detailError || this.error)) {
-      this.loadingRun = null;
-      this.detailError = null;
-      this.ready = this.refresh();
+    else if (data === "r") {
+      this.invalidate();
+      if (this.detailError || this.error) {
+        this.loadingRun = null;
+        this.detailError = null;
+        this.ready = this.refresh();
+      }
+      // Explicit recovery only: let Pi reset its terminal state as it does on
+      // resize. Ordinary updates keep differential rendering and its caches.
+      this.tui.requestRender(true);
+      return;
     } else if (this.focus === "agents") {
       if (key("tui.select.up")) this.moveAgent(-1);
       else if (key("tui.select.down")) this.moveAgent(1);
@@ -527,7 +534,7 @@ export class RunWorkspace {
       : this.focus === "agents"
         ? "↑↓ select agent · Enter open · Tab conversation"
         : "↑↓ scroll · PgUp/PgDn page · Enter steer · Ctrl+O tools · Tab agents";
-    const secondary = `Shift+↑↓ agent · Esc close · M motion ${this.motion ? "on" : "off"} · Space bonk${this.runs.length > 1 ? ` · ←→ run (${this.index + 1}/${this.runs.length}, agent list)` : ""}`;
+    const secondary = `Shift+↑↓ agent · Esc close · R redraw · M motion ${this.motion ? "on" : "off"} · Space bonk${this.runs.length > 1 ? ` · ←→ run (${this.index + 1}/${this.runs.length}, agent list)` : ""}`;
     const content = [
       ...top,
       ...body,
