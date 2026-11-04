@@ -883,6 +883,141 @@ test("orchestrator tools hand off artifacts, integrate after HEAD advancement, a
   );
 });
 
+test("a rejected saved run repairs in a new session, unblocks downstream work, and integrates", async (t) => {
+  const starts: string[] = [];
+  const respond = (turn: FauxTurn) => {
+    if (turn.round === 0) starts.push(turn.agent!);
+    const repaired = turn.text.includes("Repair feedback");
+    if (turn.role === "builder" && turn.round === 0)
+      return fauxAssistantMessage(
+        [
+          turn.agent === "build"
+            ? fauxToolCall("write", {
+                path: "README.md",
+                content: repaired ? "fixed\n" : "broken\n",
+              })
+            : fauxToolCall("bash", {
+                command:
+                  'node -e \'const fs=require("fs"); fs.copyFileSync("README.md","output.txt")\'',
+              }),
+        ],
+        { stopReason: "toolUse" },
+      );
+    const rejected = turn.agent === "review" && !turn.text.includes("prior approval is invalid");
+    return fauxAssistantMessage(
+      [
+        fauxToolCall("submit_result", {
+          status: "succeeded",
+          summary: rejected ? "README.md must contain fixed, not broken." : "done",
+          changedFiles:
+            turn.role === "builder" ? [turn.agent === "build" ? "README.md" : "output.txt"] : [],
+          checks: [],
+          findings: rejected
+            ? [{ severity: "high", message: "Incorrect content", evidence: "README.md:1" }]
+            : [],
+          blockers: [],
+          ...(turn.role === "reviewer"
+            ? { review: { verdict: rejected ? "changes_requested" : "approve" } }
+            : {}),
+        }),
+      ],
+      { stopReason: "toolUse" },
+    );
+  };
+  const first = await adapter(t, respond);
+  const check = (path: string, expected?: string) => ({
+    id: "content",
+    argv: [
+      process.execPath,
+      "-e",
+      expected
+        ? `require('assert/strict').equal(require('fs').readFileSync('${path}','utf8'),${JSON.stringify(expected)})`
+        : `require('assert/strict').ok(require('fs').readFileSync('${path}','utf8').length)`,
+    ],
+  });
+  const head = first.world.fixture.git("rev-parse", "HEAD");
+  const initial = (
+    await first.call("pinata_run", {
+      approval: "Implement and integrate this fixture locally",
+      config: { setup: false },
+      tasks: [
+        spec("build", "builder", { ownership: ["README.md"], checks: [check("README.md")] }),
+        spec("review", "reviewer", { reviewOf: "build", after: ["build"] }),
+        spec("downstream", "builder", {
+          ownership: ["output.txt"],
+          after: ["review"],
+          checks: [check("output.txt", "fixed\n")],
+        }),
+        spec("review-downstream", "reviewer", { reviewOf: "downstream", after: ["downstream"] }),
+      ],
+      integratedChecks: [check("output.txt", "fixed\n")],
+    })
+  ).details.result;
+  assert.equal(initial.status, "failed");
+  assert.equal(initial.tasks.find((task: any) => task.id === "review").status, "rejected");
+  assert.equal(initial.tasks.find((task: any) => task.id === "downstream").status, "blocked");
+  assert.deepEqual(starts, ["build", "review"]);
+  const originalArtifact = initial.tasks[0].artifact.fingerprint;
+  const recovery = initial.tasks[1].recovery;
+  assert.equal(recovery.tool, "pinata_repair");
+  assert.equal(recovery.arguments.run, initial.run);
+  assert.equal(recovery.arguments.task, "build");
+  assert.match(recovery.arguments.feedback, /README.md must contain fixed/);
+  assert.match(recovery.instruction, /Keep this run ID/);
+  for (const handler of first.handlers.session_shutdown)
+    await handler({ reason: "quit" }, first.ctx);
+
+  const second = await adapter(t, respond);
+  second.ctx.cwd = first.world.repo;
+  const status = (await second.call("pinata_status", { run: initial.run })).details.result;
+  assert.deepEqual(
+    status.tasks[1].recovery,
+    recovery,
+    "historical status preserves the repair action",
+  );
+  const detail = (
+    await second.call("pinata_status", {
+      run: initial.run,
+      task: "review",
+      detail: "result",
+    })
+  ).details.result;
+  assert.deepEqual(detail.recovery, recovery);
+  assert.equal((await second.call("pinata_integrate", { run: initial.run })).isError, true);
+
+  // Follow the actual coordinator guidance, including the pinned run for integration.
+  const repaired = (await second.call(recovery.tool, recovery.arguments)).details.result;
+  assert.equal(repaired.run, initial.run);
+  assert.equal(repaired.status, "succeeded", JSON.stringify(repaired));
+  assert.deepEqual(starts, [
+    "build",
+    "review",
+    "build",
+    "review",
+    "downstream",
+    "review-downstream",
+  ]);
+  assert.notEqual(repaired.tasks[0].artifact.fingerprint, originalArtifact);
+  assert.equal(repaired.tasks[1].review.fingerprint, repaired.tasks[0].artifact.fingerprint);
+  assert.equal(repaired.tasks[1].recovery, undefined, "fresh approval clears repair guidance");
+  assert.equal(repaired.tasks[0].engineChecks.passed, 1);
+  assert.equal(repaired.tasks[2].engineChecks.passed, 1);
+  // A newer unrelated run must not redirect the supplied follow-up actions.
+  await second.call("pinata_run", { tasks: [spec("look")] });
+  const [changes, integrate] = recovery.afterSuccess;
+  assert.deepEqual(changes.arguments, { run: initial.run });
+  assert.deepEqual(integrate.arguments, { run: initial.run });
+  const handoff = await second.call(changes.tool, changes.arguments);
+  assert.equal(handoff.isError, undefined, JSON.stringify(handoff));
+  const integrated = (await second.call(integrate.tool, integrate.arguments)).details.result;
+  assert.equal(integrated.status, "verified", JSON.stringify(integrated));
+  assert.equal(integrated.verification.application, "exact");
+  assert.equal(await readFile(join(first.world.repo, "README.md"), "utf8"), "fixed\n");
+  assert.equal(await readFile(join(first.world.repo, "output.txt"), "utf8"), "fixed\n");
+  assert.equal(first.world.fixture.git("rev-parse", "HEAD"), head);
+  assert.equal(first.world.fixture.git("diff", "--cached", "--name-only"), "");
+});
+
 test("custom definitions execute through the public tool and freeze their prompt", async (t) => {
   const a = await adapter(t, (turn) => {
     assert.match(turn.system, /CUSTOM PROMPT/);

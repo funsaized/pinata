@@ -1,9 +1,11 @@
 # View and steer agents
 
-Start a run with your configured models using [First run](first-run.md) or
-[Relay](relay.md), then follow it here. Those runs require model credentials and
-spend tokens. Viewing saved results makes no model calls; steering a running agent
-can lead to further model requests.
+Open an agent's conversation while it works, read its tool output, and send it a
+correction without leaving Pi. Start a run with [First run](first-run.md) or
+[Relay](relay.md), then follow it here. Those runs use your model credentials and
+spend tokens. Viewing saved results makes no model calls; steering can lead to more.
+
+## Open a conversation
 
 The widget above Pi's editor shows each agent's name, status, elapsed time, and current
 activity, with total tokens and cost underneath. Waiting agents have not started;
@@ -28,6 +30,8 @@ running, it opens the latest saved run. Naming a run pins it:
 /pinata view <run> --task build
 ```
 
+## Move around
+
 Use ↑/↓ to select an agent and Enter to focus its conversation. Tab switches between
 the agent list and conversation; on narrow terminals each gets the full width.
 Scroll with the mouse wheel, ↑/↓, or PgUp/PgDn. End resumes following the latest output.
@@ -43,6 +47,8 @@ Every steer is recorded, and the builder's reviewer is told about it.
 
 Esc cancels a draft first. New runs, agent navigation, and clicks cannot redirect a draft.
 Saved conversations are read-only.
+The conversation shows when steering is unavailable because the agent is no longer
+running or the view is read-only.
 
 ## Use another terminal
 
@@ -68,3 +74,5 @@ saves conversations when agents finish. Use `--external` for live streaming and 
 An open log viewer connects when the run's socket becomes available.
 
 For text output, use `pinata logs <run> [--task <task>]`; add `--follow` to follow recorded events.
+The [command reference](../reference/commands.md) lists the controls, including `R`
+to retry a failed load or redraw a damaged terminal display.

@@ -161,7 +161,7 @@
     "mode": "observe",
     "limits": {
       "concurrency": 3,
-      "costUsd": 1,
+      "costUsd": 2,
       "taskMs": 300000,
       "jobMs": 1200000,
       "maxTurns": 35,

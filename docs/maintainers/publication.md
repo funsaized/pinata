@@ -1,26 +1,26 @@
-# Publish pinata to npm
+# Publish Pinata to npm
 
 Commands on this page are _manual_: they publish, authenticate or need registry access.
 
-How to release `pi-pinata` to npm once you have explicit authorization. Nothing
-on this page authorizes a commit, push, tag, publication, or deployment by
-itself. The local test commands are in [testing](testing.md); record validation results in the release pull request.
+Release `pi-pinata` through a reviewed release branch and a version tag. Use these
+steps with authorization for the specific commits, pushes, tags, publications, or
+deployments you intend. Record the [local test results](testing.md)
+in the release pull request.
 
-Package: **pi-pinata**. Publisher: **funsaized**
-([npm profile](https://www.npmjs.com/~funsaized)). Repository:
-<https://github.com/funsaized/pinata>. License: MIT. There are no
-runtime npm dependencies.
+The npm package is `pi-pinata`, published by
+[funsaized](https://www.npmjs.com/~funsaized) from
+<https://github.com/funsaized/pinata>. It is MIT licensed and has no runtime npm
+dependencies.
 
 Record the approved action and target before proceeding. Never log npm tokens
 or read credential files to check identity.
 
 ## Automated release
 
-The [release workflow](../../.github/workflows/release.yml) runs on a pushed `vX.Y.Z`
-tag. With release authorization, bump `package.json` and `package-lock.json` on a
-release branch, complete the local checks below (including the real Pi smoke test),
-and merge the reviewed release into `master` through a pull request with green CI.
-Then tag the merge commit and push only the tag:
+The [release workflow](../../.github/workflows/release.yml) runs when you push a
+`vX.Y.Z` tag. Bump `package.json` and `package-lock.json` on a release branch, run
+the checks below (including the real Pi smoke test), and merge the reviewed pull
+request into `master` once CI passes. Then push a tag for that merge commit:
 
 ```sh
 RELEASE_VERSION="<version>"
@@ -63,44 +63,43 @@ node test/engine/package-smoke.ts
 npm pack --dry-run --json --ignore-scripts
 ```
 
-Review the included paths. You should see only package metadata, README/LICENSE,
+Inspect the file list. It should contain package metadata, README/LICENSE,
 the packaged skills (subagents registered by default), five prompt templates, three agent
 presets, optional agent examples, runtime modules, and docs. There
-should be no run state, logs, tests, .git, node_modules, secrets, or
-other development debris.
+should be no run state, logs, tests, .git, node_modules, secrets, or other
+development files.
 
-For a real local artifact, use `npm pack --ignore-scripts`. That creates an
-ignored tarball, not a publication. The Pi smoke test already exercises a tarball
+For a local artifact, use `npm pack --ignore-scripts`. It creates an ignored
+tarball for inspection. Publishing is a separate step below. The Pi smoke test already exercises a tarball
 in a scratch npm prefix and isolated agent directory.
 
-## Recheck name and account immediately before publishing
+## Check the package name and publisher
 
 ```sh
 npm view pi-pinata name version maintainers --json
 npm whoami
 ```
 
-An E404 only says the registry did not return the name. It does not guarantee
-availability or reserve it. If a different project or account occupies the name,
-**stop and ask**. If this project has already published it, inspect existing
-versions and maintainers before an authorized version bump. Confirm `npm whoami`
-is exactly `funsaized`, and authenticate interactively only with permission.
+If npm returns E404, the name was not returned; it is not reserved or guaranteed
+available. Stop and ask if a different project or account occupies it. For an
+existing Pinata package, inspect its versions and maintainers before bumping the
+version. `npm whoami` must return `funsaized`. Authenticate interactively only
+with permission.
 
 Recheck the registry before choosing the next version; published versions cannot be replaced.
 
-## Authorized release only
+## Publish the inspected artifact
 
-After reviewing the exact packed artifact, version, staged diff (if committing),
-and action-specific authorization:
+Confirm that the packed artifact, version, and authorized action match. Review the
+staged diff too if committing, then publish the inspected tarball:
 
 ```sh
 npm publish "./pi-pinata-${RELEASE_VERSION}.tgz" --access public
 ```
 
-Use the actual inspected tarball and version, not a stale filename. Follow npm's
-current MFA and trusted-publishing requirements. Do not bypass Git hooks or
-invent account credentials. Git pushes, tags, and PRs remain separately
-authorized actions.
+Use the version you inspected. Follow npm's current MFA and trusted-publishing
+requirements, keep Git hooks enabled, and use valid account credentials. Git pushes,
+tags, and PRs each need authorization for that action.
 
 Verify registry metadata, then inspect a fresh download of the published version:
 
@@ -118,14 +117,12 @@ Use the version you actually published in every command. Check that the file
 list matches the approved artifact and the `pinata` command prints its usage.
 The temporary Pi agent directory keeps this verification out of personal config.
 
-Record the output and the tested install path. If publication returns an
-ambiguous result, inspect the registry first. Do not blindly retry or bump a
-version.
+Record the output and tested install path. If the publication result is unclear,
+check the registry before retrying or choosing another version.
 
-npm versions are not overwriteable. A rollback normally means an explicitly
-authorized corrective version and, where appropriate, deprecation. Do not
-automatically unpublish or change dist-tags. Record a rollback plan before
-publication and verify its actual outcome if you use it.
+npm versions cannot be overwritten. Plan for a corrective release and, if appropriate,
+deprecation before publishing. Those actions need explicit authorization, as do
+unpublishing or changing dist-tags. If you use the rollback plan, verify its outcome.
 
 ## Sync the GitHub mirror
 
@@ -138,8 +135,8 @@ and keeps the unscoped npm package unchanged.
 ## Removal
 
 Use `pi remove npm:pi-pinata`, or the exact registered local path for a local
-installation. Let active runs settle (or cancel them) first. Package removal
-does not delete user work or run evidence. Follow [run cleanup](../how-to/recover.md)
+installation. Let active runs settle (or cancel them) first. User work and run
+evidence remain after package removal. Follow [run cleanup](../how-to/recover.md)
 before removing an active installation.
 
 ---

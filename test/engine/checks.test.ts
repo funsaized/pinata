@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile, writeFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { environment, runCheck, runChecks } from "../../engine/verify/checks.ts";
@@ -9,10 +10,22 @@ const node = process.execPath;
 const alive = (pid: number) => {
   try {
     process.kill(pid, 0);
-    return true;
   } catch {
     return false;
   }
+  if (process.platform === "linux") {
+    // Container PID 1 may not reap orphaned children. A zombie has already exited;
+    // kill(pid, 0) alone would count its process-table entry as a running survivor.
+    try {
+      const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+      const state = stat.slice(stat.lastIndexOf(")") + 2).split(" ")[0];
+      return state !== "Z" && state !== "X";
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+      throw error;
+    }
+  }
+  return true;
 };
 
 test("checks pass and fail by exit code; logs are kept and hashed; the first failure stops the list", async (t) => {

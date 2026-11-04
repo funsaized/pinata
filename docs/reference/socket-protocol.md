@@ -1,7 +1,10 @@
 # Socket protocol
 
-A run's socket lets viewers follow it (`pinata view`). It starts with an observe-mode run or
-on `/pinata view --external`, and stops when the run has settled and the last viewer leaves.
+Use this protocol to build a viewer that follows a run and sends steering messages.
+For the existing viewer, see [watching agents](../tutorials/watching-agents.md).
+
+The socket starts with an observe-mode run or `/pinata view --external`. It stops
+once the run has finished and the last viewer has left.
 
 ## Finding it
 
@@ -12,8 +15,8 @@ on Windows.
 
 ## Frames
 
-JSON lines. The first client frame must be a valid `hello` for the run within 5 seconds, or
-the connection is closed.
+Frames are JSON objects, one per line. Send a valid `hello` for the run within
+five seconds of connecting; otherwise the server closes the connection.
 
 Client → server:
 
@@ -35,5 +38,8 @@ Server → client:
 | `{type: "messages", agent, messages, streaming?}` | An agent's conversation (Pi messages)              |
 | `{type: "error", message}`                        | A refused frame or command                         |
 
-A client more than 1,000 events behind its last `ack` gets a fresh `snapshot` instead of the
-backlog. `pinata view` uses `engine/ipc/client.ts`.
+## Catching up
+
+When a client falls more than 1,000 events behind its last `ack`, the server sends
+a fresh `snapshot` instead of replaying the backlog. The existing `pinata view`
+client is implemented in `engine/ipc/client.ts`.

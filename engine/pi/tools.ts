@@ -14,6 +14,7 @@ import { statusText, progressLine } from "../ui/text.ts";
 import {
   compactRun,
   compactTask,
+  reviewRecovery,
   repositoryRoot,
   type PinataHost,
   type RunParams,
@@ -198,7 +199,7 @@ export const DESCRIPTIONS = {
   cancel:
     "Cancel a run or one of its agents. Cancelled agents settle as cancelled; nothing else is undone.",
   repair:
-    "Re-run a builder in its worktree with feedback (from a rejected review or a failure), within limits.repairs. Its reviewers run again on the new change. Waits for the result.",
+    "Re-run a builder in its original run and worktree with feedback (from a rejected review or a failure), within limits.repairs. Pass the builder ID, not its reviewer ID. Its checks and reviewers run again and blocked dependents can continue. Keep this run ID for pinata_changes and pinata_integrate after success; a standalone review cannot replace this run's approval. Waits for the result.",
   integrate:
     "Optionally apply approved builder artifacts exactly and run destination checks. The orchestrator calls this; never automatic. HEAD may advance if affected files still match. Conflicts require pinata_changes and orchestrator reconciliation. Never stages or commits. Builder reviews remain scoped to their original bases.",
   changes:
@@ -307,6 +308,9 @@ export async function statusTool(
       task: params.task,
       definition: view.agents[params.task].definition,
       ...(saved ?? { status: view.agents[params.task].status }),
+      ...(reviewRecovery(params.task, view) && {
+        recovery: reviewRecovery(params.task, view),
+      }),
     };
   if (params.detail === "transcript") {
     const file = join(dir, "transcripts", `${params.task}.jsonl`);

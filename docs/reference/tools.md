@@ -1,8 +1,14 @@
 # Tools
 
-The tools pinata gives the model in Pi. Unknown fields are rejected everywhere. `run`
-accepts a unique prefix of the run id. Tools return JSON and report errors as failed tool
-results; a completed call can still report failed tasks, so read the statuses.
+These are the tools Pi calls when you ask it to delegate, inspect, repair, or apply
+work. For prompts you can copy, start with [first run](../tutorials/first-run.md)
+or [build and review](../tutorials/build-and-review.md).
+
+Tools return JSON. A completed tool call can contain failed tasks, so read the task
+statuses as well as the tool result. Invalid calls return a tool error. Unknown
+fields are rejected, and `run` accepts a unique prefix of a run ID.
+
+## Run and manage work
 
 | Tool               | Parameters                                                                                                              | Effect                                                                                                                                                                                                                                          |
 | ------------------ | ----------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -38,13 +44,16 @@ You can describe the work in ordinary language; Pi maps it to these fields. Put
 | `reviewBase`              | Reviewers, instead: review the live checkout against a revision (`HEAD` = uncommitted changes)                 |
 | `reviewPr`                | Reviewers, instead: a GitHub pull request number, fetched with `gh`                                            |
 
-A reviewer takes exactly one of `reviewOf`, `reviewBase`, `reviewPr`. Check `timeoutMs`
-defaults to 120000 (at most 1200000).
+A reviewer requires exactly one target: `reviewOf`, `reviewBase`, or `reviewPr`.
+A check's `timeoutMs` defaults to 120000 (two minutes), with a maximum of 1200000
+(twenty minutes).
 
-Ownership entries are literal paths or directory prefixes, not globs. They bound
-which changes the engine accepts; they do not restrict reading or express semantic
-rules such as “only the heading.” Put behavioral scope in the task and acceptance
-criteria for the reviewer to inspect. Agents are not an OS sandbox.
+### Ownership and checks
+
+Ownership entries accept literal paths or directory prefixes. They control
+which changes the engine accepts. An agent can still read other files; instructions
+such as "only change the heading" belong in the task and acceptance criteria for the
+reviewer to check. Agents run with your operating-system permissions.
 
 Builder `checks` run in the builder worktree after it finishes. `evidenceChecks`
 run after an agent finishes and must not change source; failed commands or detected
@@ -53,9 +62,11 @@ agent claims. A zero exit code proves the command succeeded, so choose commands
 that actually test the requirement. `integratedChecks` run later in the destination
 checkout when the coordinator integrates or verifies.
 
-`after` waits for successful predecessors and passes along their results.
-`reviewOf` binds a reviewer to one builder’s exact captured artifact, not just its
-summary. Include that builder in `after` so the artifact exists before review.
+### Dependencies and reviews
+
+`after` waits for successful predecessors and passes their results to the next task.
+`reviewOf` gives a reviewer one builder's exact captured patch and evidence. Include
+that builder in `after` so the patch exists before review begins.
 
 ## Preset tools
 
@@ -70,51 +81,23 @@ Every agent also has `submit_result`, and `codemode` when enabled (the default).
 
 ## Results
 
-Statuses: `queued`, `running`, then `succeeded`, `failed`, `rejected` (a review asked for
-changes), `blocked` (a required predecessor failed), `cancelled`, `uncertain`.
+Tasks start as `queued`, then become `running`. Their final status tells you what
+happened:
+
+| Status      | Meaning                                                |
+| ----------- | ------------------------------------------------------ |
+| `succeeded` | The task passed.                                       |
+| `failed`    | The task failed; read its `reason` and check evidence. |
+| `rejected`  | A reviewer requested changes.                          |
+| `blocked`   | A required predecessor failed.                         |
+| `cancelled` | The task was cancelled.                                |
+| `uncertain` | Pinata could not establish the outcome.                |
 
 Each task returns `summary` and, when present, `brief`, `findings`
 (`{severity, message, evidence}`), `blockers`, `changedFiles`, `verdict` and
 `checkoutChanged`. A failed task has a `reason`. `pinata_status` with `detail: "result"`
 returns the full saved result, including check evidence. Usage is reported in tokens and
 dollars.
-
-## Integration evidence
-
-The orchestrator invokes integration tools; workers cannot, and the engine never applies
-changes automatically. `pinata_changes` requires all tasks to succeed and each builder
-to have current approving reviews. Its versioned manifest includes the starting HEAD,
-actual per-builder base commit/tree (including uncommitted snapshots and predecessor
-changes), result tree, fingerprint, dependency order, changes, check logs and review
-bindings. Patches come from recorded Git objects, not the live worktree. Repaired output
-needs fresh review and a new handoff. Earlier handoffs remain historical artifacts.
-
-`pinata_integrate` permits HEAD advancement when affected paths still match their
-recorded before-states. Conflicts require orchestrator reconciliation, never an automatic
-merge. It returns `verified`, `applied_unverified`, or `verification_failed` and an exact
-verification receipt. An existing journal cannot be resumed or rolled back after HEAD or
-the index changes; subsequent file edits are protected too.
-
-`pinata_verify` returns `scope: "destination-checks"`, the actual HEAD/content tree and
-index digest, check commands/outcomes/logs, and `application: "exact" | "different"`
-with `differingPaths`. "Different" includes changes not yet applied. Its `status` is
-`verified`, `verification_failed`, `not_run`, or `source_changed`. The review scope is
-always `builder-artifacts-only`; passing checks never grants review of reconciliation.
-An explicit `checks` list replaces the run's destination checks for that invocation.
-
-`pinata_status` reports the latest destination receipt with freshness `current`,
-`historical`, or `unknown`. Verification captures tracked and non-ignored untracked
-source through a private index; the user's index is unchanged. Ignored dependencies,
-external services and the environment are not content-attested. Check omissions remain
-explicit and never count as passed. Receipt logs survive subsequent verification attempts.
-
-## Agent discovery
-
-`pinata_agents {}` lists available definitions without injecting their complete prompts.
-`pinata_agents {"name":"scout"}` returns one definition, its tools, workspace, defaults,
-source, and digest. Tasks select a definition with `agent`.
-Simple read-only tasks may omit `acceptance`. Custom writers and reviewers follow the
-same authorization, ownership, and evidence rules as the corresponding presets.
 
 Large run summaries are paginated: at most 64 tasks and 32 KiB of task summaries per
 response. `taskCount` and `counts` cover the whole run; `nextOffset` identifies the next
@@ -123,6 +106,65 @@ page for `pinata_status {run, offset}`. `limit` can reduce the page size. A task
 
 `engineChecks` counts executed successes, failures, and planned checks not run; these
 are separate from the agent's reported checks. `review` includes the exact target
-fingerprint and scope. `artifact` identifies the original base/result trees; it does
-not establish destination verification. For captured writer results, compact
+fingerprint and scope. `artifact` identifies the original base/result trees.
+Destination verification has its own receipt. For captured writer results, compact
 `changedFiles` comes from the engine's actual diff.
+
+## Integration evidence
+
+Integration tools are available to the coordinating Pi session. It chooses when
+to call them and apply the changes.
+
+### Inspect the approved changes
+
+`pinata_changes` requires every task to succeed and every builder to have current
+approving reviews. It returns a versioned manifest with the starting HEAD,
+actual per-builder base commit/tree (including uncommitted snapshots and predecessor
+changes), result tree, fingerprint, dependency order, changes, check logs and review
+bindings. Patches come from the recorded Git objects. Repaired output
+needs fresh review and a new handoff. Earlier handoffs remain historical artifacts.
+
+### Apply changes
+
+`pinata_integrate` applies approved patches and runs the destination checks. HEAD
+may have advanced since the run began, as long as affected paths still match their
+recorded starting contents. Pinata refuses conflicts before writing; the coordinator
+must resolve them and arrange fresh checks and review of the combined change.
+
+The result includes a verification receipt and one of these statuses:
+
+| Status                | Meaning                                                                          |
+| --------------------- | -------------------------------------------------------------------------------- |
+| `verified`            | The approved patches are present exactly and the destination checks passed.      |
+| `applied_unverified`  | The patches were applied with no destination checks configured.                  |
+| `verification_failed` | Destination verification failed; inspect the checks and recorded checkout state. |
+
+An existing integration journal cannot be resumed or rolled back after HEAD or the
+index changes. Later file edits are protected too.
+
+### Verify the destination
+
+`pinata_verify` checks the destination without applying changes. It returns
+`scope: "destination-checks"`, the actual HEAD/content tree and
+index digest, check commands/outcomes/logs, and `application: "exact" | "different"`
+with `differingPaths`. "Different" includes changes not yet applied. Its `status` is
+`verified`, `verification_failed`, `not_run`, or `source_changed`. The review scope is
+always `builder-artifacts-only`; reconciled changes need their own independent review.
+An explicit `checks` list replaces the run's destination checks for that invocation.
+
+### Read a previous verification
+
+`pinata_status` reports the latest destination receipt with freshness `current`,
+`historical`, or `unknown`. Verification captures tracked and non-ignored untracked
+source through a private index; the user's index is unchanged. The receipt does not
+verify the contents of ignored dependencies, external services, or the environment.
+Check omissions remain explicit and never count as passed. Receipt logs survive
+subsequent verification attempts.
+
+## Agent discovery
+
+`pinata_agents {}` lists available definitions without injecting their complete prompts.
+`pinata_agents {"name":"scout"}` returns one definition, its tools, workspace, defaults,
+source, and digest. Tasks select a definition with `agent`.
+Simple read-only tasks may omit `acceptance`. Custom writers and reviewers follow the
+same authorization, ownership, and evidence rules as the corresponding presets.

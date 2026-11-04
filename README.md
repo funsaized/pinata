@@ -2,49 +2,45 @@
 
 **Pi stays small. Your subagent system should too.**
 
-Pinata is a fast, lightly opinionated subagent layer for Pi. You define agents, piñata delegates
-work, boundaries, and verifies results.
+Pinata is an extensible subagent framework for
+[Pi](https://github.com/earendil-works/pi). Ask Pi to investigate a codebase, split a
+change between builders, or review a patch. Pinata coordinates the tasks and brings back
+changes, findings, and checks you can inspect. Start with the included scout, builder,
+and reviewer; add your own agents and tools as your workflow grows.
 
 Pi keeps the harness small and lets you make it yours. Pinata follows that lead.
 
-Scout, builder, and reviewer come in the box. These are lightweight definitions meant for common development tasks. Planner and researcher are
-[examples to steal and make your own](docs/how-to/agents.md).
-
 [![piñata: small core, parallel agents](media/pinata-hero-v2.png)](media/pinata-demo.mp4)
 
-[Watch the demo](media/pinata-demo.mp4) · Ten agents build and review a CLI.
-
-[Why use Pinata?](docs/explanation/why-pinata.md) Follow a real change from task to
-reviewed patch, inspect the evidence, and choose a first example.
-
-[Build Relay with your models](docs/tutorials/relay.md): start from the demo's module
-stubs, run ten agents, inspect their reviews, and verify the assembled application.
+[Watch the demo](media/pinata-demo.mp4) · Ten agents build and review a CLI in a
+70-second accelerated edit of a real Pi session. [Reproduce the job](docs/tutorials/relay.md).
 
 ## Install
 
-In Pi's terminal (_manual_):
+Run in your terminal (_manual_):
 
 ```sh
 pi install npm:pi-pinata
 ```
 
-Reload Pi. You need Pi 1.1.0+, Node 22.19+ (for the `pinata` command), and Git, on Linux,
-macOS or Windows.
+Reload Pi. You need Pi 1.1.0+, Node 22.19+ (for the `pinata` command), and Git, on
+Linux, macOS, or Windows. [Herdr](https://herdr.dev/) is optional.
 
-[Herdr](https://herdr.dev/) is optional (agents can run as their own panes inside Herdr).
+This README describes the code in this branch. The npm install gets the published
+package, which may differ; check the package version and matching tagged documentation
+for the features available to you. See [platform setup](docs/how-to/platforms.md) for
+more detail.
 
-## Try this first
+## Try it
 
 Ask Pi in plain language:
-
-```text
-Have a scout figure out how request validation works in this repo.
-```
 
 ```text
 Send two scouts out in parallel, one on the retry logic and one on its tests.
 Bring back the relevant files, assumptions, and tests.
 ```
+
+Or try a focused fix or review:
 
 ```text
 /pinata-fix Correct the seconds-to-milliseconds conversion in src/duration.mjs.
@@ -54,165 +50,78 @@ Bring back the relevant files, assumptions, and tests.
 /pinata-review Focus on the error handling.
 ```
 
-Pi picks the agents, writes their briefs, and decides who waits for whom. Start with the
-[first-run tutorial](docs/tutorials/first-run.md).
+Pi can choose agents, write their briefs, and set dependencies. Follow the [first-run
+tutorial](docs/tutorials/first-run.md) for a guided start.
 
-## The three agent presets
+## How it works
 
-| Agent      | What it does                                                 |
-| ---------- | ------------------------------------------------------------ |
-| `scout`    | Finds where the behavior lives.                              |
-| `builder`  | Makes owned changes in an isolated worktree and runs checks. |
-| `reviewer` | Reviews a specific change and challenges its assumptions.    |
+A run contains tasks, their agents, dependencies, and any file ownership and checks.
+Independent tasks can run in parallel; dependent tasks wait for their inputs. The
+included agents cover three common jobs:
 
-## Custom agents
+- **Scout** maps the relevant code and returns a brief.
+- **Builder** makes an assigned change in a separate Git worktree.
+- **Reviewer** examines a specific change and its evidence.
 
-An agent is a reusable Markdown definition: instructions in the body, with its name,
-tools, workspace, and optional model defaults in YAML frontmatter. A task gives that
-agent a specific job. You choose which agents to use and how their tasks depend on
-each other.
+For a larger change, ask Pi to plan a job with ownership, dependencies, checks, and
+independent review. Inspect the plan before running it. Pinata records results and runs
+configured checks; the coordinator handles follow-up decisions and repairs. The handoff
+and integration helpers require independent approval of the exact change. [Build and
+review](docs/tutorials/build-and-review.md) walks through the process.
 
-Save definitions in either location:
+Worktrees keep patches separate from your checkout; they are not security sandboxes.
+Shell commands and custom tools run with your operating-system permissions and network
+access. Read [trust and safety](docs/explanation/trust.md) before authorizing work.
 
-| Scope      | Directory                    | Applies to                    |
-| ---------- | ---------------------------- | ----------------------------- |
-| Personal   | `~/.pi/agent/pinata/agents/` | Your work across repositories |
-| Repository | `.pi/pinata/agents/`         | Work in this repository       |
+Save a plan as a job file to run it from a terminal or CI with `pinata run job.json`.
+Headless execution leaves builder changes in their worktrees; integration is a separate
+step in Pi. See [headless runs](docs/how-to/headless.md), or use the [goal-to-job
+prompt](examples/jobs.md#let-a-coordinator-design-the-job) to have a coordinator design
+a plan for your repository.
 
-A repository definition replaces a personal definition with the same name. The three
-preset names are reserved; give your custom version a new name.
+## Make it yours
 
-For example, create a GitHub CI triage agent that inspects failed Actions runs and
-writes a report with evidence and next steps.
-
-Save this as `.pi/pinata/agents/ci-triage.md`:
+Agents are reusable Markdown definitions with instructions, tools, workspace, and
+optional model defaults. For example, save this as `.pi/pinata/agents/api-scout.md`:
 
 ```markdown
 ---
 schemaVersion: 1
-name: ci-triage
-description: Diagnose failed GitHub Actions runs and recommend the next fix.
-workspace: worktree
-tools: [read, grep, find, ls, bash, write]
+name: api-scout
+description: Map an API and its tests.
+workspace: live-readonly
+tools: [read, grep, find, ls]
 output:
   require: [brief]
 ---
 
-Inspect the assigned GitHub Actions run using gh run view and its --log-failed
-option. Always pass --repo OWNER/REPO. Record the run attempt and head commit,
-then trace each failed job to its first actionable error.
-
-Read the relevant workflow and source at the failing commit. If that revision
-or its logs are unavailable, report the gap. Separate code, workflow, dependency,
-and runner failures; call a failure flaky only with evidence from other attempts.
-
-Write ci-triage.md with run and job links, short log excerpts, likely causes,
-confidence, and the smallest suggested fix and verification command for each cause.
-Return a brief summary of the findings and any blockers.
-
-Use GitHub only for inspection. Do not rerun jobs, post comments, or change remote
-state. Write only the report; do not fix code, install dependencies, or run tests.
+Find the API's entry points, callers, error handling, and tests. Return a brief
+with file references and unanswered questions.
 ```
 
-Then ask Pi:
+Ask Pi to use `api-scout` on a specific API. Personal definitions live in
+`~/.pi/agent/pinata/agents/`. Set repository model choices and limits in
+`.pi/pinata.json`; you can also configure fallbacks, backends, and custom tool
+providers. Model availability depends on your Pi setup and credentials. See [creating
+agents](docs/how-to/agents.md) and the [configuration
+reference](docs/reference/config.md).
 
-```text
-Have ci-triage investigate this failed run: <GitHub Actions run URL>.
-```
-
-Inside Pi, `pinata_agents` lists available definitions. From a terminal, use
-`pinata agents list`, `pinata agents show ci-triage`, or `pinata agents validate`.
-
-See [creating agents](docs/how-to/agents.md) for all fields, custom tools, and the
-optional planner and researcher examples.
-
-## Configuration hierarchy
-
-Agent definitions describe the agent. Configuration sets models, run limits, execution
-mode, backend, and worktree setup. Settings apply in this order, from lowest to highest
-priority:
-
-| Priority | Source                    | Scope                             |
-| -------- | ------------------------- | --------------------------------- |
-| 1        | Built-in defaults         | Used when no override is provided |
-| 2        | `~/.pi/agent/pinata.json` | Your defaults across repositories |
-| 3        | `<repo>/.pi/pinata.json`  | Overrides for this repository     |
-| 4        | The run's `config` object | Overrides for one run             |
-
-`models`, `fallbacks`, `limits`, and `toolProviders` merge by entry: overriding
-`limits.concurrency` keeps the other limits. Other keys are replaced by the higher
-priority value. If you set `PI_CODING_AGENT_DIR`, that directory replaces `~/.pi/agent`
-for both personal config and agent definitions.
-
-For example, put this in `.pi/pinata.json` to allow four agents at once per run:
-
-```json
-{
-  "limits": { "concurrency": 4 }
-}
-```
-
-Model selection uses the first defined value in this order:
-
-1. The task's `model`.
-2. `models[agentName]` from the merged config.
-3. The agent definition's `model`.
-4. `models.default` from the merged config.
-5. The current Pi model.
-
-If the selected model is unknown or lacks authentication, Pinata tries the agent's
-configured `fallbacks`, or its definition fallbacks when none are configured.
-See the [configuration reference](docs/reference/config.md) for all settings and defaults.
-
-## What it's like to use
-
-- **Fast.** Agents share your Pi process by default. Startup, memory, and dispatch have
-  [performance budgets](docs/maintainers/performance.md), including tests at 64 active agents.
-- **Visible.** The widget above Pi's editor shows each agent's status, elapsed time,
-  and activity, plus total tokens and cost. Open `/pinata view` to read conversations
-  and steer agents. Shift+↑/↓ moves between conversations; Esc returns to Pi.
-  Use `/pinata view --external` to enable live viewing and steering from another terminal.
-  See [watching agents](docs/tutorials/watching-agents.md).
-- **Verifiable.** Writers work in isolated Git worktrees. Pinata checks their actual
-  changes against the task's owned paths and runs the task's checks. The handoff and
-  integration helpers require an independent reviewer to approve the exact change.
-  Integration applies it to your checkout without staging or committing; checks in
-  your checkout are recorded separately. See [build and review](docs/tutorials/build-and-review.md).
-- **Recoverable.** Runs, results, and logs are saved on disk. Agents launched with
-  `survive: true` keep running when Pi exits; the next Pi session in the repository
-  resumes the run. Use `/pinata rerun <run>` to restart tasks lost in a crash.
-  See [recovery](docs/how-to/recover.md).
-- **Scriptable.** `pinata run job.json` runs a job without an interactive Pi session.
-  It supports plain or JSONL output and exit codes for CI. See [headless runs](docs/how-to/headless.md).
-
-## Keep it small
-
-Pinata reuses Pi's sessions, models, tools, and extensions. Workflows live in editable
-agent definitions, prompts, and recipes. Each run saves the definitions it used, so you
-can inspect its instructions alongside its results. Tool extensions load only
-for agents that need them.
-
-The benchmark suite tracks
-startup, memory, context size, and dispatch costs as the project grows.
+Pinata uses Pi's sessions, models, tools, and extensions. You can watch and steer agents
+in Pi, inspect saved runs, and choose process or Herdr backends when they suit your
+setup. [Watching agents](docs/tutorials/watching-agents.md) and
+[backends](docs/how-to/backends.md) show how.
 
 ## Documentation
 
-| I want to…                                 | Start here                                                                           |
-| ------------------------------------------ | ------------------------------------------------------------------------------------ |
-| Run my first agents                        | [First run](docs/tutorials/first-run.md)                                             |
-| Create or customize an agent               | [Creating agents](docs/how-to/agents.md)                                             |
-| Set models, limits, or repository defaults | [Configuration](docs/reference/config.md)                                            |
-| Build, review and apply a change           | [Build and review](docs/tutorials/build-and-review.md)                               |
-| Watch agents work                          | [Watching agents](docs/tutorials/watching-agents.md)                                 |
-| Choose lean or observe mode                | [Modes](docs/how-to/modes.md)                                                        |
-| Run agents as processes or Herdr panes     | [Backends](docs/how-to/backends.md), [Herdr](docs/how-to/herdr.md)                   |
-| Run jobs from scripts or CI                | [Headless runs](docs/how-to/headless.md)                                             |
-| Give builders their dependencies           | [Dependencies](docs/how-to/dependencies.md)                                          |
-| Recover, rerun or clean up                 | [Recovery](docs/how-to/recover.md)                                                   |
-| Set up on Windows or macOS                 | [Platforms](docs/how-to/platforms.md)                                                |
-| Look up a tool, command or config key      | [Reference](docs/README.md#reference)                                                |
-| Understand how it works and what it trusts | [Architecture](docs/explanation/architecture.md), [Trust](docs/explanation/trust.md) |
+- **Learn:** [First run](docs/tutorials/first-run.md), [build and review](docs/tutorials/build-and-review.md),
+  [Relay walkthrough](docs/tutorials/relay.md)
+- **Do:** [Create agents](docs/how-to/agents.md), [run headless](docs/how-to/headless.md),
+  [recover a run](docs/how-to/recover.md)
+- **Look up:** [Tools](docs/reference/tools.md), [commands](docs/reference/commands.md),
+  [configuration](docs/reference/config.md)
+- **Understand:** [Why Pinata?](docs/explanation/why-pinata.md),
+  [architecture](docs/explanation/architecture.md), [trust and safety](docs/explanation/trust.md)
 
-The [documentation index](docs/README.md) lists everything, including maintainer docs.
+The [documentation index](docs/README.md) has the full list, including maintainer docs.
 
 MIT licensed.

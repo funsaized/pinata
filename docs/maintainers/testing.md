@@ -1,5 +1,8 @@
 # Testing
 
+Start with the local checks. They use scripted providers and make no paid model
+calls:
+
 ```sh
 npm run check
 npm test
@@ -13,8 +16,8 @@ The default suite also exercises quality-report exit codes, benchmark completion
 measurement gates, and the Relay example. Relay tests cover starter setup in a path
 with spaces, refusal to overwrite existing work, and the complete
 job through review and destination integration with scripted provider responses.
-The package smoke also creates a starter from the installed tarball. These CI checks
-make no paid model calls; user-facing examples use real models.
+The package smoke also creates a starter from the installed tarball. User-facing
+examples use real models.
 
 `test/engine/fixtures/relay/` holds the implementation and tests used by the
 scripted job. It is excluded from the npm package.
@@ -42,8 +45,8 @@ the paid smoke is the separate `live-smoke.ts` entry point.
 The [CI workflow](../../.github/workflows/ci.yml) runs the checks and tests on Linux,
 macOS, and Windows with Node 22.19 and 24. It also runs the Pi and package smokes,
 Pi-hosted performance gates, and selected process-backend benchmarks. Interactive
-UX and viewer measurements run on Linux and macOS. This describes configured
-coverage, not a claim that every environment has passed for a particular commit.
+UX and viewer measurements run on Linux and macOS. Check the CI results for the
+commit you are testing to see which environments passed.
 
 ## Smokes and benchmarks
 
@@ -55,19 +58,27 @@ npm run bench -- --host tui --scenario ux-8
 node bench/viewer.ts
 ```
 
+### Select the Pi runtime
+
 The smokes and `--host pi` use `PINATA_PI`, or `pi` on PATH when it is unset. npm
 scripts prepend `node_modules/.bin`, so `npm run bench -- --host pi` can select the
 development dependency's Node CLI. Set `PINATA_PI` to the native binary's absolute
 path when measuring the Bun runtime, as CI does, and check each result's `host`.
-The report's top-level `meta.pi` comes from PATH and may differ from `PINATA_PI`.
-Benchmarks write ignored JSON reports to `bench/results/`. Every invocation requires
-all requested tasks to succeed,
-complete launch/dependency samples, and finite nonnegative core measurements.
-`--ci` additionally requires each applicable budget metric and fails a measured value
-above twice its budget (`bench/budgets.json`). A complete over-budget scenario gets up
-to two retries. A complete passing retry is accepted; a failed or incomplete retry
-fails the command. Missing measurements and execution failures are never retried into
-a pass. Reports are saved before returning failure, including retry diagnostics.
+The report's `meta.pi` records the version of that selected Pi command.
+
+### Read a benchmark result
+
+Benchmarks write ignored JSON reports to `bench/results/`. Every requested task must
+succeed. Reports must include complete launch and dependency samples, with finite,
+nonnegative core measurements.
+
+With `--ci`, every applicable budget metric is required. A value above twice its
+budget in `bench/budgets.json` fails the check. A complete scenario that exceeds its
+budget can retry twice; only a complete passing retry is accepted. Missing measurements,
+failed execution, or an incomplete retry fail the command. Reports include retry
+diagnostics and are saved even when the command fails. The `attempts` field retains
+each measurement, including retries; `meta.source` records the commit, dirty status,
+and lockfile hash to help identify the checkout used.
 `BENCH_BACKEND=process` or `herdr-pi` measures those backends
 (loopback provider). `--host tui` needs `script` (Linux, macOS).
 
@@ -81,13 +92,16 @@ across three runtime configurations.
 
 Use an explicit `--out` path when retaining several runs: the default filename is
 shared by runs on the same platform and date. Faux and loopback providers make no
-paid calls. These measurements isolate coordination overhead, not coding quality
-or time saved on a real assignment.
+paid calls. These measurements cover coordination overhead. Use live evaluations
+for coding quality and timed real assignments to measure time saved.
 
 Inside Herdr, `test/engine/herdr.test.ts` and the herdr-pi conformance cases also run; they
 create and close only their own workspaces.
 
 ## Live runs (spend real tokens) — _manual_
+
+Use a live smoke to check the real model and tool connection. Use the quality
+evaluator to score the agents' answers, code, and reviews:
 
 ```sh
 PINATA_LIVE_SMOKE=1 PINATA_LIVE_CONFIG=examples/configs/luna.json node test/engine/live-smoke.ts
@@ -105,7 +119,7 @@ process backends; the runners have no Herdr.
 
 The live smoke checks that a real coordinator calls `pinata_run` and the three scouts
 and dependent planner succeed. It reports model, backend, elapsed time, and parent
-plus worker cost. It does not independently grade their answers. Set
+plus worker cost. Answer grading is covered by the quality evaluator below. Set
 `PINATA_LIVE_KEEP=1` to retain its temporary repository and task evidence.
 
 The quality evaluator runs one to ten trials (`PINATA_EVAL_TRIALS`, default one).
@@ -127,7 +141,7 @@ and 1 when it is false. Wrong or unsupported factual answers, failed builder ora
 cases, incorrect or missing review verdicts, and failed live work fail the quality gate.
 The offline regression tests cover these thresholds and the report/exit-code contract.
 
-### Current limits and useful next improvements
+### What is still unmeasured
 
 - The process benchmark CI step enforces successful completion and required execution
   measurements, but runs without timing gates. Its startup and per-process RSS need
@@ -145,10 +159,10 @@ The offline regression tests cover these thresholds and the report/exit-code con
   across repeated trials. This would show when delegation helps without comparing
   unrelated tools or treating agent count as an outcome.
 
-The user-facing [why use Pinata guide](../explanation/why-pinata.md) connects the
-existing evidence to a first useful workflow. The [Relay tutorial](../tutorials/relay.md)
-covers a complete run with the user's models, checks, reviews, and destination
-verification. The remaining improvements above are follow-up work.
+The [why use Pinata guide](../explanation/why-pinata.md) helps users choose a first
+workflow. [Relay](../tutorials/relay.md) walks through a complete job with their
+models, reviews, and destination checks. The measurements listed above remain
+follow-up work.
 
 ## Definition and scale regression checks
 
@@ -164,5 +178,5 @@ npm run bench -- --scenario scale-queue-1000 --scenario scale-fanin-256 --scenar
 
 They measure queueing, dependency fan-in, and repeated batches with at most 64 active
 agents. `settledHeapDeltaMB` measures heap retained after GC while compact run history
-is still available; it is not per-session live memory. Compare repeat runs on a quiet
+is still available. Measure live session memory separately. Compare repeat runs on a quiet
 host. Provider latency is separate from engine overhead.

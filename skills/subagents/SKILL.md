@@ -121,6 +121,11 @@ artifacts; label their checks and review state accurately.
   fails the builder whatever it claimed. Self-reported checks are claims.
 - For a rejected review, call `pinata_repair` with concise feedback; the builder
   continues in its worktree and its reviewer runs again on the new change.
+  Use the original run ID and the review's target builder ID, not the reviewer ID.
+  Read the full findings and follow the result's `recovery` action. Keep that same
+  run ID for `pinata_changes` and `pinata_integrate` after all required tasks
+  succeed, including previously blocked dependents. Do not create a standalone
+  review to replace a rejected review or switch to whichever run is latest.
 - Own integration after every builder has a current approving review. Read
   `pinata_changes` for the original bases, immutable patches, checks and reviews.
   Use `pinata_integrate` for exact application when affected files still match;

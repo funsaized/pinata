@@ -1,4 +1,4 @@
-// Relative links in shipped documentation resolve within the repository.
+// Relative links in documentation, agent definitions and media notes resolve in the checkout.
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
@@ -23,6 +23,9 @@ const files = async () => [
   ...(await markdown("docs")),
   ...(await markdown("examples")),
   ...(await markdown("skills")),
+  ...(await markdown("agents")),
+  ...(await markdown("prompts")),
+  ...(await markdown("media")),
 ];
 
 test("every relative link in the docs resolves", async () => {

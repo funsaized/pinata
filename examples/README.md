@@ -19,21 +19,22 @@ For the evidence behind these workflows, see [why use Pinata](../docs/explanatio
 The presets are scout, builder, and reviewer. [planner](agents/planner.md) and
 [researcher](agents/researcher.md) are optional definitions: copy them to
 `.pi/pinata/agents/` or your personal Pi agent directory before running jobs that use
-them. See [creating agents](../docs/how-to/agents.md). The example files are packaged,
-but are never automatically registered.
+them. See [creating agents](../docs/how-to/agents.md). The package includes the
+example files; copying them into an agent directory makes them available.
 
 For a well-specified fix, use [fast-fix-job.json](jobs/fast-fix-job.json):
 builder → independent reviewer. Add a scout when a concrete uncertainty needs
 answering first. The `/pinata-fix` prompt prepares that workflow interactively.
 
 Copy an assignment into Pi and replace paths and acceptance criteria with your own.
-Ask Pi to delegate explicitly: `/scout` or another persona command alone applies
-the prompt to your current conversation and does not launch a worker.
+Ask Pi to delegate explicitly. Persona commands such as `/scout` apply instructions
+to your current conversation; a request to delegate launches a worker.
 
 For complete walkthroughs, see [the tutorials](../docs/README.md#tutorials).
 For task JSON, model configs, and complete jobs, see [task and job examples](jobs.md).
 
-For parallel explanations, use distinct assignments and let the parent synthesize:
+To investigate local code and its external dependencies together, give the scout
+and researcher separate questions. Pi combines their findings:
 
 ```text
 Use scout and researcher subagents in parallel. Scout: explain this repository's
@@ -48,7 +49,8 @@ material claims. Do not change files.
 ## Scout: find local evidence
 
 Use a scout when you need to understand existing code. It reads and searches
-files; it cannot run tests, browse the web, or edit.
+files using read-only local tools. Use a researcher for web sources and a builder
+for edits and test execution.
 
 ### Trace behavior
 
@@ -95,8 +97,9 @@ versions and affected APIs. Without them, narrow the question before launching.
 
 ## Planner: propose the work
 
-Use a planner when ordering, ownership, or verification needs thought. It can
-read the code and predecessor results, but cannot implement or run checks.
+Use a planner when you need help splitting a change into tasks. It reads code and
+earlier results, then proposes file ownership, dependency order, and checks for
+the coordinator to assign to builders.
 
 ### Plan from a scout report
 
@@ -117,9 +120,9 @@ integrated checks, plus any unresolved decision that prevents implementation.
 
 ## Builder: make a bounded change
 
-Use a builder for implementation. It has read, bash, edit, and write tools and
-needs explicit owned paths plus approved checks or a reason no checks apply.
-Pi records the approved write scope before launching.
+Give a builder a specific change, the files it owns, and the checks it should pass.
+It has read, bash, edit, and write tools. Pi records your authorized write scope
+before launching; if no checks apply, the task must explain why.
 
 ### Fix one regression
 
@@ -143,9 +146,8 @@ Pi should identify the check to run or explain why no automated check applies.
 
 ## Reviewer: challenge the actual result
 
-Use a reviewer for an independent inspection of a change. It has no
-bash or write tools, so it inspects the target's source, diff, result, and check
-logs rather than rerunning tests itself.
+A reviewer uses read-only tools to inspect the actual patch, source, result, and
+saved check logs. Builders make fixes, and the engine runs the assigned checks.
 
 ### Review a builder
 
@@ -197,8 +199,8 @@ test, keep ownership to greet.mjs and greet.test.mjs, require an independent
 review, and integrate locally after checks pass. Do not commit, push, or publish.
 ```
 
-The coordinator may skip scout, research, or planning tasks that the job does
-not need. It still owns scope, collection of every result, review resolution,
-and final verification.
+Pi chooses the agents the job needs; a clear fix may only need a builder and
+reviewer. It collects the results, resolves review findings, and verifies the
+final change within the scope you authorized.
 
 [Task and job examples](jobs.md) · [Documentation index](../docs/README.md)

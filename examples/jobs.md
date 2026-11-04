@@ -1,17 +1,81 @@
 # Task and job examples
 
-Use these examples when writing job files for [`pinata run`](../docs/how-to/headless.md)
-or integrations. For everyday delegation, use the [chat assignments](README.md).
+A job turns a goal into work Pinata can run: named tasks, agents, dependencies,
+file ownership, and checks. Save it as JSON to inspect the plan, adjust it, or run
+it from a terminal or CI. A coordinating agent can write the job for you.
+
+## Let a coordinator design the job
+
+Give a capable model your goal, repository, and Pinata's
+[task format](../docs/reference/tools.md#task),
+[job format](../docs/how-to/headless.md#write-a-job-file), and
+[configuration reference](../docs/reference/config.md). Pi or another coding agent
+can read those contracts, inspect the code, and write the task objects for you.
+
+The coordinator decides:
+
+- Which questions need scouts before implementation starts.
+- Which builders can work in parallel, with separate owned files.
+- Which tasks must wait for earlier results or reviews.
+- Which models and reusable agent definitions fit each assignment.
+- What checks and independent reviews will establish that the work is ready.
+
+You can use a stronger model for these decisions and choose worker models per
+task or agent. The coordinator's model is the one running your Pi session;
+the job's model settings choose the workers. If a task needs a specialist, the
+coordinator can [create an agent definition](../docs/how-to/agents.md) before
+running the job. Otherwise, scout, builder, and reviewer cover common coding work.
+
+For example, ask Pi to prepare a migration:
+
+```text
+Read Pinata's task, job, and configuration references. Inspect this repository
+and plan the migration from our old logging API to the replacement we selected.
+
+Save a job.json with the necessary agents and concrete acceptance criteria.
+Use scouts where call sites or behavior are unclear. Split independent packages
+between builders with separate ownership, and order any shared API changes first.
+Give each builder an independent reviewer. Use our existing tests for task checks
+and define integratedChecks for the combined result.
+
+Use my configured models and limits. Explain the task graph and any unresolved
+decisions before running it.
+```
+
+Once the plan is ready, Pi can run it, inspect the saved results, repair builders
+in the same run, and integrate approved changes. Pinata executes the declared
+dependencies; the coordinator makes the follow-up decisions. An optional `planner`
+worker returns a proposal for the coordinator to turn into tasks and launch.
+For headless execution, use [`pinata run`](../docs/how-to/headless.md); applying the
+result remains a separate step.
+
+## Where jobs help
+
+| Goal                                 | How to organize the work                                                                                                                                                                    |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Build a feature across modules       | Scouts establish interfaces, builders work on separate modules, reviewers check each patch, and a dependent builder connects them. [Relay](../docs/tutorials/relay.md) demonstrates this.   |
+| Migrate several packages             | Investigate shared assumptions first, then assign independent packages to builders. Check each package and the combined result. Adapt [parallel builders](jobs/parallel-builders-job.json). |
+| Review a branch or pull request      | Run independent reviewers with different focuses, such as correctness and test coverage, then have Pi combine their findings. Start with [review changes](jobs/review-changes-job.json).    |
+| Investigate an upgrade before coding | Gather local usage, check version-specific documentation, and pass the findings to a planner. Adapt [research and planning](jobs/research-plan-job.json).                                   |
+
+The saved plan can also become a repeatable script or CI step. Update its target,
+paths, and checks when the repository changes. Each execution makes fresh model
+calls and saves its own results.
+
+## Adapt the examples
+
+Copy the task objects below into a job file or use them when building an
+integration. For everyday delegation directly in Pi, use the [chat assignments](README.md).
 
 All jobs run real agents with your configured model credentials and spend tokens.
 Replace template models, paths, and checks with ones that fit your repository, and
 set limits before launching. For a prepared starter and complete walkthrough, use
 [Relay](../docs/tutorials/relay.md).
 
-Task objects belong in a job's `tasks` array; they are not complete jobs. See the
+Put these task objects in a complete job's `tasks` array. See the
 [tool reference](../docs/reference/tools.md) and [configuration](../docs/reference/config.md).
 The planner and researcher tasks require installing the optional
-[agent examples](../docs/how-to/agents.md#planner-and-researcher-examples).
+[agent examples](../docs/how-to/agents.md#start-from-an-example).
 
 ## Scout: find local evidence
 
@@ -29,8 +93,9 @@ This task fits a small greeting repository (`greet.mjs` and its test):
 }
 ```
 
-Expect a `brief` with local evidence and an empty changed-file list. A scout
-report is not proof that a proposed test passes.
+The result should contain a `brief` with file references and an empty changed-file
+list. Scouts suggest tests from source inspection; builders or engine checks can
+execute them.
 
 ## Research: answer a question from sources
 
@@ -47,9 +112,10 @@ report is not proof that a proposed test passes.
 }
 ```
 
-Expect a brief and `sources` entries with `url`, `title`, `supports`, and
-`applicability`. Success needs inspected sources, not plausible URLs. The worker
-must not silently switch providers or invent a citation when a fetch fails.
+The result should contain a brief and `sources` entries with `url`, `title`,
+`supports`, and `applicability`. Check that the researcher read the cited sources.
+A failed fetch should be reported as a blocker, without inventing a citation or
+silently switching providers.
 
 ## Planner: propose the work
 
@@ -69,9 +135,8 @@ Include the `scout` task above in the same run before adding this task:
 }
 ```
 
-Expect a `brief`, not changed files. The coordinator decides whether to turn
-the proposal into tasks. Commands mentioned in a plan are not automatically
-approved for execution.
+Expect a `brief` describing the proposed work. The coordinator decides which tasks
+to launch and confirms that proposed commands fall within your authorization.
 
 ## Builder: make a bounded change
 
@@ -98,9 +163,8 @@ approved checks or an explicit `noChecksReason` before submitting the task.
 }
 ```
 
-Expect a changed-file list matching the real delta and supervisor-run check
-evidence. A separate review is required for
-integration, even if the builder says the patch is correct.
+The result should list the files actually changed and include checks run by the
+engine. Read those logs, then collect an independent review before integration.
 
 ## Reviewer: challenge the actual result
 
@@ -125,10 +189,10 @@ To review changes that already exist, replace `reviewOf` and `after` with
 branch since `main`), or `"reviewPr": 482` (a GitHub pull request, fetched with
 `gh`). Such a job needs no builder or write approval.
 
-Expect a fingerprint-bound `approve` or `changes_requested` verdict. Approval
-cannot include unresolved medium, high, or critical findings. A rejection needs
-[repair and re-review](../docs/how-to/recover.md#a-task-failed-or-a-review-asked-for-changes),
-not a more flattering reviewer prompt.
+The reviewer returns `approve` or `changes_requested`, tied to the exact patch's
+fingerprint. Approval cannot include unresolved medium, high, or critical findings.
+For a rejection, [repair the builder and rerun its review](../docs/how-to/recover.md#repair-a-failed-task)
+in the same run.
 
 ## Model configs
 
@@ -148,10 +212,11 @@ job's `config` field. They use models from a real Pi setup (OpenAI `gpt-6-luna`,
 | [pinata.config.json](pinata.config.json)     | An example with explicit limits                                                                      |
 
 Pick models and thinking levels by role. Scouts mostly read, so `low` is
-usually enough. A different reviewer model can bring a different perspective, but does not
-guarantee it will catch the builder’s mistakes. `per-role.json` reviews Luna’s work
-with Astra. Fallbacks are tried only when the preferred model is unavailable
-or unauthenticated, never after a bad result.
+usually enough. A different reviewer model can bring a different perspective;
+judge its review by the findings and evidence it returns. `per-role.json` reviews
+Luna's work with Astra. Reviewers can still miss defects. Fallbacks apply only
+when the preferred model is unavailable or unauthenticated. Use
+[task recovery](../docs/how-to/recover.md) to address failed work.
 
 Use the thinking level Pi actually applies to that model. Pi silently maps some
 levels; for example, DeepSeek `deepseek-flash` turns `xhigh` into `max`. pinata
@@ -160,7 +225,8 @@ treats that change as "not ready" and skips the model, so these configs say `max
 ## Complete jobs
 
 Each file in [jobs/](jobs/) is a complete job for `pinata run`. Replace `cwd`,
-`approval`, and the assignment text before use.
+`approval`, and the assignment text before use, or ask your coordinator to adapt
+the example to your goal and repository.
 
 | File                                                          | Shape                                                                           |
 | ------------------------------------------------------------- | ------------------------------------------------------------------------------- |
@@ -171,9 +237,9 @@ Each file in [jobs/](jobs/) is a complete job for `pinata run`. Replace `cwd`,
 | [review-changes-job.json](jobs/review-changes-job.json)       | Read-only: two reviewers on the branch since `main`, with a $2 cost limit       |
 
 In `parallel-builders-job.json`, setup copies `node_modules` from your checkout
-(`$PINATA_ROOT`) instead of installing. That copy is nearly instant on
-copy-on-write filesystems, but it trusts your checkout's dependencies to match
-the lockfile. Use the detected `npm ci` when they might not.
+(`$PINATA_ROOT`) instead of installing. Copy-on-write filesystems can make this
+faster, but the command trusts your checkout's dependencies to match the lockfile.
+Use the detected `npm ci` when they might not.
 
 ## Files you can copy
 
