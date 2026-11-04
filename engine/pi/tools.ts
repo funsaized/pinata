@@ -463,8 +463,9 @@ export function registerTools(pi: ExtensionAPI, host: PinataHost): void {
     async execute(_id, input, signal, onUpdate, ctx) {
       const params = input as { run: string; task: string; feedback: string };
       try {
-        const { id, handle } = await host.find(params.run, ctx.cwd);
-        if (!handle) throw new Error(`Run ${id} is not in this session; start a new run`);
+        const found = await host.find(params.run, ctx.cwd);
+        const { id } = found;
+        const handle = found.handle ?? (await host.resumeDir(found.dir, ctx, true));
         host.engine(ctx).repair(id, params.task, params.feedback);
         const view = await host.foreground(handle, signal, (text, v) =>
           onUpdate?.({

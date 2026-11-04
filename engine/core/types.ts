@@ -109,7 +109,7 @@ export interface ToolRecord {
 
 export type EventBody =
   | { t: "run_started"; tasks: TaskSpec[]; mode: Mode; definitions?: Definitions }
-  | { t: "agent_queued"; task?: TaskSpec } // task: added or requeued after run_started
+  | { t: "agent_queued"; task?: TaskSpec; repair?: boolean } // task: added or requeued after run_started
   | { t: "agent_started"; backend: BackendKind | "fake"; model: ModelRef; workspace: WorkspaceRef }
   | { t: "turn_start"; turn: number }
   | { t: "text_delta" | "thinking_delta"; delta: string }
@@ -138,7 +138,7 @@ export type EventBody =
       turns: number;
       toolCalls: number;
     }
-  | { t: "run_settled"; status: RunStatus; usage: Usage }
+  | { t: "run_settled"; status: RunStatus; usage: Usage; stopped?: boolean }
   | { t: "run_resumed"; reason: string } // a settled run reopened (a repair)
   | { t: "telemetry"; sample: TelemetrySample }; // observe mode, at most every 2 s
 

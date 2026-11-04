@@ -269,3 +269,68 @@ for (const emitTail of [true, false]) {
     assert.deepEqual(view.usage, sum(await readEvents(handle.dir)));
   });
 }
+
+for (const mode of ["lean", "observe"] as const) {
+  test(`${mode}: explicit settled loading preserves repair budget and evidence until repair`, async (t) => {
+    const world = await fakeEngine(t);
+    const handle = await world.run([spec("build")], { mode, limits: { repairs: 1 } });
+    await handle.done;
+    await assert.rejects(world.engine.resume(handle.dir), /has settled/);
+    const make = () =>
+      createEngine({ backends: { fake: new FakeBackend() }, defaultBackend: "fake" });
+    let engine = make();
+    let loaded = await engine.resume(handle.dir, { settled: true, limits: { repairs: 1 } });
+    assert.equal((await loaded.done).status, "succeeded");
+    assert.equal((await readEvents(handle.dir)).filter((e) => e.t === "agent_started").length, 1);
+    engine.repair(handle.id, "build", "Check again");
+    await loaded.done;
+    engine = make();
+    loaded = await engine.resume(handle.dir, { settled: true, limits: { repairs: 1 } });
+    assert.throws(() => engine.repair(handle.id, "build", "Again"), /Repair budget exhausted/);
+    assert.equal((await loaded.done).status, "succeeded");
+  });
+}
+
+test("settled loading does not bypass a stopped run", async (t) => {
+  const world = await fakeEngine(t, { build: { hang: true } });
+  const handle = await world.run([spec("build")]);
+  world.engine.cancel(handle.id);
+  await handle.done;
+  const engine = createEngine({ backends: { fake: new FakeBackend() }, defaultBackend: "fake" });
+  await assert.rejects(engine.resume(handle.dir, { settled: true }), /run was stopped/);
+});
+
+test("a saved failed task repairs with its blocked review and accumulated usage", async (t) => {
+  const world = await fakeEngine(t, { build: { result: fakeResult({ status: "failed" }), usage } });
+  const handle = await world.run(
+    [
+      spec("build", "builder", { ownership: ["README.md"], noChecksReason: "fixture" }),
+      spec("review", "reviewer", { after: ["build"], reviewOf: "build" }),
+    ],
+    { allowWrites: true, limits: { costUsd: 1 } },
+  );
+  const before = await handle.done;
+  assert.equal(before.agents.build.status, "failed");
+  assert.equal(before.agents.review.status, "blocked");
+  const backend = new FakeBackend();
+  const engine = createEngine({ backends: { fake: backend }, defaultBackend: "fake" });
+  const loaded = await engine.resume(handle.dir, { settled: true, limits: { costUsd: 1 } });
+  assert.deepEqual(loaded.results().get("build"), handle.results().get("build"));
+  assert.deepEqual(engine.repair(handle.id, "build", "Fix the failed check"), ["build", "review"]);
+  const after = await loaded.done;
+  assert.equal(after.status, "succeeded");
+  assert.equal(after.usage.cost, before.usage.cost);
+  assert.deepEqual(
+    backend.starts.map((s) => s.task),
+    ["build", "review"],
+  );
+});
+
+test("loading a settled run cannot reset its accumulated cost budget", async (t) => {
+  const world = await fakeEngine(t, { build: { usage } });
+  const handle = await world.run([spec("build")], { limits: { costUsd: usage.cost } });
+  await handle.done;
+  const engine = createEngine({ backends: { fake: new FakeBackend() }, defaultBackend: "fake" });
+  await engine.resume(handle.dir, { settled: true, limits: { costUsd: usage.cost } });
+  assert.throws(() => engine.repair(handle.id, "build", "Try again"), /Cost limit reached/);
+});
