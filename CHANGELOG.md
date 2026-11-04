@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.0.3 (2026-11-04)
+
+- Repair saved runs from a new Pi session, including finished headless runs. Reuse
+  the original configuration and worktree and collect fresh independent reviews.
+- Preserve repair budgets and cumulative usage across sessions, reject stopped
+  runs, and enforce the job deadline when reopening a run for repair.
+
 ## 2.0.2 (2026-11-02)
 
 - Preserve cumulative cost, tokens, turns, and tool calls across repairs, reruns,
