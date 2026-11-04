@@ -30,7 +30,9 @@ run, and preserve your parent draft; Esc returns to it.
 
 Both interfaces use the same workspace: ↑/↓ selects an agent, Enter focuses its
 conversation, and Tab switches panes. In a conversation, ↑/↓ or the mouse wheel scrolls,
-PgUp/PgDn moves a page, End follows new output, and Enter starts a steering message.
+PgUp/PgDn moves a page, End follows new output, and Enter starts a steering message
+when the selected agent is running and the view can send guidance. Otherwise the
+conversation shows why steering is unavailable.
 Shift+↑/↓ cycles through agent conversations in either pane, wrapping at either end.
 It stays on the same agent while you compose a steering message.
 Esc cancels a draft before closing. R requests a full terminal redraw (and retries

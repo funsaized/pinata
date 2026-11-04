@@ -47,6 +47,8 @@ Every steer is recorded, and the builder's reviewer is told about it.
 
 Esc cancels a draft first. New runs, agent navigation, and clicks cannot redirect a draft.
 Saved conversations are read-only.
+The conversation shows when steering is unavailable because the agent is no longer
+running or the view is read-only.
 
 ## Use another terminal
 
@@ -73,4 +75,4 @@ An open log viewer connects when the run's socket becomes available.
 
 For text output, use `pinata logs <run> [--task <task>]`; add `--follow` to follow recorded events.
 The [command reference](../reference/commands.md) lists the controls, including `R`
-to redraw a damaged terminal display.
+to retry a failed load or redraw a damaged terminal display.

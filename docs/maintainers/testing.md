@@ -64,7 +64,7 @@ The smokes and `--host pi` use `PINATA_PI`, or `pi` on PATH when it is unset. np
 scripts prepend `node_modules/.bin`, so `npm run bench -- --host pi` can select the
 development dependency's Node CLI. Set `PINATA_PI` to the native binary's absolute
 path when measuring the Bun runtime, as CI does, and check each result's `host`.
-The report's top-level `meta.pi` comes from PATH and may differ from `PINATA_PI`.
+The report's `meta.pi` records the version of that selected Pi command.
 
 ### Read a benchmark result
 
@@ -76,7 +76,9 @@ With `--ci`, every applicable budget metric is required. A value above twice its
 budget in `bench/budgets.json` fails the check. A complete scenario that exceeds its
 budget can retry twice; only a complete passing retry is accepted. Missing measurements,
 failed execution, or an incomplete retry fail the command. Reports include retry
-diagnostics and are saved even when the command fails.
+diagnostics and are saved even when the command fails. The `attempts` field retains
+each measurement, including retries; `meta.source` records the commit, dirty status,
+and lockfile hash to help identify the checkout used.
 `BENCH_BACKEND=process` or `herdr-pi` measures those backends
 (loopback provider). `--host tui` needs `script` (Linux, macOS).
 
