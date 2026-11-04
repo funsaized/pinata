@@ -12,6 +12,8 @@ and CLI example.
 The video is an accelerated, 70-second edit of a real Pi session. Its playback time
 is not a runtime benchmark or the time needed to complete the job. To run it yourself, follow the
 [Relay tutorial](../docs/tutorials/relay.md).
+See [what the demo shows](proof.md) for the recording's evidence and the related
+offline checks.
 
 ## Illustration
 
