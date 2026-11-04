@@ -1,8 +1,32 @@
 # Configuration
 
-All keys are optional. Layered: `~/.pi/agent/pinata.json`, then `<repo>/.pi/pinata.json`,
-then the run's `config`. `models`, `fallbacks`, `limits` and `toolProviders` merge per entry; other keys
-replace. Unknown keys are rejected.
+Use configuration to choose models, set run limits, and prepare worktrees. Every
+key is optional; unknown keys are rejected except for the [ignored keys](#ignored-keys).
+
+## Where settings go
+
+Pinata applies settings in this order, with later values taking priority:
+
+1. Built-in defaults.
+2. `~/.pi/agent/pinata.json` for your personal defaults.
+3. `<repo>/.pi/pinata.json` for this repository.
+4. The run's `config` for one job.
+
+`PI_CODING_AGENT_DIR`, when set, replaces `~/.pi/agent`. The `models`, `fallbacks`,
+`limits`, and `toolProviders` objects merge by entry. For example, setting
+`limits.concurrency` keeps the other limits. Other keys are replaced.
+
+For example, put this in `.pi/pinata.json` to limit each run in this repository
+to four agents at once and skip dependency setup for a project that needs none:
+
+```json
+{ "limits": { "concurrency": 4 }, "setup": false }
+```
+
+Use the same object inside `pinata_run`'s `config` for one run. Put `ownership`,
+`checks`, and `evidenceChecks` on individual tasks, and `integratedChecks` on the run.
+
+## All settings
 
 | Key                  | Default and meaning                                                                                     |
 | -------------------- | ------------------------------------------------------------------------------------------------------- |
@@ -19,24 +43,21 @@ replace. Unknown keys are rejected.
 | `toolProviders`      | Named `{extension, tools}` records for custom agent tools; only required providers load                 |
 | `passEnv`            | Extra environment variable names for agents' checks and setup (never values)                            |
 
-For example, put this in `.pi/pinata.json` to limit each run in this repository
-to four agents at once and skip dependency setup for a project that needs none:
-
-```json
-{ "limits": { "concurrency": 4 }, "setup": false }
-```
-
-Use the same object inside `pinata_run`’s `config` for one run. Task ownership and
-checks do not belong here: `ownership`, `checks`, and `evidenceChecks` belong on
-tasks; `integratedChecks` belongs on the run.
-
 ## Models
 
-`thinking` is `off`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max`. A task uses the
-first of `task.model`, `models[agent]`, the definition model, `models.default` and this Pi's current model; if that
-model is unknown or has no configured authentication, `fallbacks[agent]` (or definition fallbacks) in order.
-`models` and `fallbacks` accept any installed agent name. See [creating agents](../how-to/agents.md)
-for definition defaults and tool providers.
+A task uses the first model defined in this list:
+
+1. The task's `model`.
+2. `models[agent]` from the merged configuration.
+3. The agent definition's model.
+4. `models.default` from the merged configuration.
+5. The current Pi model.
+
+If that model is unknown or has no configured authentication, Pinata tries
+`fallbacks[agent]` in order, or the definition's fallbacks when none are configured.
+`thinking` accepts `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`.
+Both `models` and `fallbacks` accept any installed agent name. See
+[creating agents](../how-to/agents.md) for definition defaults and tool providers.
 
 ## Limits
 
@@ -50,10 +71,12 @@ for definition defaults and tool providers.
 | `maxToolCalls` | 400 per agent                    | 10000    |
 | `costUsd`      | none: a dollar limit for the run | 10000    |
 
-An agent over its turns, tool calls or wall clock fails with the reason. When the run's
-cost passes `costUsd`, the run is cancelled; the agent that crossed it fails with "cost
-limit reached". Providers' rate limits are handled adaptively (each provider starts at 8
-agents at once, halves on a 429 and recovers).
+An agent fails when it exceeds its turn, tool-call, or time limit, with the reason
+saved in its result. When the run's cost exceeds `costUsd`, Pinata cancels the run;
+the agent that crossed the limit fails with "cost limit reached".
+
+Provider concurrency starts at eight agents, halves after a 429 response, and
+recovers as requests succeed. This adapts to the provider's rate limits.
 
 ## Worktree location
 
@@ -90,7 +113,7 @@ created before this setting retain their original `<run>/worktrees/` paths and a
 not moved automatically. Start a new run to use the external layout for those jobs.
 Worktrees remain available after a run for review and recovery. To remove one when
 it is no longer needed, use `git worktree remove <path>` from the repository after
-preserving any wanted changes; deleting run logs alone does not remove its worktrees.
+preserving any wanted changes. Worktrees remain on disk after you delete run logs.
 
 ## Setup
 

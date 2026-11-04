@@ -1,8 +1,11 @@
 # Build Relay with your models
 
-In this tutorial you will build the incident-report CLI from Pinata's demo with
-real model agents, inspect their checks and independent reviews, and verify the
-assembled program in your checkout.
+Build the incident-report CLI from Pinata's demo using your own models. Ten agents
+investigate the requirements, build separate modules, and review the changes. You
+then apply the patches and check the finished program against an expected report.
+
+You need Pi, Pinata, Node 22.19+, Git, and working model credentials. The agents spend
+tokens; the example itself needs no package installation.
 
 ## 1. Create your starter repository
 
@@ -17,21 +20,20 @@ Setup creates an independent Git repository with module stubs, requirements, sam
 data, `expected-report.md`, `verify.mjs`, and a ready-to-edit `job.json`. It makes an
 initial commit.
 
-## 2. Choose your models and inspect the job definition
+## 2. Choose your models and limits
 
 Edit `job.json`. Replace the `provider` and `id` placeholders in `config.models.scout`,
 `.builder`, and `.reviewer` with available models you have configured in Pi. Using
 the same model for all three is a simple first run.
 
 Review `config.limits`: the template allows three concurrent agents, a $1 reported
-worker-cost limit, five minutes per task, and twenty minutes per job. These are
-starting limits to give you an idea of configurable guard rails. Change these limits to suit your provider.
+worker-cost limit, five minutes per task, and twenty minutes per job. Adjust these
+starting limits to suit your models and provider.
 
-The `approval` field is a note recording what you authorize by running this job.
-Pinata requires a nonempty note for jobs with builders and saves it with the run.
-It does not turn that text into permissions or send it to the builders as an
-instruction. Each builder's `ownership` list sets which files it can edit: its
-module and tests.
+The `approval` field records the work you authorize. Pinata requires and saves this
+note for jobs with builders. Each builder's `ownership` list sets which files it can
+change: its module and tests. The approval note is neither a permission rule nor an instruction
+sent to builders.
 
 See [configuration](../reference/config.md) for role models and fallback settings.
 
@@ -50,16 +52,11 @@ pinata view <run-id>
 pinata logs <run-id>
 ```
 
-A successful `pinata run` means all tasks, including reviews and configured task
-checks, succeeded. It does not mean the changes have been applied to your checkout
-or verified there. Builder changes remain in their worktrees until you integrate
-them separately.
+When the command succeeds, the tasks, reviews, and configured task checks have passed.
+The patches are still in the builders' worktrees. In step 5, you ask Pi to apply
+them to your checkout and run the destination checks.
 
-This is how the current headless command works. A future iteration may allow for automatic integration in headless mode: The job's
-`integratedChecks` defines the destination checks to run during integration; it
-does not trigger integration or run those checks when the task graph finishes.
-Use Pi's `pinata_integrate` tool in step 5 to apply the approved changes and run
-those checks.
+The job's `integratedChecks` run during that separate integration step.
 
 ## 4. Inspect checks and reviews
 
@@ -71,8 +68,8 @@ independent review. Show which exact artifacts were approved and any failures.
 Stop before integration.
 ```
 
-Each approval should identify its builder's current artifact fingerprint. A passing
-builder check alone is not a review approval. You can inspect individual tasks with
+Check that each builder has both passing checks and a review approval tied to its
+current artifact fingerprint. You can inspect individual tasks with
 `pinata logs <run-id> --task build-parse` and `pinata logs <run-id> --task review-parse`.
 
 If a check or review failed, inspect its evidence before asking Pi for a repair:
@@ -83,12 +80,14 @@ then repair that task within its original ownership and checks. Collect a fresh
 independent review. Stop before integration.
 ```
 
-Pi can use `pinata_repair`; changes require a fresh review of the new artifact.
-See [recovery](../how-to/recover.md) for details on rerunning work that did not finish.
+For a failed builder check or rejected review, Pi uses `pinata_repair` on the
+builder in this same run. Its checks and independent review run again. Keep
+`<run-id>` for repair and integration so the new approval is recorded in the
+original run. See [recovery](../how-to/recover.md) for interrupted work.
 
 ## 5. Integrate and verify
 
-After checking and if results are passing, ask Pi:
+Once all required tasks and reviews pass, ask Pi:
 
 ```text
 Inspect Relay run <run-id>, its builder checks, patches, and independent reviews.
@@ -98,10 +97,9 @@ Do not stage, commit, push, install packages, or publish. Report the destination
 verification result and any remaining failures.
 ```
 
-Pinata's integration helper refuses stale approvals and overlapping destination
-changes. Expect a `verified` destination result when the exact artifacts apply and
-both checks pass. If the destination differs, inspect the discrepancy and arrange
-checks and review for the reconciled result; a previous approval is not transferable.
+Expect a `verified` destination result when the reviewed patches apply and both
+checks pass. Pinata refuses stale approvals and overlapping changes in your checkout.
+If you need to reconcile changes, check and review the combined result too.
 
 You can also inspect the assembled program yourself:
 
@@ -125,8 +123,8 @@ Events: 4 | Failures: 1 | Invalid lines: 0
 | worker | 2 | 0 | 0.0% | 19.0 |
 ```
 
-Use the requirements, expected output, checks, and reviews to judge whether your
-run succeeded.
+Compare your result with the requirements and expected output, then read the saved
+checks and reviews to see how the agents got there.
 
 For the file and job contracts, see [Relay reference](../reference/relay.md).
 [How Relay checks the work](../explanation/relay-safeguards.md) explains the

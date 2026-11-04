@@ -75,8 +75,7 @@ checkout:
 }
 ```
 
-Check that those dependencies match the lockfile first; this command does not check
-for you. On filesystems that support reflinks, copies can share data blocks while
+Check that those dependencies match the lockfile before copying them. On filesystems that support reflinks, copies can share data blocks while
 remaining independently writable. On macOS, use `cp -c -R` where supported. Speed
 depends on the filesystem and the dependencies being copied.
 
@@ -148,7 +147,6 @@ cache directory while no runs are active.
   it reports a blocker. Add it in your checkout and start a new run. The worktree
   receives the updated lockfile even if you have not committed it.
 - Setup runs with your permissions and network access, like an approved check.
-  It is not a sandbox.
 
 Related: [setup reference](../reference/config.md#setup) ·
 [trust and safety](../explanation/trust.md)

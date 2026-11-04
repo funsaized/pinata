@@ -1,17 +1,27 @@
 # Run jobs headless
 
-`pinata run` runs a job file without an interactive Pi, for scripts and CI. It starts the
-`pi` binary in print mode with only pinata's headless extension. Its agents call
-real models and spend tokens. Install Pi and Pinata, configure credentials, and
-choose available models and limits before running a job. For a prepared project
-and walkthrough, use [Relay](../tutorials/relay.md).
+Use `pinata run job.json` to execute a saved plan from a terminal, script, or CI. You get
+progress, saved results, and an exit code without opening an interactive Pi session.
+
+A job describes which agents do the work, what each owns, when tasks can start,
+and how their results will be checked. A coordinating agent can inspect your
+repository and write that job from a goal. See [designing jobs and use cases](../../examples/jobs.md#let-a-coordinator-design-the-job)
+for a prompt you can use in Pi or adapt for another coding agent.
+
+Install Pi and Pinata, configure model credentials, and choose models and limits
+before running a job. Agents spend tokens. For a prepared project and a complete
+walkthrough, use [Relay](../tutorials/relay.md).
 
 ## Write a job file
 
-A job contains `tasks` and optional `config`, `approval`, `instructions`,
-`integratedChecks`, and `noIntegratedChecksReason`. An optional `cwd` is relative
-to the job file; when omitted, the current shell directory is used. Interactive
-options such as `background` and `survive` belong to `pinata_run`, not this CLI:
+Ask your coordinator to read the [task contract](../reference/tools.md#task),
+[configuration reference](../reference/config.md), and fields below before writing
+the job. It should choose the agents, dependency order, ownership, and checks to
+fit your repository. You can also start from a [complete example](../../examples/jobs.md#complete-jobs)
+and edit it yourself.
+
+Start with a task and the model you want it to use. This example asks a scout to
+map duration parsing in a repository named `repo` next to the job file:
 
 ```json
 {
@@ -30,7 +40,13 @@ options such as `background` and `survive` belong to `pinata_run`, not this CLI:
 }
 ```
 
-The [examples](../../examples/) folder has complete jobs.
+Choose a model configured on your machine and replace the task and path. The
+[examples](../../examples/) folder has complete jobs you can adapt.
+
+A job requires `tasks`. It also accepts `config`, `approval`, `instructions`,
+`integratedChecks`, and `noIntegratedChecksReason`. `cwd` is relative to the job
+file; omit it to use the current shell directory. `background` and `survive` are
+options for Pi's `pinata_run` tool, not this command.
 
 ## Run it
 
@@ -41,6 +57,7 @@ pinata run job.json --mode observe
 pinata run job.json --watch
 ```
 
+The command starts `pi` in print mode with only Pinata's headless extension.
 Text output prints one line per state change; `--json` prints the run's events as JSONL.
 `--watch` (or observe mode) starts the run's socket and prints the `pinata view` command
 on stderr.
@@ -52,16 +69,18 @@ on stderr.
 | 2         | the job file is invalid       |
 | 3         | the run was cancelled         |
 
-For writers, record the authorized scope in `approval`. Exit code 0 means all
-tasks and their configured task checks succeeded; it does not mean the destination
-checkout has been updated or verified. Builders’ changes stay in their worktrees
-until a separate integration step.
+## Apply a builder's changes
 
-The current `pinata run` command has no automatic integration flag or job option.
-Setting `integratedChecks` only defines the checks to use during integration; it
-does not cause them to run when the task graph finishes. From an interactive Pi,
-use `pinata_integrate` to apply approved builder changes and run those checks in
-the destination checkout.
+For jobs with writers, record the authorized scope in `approval`. Exit code 0
+means every task and its configured checks succeeded. Builder patches remain in
+their worktrees until you apply them; the destination checkout is not yet verified.
+
+Open Pi in the repository and ask it to inspect the saved run, apply its approved
+changes, and run its destination checks. Pi uses `pinata_integrate` for this step.
+Follow [build and review](../tutorials/build-and-review.md) for the full sequence.
+
+`pinata run` finishes after the task graph completes. Run integration separately
+through Pi; that step applies the patches and runs `integratedChecks`.
 
 ## Read a run's log
 

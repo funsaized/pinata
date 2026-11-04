@@ -1,35 +1,32 @@
 # Trust and safety
 
-pinata enforces workflow rules; it is **not an operating-system sandbox**.
+Pinata checks tool access, file ownership, and the changes an agent produces.
+Worktrees keep agent patches separate from your checkout. Shell commands and
+custom tools retain your operating-system permissions and network access.
 
 ## What is enforced
 
-- **Loadouts.** Each definition declares its tools, and every tool call goes through a guard,
-  including calls made from codemode scripts.
-- **Workspace capabilities.** Live readers and review-target agents cannot use the built-in
-  edit, write or shell tools. Agent names do not determine these permissions.
-- **Ownership.** Worktree agents edit only their owned paths, inside their own worktree, never
-  through symbolic links; the engine checks the captured change afterwards too.
-- **Approval.** A run with worktree agents needs `approval`, the user's authorization for these
-  local writes, recorded with the run.
-- **Verification.** Builders' checks run in the engine, not on the builder's word. Reviews
-  are bound to the exact change and original base. Destination checks record a separate
-  content tree and do not grant independent review of integration. Integration refuses secret-bearing files (`.env*`,
-  `auth.json`, `.npmrc`, `.netrc`), symbolic links and submodules, and files you changed
-  since the run started.
-- **No recursion.** Agents never get pinata's tools (`PINATA_AGENT=1`).
-- **Environment.** Checks and setup get an allowlist of variables plus `passEnv` names.
-- **Viewers.** The run socket accepts only clients that present the run's token from
-  `link.json` (mode 0600, in a private directory).
+| Rule              | What Pinata checks                                                                                                                                                                                                                                                                      |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Tools             | Each definition declares allowed tools. Every call passes through a guard, including calls from codemode scripts.                                                                                                                                                                       |
+| Workspace         | Live readers and review-target agents cannot use the built-in edit, write, or shell tools. Permissions come from the definition's workspace capabilities.                                                                                                                               |
+| Ownership         | Worktree agents edit owned paths in their own worktree, never through symbolic links. The engine also checks the captured change.                                                                                                                                                       |
+| Authorization     | A run with worktree agents requires an `approval` record of the user's authorization for those local writes.                                                                                                                                                                            |
+| Checks and review | The engine runs builder checks. Review verdicts are tied to the exact change and its original base.                                                                                                                                                                                     |
+| Integration       | Destination checks record a separate content tree. Reviewing the combined change requires a separate independent review. Pinata refuses secret-bearing files (`.env*`, `auth.json`, `.npmrc`, `.netrc`), symlinks, submodules, and overlapping file changes made since the run started. |
+| Delegation        | Pinata reserves delegation tools for the coordinator and excludes them from workers (`PINATA_AGENT=1`).                                                                                                                                                                                 |
+| Environment       | Checks and setup receive an allowlist of variables plus names configured in `passEnv`.                                                                                                                                                                                                  |
+| Viewers           | A client must present the run's token from `link.json`, stored with mode 0600 in a private directory.                                                                                                                                                                                   |
 
-## What is not
+## What runs with your permissions
 
-A builder's `bash` and every check run with your permissions and network access. Read a
-builder's task, ownership and checks before approving it. Model output is data: pinata
-never lets it into a terminal as control sequences, and agents' results are evidence, not
-instructions, to the agents that read them.
+A builder's `bash` and every check run with your permissions and network access.
+Read the task, ownership, and checks before authorizing the work.
 
-Custom tool providers are trusted code running with your permissions. A definition's
-read-only workspace mode cannot make an arbitrary extension tool read-only. Configure
-providers deliberately. Saved entry-file hashes detect changes before a new launch;
-they do not freeze imported dependencies or remote service behavior.
+Pinata treats model output as data. It removes terminal control sequences from
+that output and labels results passed between agents as evidence.
+
+Custom tool providers are trusted code running with your permissions. Each provider
+is responsible for its tools' side effects, including in read-only workspaces.
+Configure providers deliberately. Saved entry-file hashes detect changes before a
+new launch; imported dependencies and remote services remain outside that check.

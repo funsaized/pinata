@@ -142,8 +142,7 @@ verification commands, and identify risks when combining changes.
 
 The researcher uses tools from pi-web-access and cites sources in its results.
 Each source uses an HTTP(S) `url` or a repository-relative `path`, with `title`,
-`supports`, and `applicability` fields. Reading a source does not verify that the
-code works when run.
+`supports`, and `applicability` fields. Use execution checks to verify runtime behavior.
 
 ## Definition fields
 
@@ -167,8 +166,9 @@ The workspace determines what a task needs, regardless of the agent's name:
 - Agents using `live-readonly` or `review-target` cannot request `bash`, `edit`,
   `write`, or `powershell`.
 
-A definition does not authorize installs, releases, delegation to other agents, or
-global changes. Tool restrictions are not an OS sandbox.
+Installs, releases, delegation, and global changes each require authorization for
+that action. Agents run with your operating-system permissions; see
+[trust and safety](../explanation/trust.md).
 
 ## Models and tools
 
@@ -216,7 +216,7 @@ affect new runs; resume, repair, and rerun use the saved copy.
 Before launching an agent, Pinata checks the hash of each extension's entry file,
 including for queued tasks after resuming. Detached agents already running keep their loaded
 extensions. If an extension has changed, restore it or start a new run. These hashes
-cover only entry files, not their dependencies or external service state.
+cover entry files. Dependencies and external service state remain outside that check.
 
 Pinata limits the combined size of dependency summaries passed to an agent. Full
 results remain on disk.
