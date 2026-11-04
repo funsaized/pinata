@@ -27,7 +27,9 @@ conversation, and Tab switches panes. In a conversation, ↑/↓ or the mouse wh
 PgUp/PgDn moves a page, End follows new output, and Enter starts a steering message.
 Shift+↑/↓ cycles through agent conversations in either pane, wrapping at either end.
 It stays on the same agent while you compose a steering message.
-Esc cancels a draft before closing. M toggles mascot motion; Space bonks it.
+Esc cancels a draft before closing. R requests a full terminal redraw (and retries
+a failed load) if stale display artifacts appear. Like resizing, this can clear
+and repaint Pi's scrollback. M toggles mascot motion; Space bonks it.
 
 For streaming and steering from another terminal, run `/pinata view --external` in the
 Pi session that owns the run. It prints the exact `pinata view` command; inside Herdr it

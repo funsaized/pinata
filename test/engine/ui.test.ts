@@ -1,7 +1,7 @@
 // Run status, conversation controls, asynchronous selection, and UI resource cleanup.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { TuiAltScreen, visibleWidth, type Terminal } from "@earendil-works/pi-tui";
+import { TuiAltScreen, TuiMainScreen, visibleWidth, type Terminal } from "@earendil-works/pi-tui";
 import { initTheme } from "@earendil-works/pi-coding-agent";
 import type { DetailSource } from "../../engine/ui/detail.ts";
 import type { AgentEvent, TaskSpec } from "../../engine/core/types.ts";
@@ -246,6 +246,87 @@ function harness(options: Partial<WorkspaceOptions> = {}) {
 }
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
+test("workspace redraw is explicit and ordinary updates retain differential rendering", async (t) => {
+  for (const Renderer of [TuiMainScreen, TuiAltScreen]) {
+    await t.test(Renderer.name, async (t) => {
+      const writes: string[] = [];
+      const terminal: Terminal = {
+        columns: 120,
+        rows: 32,
+        kittyProtocolActive: false,
+        start() {},
+        stop() {},
+        async drainInput() {},
+        write: (data) => writes.push(data),
+        moveBy() {},
+        hideCursor() {},
+        showCursor() {},
+        clearLine() {},
+        clearFromCursor() {},
+        clearScreen() {},
+        setTitle() {},
+        setProgress() {},
+        setProgramStatus() {},
+      };
+      const tui = new Renderer(terminal);
+      let reads = 0;
+      const h = harness({
+        tui,
+        motion: false,
+        readRun: () => {
+          reads++;
+          return sceneRun(3);
+        },
+      });
+      t.after(() => {
+        h.scene.dispose();
+        tui.stop();
+      });
+      await h.scene.ready;
+      tui.addChild({
+        render: () => Array.from({ length: 100 }, (_, i) => `Parent chat ${i}`),
+        invalidate() {},
+      });
+      tui.start();
+      const overlay = tui.showOverlay(h.scene, {
+        width: "96%",
+        maxHeight: "95%",
+        anchor: "center",
+      });
+      tui.renderNow();
+      const bounds = overlay.getBounds()!;
+      const initial = h.scene.render(bounds.width);
+      const redraws = tui.fullRedraws;
+      const unchanged = () => {
+        writes.length = 0;
+        h.time(10_000);
+        tui.renderNow();
+        const output = writes.join("");
+        assert(!output.includes("║"), "elapsed time never forces unchanged rows to repaint");
+        assert(!output.includes("\x1b[2J") && !output.includes("\x1b[3J"));
+        assert.deepEqual(h.scene.render(bounds.width), initial);
+        assert.equal(h.timers.size, 0, "recovery never starts an idle timer");
+      };
+      unchanged();
+      assert.equal(tui.fullRedraws, redraws);
+      // Exercise repeated recovery as well as the return to normal diffing.
+      for (let i = 1; i <= 2; i++) {
+        writes.length = 0;
+        h.scene.handleInput("r");
+        tui.renderNow();
+        const output = writes.join("");
+        assert.equal((output.match(/║/g) ?? []).length, 2 * (bounds.height - 2));
+        assert(output.includes("╔") && output.includes("╚"), "both borders are repainted");
+        assert(output.includes("\x1b[2J"), "Pi resets the physical screen as on resize");
+        assert.equal(tui.fullRedraws, redraws + i);
+        assert.equal(reads, 1, "a redraw does not reload run data");
+        unchanged();
+        assert.equal(tui.fullRedraws, redraws + i);
+      }
+    });
+  }
+});
+
 test("the workspace releases animation timers when idle, motion is disabled, or it is disposed", async () => {
   const h = harness();
   await flush();
@@ -483,7 +564,7 @@ test("the workspace selects conversations, scrolls, steers, and preserves draft 
   assert(h.scene.detail!.expanded);
   h.scene.handleInput("\r");
   assert(h.scene.detail!.input);
-  for (const ch of "m q keep scope") h.scene.handleInput(ch);
+  for (const ch of "m q r keep scope") h.scene.handleInput(ch);
   assert(h.scene.motion, "typing m does not toggle motion");
   assert.equal(h.closed(), 0, "typing q does not close the workspace");
   h.scene.render(120);
@@ -491,17 +572,17 @@ test("the workspace selects conversations, scrolls, steers, and preserves draft 
   wheel(-3);
   assert.equal(h.scene.detail!.offset, 3, "scrolling remains available while composing");
   wheel(-1, other.x, other.y);
-  assert.equal(h.scene.detail!.input!.getValue(), "m q keep scope");
+  assert.equal(h.scene.detail!.input!.getValue(), "m q r keep scope");
   for (const key of ["\x1b[1;2A", "\x1b[1;2B"]) h.scene.handleInput(key);
-  assert.equal(h.scene.detail!.input!.getValue(), "m q keep scope");
+  assert.equal(h.scene.detail!.input!.getValue(), "m q r keep scope");
   assert.equal(h.scene.agent, "build", "keyboard navigation cannot redirect a steering draft");
   h.scene.handleMouse({ type: "click", button: "left", x: other.x, y: other.y });
   assert.equal(h.scene.agent, "build", "a click cannot redirect a draft");
   h.tui.terminal.rows = 12;
-  assert.match(strip(h.scene.render(80)).join("\n"), /steer › m q keep scope/);
+  assert.match(strip(h.scene.render(80)).join("\n"), /steer › m q r keep scope/);
   h.scene.handleInput("alt+enter");
   await flush();
-  assert.deepEqual(sent, [["build", "m q keep scope", "followUp"]]);
+  assert.deepEqual(sent, [["build", "m q r keep scope", "followUp"]]);
   h.scene.handleInput("\r");
   h.scene.handleInput("\x1b");
   assert.equal(h.scene.detail!.input, null);
