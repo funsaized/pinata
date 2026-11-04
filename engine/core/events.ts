@@ -48,7 +48,9 @@ const isUsage = (v: unknown): v is Usage =>
 // Field checks per event type, beyond the envelope.
 const BODY: Record<EventType, (e: any) => boolean> = {
   run_started: (e) => Array.isArray(e.tasks) && (e.mode === "lean" || e.mode === "observe"),
-  agent_queued: (e) => e.task === undefined || (typeof e.task === "object" && e.task !== null),
+  agent_queued: (e) =>
+    (e.task === undefined || (typeof e.task === "object" && e.task !== null)) &&
+    (e.repair === undefined || typeof e.repair === "boolean"),
   agent_started: (e) =>
     (BACKENDS.includes(e.backend) || e.backend === "fake") &&
     typeof e.model === "object" &&
@@ -100,7 +102,10 @@ const BODY: Record<EventType, (e: any) => boolean> = {
     Number.isFinite(e.sample.rssMB) &&
     Number.isFinite(e.sample.heapUsedMB) &&
     Number.isFinite(e.sample.elu),
-  run_settled: (e) => ["succeeded", "failed", "cancelled"].includes(e.status) && isUsage(e.usage),
+  run_settled: (e) =>
+    ["succeeded", "failed", "cancelled"].includes(e.status) &&
+    isUsage(e.usage) &&
+    (e.stopped === undefined || typeof e.stopped === "boolean"),
 };
 
 const AGENT_ID = /^[a-z][a-z0-9-]{0,31}$/;

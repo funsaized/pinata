@@ -7,7 +7,7 @@ import { fauxAssistantMessage, fauxText, fauxToolCall } from "@earendil-works/pi
 import pinata from "../../engine/pi/extension.ts";
 import { pinataCommand } from "../../engine/pi/commands.ts";
 import { PinataHost } from "../../engine/pi/host.ts";
-import { statusTool } from "../../engine/pi/tools.ts";
+import { registerTools, statusTool } from "../../engine/pi/tools.ts";
 import { fauxWorld, type FauxTurn } from "./faux.ts";
 import { spec } from "./helpers.ts";
 
@@ -822,6 +822,37 @@ test("orchestrator tools hand off artifacts, integrate after HEAD advancement, a
   const changes = (await a.call("pinata_changes", { run: result.run })).details.result;
   assert.equal(changes.scope, "builder-artifacts");
   assert(existsSync(changes.builders[0].patch));
+  // A new Pi host has only the saved run, as when inspecting a finished CLI run.
+  const fresh = () => {
+    const pi: any = {
+      registerTool: (tool: any) => a.tools.set(tool.name, tool),
+      getSettings: () => ({}),
+      getAllTools: () => [],
+    };
+    const host = new PinataHost(pi);
+    registerTools(pi, host);
+    return host;
+  };
+  const host = fresh();
+  const repaired = await a.call("pinata_repair", {
+    run: result.run,
+    task: "build",
+    feedback: "Recheck the implementation and collect a fresh independent review",
+  });
+  assert.equal(repaired.details.result.status, "succeeded", JSON.stringify(repaired));
+  assert.equal(host.handles.get(result.run)!.view().agents.review.status, "succeeded");
+  assert.equal(
+    saved.resume.data.prep.worktreePaths.build,
+    JSON.parse(await readFile(join(result.dir, "run.json"), "utf8")).resume.data.prep.worktreePaths
+      .build,
+  );
+  const log = (await readFile(join(result.dir, "events.jsonl"), "utf8"))
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  assert.equal(log.filter((e) => e.t === "agent_started" && e.agent === "review").length, 2);
+  assert.equal(log.filter((e) => e.t === "agent_queued" && e.repair).length, 1);
+
   assert.equal(
     (await a.call("pinata_verify", { run: result.run })).details.result.application,
     "different",

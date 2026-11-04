@@ -152,6 +152,7 @@ export interface RunOptions {
 }
 
 export interface ResumeOptions {
+  settled?: boolean; // load a settled run without scheduling; explicit repair reopens it
   cwd?: string; // the repository the run works in
   limits?: Partial<Limits>;
   policy?: "allSettled" | "failFast";
@@ -739,7 +740,12 @@ export function createEngine(options: EngineOptions): Engine {
         ? "cancelled"
         : "failed";
     // Results are invalidated on repair; the view retains effort from every attempt.
-    emit(run, undefined, { t: "run_settled", status, usage: run.current.usage });
+    emit(run, undefined, {
+      t: "run_settled",
+      status,
+      usage: run.current.usage,
+      ...(run.controller.signal.aborted && { stopped: true }),
+    });
     const view = run.current;
     void (async () => {
       // Settle hooks of the last agent are tracked right after it settles; let them register.
@@ -892,7 +898,13 @@ export function createEngine(options: EngineOptions): Engine {
       const existing = runs.get(first.run);
       if (existing && !existing.finished) return handleOf(existing);
       const before = replayView(events, first.run);
-      if (before.status !== "running") throw new Error(`Run ${first.run} has settled`);
+      if (before.status !== "running" && !opts.settled)
+        throw new Error(`Run ${first.run} has settled`);
+      if (
+        opts.settled &&
+        (before.status === "cancelled" || events.some((e) => e.t === "run_settled" && e.stopped))
+      )
+        throw new Error("The run was stopped; start a new run");
       // Tasks: the run's own, plus any added or requeued later (last definition wins).
       const specs = new Map<string, TaskSpec>(first.tasks.map((t) => [t.id, t]));
       for (const e of events)
@@ -920,6 +932,14 @@ export function createEngine(options: EngineOptions): Engine {
         const agent = before.agents[task.id];
         const state = run.agents.get(task.id)!;
         state.source = agent?.source;
+        state.repairs = events.filter(
+          (e) => e.t === "agent_queued" && e.agent === task.id && e.repair === true,
+        ).length;
+        // Older logs identify settled repairs through their reopening reason.
+        state.repairs = Math.max(
+          state.repairs,
+          events.filter((e) => e.t === "run_resumed" && e.reason === `repair of ${task.id}`).length,
+        );
         if (agent)
           state.observed = {
             usage: usageRemainder(agent.usage, agent.previous?.usage ?? ZERO_USAGE),
@@ -941,6 +961,11 @@ export function createEngine(options: EngineOptions): Engine {
       }
       const handle = handleOf(run);
       for (const listener of runListeners) listener(handle);
+      if (before.status !== "running") {
+        run.finished = true;
+        run.resolve(before);
+        return handle;
+      }
       emit(run, undefined, { t: "run_resumed", reason: opts.reason ?? "Pi restarted" });
       if (run.mode === "observe") startTelemetry(run);
       startJobDeadline(run);
@@ -1027,6 +1052,8 @@ export function createEngine(options: EngineOptions): Engine {
         throw new Error(
           `Task ${task} is ${state.status}; wait for it or cancel it before repairing`,
         );
+      if (run.limits.costUsd !== undefined && run.usage.cost >= run.limits.costUsd)
+        throw new Error("Cost limit reached; start a new run with an appropriate budget");
       if ((state.repairs ?? 0) >= run.limits.repairs)
         throw new Error(
           `Repair budget exhausted for ${task} (limits.repairs ${run.limits.repairs})`,
@@ -1056,6 +1083,7 @@ export function createEngine(options: EngineOptions): Engine {
         run.finished = false;
         run.done = new Promise<RunView>((resolve) => (run.resolve = resolve));
         emit(run, undefined, { t: "run_resumed", reason: `repair of ${task}` });
+        startJobDeadline(run);
         if (run.mode === "observe") startTelemetry(run);
       }
       state.repairs = (state.repairs ?? 0) + 1;
@@ -1074,7 +1102,11 @@ export function createEngine(options: EngineOptions): Engine {
         s.observed = { usage: ZERO_USAGE, turns: 0, toolCalls: 0 };
         s.source = undefined;
         run.settledResults.delete(name);
-        emit(run, name, { t: "agent_queued", task: taskSpec(s.task) });
+        emit(run, name, {
+          t: "agent_queued",
+          task: taskSpec(s.task),
+          ...(name === task && { repair: true }),
+        });
       }
       run.scheduler.resume();
       pumpAll();
