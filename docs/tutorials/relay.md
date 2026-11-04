@@ -4,13 +4,6 @@ In this tutorial you will build the incident-report CLI from Pinata's demo with
 real model agents, inspect their checks and independent reviews, and verify the
 assembled program in your checkout.
 
-You need Pi 1.1.0+, Pinata (including the `pinata` command), Node 22.19+, Git, and a
-copy of this repository. Configure working model credentials in Pi before starting.
-The agents and Pi coordinator use real models and spend tokens. Relay itself has
-no package dependencies.
-
-Commands on this page are _manual_. Start in the Pinata repository root.
-
 ## 1. Create your starter repository
 
 From the Pinata repository root:
@@ -22,34 +15,25 @@ cd ../relay-demo
 
 Setup creates an independent Git repository with module stubs, requirements, sample
 data, `expected-report.md`, `verify.mjs`, and a ready-to-edit `job.json`. It makes an
-initial commit. Setup refuses an existing destination; choose a new name if it
-already exists.
+initial commit.
 
-Use the generated job in this new directory. Running the template from inside
-Pinata's source checkout is not the exercise. The starter CLI throws `Not implemented`;
-it becomes runnable when the reviewed changes are integrated.
-
-## 2. Choose your models and limits
+## 2. Choose your models and inspect the job definition
 
 Edit `job.json`. Replace the `provider` and `id` placeholders in `config.models.scout`,
 `.builder`, and `.reviewer` with available models you have configured in Pi. Using
-the same model for all three is a simple first run. Adjust `thinking` to a setting
-your model supports. Every role is explicit and its fallback list starts empty,
-so personal role defaults cannot silently supply a different model.
+the same model for all three is a simple first run. 
 
 Review `config.limits`: the template allows three concurrent agents, a $1 reported
 worker-cost limit, five minutes per task, and twenty minutes per job. These are
-starting limits, not an estimated price or a guaranteed completion time. Usage is
-reported by the provider; in-flight calls can overshoot a limit. Later interactive
-coordinator turns have their own cost. Change these limits to suit your provider.
+starting limits to give you an idea of configurable guard rails. Change these limits to suit your provider.
 
-The `approval` field records the scope of the job you choose to run. The builders
-own only their module and test files. `verify.mjs` and `expected-report.md` remain
-outside their ownership. The job requires an exact match to the sample report.
+The `approval` field is a note recording what you authorize by running this job.
+Pinata requires a nonempty note for jobs with builders and saves it with the run.
+It does not turn that text into permissions or send it to the builders as an
+instruction. Each builder's `ownership` list sets which files it can edit: its
+module and tests. 
 
-Use `pi --list-models` to find provider/model IDs and `pi auth check` to check your
-configured credentials. See [configuration](../reference/config.md) for role models
-and fallback settings.
+See [configuration](../reference/config.md) for role models and fallback settings.
 
 ## 3. Run and watch
 
