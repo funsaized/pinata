@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
 import type { Scenario, ScenarioResult } from "../../bench/lib.ts";
@@ -105,9 +105,77 @@ test("CI accepts a complete within-budget retry, but retains a broken retry as f
     });
     assert.equal(code, broken ? 1 : 0);
     assert.equal(calls, 2);
-    const saved = JSON.parse(await readFile(file, "utf8")).results[0];
-    assert.match(saved.notes.join(), broken ? /provider disconnected/ : /within budget/);
+    const saved = JSON.parse(await readFile(file, "utf8"));
+    assert.match(saved.results[0].notes.join(), broken ? /provider disconnected/ : /within budget/);
+    assert.equal(saved.attempts[fanout.name].length, 2);
+    assert.equal(saved.attempts[fanout.name][0].memoryPerAgentMB, 11);
+    assert.equal(saved.attempts[fanout.name][1].memoryPerAgentMB, broken ? null : 1);
+    assert(
+      !saved.attempts[fanout.name][0].notes.some((note: string) => note.startsWith("CI attempts:")),
+    );
+    assert.equal(saved.validation.passed, !broken);
   }
+});
+
+test("benchmark reports retain all three over-budget attempts and the validation policy", async (t) => {
+  const file = join(await tempDir(t, "pinata-performance-"), "over.json");
+  let calls = 0;
+  assert.equal(
+    await main(["--ci", "--scenario", fanout.name, "--out", file], async () => ({
+      ...result(fanout),
+      memoryPerAgentMB: 11 + calls++,
+    })),
+    1,
+  );
+  const saved = JSON.parse(await readFile(file, "utf8"));
+  assert.deepEqual(
+    saved.attempts[fanout.name].map((r: ScenarioResult) => r.memoryPerAgentMB),
+    [11, 12, 13],
+  );
+  assert.equal(saved.results[0].memoryPerAgentMB, 11);
+  assert.equal(saved.validation.passed, false);
+  assert.equal(saved.meta.ci, true);
+  assert.equal(saved.meta.budgetFactor, 2);
+  assert(saved.meta.budgets.some((b: { metric: string }) => b.metric === "memoryPerAgentMB"));
+});
+
+test("benchmark provenance identifies the checkout and selected Pi executable", async (t) => {
+  const dir = await tempDir(t, "pinata-performance-");
+  const binary = join(dir, "selected pi.mjs");
+  await writeFile(binary, 'console.log("fixture-pi-version");\n');
+  for (const [key, value] of Object.entries({
+    PINATA_PI: binary,
+    BENCH_BACKEND: "process",
+    BENCH_MODE: "observe",
+  })) {
+    const previous = process.env[key];
+    t.after(() => {
+      if (previous === undefined) delete process.env[key];
+      else process.env[key] = previous;
+    });
+    process.env[key] = value;
+  }
+  const file = join(dir, "provenance.json");
+  assert.equal(
+    await main(["--host", "pi", "--scenario", fanout.name, "--out", file], async () =>
+      result(fanout),
+    ),
+    0,
+  );
+  const saved = JSON.parse(await readFile(file, "utf8"));
+  assert.equal(saved.schemaVersion, 1);
+  assert.match(saved.meta.source.commit, /^[a-f0-9]{40,64}$/);
+  assert.equal(typeof saved.meta.source.dirty, "boolean");
+  assert.match(saved.meta.source.lockfileSha256, /^[a-f0-9]{64}$/);
+  assert.equal(saved.meta.pi, "fixture-pi-version");
+  assert.equal(saved.meta.host, "pi");
+  assert.equal(saved.meta.backend, "process");
+  assert.equal(saved.meta.mode, "observe");
+  assert.deepEqual(saved.meta.scenarios, [fanout.name]);
+  assert.equal(saved.meta.ci, false);
+  assert.deepEqual(saved.meta.budgets, []);
+  assert.match(saved.meta.scope, /synthetic orchestration/);
+  assert.equal(saved.attempts[fanout.name].length, 1);
 });
 
 test("benchmark selection rejects typos instead of running only the recognized subset", async () => {
@@ -116,4 +184,14 @@ test("benchmark selection rejects typos instead of running only the recognized s
     /Unknown benchmark scenario/,
   );
   await assert.rejects(main(["--host", "typo"]), /Unknown benchmark host/);
+  for (const key of ["BENCH_BACKEND", "BENCH_MODE"]) {
+    const previous = process.env[key];
+    try {
+      process.env[key] = "typo";
+      await assert.rejects(main([]), /Unknown benchmark (backend|mode)/);
+    } finally {
+      if (previous === undefined) delete process.env[key];
+      else process.env[key] = previous;
+    }
+  }
 });
