@@ -243,7 +243,7 @@ export async function main(argv = process.argv.slice(2), run = runScenario): Pro
       date,
       startedAt,
       source: revision,
-      scope: "synthetic orchestration; not live-model quality, real-job duration or speedup",
+      scope: "synthetic orchestration overhead for the selected workload and host",
       os: platform(),
       release: release(),
       arch: arch(),

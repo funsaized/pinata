@@ -36,7 +36,7 @@ repository.` If the command is missing, use `/reload` or restart Pi. This
 inspection does not send a request to a model.
 
 If the model list was empty, use `/login` in Pi to authenticate with a provider.
-Then use `/model` to select an authenticated model from your available choices. The scouts inherit the current
+Then use `/model` to select an authenticated model. The scouts inherit the current
 Pi model unless a configured model or agent definition takes precedence; see
 [model selection](../reference/config.md#models).
 
@@ -52,8 +52,8 @@ do not increase it.
 
 Pi can delegate the two questions to scouts with `pinata_run`. They investigate
 in parallel, and Pi can combine their findings when they finish. The $1 limit is
-a reported worker-cost threshold, not a guaranteed spending cap: in-flight
-requests can overshoot it and coordinator tokens are excluded.
+a reported worker-cost threshold: in-flight requests can overshoot it, and it
+excludes coordinator tokens.
 
 ## 3. Watch them
 

@@ -9,11 +9,9 @@ parallel, each with an independent reviewer. A CLI builder waits for those revie
 then gets its own review. The coordinator applies the changes and runs the tests
 and CLI example.
 
-The video is an accelerated, 70-second edit of a real Pi session. Its playback time
-is not a runtime benchmark or the time needed to complete the job. To run it yourself, follow the
-[Relay tutorial](../docs/tutorials/relay.md).
-See [what the demo shows](proof.md) for the recording's evidence and the related
-offline checks.
+The video is a 70-second accelerated edit of a real Pi session. For the recording
+and related offline checks, see [what the demo shows](proof.md). To run the job
+yourself, follow the [Relay tutorial](../docs/tutorials/relay.md).
 
 ## Illustration
 

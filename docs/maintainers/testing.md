@@ -16,8 +16,8 @@ The default suite also exercises quality-report exit codes, benchmark completion
 measurement gates, and the Relay example. Relay tests cover starter setup in a path
 with spaces, refusal to overwrite existing work, and the complete
 job through review and destination integration with scripted provider responses.
-The package smoke also creates a starter from the installed tarball. These CI checks
-make no paid model calls; user-facing examples use real models.
+The package smoke also creates a starter from the installed tarball. User-facing
+examples use real models.
 
 `test/engine/fixtures/relay/` holds the implementation and tests used by the
 scripted job. It is excluded from the npm package.
