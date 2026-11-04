@@ -3,11 +3,9 @@
 **Pi stays small. Your subagent system should too.**
 
 Pinata is a fast, lightly opinionated subagent layer for Pi. You define agents, piñata delegates
-work, boundaries, and verifies results.
+work, boundaries, and verifies results. Pi keeps the harness small and lets you make it yours. Pinata follows that lead.
 
-Pi keeps the harness small and lets you make it yours. Pinata follows that lead.
-
-Scout, builder, and reviewer come in the box. These are lightweight definitions meant for common development tasks. Planner and researcher are
+**Scout**, **builder**, and **reviewer** come in the box. These are lightweight definitions meant for common development tasks. _Planner_ and _researcher_ are
 [examples to steal and make your own](docs/how-to/agents.md).
 
 [![piñata: small core, parallel agents](media/pinata-hero-v2.png)](media/pinata-demo.mp4)
