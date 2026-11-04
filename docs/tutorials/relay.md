@@ -39,9 +39,8 @@ The destination must not already exist. With a source checkout, you can set
 
 Setup creates an independent Git repository with module stubs, requirements, sample
 data, `expected-report.md`, `verify.mjs`, and a ready-to-edit `job.json`. It makes an
-initial commit without calling a model. The starter contains stubs: `node verify.mjs`
-is expected to fail until the implementation is integrated, and an empty test
-run is not evidence that the exercise is complete.
+initial commit without calling a model. The starter contains stubs, so `node verify.mjs`
+will fail until the implementation is integrated.
 
 ## 2. Choose your models and limits
 
@@ -59,9 +58,8 @@ in your Pi setup. Copy the `provider` and `model` columns into the respective
 values in place of the brackets. If the result is `not_ready`, finish
 authentication before running the job.
 
-All three entries are placeholders, so each must be replaced before running.
-Using the same model for all three is a simple first run; choose one suited to
-coding and review. Model availability, quality, and price depend on your provider.
+For a simple first run, use the same model for all three roles; choose one suited to
+coding and review.
 
 Review `config.limits`: the template allows three concurrent agents, a $2 reported
 worker-cost limit, five minutes per task, and twenty minutes per job. It also sets
@@ -69,9 +67,8 @@ worker-cost limit, five minutes per task, and twenty minutes per job. It also se
 these starting limits to suit your models and provider. The role fallback lists
 are empty; configure alternatives if you need them.
 
-The cost limit cancels the run after recorded worker usage exceeds it. It is not
-a price quote or a guaranteed spending cap: parallel requests already in flight
-can overshoot it, and coordinator tokens are not counted. Check your provider's
+The cost limit cancels the run after recorded worker usage exceeds it. In-flight
+requests can overshoot the limit, and it excludes coordinator tokens. Check your provider's
 pricing and usage as well as the run totals.
 
 The `approval` field records the work you authorize. Pinata requires and saves this
@@ -105,9 +102,7 @@ node "$PINATA_PACKAGE/bin/pinata.mjs" logs <run-id>
 
 When the command succeeds, the tasks, reviews, and configured task checks have passed.
 The patches are still in the builders' worktrees. In step 5, you ask Pi to apply
-them to your checkout and run the destination checks.
-
-The job's `integratedChecks` run during that separate integration step.
+them to your checkout and run the job's `integratedChecks` there.
 
 ## 4. Inspect checks and reviews
 

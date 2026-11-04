@@ -39,10 +39,9 @@ pinata agents validate
 pinata agents show api-scout
 ```
 
-Use the agent in a small task that needs the tool and inspect the result. The
-provider declaration maps tool names to an extension; it does not itself implement
-them. Each requested custom tool must resolve to exactly one provider. Pinata
-refuses a missing or ambiguous provider before launching the agent, and loads only
+Use the agent in a small task that needs the tool and inspect the result. Each requested
+custom tool must resolve to exactly one provider. Pinata refuses a missing or ambiguous
+provider before launching the agent, and loads only
 the providers needed by that agent. For web research, see [enable research](research.md),
 which also describes `webExtension` and Pi's detection of pi-web-access.
 

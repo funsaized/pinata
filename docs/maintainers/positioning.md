@@ -1,13 +1,12 @@
 # Positioning notes
 
-These notes describe the code in this branch. They are working material for maintainers,
-not a release announcement or evidence that this branch is available on npm. Check the
-published package and its documentation before making release-specific claims.
+These working notes describe the code in this branch. Check the published package and
+its documentation before making release-specific claims.
 
-Audit target: PR head `f3e30b1d4c2850da86209286b550367731c5803e`. On 2026-11-04,
-npm reported `latest` as 2.0.3; the `v2.0.3` tag resolved to
-`23fbed2205c7e455f65ec1b9d5fe56405c88b7ce`. npm did not provide `gitHead`
-metadata, so this observation does not establish the tarball's exact source commit.
+Audit target: PR head `f3e30b1d4c2850da86209286b550367731c5803e`. On 2026-11-04, npm
+reported `latest` as 2.0.3; the `v2.0.3` tag resolved to
+`23fbed2205c7e455f65ec1b9d5fe56405c88b7ce`. npm did not provide `gitHead` metadata, so
+this observation does not establish the tarball's exact source commit.
 
 ## Positioning
 
@@ -16,10 +15,9 @@ assign tasks to reusable agents, run independent work in parallel, and inspect t
 results. Start with scout, builder, and reviewer; customize agents, models, tools, and
 execution settings for the work at hand.
 
-The useful distinction is control over the workflow: tasks can specify dependencies,
-file ownership, and checks. Builders work in separate Git worktrees; controlled handoff
-and integration require independent review of the exact change. These are aids to review,
-not a security boundary or proof that a change is correct.
+Tasks can specify dependencies, file ownership, and checks. Builders work in separate
+Git worktrees; handoff and integration require independent review of the exact change.
+Worktrees separate patches but are not a security boundary.
 
 ## Draft announcement — unpublished
 
