@@ -2,7 +2,7 @@
 // is fed RunViews pushed by the host instead of polling saved runs, and its animation timer
 // runs only while motion is on and an agent is working (or a bonk or cheer is playing).
 import type { RunView } from "../core/view.ts";
-import { matchesKey } from "@earendil-works/pi-tui";
+import { matchesKey, visibleWidth } from "@earendil-works/pi-tui";
 import { RIBBON_COLORS, colorize, mascotFrame, mood } from "./mascot.ts";
 import { GLYPHS, clean, duration, counts, runSummary, usageText, statusLabel } from "./text.ts";
 import type { Paint } from "./widget.ts";
@@ -336,7 +336,7 @@ export class RunWorkspace {
         this.loadingRun = null;
         this.detailError = null;
         this.ready = this.refresh();
-      }
+      } else if (this.detail?.loadError) this.ready = this.detail.sync();
       // Explicit recovery only: let Pi reset its terminal state as it does on
       // resize. Ordinary updates keep differential rendering and its caches.
       this.tui.requestRender(true);
@@ -456,7 +456,7 @@ export class RunWorkspace {
       fg(
         this.error ? "error" : state.kind === "attention" ? "warning" : "muted",
         this.error
-          ? `Status unavailable · ${this.error} · R retry`
+          ? `r retry · Status unavailable · ${this.error}`
           : moodText + facts + (this.connection ? ` · ${this.connection}` : ""),
       ),
     ];
@@ -500,7 +500,7 @@ export class RunWorkspace {
         fg(
           this.detailError ? "error" : "muted",
           this.detailError
-            ? `${this.detailError} · R retry`
+            ? `r retry · ${this.detailError}`
             : !view
               ? this.runs.length
                 ? "Reading saved run state…"
@@ -529,18 +529,42 @@ export class RunWorkspace {
     if (!view && bodyHeight > 1 && !wide)
       body[1] = pad(this.error ?? "No runs yet. Ask Pi to start a pinata task.", inner);
     const input = !!this.detail?.input;
+    // Choose whole hints before clipping: narrow panes must retain their main action
+    // and a way to close or recover, even when the decorative controls no longer fit.
+    const fit = (...variants: string[]) =>
+      variants.find((hint) => visibleWidth(hint) <= inner) ?? variants.at(-1)!;
+    const steering = this.detail?.steeringHint ?? "Conversation unavailable";
+    const recovery =
+      this.error || this.detailError || this.detail?.loadError ? "r retry" : "r redraw";
     const primary = input
-      ? "Enter send steer · Alt+Enter follow-up · Esc cancel"
+      ? fit("Enter send steer · Esc cancel", "Enter send · Esc cancel", "Enter send · Esc")
       : this.focus === "agents"
-        ? "↑↓ select agent · Enter open · Tab conversation"
-        : "↑↓ scroll · PgUp/PgDn page · Enter steer · Ctrl+O tools · Tab agents";
-    const secondary = `Shift+↑↓ agent · Esc close · R redraw · M motion ${this.motion ? "on" : "off"} · Space bonk${this.runs.length > 1 ? ` · ←→ run (${this.index + 1}/${this.runs.length}, agent list)` : ""}`;
-    const content = [
-      ...top,
-      ...body,
-      fg("muted", primary),
-      fg("dim", input ? "Steering " + this.agent : secondary),
-    ];
+        ? fit(
+            "↑↓ select agent · Enter open · Tab conversation",
+            "↑↓ agent · Enter open",
+            "↑↓ select · ↵ open",
+          )
+        : fit(
+            `${steering} · Tab agents · ↑↓ scroll · PgUp/PgDn page · Ctrl+O tools`,
+            `${steering} · Tab agents · ↑↓ scroll`,
+            `${steering} · ↑↓ scroll`,
+            `${steering} · Tab agents`,
+            steering,
+          );
+    const navigation =
+      this.runs.length > 1 && this.focus === "agents"
+        ? `←→ run (${this.index + 1}/${this.runs.length})`
+        : "Shift+↑↓ agent";
+    const secondary = input
+      ? fit(`Alt+Enter follow-up · Steering ${clean(this.agent)}`, "Alt+Enter follow-up")
+      : fit(
+          `Esc close · ${recovery} · ${navigation} · m motion ${this.motion ? "on" : "off"} · Space bonk`,
+          `Esc close · ${recovery} · ${navigation}`,
+          `Esc close · ${recovery} · Tab pane`,
+          `Esc close · ${recovery}`,
+          "Esc close",
+        );
+    const content = [...top, ...body, fg("muted", primary), fg("dim", secondary)];
     return workspaceFrame(
       content.map((line) => " " + pad(line, inner) + " "),
       width,

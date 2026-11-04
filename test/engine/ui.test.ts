@@ -246,6 +246,123 @@ function harness(options: Partial<WorkspaceOptions> = {}) {
 }
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
+test("viewer hints follow steering availability, including settled, queued and repaired agents", async (t) => {
+  let run = sceneRun(0);
+  const sent: unknown[] = [];
+  const steer = async (...args: unknown[]) => {
+    sent.push(args);
+  };
+  const source: DetailSource = {
+    run: run.view.run,
+    cwd: ".",
+    agents: () => run.view.order,
+    view: (id) => run.view.agents[id],
+    load: async () => ({ messages: [] }),
+    steer,
+  };
+  const h = harness({ readRun: () => run, detailSource: () => source, agent: "map" });
+  t.after(() => h.scene.dispose());
+  await h.scene.ready;
+  const hints = (expected: string, canSteer: boolean) => {
+    for (const width of [24, 40, 60, 80, 120]) {
+      const lines = strip(h.scene.render(width));
+      const text = lines.join("\n");
+      assert(text.includes(expected), `missing ${expected} at ${width} columns`);
+      assert.equal(text.includes("Enter steer"), canSteer, `steering at ${width} columns`);
+      assert.match(text, /Esc close/);
+      assert.match(text, /r redraw/);
+      if (width >= 40) assert.match(text, /Tab agents|Tab pane/);
+      assert(lines.every((line) => visibleWidth(line) <= width));
+    }
+  };
+  hints("Enter steer", true);
+  run = sceneRun(3);
+  h.scene.update(run);
+  hints("Agent not running", false);
+  h.scene.handleInput("\r");
+  assert.equal(h.scene.detail!.input, null);
+  assert.equal(sent.length, 0);
+
+  // A repair reuses the detail source: availability must not be cached at construction.
+  run = sceneRun(0);
+  h.scene.update(run);
+  hints("Enter steer", true);
+  h.scene.selectAgent("review");
+  await h.scene.ready;
+  hints("Agent not running", false);
+
+  h.scene.selectAgent("map");
+  await h.scene.ready;
+  delete source.steer;
+  hints("Read-only", false);
+  h.scene.handleInput("\r");
+  assert.equal(h.scene.detail!.input, null);
+  assert.match(h.scene.detail!.notice!, /read-only/);
+  source.steer = steer;
+  hints("Enter steer", true);
+  h.scene.handleInput("\r");
+  assert(h.scene.detail!.input);
+  for (const width of [24, 40, 80, 120]) {
+    const text = strip(h.scene.render(width)).join("\n");
+    assert.match(text, width === 24 ? /Enter send · Esc/ : /Esc cancel/);
+    assert.match(text, /Alt\+Enter follow-up/);
+    assert(!text.includes("Esc close"), "Escape cancels a draft before closing the viewer");
+    assert(!text.includes("r redraw"), "r belongs to the draft while composing");
+  }
+  h.scene.handleInput("\x1b");
+  h.scene.handleInput("\t");
+  assert.match(strip(h.scene.render(24)).join("\n"), /↑↓ select · ↵ open/);
+});
+
+test("r retries a failed transcript load and then returns to redraw without reloading", async (t) => {
+  const run = sceneRun(3);
+  let fail = true,
+    loads = 0;
+  const renders: Array<boolean | undefined> = [];
+  const h = harness({
+    readRun: () => run,
+    agent: "map",
+    tui: {
+      terminal: { rows: 32 },
+      requestRender: (force) => {
+        renders.push(force);
+      },
+    },
+    detailSource: () => ({
+      run: run.view.run,
+      cwd: ".",
+      agents: () => run.view.order,
+      view: (id) => run.view.agents[id],
+      load: async () => {
+        loads++;
+        if (fail) throw new Error("Transcript temporarily unavailable\x1b[2J");
+        return { messages: [{ role: "user", content: "Recovered transcript" }] };
+      },
+    }),
+  });
+  t.after(() => h.scene.dispose());
+  await h.scene.ready;
+  assert.equal(loads, 1);
+  assert(!h.scene.detail!.loadError!.includes("\x1b"));
+  for (const width of [24, 40, 120])
+    assert.match(strip(h.scene.render(width)).join("\n"), /r retry/);
+  h.scene.handleInput("r");
+  await h.scene.ready;
+  assert.equal(loads, 2, "a failed retry remains recoverable");
+  fail = false;
+  h.scene.handleInput("r");
+  await h.scene.ready;
+  assert.equal(loads, 3);
+  assert.equal(h.scene.detail!.loadError, null);
+  assert.match(strip(h.scene.render(80)).join("\n"), /Recovered transcript/);
+  assert.match(strip(h.scene.render(80)).join("\n"), /r redraw/);
+  h.scene.handleInput("r");
+  await h.scene.ready;
+  assert.equal(loads, 3, "a successful retry restores redraw-only behavior");
+  assert.equal(renders.filter(Boolean).length, 3, "each r explicitly redraws the screen");
+  assert.equal(h.timers.size, 0, "recovery does not start idle animation");
+});
+
 test("workspace redraw is explicit and ordinary updates retain differential rendering", async (t) => {
   for (const Renderer of [TuiMainScreen, TuiAltScreen]) {
     await t.test(Renderer.name, async (t) => {
