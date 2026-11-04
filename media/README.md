@@ -10,7 +10,7 @@ then gets its own review. The coordinator applies the changes and runs the tests
 and CLI example.
 
 The video is an accelerated, 70-second edit of a real Pi session. Its playback time
-is not the time needed to complete the job. To run it yourself, follow the
+is not a runtime benchmark or the time needed to complete the job. To run it yourself, follow the
 [Relay tutorial](../docs/tutorials/relay.md).
 
 ## Illustration
