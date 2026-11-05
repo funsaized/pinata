@@ -91,9 +91,20 @@ For the in-process backend, values above twice the limits in
 complete scenario over budget can retry twice; execution failures and missing
 measurements fail immediately. Process and herdr-pi runs have execution checks but
 no timing budgets, including when `--ci` is set. CI runs 20 process trials with a
-60-second timeout per trial covering startup, warm-up and cleanup, and a 12-minute
-step cap to leave time for artifact upload. These are resource limits, not
-performance gates.
+60-second execution timeout per trial covering startup, warm-up and measured work,
+with cleanup and drain grace as described below. A 12-minute step cap leaves time
+for artifact upload. These are resource limits, not performance gates; checkpoint
+file I/O is not hard-time bounded. Each trial independently checkpoints to `<reportPath>.status.json`
+(for example `trials-uuid/1-fanout-1.json.status.json`), with running, stopping,
+and finished states. The initial and nonfinished states are invalid; a forced pipe
+drain, incomplete trial, or cleanup failure also invalidates the cohort. Checkpoints
+are written independently of aggregate publication.
+
+A host that exits while its output pipes remain open gets 250 ms to drain; the
+trial can fail before the configured trial timeout. Cleanup has a 2-second deadline,
+followed by at most 250 ms to drain pipes. Cleanup is best effort, not operating-system
+containment: already reparented or escaped descendants may evade discovery and may
+require caller cleanup. The runner does not signal an already exited host PID.
 
 Compare repeated runs on the same quiet machine with the same scenario, backend,
 provider, host, runtime and configuration. Baseline comparison checks the workload,

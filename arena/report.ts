@@ -1,4 +1,4 @@
-import { lstatSync, readFileSync, readdirSync } from "node:fs";
+import { lstatSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { RunResult } from "./runner.ts";
@@ -29,6 +29,32 @@ const canonical = (value: unknown): string =>
       : item,
   );
 const unique = (values: unknown[]) => new Set(values.map(canonical)).size;
+
+function assertUniqueTrials(results: RunResult[]): void {
+  const runs = new Set<string>();
+  const cells = new Set<string>();
+  const orders = new Set<string>();
+  for (const result of results) {
+    const run = canonical([result.batchId, result.runId]);
+    const cell = canonical([
+      result.batchId,
+      result.task.id,
+      result.task.version,
+      result.workflow,
+      result.trial,
+    ]);
+    const order = canonical([result.batchId, result.order]);
+    if (runs.has(run))
+      throw new Error(`Duplicate trial identity: ${result.batchId}/${result.runId}`);
+    if (cells.has(cell))
+      throw new Error(`Duplicate requested trial cell: ${result.batchId}/${result.runId}`);
+    if (orders.has(order))
+      throw new Error(`Duplicate trial order: ${result.batchId}/${result.order}`);
+    runs.add(run);
+    cells.add(cell);
+    orders.add(order);
+  }
+}
 
 export function comparisonWarnings(results: RunResult[]): string[] {
   const warnings: string[] = [];
@@ -112,6 +138,7 @@ export function comparisonWarnings(results: RunResult[]): string[] {
 }
 
 export function renderReport(results: RunResult[]): string {
+  assertUniqueTrials(results);
   const lines = [
     "# Coding arena report",
     "",
@@ -245,27 +272,236 @@ export function renderReport(results: RunResult[]): string {
   return lines.join("\n");
 }
 
-export function loadResults(paths: string[]): RunResult[] {
-  const results: RunResult[] = [];
-  function visit(path: string) {
-    const stat = lstatSync(path);
-    if (stat.isSymbolicLink()) return;
-    if (stat.isDirectory()) {
-      for (const name of readdirSync(path).sort())
-        if (name !== "candidate" && name !== "evidence" && name !== ".git") visit(join(path, name));
-    } else if (path.endsWith("result.json")) {
-      const value = JSON.parse(readFileSync(path, "utf8")) as RunResult;
-      if (
-        value.schemaVersion !== 1 ||
-        !value.provenance ||
-        !value.task ||
-        !Array.isArray(value.errors)
-      )
-        throw new Error(`Unsupported result artifact: ${path}`);
-      results.push(value);
-    }
+interface BatchManifest {
+  schemaVersion: 1;
+  batchId: string;
+  mode: RunResult["mode"];
+  tasks: Array<Pick<RunResult["task"], "id" | "version">>;
+  workflows: RunResult["workflow"][];
+  trials: number;
+  adapter: RunResult["adapter"];
+  limits: RunResult["provenance"]["limits"];
+}
+
+const record = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === "object" && !Array.isArray(value);
+const strings = (value: unknown): value is string[] =>
+  Array.isArray(value) && value.every((entry) => typeof entry === "string");
+const positiveInteger = (value: unknown): value is number =>
+  Number.isSafeInteger(value) && Number(value) > 0;
+const measurement = (value: unknown) =>
+  value === null || (typeof value === "number" && Number.isFinite(value) && value >= 0);
+const workflowNames = ["sequential", "parallel", "sequential-review", "parallel-review"];
+
+function artifact(path: string, directory = false): void {
+  const stat = lstatSync(path, { throwIfNoEntry: false });
+  if (!stat) throw new Error(`Incomplete batch: missing ${path}`);
+  if (stat.isSymbolicLink() || !(directory ? stat.isDirectory() : stat.isFile())) {
+    throw new Error(
+      `Expected a regular ${directory ? "directory" : "file"}, not a symlink: ${path}`,
+    );
   }
-  for (const path of paths) visit(resolve(path));
+}
+
+function readJson(path: string): unknown {
+  artifact(path);
+  try {
+    return JSON.parse(readFileSync(path, "utf8"));
+  } catch (error) {
+    throw new Error(`Malformed JSON artifact: ${path}: ${String(error)}`);
+  }
+}
+
+function manifestAt(path: string): BatchManifest {
+  const value = readJson(path);
+  if (
+    !record(value) ||
+    value.schemaVersion !== 1 ||
+    typeof value.batchId !== "string" ||
+    !/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(value.batchId) ||
+    !["scripted-control", "external"].includes(String(value.mode)) ||
+    !positiveInteger(value.trials) ||
+    value.trials > 100 ||
+    !strings(value.workflows) ||
+    !value.workflows.length ||
+    !value.workflows.every((workflow) => workflowNames.includes(workflow)) ||
+    new Set(value.workflows).size !== value.workflows.length ||
+    !Array.isArray(value.tasks) ||
+    !value.tasks.length ||
+    !value.tasks.every(
+      (task) =>
+        record(task) &&
+        typeof task.id === "string" &&
+        /^[a-z0-9][a-z0-9_-]*$/.test(task.id) &&
+        positiveInteger(task.version),
+    ) ||
+    new Set(value.tasks.map((task) => task.id)).size !== value.tasks.length ||
+    !record(value.adapter) ||
+    typeof value.adapter.name !== "string" ||
+    typeof value.adapter.command !== "string" ||
+    !record(value.limits) ||
+    ![
+      "timeoutMs",
+      "oracleTimeoutMs",
+      "maxRepairs",
+      "maxLogBytes",
+      "maxTreeFiles",
+      "maxTreeBytes",
+      "maxFileBytes",
+      "maxTreeDepth",
+    ].every(
+      (key) =>
+        Number.isSafeInteger((value.limits as Record<string, unknown>)[key]) &&
+        Number((value.limits as Record<string, unknown>)[key]) >= 0,
+    ) ||
+    !positiveInteger(value.limits.timeoutMs) ||
+    !positiveInteger(value.limits.oracleTimeoutMs)
+  ) {
+    throw new Error(`Unsupported batch manifest: ${path}`);
+  }
+  return value as unknown as BatchManifest;
+}
+
+function resultAt(path: string): RunResult {
+  const value = readJson(path);
+  if (
+    !record(value) ||
+    value.schemaVersion !== 1 ||
+    typeof value.batchId !== "string" ||
+    typeof value.runId !== "string" ||
+    !positiveInteger(value.trial) ||
+    !positiveInteger(value.order) ||
+    !record(value.task) ||
+    typeof value.task.id !== "string" ||
+    !positiveInteger(value.task.version) ||
+    typeof value.task.title !== "string" ||
+    !workflowNames.includes(String(value.workflow)) ||
+    !["scripted-control", "external"].includes(String(value.mode)) ||
+    !(
+      value.control === null ||
+      ["known-good", "noop", "broken", "repair-control"].includes(String(value.control))
+    ) ||
+    !["pending", "running", "completed", "failed"].includes(String(value.status)) ||
+    !record(value.adapter) ||
+    typeof value.adapter.name !== "string" ||
+    !strings(value.errors) ||
+    !measurement(value.elapsedMs) ||
+    !record(value.provenance) ||
+    !record(value.provenance.runtime) ||
+    !record(value.provenance.limits) ||
+    !["arenaSourceSha256", "corpusSha256", "promptSha256", "starterSha256", "configSha256"].every(
+      (key) => typeof (value.provenance as Record<string, unknown>)[key] === "string",
+    ) ||
+    (value.candidateCorrect !== undefined &&
+      value.candidateCorrect !== null &&
+      typeof value.candidateCorrect !== "boolean") ||
+    (value.comparisonEligible !== undefined && typeof value.comparisonEligible !== "boolean") ||
+    (value.treatment !== undefined &&
+      (!record(value.treatment) ||
+        !["verified-control", "unverified", "invalid"].includes(String(value.treatment.status)) ||
+        !strings(value.treatment.reasons))) ||
+    (value.adapterProcess !== null &&
+      (!record(value.adapterProcess) || !measurement(value.adapterProcess.elapsedMs))) ||
+    (value.oracle !== null &&
+      (!record(value.oracle) ||
+        !Number.isSafeInteger(value.oracle.passed) ||
+        Number(value.oracle.passed) < 0 ||
+        !positiveInteger(value.oracle.total) ||
+        Number(value.oracle.passed) > value.oracle.total ||
+        !strings(value.oracle.failed))) ||
+    (value.response !== null &&
+      (!record(value.response) ||
+        !record(value.response.framework) ||
+        !record(value.response.usage) ||
+        !["inputTokens", "outputTokens", "costUsd"].every((key) =>
+          measurement((value.response as { usage: Record<string, unknown> }).usage[key]),
+        ) ||
+        !measurement(value.response.attempts) ||
+        !measurement(value.response.repairs) ||
+        !strings(value.response.limitations) ||
+        !Array.isArray(value.response.events) ||
+        !value.response.events.every(
+          (event) =>
+            record(event) &&
+            typeof event.stage === "string" &&
+            typeof event.status === "string" &&
+            (event.elapsedMs === undefined || measurement(event.elapsedMs)),
+        )))
+  ) {
+    throw new Error(`Unsupported result artifact: ${path}`);
+  }
+  return value as unknown as RunResult;
+}
+
+/** Load complete explicit batch directories; never infer a denominator from files found. */
+export function loadResults(paths: string[]): RunResult[] {
+  if (!paths.length) throw new Error("At least one batch directory is required");
+  const results: RunResult[] = [];
+  const directories = new Set<string>();
+  const batches = new Set<string>();
+  for (const input of paths) {
+    const path = resolve(input);
+    artifact(path, true);
+    const directory = realpathSync(path);
+    if (directories.has(directory)) throw new Error(`Duplicate batch directory: ${input}`);
+    directories.add(directory);
+    const manifest = manifestAt(join(directory, "manifest.json"));
+    if (batches.has(manifest.batchId))
+      throw new Error(`Duplicate batch identity: ${manifest.batchId}`);
+    batches.add(manifest.batchId);
+    const runs = join(directory, "runs");
+    artifact(runs, true);
+    const expected = new Map<
+      string,
+      {
+        task: BatchManifest["tasks"][number];
+        workflow: RunResult["workflow"];
+        trial: number;
+        order: number;
+      }
+    >();
+    for (const task of manifest.tasks)
+      for (let trial = 1; trial <= manifest.trials; trial++)
+        for (const workflow of manifest.workflows) {
+          const runId = `${task.id}-${workflow}-trial-${trial}`;
+          expected.set(runId, { task, workflow, trial, order: expected.size + 1 });
+        }
+    const actual = new Set(readdirSync(runs));
+    for (const runId of actual)
+      if (!expected.has(runId)) throw new Error(`Unexpected trial artifact: ${join(runs, runId)}`);
+    const batch: RunResult[] = [];
+    for (const [runId, planned] of expected) {
+      const run = join(runs, runId);
+      artifact(run, true);
+      const result = resultAt(join(run, "result.json"));
+      if (
+        result.batchId !== manifest.batchId ||
+        result.runId !== runId ||
+        result.task.id !== planned.task.id ||
+        result.task.version !== planned.task.version ||
+        result.workflow !== planned.workflow ||
+        result.trial !== planned.trial ||
+        result.order !== planned.order ||
+        result.mode !== manifest.mode ||
+        (result.mode === "external" ? result.control !== null : result.control === null) ||
+        canonical(result.adapter) !== canonical(manifest.adapter) ||
+        canonical(result.provenance.limits) !== canonical(manifest.limits)
+      ) {
+        throw new Error(
+          `Result identity or configuration does not match batch manifest: ${join(run, "result.json")}`,
+        );
+      }
+      batch.push(result);
+    }
+    if (
+      unique(batch.map((result) => result.control)) !== 1 ||
+      unique(batch.map((result) => result.provenance.configSha256)) !== 1
+    ) {
+      throw new Error(`Conflicting control configuration within batch: ${manifest.batchId}`);
+    }
+    results.push(...batch);
+  }
+  assertUniqueTrials(results);
   return results;
 }
 
