@@ -60,6 +60,7 @@ and commands. The explanations cover how Pinata works and what its checks establ
 ## Maintainers
 
 - [Testing](maintainers/testing.md)
+- [Coding arena](maintainers/coding-arena.md): reproduce and compare coding trials.
 - [Measure performance](maintainers/performance.md)
 - [Publication](maintainers/publication.md)
 - [GitHub Packages](maintainers/github-packages.md)
