@@ -378,6 +378,7 @@ test("missing telemetry and setup failures remain in the planned treatment denom
   } = await runArena(options);
   const failed = structuredClone(original);
   failed.trial = 2;
+  failed.order = 2;
   failed.runId = "fixture-sequential-trial-2";
   failed.status = "failed";
   failed.response = null;

@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { ChildMemorySampler } from "../../bench/child-memory.ts";
 import {
@@ -9,6 +10,7 @@ import {
   main,
   processReportFailures,
   processSeries,
+  runTrial,
   type ProcessReport,
 } from "../../bench/process.ts";
 import { terminateProcessTree } from "../../bench/process-tree.ts";
@@ -325,8 +327,204 @@ test("failed repeated trials are all saved and unavailable aggregate statistics 
   assert.equal(saved.validation.passed, false);
   assert(saved.series.every((series) => series.summary === null));
   assert.match(await readFile(output.replace(/json$/, "md"), "utf8"), /incomplete/);
+  for (const trial of saved.trials) {
+    const checkpoint = JSON.parse(await readFile(`${trial.reportPath}.status.json`, "utf8"));
+    assert.equal(checkpoint.state, "finished");
+    assert.equal(checkpoint.validation.passed, false);
+    assert.deepEqual(checkpoint.trial, trial);
+  }
   await assert.rejects(main(["--repeat", "1"]), /3 to 100/);
   await assert.rejects(main(["--out", "process-output.json"]), /git-ignored/);
+});
+
+const lifecycleFixture = fileURLToPath(
+  new URL("./fixtures/benchmark-lifecycle.mjs", import.meta.url),
+);
+
+test("a normally completed host retains valid measurements, output and an independent passing checkpoint", async (t) => {
+  const dir = await tempDir(t, "pinata-process-completed-");
+  const reportPath = join(dir, "trial.json");
+  const expected = report().trials[0].report;
+  await writeFile(reportPath, JSON.stringify(expected));
+  const trial = await runTrial(
+    scenario,
+    1,
+    reportPath,
+    {
+      timeoutMs: 10_000,
+      tokenDelayMs: 0,
+      mode: "lean",
+    },
+    {
+      launch: () =>
+        spawn(process.execPath, ["-e", "console.log('completed'); console.error('diagnostic')"], {
+          stdio: ["ignore", "pipe", "pipe"],
+        }),
+      terminate: async () => {
+        assert.fail("completed host must not need cleanup");
+      },
+    },
+  );
+  assert.equal(trial.exitCode, 0);
+  assert.equal(trial.timedOut, false);
+  assert.equal(trial.error, undefined);
+  assert.deepEqual(trial.report, expected);
+  assert.match(trial.stdoutTail!, /completed/);
+  assert.match(trial.stderrTail!, /diagnostic/);
+  const checkpoint = JSON.parse(await readFile(`${reportPath}.status.json`, "utf8"));
+  assert.equal(checkpoint.state, "finished");
+  assert.equal(checkpoint.validation.passed, true);
+  assert.deepEqual(checkpoint.trial, trial);
+});
+
+async function lifecycleFixtureRun(mode: string, directory: string) {
+  const child = spawn(process.execPath, [lifecycleFixture, mode, directory], {
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let stdout = "";
+  let stderr = "";
+  child.stdout.on("data", (chunk: Buffer) => {
+    stdout += chunk;
+  });
+  child.stderr.on("data", (chunk: Buffer) => {
+    stderr += chunk;
+  });
+  let exceeded = false;
+  const guard = setTimeout(() => {
+    exceeded = true;
+    child.kill("SIGKILL");
+    child.stdout.destroy();
+    child.stderr.destroy();
+  }, 10_000);
+  let completed: { code: number | null; stdout: string; stderr: string } | undefined;
+  const failures: unknown[] = [];
+  try {
+    const code = await new Promise<number | null>((done, reject) => {
+      child.once("close", done);
+      child.once("error", reject);
+    });
+    assert.equal(exceeded, false, `Coordinator must exit naturally: ${stderr}`);
+    completed = { code, stdout, stderr };
+  } catch (error) {
+    failures.push(error);
+  } finally {
+    clearTimeout(guard);
+    try {
+      const pids: number[] = JSON.parse(
+        await readFile(join(directory, "pids.json"), "utf8").catch(() => "[]"),
+      );
+      // Reparented fixture children are outside the cleanup guarantee. Attempt
+      // every owned fixture cleanup, retaining both test and cleanup failures.
+      for (const pid of pids.reverse()) {
+        try {
+          process.kill(pid, "SIGKILL");
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ESRCH") failures.push(error);
+        }
+      }
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+  if (failures.length) throw new AggregateError(failures, "Lifecycle fixture or cleanup failed");
+  return completed!;
+}
+
+test("an exited host with inherited output pipes cannot hold the trial or coordinator open", async (t) => {
+  const dir = await tempDir(t, "pinata-process-orphan-");
+  const completed = await lifecycleFixtureRun("exit-held-pipes", dir);
+  assert.equal(completed.code, 0, completed.stderr);
+  const { trial, cleanupCalls } = JSON.parse(completed.stdout);
+  assert.equal(trial.exitCode, 0);
+  assert.equal(
+    trial.timedOut,
+    false,
+    "host exit must trigger draining before the 30s trial deadline",
+  );
+  assert.equal(cleanupCalls, 0, "an observed exited host PID must never be signalled");
+  assert.match(trial.error, /output did not close/);
+  assert.match(trial.error, /descendant cleanup cannot be confirmed/);
+  const checkpoint = JSON.parse(await readFile(`${trial.reportPath}.status.json`, "utf8"));
+  assert.equal(checkpoint.state, "finished");
+  assert.equal(checkpoint.validation.passed, false);
+  assert.deepEqual(checkpoint.trial, trial);
+});
+
+for (const mode of ["timeout", "cleanup-reject", "cleanup-hang"]) {
+  test(`process trial ${mode} is bounded, checkpointed and cannot retain coordinator handles`, async (t) => {
+    const dir = await tempDir(t, `pinata-process-${mode}-`);
+    const completed = await lifecycleFixtureRun(mode, dir);
+    assert.equal(completed.code, 0, completed.stderr);
+    const { trial, cleanupCalls } = JSON.parse(completed.stdout);
+    assert.equal(trial.timedOut, true);
+    assert.match(trial.error, /exceeded 100ms timeout/);
+    if (mode !== "timeout") assert.equal(cleanupCalls, 1);
+    if (mode === "cleanup-reject") assert.match(trial.error, /fixture cleanup failed/);
+    if (mode === "cleanup-hang") {
+      assert.match(trial.error, /cleanup exceeded 100ms/);
+      assert.equal(await readFile(join(dir, "aborted.txt"), "utf8"), "aborted");
+    }
+    const checkpoint = JSON.parse(await readFile(`${trial.reportPath}.status.json`, "utf8"));
+    assert.equal(checkpoint.state, "finished");
+    assert.equal(checkpoint.validation.passed, false);
+    assert.deepEqual(checkpoint.trial, trial);
+  });
+}
+
+test("aborting a cleanup utility closes inherited pipes and lets its coordinator exit", async (t) => {
+  const dir = await tempDir(t, "pinata-cleanup-command-");
+  const completed = await lifecycleFixtureRun("cleanup-command-abort", dir);
+  assert.equal(completed.code, 0, completed.stderr);
+  assert.match(JSON.parse(completed.stdout).error, /fixture cleanup aborted/);
+});
+
+test("host exit during cleanup cannot mutate a finished trial after its pipe drain deadline", async (t) => {
+  const dir = await tempDir(t, "pinata-process-late-drain-");
+  const completed = await lifecycleFixtureRun("late-drain", dir);
+  assert.equal(completed.code, 0, completed.stderr);
+  const { trial, cleanupCalls } = JSON.parse(completed.stdout);
+  assert.equal(cleanupCalls, 1);
+  assert.equal(trial.timedOut, true);
+  const checkpoint = JSON.parse(await readFile(`${trial.reportPath}.status.json`, "utf8"));
+  assert.deepEqual(checkpoint.trial, trial);
+  assert.equal(checkpoint.validation.passed, false);
+});
+
+test("an abruptly exited collector leaves an independent incomplete trial checkpoint", async (t) => {
+  const dir = await tempDir(t, "pinata-collector-exit-");
+  const completed = await lifecycleFixtureRun("collector-exit", dir);
+  assert.equal(completed.code, 7, completed.stderr);
+  const aggregate = JSON.parse(await readFile(join(dir, "aggregate.json"), "utf8"));
+  assert.equal(aggregate.trials.length, 0);
+  assert.equal(aggregate.validation.passed, false);
+  const trialDir = (await readdir(dir)).find((name) => name.startsWith("trials-"))!;
+  const checkpoint = JSON.parse(
+    await readFile(join(dir, trialDir, "1-fanout-1.json.status.json"), "utf8"),
+  );
+  assert.equal(checkpoint.state, "running");
+  assert.equal(checkpoint.validation.passed, false);
+  assert.equal(checkpoint.trial.repetition, 1);
+  assert.equal(checkpoint.trial.exitCode, null);
+  assert.equal(checkpoint.trial.report, null);
+});
+
+test("an aggregate writer failure preserves the finished failed trial independently", async (t) => {
+  const dir = await tempDir(t, "pinata-aggregate-failure-");
+  const output = join(dir, "aggregate.json");
+  await assert.rejects(
+    main(["--repeat", "3", "--scenario", "fanout-1", "--out", output], async () => {
+      await rm(output);
+      await mkdir(output);
+      throw new Error("fixture collector failed");
+    }),
+  );
+  const trialDir = (await readdir(dir)).find((name) => name.startsWith("trials-"))!;
+  const checkpoint = JSON.parse(
+    await readFile(join(dir, trialDir, "1-fanout-1.json.status.json"), "utf8"),
+  );
+  assert.equal(checkpoint.state, "finished");
+  assert.equal(checkpoint.validation.passed, false);
+  assert.match(checkpoint.trial.error, /fixture collector failed/);
 });
 
 test("failure diagnostics retain bounded log tails before fixture cleanup", async (t) => {

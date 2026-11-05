@@ -1,7 +1,8 @@
 // Repeated process evidence. Every scenario/repetition gets a fresh Node host, and
 // every trial (including failures) is retained. Performance comparisons are advisory.
-import { spawn, spawnSync } from "node:child_process";
-import { mkdir, readFile } from "node:fs/promises";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stat, type Scenario, type ScenarioResult, type Stat } from "./lib.ts";
@@ -336,12 +337,71 @@ export function compareProcessReports(
   return { status: "compared", advisory: true, issues: [], changes };
 }
 
-async function runTrial(
+// Separate from the host's measurement report and the aggregate. A killed host
+// or collector leaves an explicit incomplete/failed trial, not an absent cell.
+async function checkpointTrial(
+  scenario: Scenario,
+  trial: ProcessTrial,
+  state: "running" | "stopping" | "finished",
+): Promise<void> {
+  let failures = [state === "running" ? "Trial has not completed" : "Trial is stopping"];
+  if (state === "finished") {
+    try {
+      failures = processTrialFailures(scenario, trial);
+    } catch (error) {
+      failures = [`Invalid trial evidence: ${String(error)}`];
+    }
+  }
+  const path = `${trial.reportPath}.status.json`;
+  const temporary = `${path}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(
+      temporary,
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          state,
+          updatedAt: new Date().toISOString(),
+          validation: { passed: failures.length === 0, failures },
+          trial,
+        },
+        null,
+        2,
+      ) + "\n",
+      { flag: "wx" },
+    );
+    await rename(temporary, path);
+  } finally {
+    await rm(temporary, { force: true });
+  }
+}
+
+export interface TrialRuntime {
+  launch?: (command: string[], env: NodeJS.ProcessEnv) => ChildProcess;
+  terminate?: typeof terminateProcessTree;
+  cleanupTimeoutMs?: number;
+  drainTimeoutMs?: number;
+}
+
+export async function runTrial(
   scenario: Scenario,
   repetition: number,
   reportPath: string,
-  args: Args,
+  args: Pick<Args, "timeoutMs" | "mode" | "tokenDelayMs">,
+  runtime: TrialRuntime = {},
 ): Promise<ProcessTrial> {
+  const trial: ProcessTrial = {
+    repetition,
+    scenario: scenario.name,
+    reportPath,
+    exitCode: null,
+    signal: null,
+    timedOut: false,
+    stdoutTail: "",
+    stderrTail: "",
+    report: null,
+  };
+  await checkpointTrial(scenario, trial, "running");
   const command = [
     "--expose-gc",
     join(ROOT, "bench", "run.ts"),
@@ -360,57 +420,161 @@ async function runTrial(
   // These switches are diagnostic-only and would change the measurement protocol.
   for (const key of ["BENCH_NO_GC", "BENCH_NO_SAMPLER", "BENCH_NO_LAG", "BENCH_TRACE"])
     delete (env as NodeJS.ProcessEnv)[key];
-  const child = spawn(process.execPath, command, {
-    cwd: ROOT,
-    env,
-    detached: process.platform !== "win32",
-    stdio: ["ignore", "pipe", "pipe"],
+  const launch =
+    runtime.launch ??
+    ((command, env) =>
+      spawn(process.execPath, command, {
+        cwd: ROOT,
+        env,
+        detached: process.platform !== "win32",
+        stdio: ["ignore", "pipe", "pipe"],
+      }));
+  const child = launch(command, env);
+  const cleanupMs = runtime.cleanupTimeoutMs ?? 2000;
+  const drainMs = runtime.drainTimeoutMs ?? 250;
+  const terminate = runtime.terminate ?? terminateProcessTree;
+  const errors: string[] = [];
+  let observing = true;
+  let stopping = false;
+  let exited = false;
+  let closed = false;
+  let drainExpired = false;
+  let drainTimer: ReturnType<typeof setTimeout> | undefined;
+  let resolveOutcome!: (outcome: "closed" | "stop") => void;
+  let resolveClosed!: () => void;
+  const outcome = new Promise<"closed" | "stop">((done) => {
+    resolveOutcome = done;
   });
-  let stdoutTail = "";
-  let stderrTail = "";
-  let error: string | undefined;
-  let timedOut = false;
-  let cleanup: Promise<void> | undefined;
-  child.stdout.on("data", (chunk: Buffer) => {
-    stdoutTail = (stdoutTail + chunk.toString()).slice(-16000);
+  const closedPromise = new Promise<void>((done) => {
+    resolveClosed = done;
   });
-  child.stderr.on("data", (chunk: Buffer) => {
-    stderrTail = (stderrTail + chunk.toString()).slice(-16000);
+  const recordError = (message: string) => {
+    errors.push(message);
+    trial.error = errors.join("; ");
+  };
+  child.stdout?.on("data", (chunk: Buffer) => {
+    if (!observing) return;
+    trial.stdoutTail = (trial.stdoutTail + chunk.toString()).slice(-16000);
   });
+  child.stderr?.on("data", (chunk: Buffer) => {
+    if (!observing) return;
+    trial.stderrTail = (trial.stderrTail + chunk.toString()).slice(-16000);
+  });
+  for (const stream of [child.stdout, child.stderr])
+    stream?.on("error", (cause) => {
+      if (!observing) return;
+      recordError(`Trial output failed: ${cause.message}`);
+      resolveOutcome("stop");
+    });
   child.on("error", (cause) => {
-    error = cause.message;
+    if (!observing) return;
+    recordError(`Trial process failed: ${cause.message}`);
+    resolveOutcome("stop");
+  });
+  child.once("exit", (code, signal) => {
+    if (!observing) return;
+    exited = true;
+    trial.exitCode = code;
+    trial.signal = signal;
+    if (stopping) return;
+    // close waits for every inherited pipe, whereas exit identifies the host.
+    // Do not spend the entire trial deadline waiting for an orphan's output.
+    drainTimer = setTimeout(() => {
+      if (!observing) return;
+      drainExpired = true;
+      recordError(`Trial output did not close within ${drainMs}ms after host exit`);
+      resolveOutcome("stop");
+    }, drainMs);
+  });
+  child.once("close", (code, signal) => {
+    if (!observing) return;
+    closed = true;
+    trial.exitCode = code;
+    trial.signal = signal;
+    resolveClosed();
+    resolveOutcome("closed");
   });
   const timeout = setTimeout(() => {
-    timedOut = true;
-    if (!child.pid) return;
-    cleanup = terminateProcessTree(child.pid).catch((cause) => {
-      error = `Timeout process cleanup failed: ${String(cause)}`;
-      child.kill("SIGKILL");
-    });
+    trial.timedOut = true;
+    recordError(`Trial exceeded ${args.timeoutMs}ms timeout`);
+    resolveOutcome("stop");
   }, args.timeoutMs);
-  const [exitCode, signal] = await new Promise<[number | null, NodeJS.Signals | null]>((done) =>
-    child.once("close", (code, signal) => done([code, signal])),
-  );
-  clearTimeout(timeout);
-  await cleanup;
-  let report: EngineReport | null = null;
   try {
-    report = JSON.parse(await readFile(reportPath, "utf8"));
-  } catch (cause) {
-    error = [error, `Could not read trial report: ${String(cause)}`].filter(Boolean).join("; ");
+    if ((await outcome) === "stop") {
+      stopping = true;
+      clearTimeout(timeout);
+      clearTimeout(drainTimer);
+      try {
+        await checkpointTrial(scenario, trial, "stopping");
+      } catch (error) {
+        recordError(`Could not checkpoint stopped trial: ${String(error)}`);
+      }
+      if (child.pid && !exited) {
+        const controller = new AbortController();
+        let cleanupTimer: ReturnType<typeof setTimeout> | undefined;
+        const cleanupFailure = await Promise.race([
+          Promise.resolve()
+            .then(() =>
+              terminate(child.pid!, {
+                signal: controller.signal,
+                isRootAlive: () => !exited && child.exitCode === null && child.signalCode === null,
+              }),
+            )
+            .then(
+              () => undefined,
+              (error: unknown) => `Trial process cleanup failed: ${String(error)}`,
+            ),
+          new Promise<string>((done) => {
+            cleanupTimer = setTimeout(() => {
+              done(`Trial process cleanup exceeded ${cleanupMs}ms`);
+              controller.abort(new Error("Trial cleanup deadline exceeded"));
+            }, cleanupMs);
+          }),
+        ]);
+        clearTimeout(cleanupTimer);
+        if (cleanupFailure) recordError(cleanupFailure);
+        // Fallback targets the retained ChildProcess only while its exit is
+        // unobserved. Tree discovery cannot recover already reparented children.
+        if (!exited) {
+          try {
+            child.kill("SIGKILL");
+          } catch (error) {
+            recordError(`Trial host kill failed: ${String(error)}`);
+          }
+        }
+      } else if (exited && !closed) {
+        recordError("Host already exited; detached descendant cleanup cannot be confirmed");
+      }
+      if (!closed && !drainExpired) {
+        await Promise.race([
+          closedPromise,
+          new Promise<void>((done) => {
+            drainTimer = setTimeout(() => {
+              drainExpired = true;
+              done();
+            }, drainMs);
+          }),
+        ]);
+      }
+      if (!closed) recordError("Forced local output closure; descendant cleanup is best effort");
+    }
+  } finally {
+    observing = false;
+    clearTimeout(timeout);
+    clearTimeout(drainTimer);
+    child.stdin?.destroy();
+    child.stdout?.destroy();
+    child.stderr?.destroy();
+    // A failed kill or inherited OS handle must not keep the collector alive.
+    child.unref();
   }
-  return {
-    repetition,
-    scenario: scenario.name,
-    reportPath,
-    exitCode,
-    signal,
-    timedOut,
-    stdoutTail,
-    stderrTail,
-    ...(error && { error }),
-    report,
-  };
+  try {
+    trial.report = JSON.parse(await readFile(reportPath, "utf8"));
+  } catch (error) {
+    recordError(`Could not read trial report: ${String(error)}`);
+  }
+  await checkpointTrial(scenario, trial, "finished");
+  return trial;
 }
 
 export async function main(argv = process.argv.slice(2), run = runTrial): Promise<number> {
@@ -523,10 +687,23 @@ export async function main(argv = process.argv.slice(2), run = runTrial): Promis
       for (const scenario of order) {
         console.log(`process repetition ${repetition}/${args.repeat}: ${scenario.name}`);
         const reportPath = join(trialDir, `${repetition}-${scenario.name}.json`);
+        await checkpointTrial(
+          scenario,
+          {
+            repetition,
+            scenario: scenario.name,
+            reportPath,
+            exitCode: null,
+            timedOut: false,
+            report: null,
+          },
+          "running",
+        );
+        let trial: ProcessTrial;
         try {
-          report.trials.push(await run(scenario, repetition, reportPath, args));
+          trial = await run(scenario, repetition, reportPath, args);
         } catch (error) {
-          report.trials.push({
+          trial = {
             repetition,
             scenario: scenario.name,
             reportPath,
@@ -534,8 +711,12 @@ export async function main(argv = process.argv.slice(2), run = runTrial): Promis
             timedOut: false,
             error: String(error),
             report: null,
-          });
+          };
         }
+        // Persist this cell independently before the aggregate/report writer can
+        // fail. All checkpoint writes are awaited, never launched from a timer.
+        await checkpointTrial(scenario, trial, "finished");
+        report.trials.push(trial);
         await save();
       }
     }

@@ -46,15 +46,21 @@ artifact, including failures, for 30 days. Check the workflow run and its commit
 using those results. To render a combined report from retained batches:
 
 ```sh
-node arena/report.ts path/to/batch-1 path/to/batch-2 > combined-report.md
+node arena/report.ts BATCH_DIR_1 BATCH_DIR_2 > combined-report.md
 ```
 
 The runner creates a result for every requested trial before execution. If a run is
 interrupted, pending and running results remain in the batch, so the requested trial
 count is retained. Re-rendering the report shows the saved state. Combined reports
 group outcomes by batch, task, and workflow rather than pooling batches; each result
-records its batch ID. The report command exits 1 if an artifact cannot be parsed.
-Review individual trial evidence as well as summaries.
+records its batch ID. Supply each complete batch directory explicitly. The report
+reconciles results with each manifest and rejects missing, unexpected, or
+mismatched cells, duplicate batch, run, or logical trial identities, and symlinked
+inputs. Renamed or relocated complete batches are supported; parent directories and
+individual result files are not. Valid pending, running, and failed cells remain in
+the denominator. The command exits 1 without a partial report when reconciliation
+or parsing fails. A manifest is a trusted local accounting record, not a signed or
+tamper-proof record. Review individual trial evidence as well as summaries.
 
 ## Run an external adapter
 

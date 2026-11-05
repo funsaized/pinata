@@ -211,6 +211,8 @@ test("reports retain failed and unstarted controls while excluding external and 
   assert.ok(original);
   const failed = structuredClone(original);
   failed.runId = "failed-control";
+  failed.trial = 2;
+  failed.order = 2;
   failed.status = "failed";
   failed.candidateCorrect = false;
   failed.treatment = { status: "invalid", reasons: ["Control evidence failed"] };
@@ -218,17 +220,23 @@ test("reports retain failed and unstarted controls while excluding external and 
   failed.oracle = null;
   const pending = structuredClone(failed);
   pending.runId = "pending-control";
+  pending.trial = 3;
+  pending.order = 3;
   pending.status = "pending";
   pending.candidateCorrect = null;
   pending.treatment = { status: "unverified", reasons: ["No evidence"] };
   const external = structuredClone(original);
   external.runId = "self-claimed-control";
+  external.trial = 4;
+  external.order = 4;
   external.mode = "external";
   external.control = null;
   // Even an artifact claiming eligibility cannot convert an external run to a control.
   external.comparisonEligible = true;
   const legacy: RunResult = structuredClone(original);
   legacy.runId = "legacy-control";
+  legacy.trial = 5;
+  legacy.order = 5;
   for (const field of ["candidateCorrect", "treatment", "comparisonEligible"])
     Reflect.deleteProperty(legacy, field);
   const report = renderReport([original, failed, pending, external, legacy]);
