@@ -11,6 +11,7 @@ import { HerdrPiBackend } from "../../engine/backends/herdr-pi.ts";
 import type { AgentBackend } from "../../engine/backends/types.ts";
 import { readFile } from "node:fs/promises";
 import { ChildMemorySampler, type ChildMemory } from "../child-memory.ts";
+import { createRssReader } from "../rss-reader.ts";
 import { createEngine, type Engine, type RunHandle } from "../../engine/core/engine.ts";
 import { Limiter } from "../../engine/core/limiter.ts";
 import type { AgentEvent, ModelRef, TaskSpec } from "../../engine/core/types.ts";
@@ -110,8 +111,6 @@ export async function runEngineScenario(
     runsDir: string;
     // Called with the measured run as it starts (the TUI host opens Pi's surfaces on it).
     onRun?: (handle: RunHandle, engine: Engine) => void;
-    // Node loopback host installs this before measured requests can receive a reply.
-    registerChildRequest?: (gate: (agent: string) => Promise<void>) => void;
   },
 ): Promise<EngineRaw> {
   const cache = new RuntimeCache(setup.agentDir);
@@ -256,6 +255,9 @@ export async function runEngineScenario(
     validateGraph(tasks, { allowWrites: true, definitions }),
     config,
   );
+  // The Windows helper must complete a real working-set query before memory/CPU
+  // baselines and t0, so helper startup never races a short loaded agent.
+  const rssReader = kind === "in-process" ? undefined : await createRssReader();
   if (!process.env.BENCH_NO_GC) gc();
   const baselineRss = process.memoryUsage().rss;
   const baselineHeap = process.memoryUsage().heapUsed;
@@ -289,16 +291,13 @@ export async function runEngineScenario(
         }
         return pids;
       },
-      { ready: () => readyChildren },
+      {
+        ready: () => readyChildren,
+        read: rssReader!.read.bind(rssReader),
+        rssMethod: rssReader!.method,
+      },
     );
     children.start();
-    setup.registerChildRequest?.(async (agent) => {
-      if (!taskIds.has(agent)) return;
-      // HTTP can arrive before the turn_start pipe is drained. A provider request
-      // independently establishes that this child has loaded Pi and begun its turn.
-      readyChildren.add(agent);
-      await children!.waitForReady(agent);
-    });
   }
   let lag: ReturnType<typeof monitorEventLoopDelay> | undefined;
   try {
@@ -338,7 +337,11 @@ export async function runEngineScenario(
     clearInterval(sampler);
     lag?.disable();
     // Drain the last asynchronous OS read before publishing the snapshot.
-    childMemory = await children?.stop();
+    try {
+      childMemory = await children?.stop();
+    } finally {
+      await rssReader?.close();
+    }
   }
   const cpu = process.cpuUsage(cpu0);
   let lagP99Ms: number | null = null;
@@ -431,10 +434,9 @@ export function summarize(
         peakRssByAgentMB: peaks,
         rssSamplesByAgent: counts,
         readyRssSamplesByAgent: readyCounts,
-        loadedRssWaitByAgentMs: child?.loadedRssWaitByAgentMs ?? {},
-        loadedRssWaitTimeoutMs: child?.loadedRssWaitTimeoutMs ?? 5000,
         missingRssAgents,
         sampleIntervalMs: child?.sampleIntervalMs ?? 200,
+        rssMethod: child?.rssMethod,
         errors: child?.errors ?? [],
       }
     : undefined;
@@ -447,13 +449,8 @@ export function summarize(
     ...(processBackend
       ? [
           "process.startupMs: child creation to first provider request; fresh agent processes after host warm-up, not cold machine startup",
-          `child RSS: sampled every ${child?.sampleIntervalMs ?? 200} ms, on spawn and turn start; coverage requires a sample after turn_start or the first provider request; observed peaks are lower bounds`,
-          ...(Object.keys(child?.loadedRssWaitByAgentMs ?? {}).length
-            ? [
-                `loaded RSS: each first provider response waits at most ${child!.loadedRssWaitTimeoutMs} ms for a post-request sample; per-agent waits are recorded in process.loadedRssWaitByAgentMs`,
-                "wallMs, host cpuMs and loop lag include loaded-RSS sampling waits and overhead; first-request startup timestamps precede the wait; overlapping waits must not be summed or subtracted from wall time",
-              ]
-            : ["loaded RSS: this host has no first-provider-response sampling gate"]),
+          `child RSS: sampled every ${child?.sampleIntervalMs ?? 200} ms, on spawn and turn start; coverage requires a sample after Pi begins a turn; observed peaks are lower bounds`,
+          `child RSS method: ${child?.rssMethod ?? "historical/unknown"}; collector resource use is excluded from child RSS`,
           ...(missingRssAgents.length
             ? [`child RSS unavailable for: ${missingRssAgents.join(", ")}`]
             : []),

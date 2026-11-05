@@ -70,13 +70,12 @@ export interface ScenarioResult {
     childPeakRssMB: Stat | null;
     peakRssByAgentMB: Record<string, number>;
     rssSamplesByAgent: Record<string, number>;
-    // Samples after turn_start or the first provider request establish Pi is loaded.
+    // Samples taken after the agent emitted its first turn_start (Pi is loaded).
     readyRssSamplesByAgent: Record<string, number>;
-    // v2 holds the first provider response for a post-request sample; wall time includes it.
-    loadedRssWaitByAgentMs?: Record<string, number>;
-    loadedRssWaitTimeoutMs?: number;
     missingRssAgents: string[];
     sampleIntervalMs: number;
+    // Collector method/protocol; absent only in historical measurement v1 reports.
+    rssMethod?: string;
     errors: string[];
   };
   diagnostics?: Array<{ file: string; tail: string }>;
