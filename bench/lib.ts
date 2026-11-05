@@ -58,6 +58,28 @@ export interface ScenarioResult {
   loopLagP99Ms: number | null;
   cpuMs: number | null;
   wallMs: number;
+  // Per-task observations, retained before percentile aggregation.
+  samples?: Record<
+    "spawnMs" | "setupMs" | "toolCallMs" | "dependentMs" | "dependentRequestMs",
+    Record<string, number>
+  >;
+  process?: {
+    // Child creation (ProcessBackend.onSpawn) to its first provider request.
+    startupMs: Stat | null;
+    startupByAgentMs: Record<string, number>;
+    childPeakRssMB: Stat | null;
+    peakRssByAgentMB: Record<string, number>;
+    rssSamplesByAgent: Record<string, number>;
+    // Samples after turn_start or the first provider request establish Pi is loaded.
+    readyRssSamplesByAgent: Record<string, number>;
+    // v2 holds the first provider response for a post-request sample; wall time includes it.
+    loadedRssWaitByAgentMs?: Record<string, number>;
+    loadedRssWaitTimeoutMs?: number;
+    missingRssAgents: string[];
+    sampleIntervalMs: number;
+    errors: string[];
+  };
+  diagnostics?: Array<{ file: string; tail: string }>;
   notes?: string[];
 }
 

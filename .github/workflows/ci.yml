@@ -26,27 +26,42 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           package-manager-cache: false
-      - run: npm ci --ignore-scripts
+      - id: dependencies
+        run: npm ci --ignore-scripts
       - run: npm run check
       - run: npm test
       - name: Download Pi's release binary
+        id: pi
         # The engine runs inside Pi's Bun binary, as users run it.
         shell: bash
-        run: echo "PINATA_PI=$(node scripts/pi-binary.mjs 1.1.0 "$RUNNER_TEMP/pi-binary" | tail -n 1)" >> "$GITHUB_ENV"
+        run: |
+          pi_binary=$(node scripts/pi-binary.mjs 1.1.0 "$RUNNER_TEMP/pi-binary" | tail -n 1)
+          test -n "$pi_binary"
+          echo "PINATA_PI=$pi_binary" >> "$GITHUB_ENV"
       - name: Engine inside Pi (faux provider)
         run: node test/engine/pi-smoke.ts
       - name: Packed package inside Pi
         run: node test/engine/package-smoke.ts
       - name: Engine benchmarks against budgets
-        run: npm run bench -- --ci --host pi
-      - name: Process backend benchmarks (Gate 2)
-        env:
-          BENCH_BACKEND: process
-        run: npm run bench -- --provider loopback --scenario fanout-1 --scenario fanout-8 --scenario chain --scenario builder
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' && steps.pi.outcome == 'success' }}
+        run: node scripts/bench-ci.mjs engine --expose-gc bench/run.ts --ci --host pi
+      - name: Process backend repeated baseline (timing advisory)
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' && steps.pi.outcome == 'success' }}
+        # Bound 20 trials so a regression leaves time for later evidence and upload.
+        timeout-minutes: 12
+        run: node scripts/bench-ci.mjs process --expose-gc bench/process.ts --repeat 5 --timeout-ms 30000 --scenario fanout-1 --scenario fanout-8 --scenario chain --scenario builder
       - name: UX benchmark in interactive Pi (pseudo-terminal)
         # `script` provides the terminal; Windows has no equivalent without extra tools.
-        if: runner.os != 'Windows'
-        run: npm run bench -- --ci --host tui --scenario ux-8
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' && steps.pi.outcome == 'success' && runner.os != 'Windows' }}
+        run: node scripts/bench-ci.mjs ux --expose-gc bench/run.ts --ci --host tui --scenario ux-8
       - name: Viewer runtimes (E5.6)
-        if: runner.os != 'Windows'
-        run: node bench/viewer.ts --runs 3
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' && steps.pi.outcome == 'success' && runner.os != 'Windows' }}
+        run: node scripts/bench-ci.mjs viewer bench/viewer.ts --runs 3
+      - name: Retain benchmark reports and failure diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: benchmarks-${{ github.sha }}-${{ runner.os }}-${{ runner.arch }}-node-${{ matrix.node }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: bench/results/
+          retention-days: 30
+          if-no-files-found: warn
