@@ -122,20 +122,23 @@ class PersistentRssReader implements RssReader {
   }
 
   async warm(): Promise<void> {
+    const deadline = performance.now() + this.options.startupTimeoutMs;
     const timer = setTimeout(
       () => this.fail(new Error("RSS reader startup timed out")),
       this.options.startupTimeoutMs,
     );
     try {
       await this.ready;
+      // One startup deadline covers both the handshake and first-use JSON/.NET
+      // work. Only queries after the factory returns use the shorter read timeout.
+      const remaining = deadline - performance.now();
+      if (remaining <= 0) throw new Error("RSS reader startup timed out");
+      const sample = (await this.query([process.pid], remaining)).get(process.pid);
+      if (sample === null || sample === undefined || sample <= 0)
+        throw new Error("RSS reader warm-up did not return a positive host working set");
     } finally {
       clearTimeout(timer);
     }
-    // Exercise JSON parsing, .NET process lookup and WorkingSet64 before t0. A
-    // ready marker alone would leave first-use costs inside the measured run.
-    const sample = (await this.read([process.pid])).get(process.pid);
-    if (sample === null || sample === undefined || sample <= 0)
-      throw new Error("RSS reader warm-up did not return a positive host working set");
   }
 
   private fail(error: Error): void {
@@ -202,6 +205,10 @@ class PersistentRssReader implements RssReader {
   }
 
   read(pids: readonly number[]): Promise<Map<number, number | null>> {
+    return this.query(pids, this.options.requestTimeoutMs);
+  }
+
+  private query(pids: readonly number[], timeoutMs: number): Promise<Map<number, number | null>> {
     const unique = [...new Set(pids)];
     if (unique.some((pid) => !Number.isSafeInteger(pid) || pid <= 0))
       return Promise.reject(new Error("RSS reader requires positive integer PIDs"));
@@ -213,7 +220,7 @@ class PersistentRssReader implements RssReader {
         const id = ++this.nextId;
         const timer = setTimeout(
           () => this.fail(new Error(`RSS reader request ${id} timed out`)),
-          this.options.requestTimeoutMs,
+          timeoutMs,
         );
         this.pending = { id, pids: unique, resolve, reject, timer };
         this.child.stdin.write(JSON.stringify({ id, pids: unique }) + "\n", (error) => {
