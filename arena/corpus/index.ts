@@ -5,6 +5,7 @@ import type { ArenaTask } from "../types.ts";
 const definitions = [
   {
     id: "checkout",
+    oracleCaseCount: 20,
     title: "Exact-cent checkout with promotions and delivery",
     units: [
       {
@@ -29,6 +30,7 @@ const definitions = [
   },
   {
     id: "reservations",
+    oracleCaseCount: 22,
     title: "Atomic stock reservations with idempotent order replay",
     units: [
       {
@@ -53,6 +55,7 @@ const definitions = [
   },
   {
     id: "incidents",
+    oracleCaseCount: 20,
     title: "Windowed incident summaries from delimited logs",
     units: [
       {
@@ -77,7 +80,7 @@ const definitions = [
   },
 ];
 
-export const tasks: ArenaTask[] = definitions.map(({ id, title, units }) => {
+export const tasks: ArenaTask[] = definitions.map(({ id, title, units, oracleCaseCount }) => {
   const directory = new URL(`./v1/${id}/`, import.meta.url);
   return {
     id,
@@ -87,6 +90,7 @@ export const tasks: ArenaTask[] = definitions.map(({ id, title, units }) => {
     starterDir: fileURLToPath(new URL("starter/", directory)),
     solutionDir: fileURLToPath(new URL("solution/", directory)),
     oracleFile: fileURLToPath(new URL("oracle.mjs", directory)),
+    oracleCaseCount,
     units,
   };
 });

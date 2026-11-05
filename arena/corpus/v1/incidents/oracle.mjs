@@ -7,8 +7,8 @@ await runOracle(
   [
     [
       "parse trims service and preserves message delimiters",
-      ({ parse }) => {
-        assert.deepEqual(parse.parseLine("12|WARN| api |  retry|later  "), {
+      async ({ parse }) => {
+        assert.deepEqual(await parse.parseLine("12|WARN| api |  retry|later  "), {
           timestamp: 12,
           level: "WARN",
           service: "api",
@@ -18,8 +18,8 @@ await runOracle(
     ],
     [
       "zero timestamp and empty message",
-      ({ parse }) => {
-        assert.deepEqual(parse.parseLine("0|INFO|worker|"), {
+      async ({ parse }) => {
+        assert.deepEqual(await parse.parseLine("0|INFO|worker|"), {
           timestamp: 0,
           level: "INFO",
           service: "worker",
@@ -29,7 +29,7 @@ await runOracle(
     ],
     [
       "timestamp strict grammar",
-      ({ parse }) => {
+      async ({ parse }) => {
         for (const timestamp of [
           "",
           "01",
@@ -44,14 +44,14 @@ await runOracle(
           "Infinity",
           "9007199254740992",
         ]) {
-          assert.equal(parse.parseLine(`${timestamp}|INFO|api|ok`), null);
+          assert.equal(await parse.parseLine(`${timestamp}|INFO|api|ok`), null);
         }
       },
     ],
     [
       "timestamp largest safe integer",
-      ({ parse }) => {
-        assert.deepEqual(parse.parseLine("9007199254740991|ERROR|api|end"), {
+      async ({ parse }) => {
+        assert.deepEqual(await parse.parseLine("9007199254740991|ERROR|api|end"), {
           timestamp: 9007199254740991,
           level: "ERROR",
           service: "api",
@@ -61,7 +61,7 @@ await runOracle(
     ],
     [
       "malformed line fields and types",
-      ({ parse }) => {
+      async ({ parse }) => {
         for (const line of [
           null,
           1,
@@ -73,25 +73,29 @@ await runOracle(
           "1|INFO|  |ok",
           "1||api|ok",
         ]) {
-          assert.equal(parse.parseLine(line), null);
+          assert.equal(await parse.parseLine(line), null);
         }
       },
     ],
     [
       "empty and zero-width aggregation",
-      ({ aggregate }) => {
-        assert.deepEqual(aggregate.aggregate([], 0, 10), []);
+      async ({ aggregate }) => {
+        assert.deepEqual(await aggregate.aggregate([], 0, 10), []);
         assert.deepEqual(
-          aggregate.aggregate([{ timestamp: 5, service: "api", level: "INFO", message: "" }], 5, 5),
+          await aggregate.aggregate(
+            [{ timestamp: 5, service: "api", level: "INFO", message: "" }],
+            5,
+            5,
+          ),
           [],
         );
       },
     ],
     [
       "half-open window boundaries",
-      ({ aggregate }) => {
+      async ({ aggregate }) => {
         assert.deepEqual(
-          aggregate.aggregate(
+          await aggregate.aggregate(
             [
               { timestamp: 9, service: "api", level: "ERROR", message: "" },
               { timestamp: 10, service: "api", level: "WARN", message: "" },
@@ -107,9 +111,9 @@ await runOracle(
     ],
     [
       "case-sensitive service ordering and complete counts",
-      ({ aggregate }) => {
+      async ({ aggregate }) => {
         assert.deepEqual(
-          aggregate.aggregate(
+          await aggregate.aggregate(
             [
               { timestamp: 1, service: "z", level: "INFO", message: "" },
               { timestamp: 1, service: "a", level: "WARN", message: "" },
@@ -129,7 +133,7 @@ await runOracle(
     ],
     [
       "repeated events count independently",
-      ({ aggregate }) => {
+      async ({ aggregate }) => {
         const event = Object.freeze({
           timestamp: 1,
           service: "api",
@@ -137,16 +141,16 @@ await runOracle(
           message: "same",
         });
         const input = Object.freeze([event, event]);
-        assert.deepEqual(aggregate.aggregate(input, 0, 2), [
+        assert.deepEqual(await aggregate.aggregate(input, 0, 2), [
           { service: "api", info: 0, warn: 0, error: 2 },
         ]);
       },
     ],
     [
       "object-property-looking service names",
-      ({ aggregate }) => {
+      async ({ aggregate }) => {
         assert.deepEqual(
-          aggregate.aggregate(
+          await aggregate.aggregate(
             [
               { timestamp: 1, service: "__proto__", level: "WARN", message: "" },
               { timestamp: 1, service: "constructor", level: "ERROR", message: "" },
@@ -163,12 +167,12 @@ await runOracle(
     ],
     [
       "aggregation leaves frozen inputs in original order",
-      ({ aggregate }) => {
+      async ({ aggregate }) => {
         const input = Object.freeze([
           Object.freeze({ timestamp: 1, service: "z", level: "INFO", message: "" }),
           Object.freeze({ timestamp: 1, service: "a", level: "WARN", message: "" }),
         ]);
-        assert.deepEqual(aggregate.aggregate(input, 0, 2), [
+        assert.deepEqual(await aggregate.aggregate(input, 0, 2), [
           { service: "a", info: 0, warn: 1, error: 0 },
           { service: "z", info: 1, warn: 0, error: 0 },
         ]);
@@ -177,7 +181,7 @@ await runOracle(
     ],
     [
       "window validation on empty input",
-      ({ aggregate }) => {
+      async ({ aggregate }) => {
         for (const [start, end] of [
           [-1, 2],
           [2, 1],
@@ -187,14 +191,14 @@ await runOracle(
           [NaN, 2],
           [0, 9007199254740992],
         ]) {
-          assert.throws(() => aggregate.aggregate([], start, end), TypeError);
+          await assert.rejects(async () => await aggregate.aggregate([], start, end), TypeError);
         }
       },
     ],
     [
       "empty report",
-      ({ report }) => {
-        assert.deepEqual(report.summarize([], 0, 10), {
+      async ({ report }) => {
+        assert.deepEqual(await report.summarize([], 0, 10), {
           accepted: 0,
           malformed: 0,
           outsideWindow: 0,
@@ -205,9 +209,9 @@ await runOracle(
     ],
     [
       "report parser and window handoff",
-      ({ report }) => {
+      async ({ report }) => {
         assert.deepEqual(
-          report.summarize(
+          await report.summarize(
             [
               "9|INFO|api|before",
               "10|ERROR| api |start",
@@ -231,21 +235,24 @@ await runOracle(
     ],
     [
       "warning inclusive threshold",
-      ({ report }) => {
-        assert.deepEqual(report.summarize(["1|WARN|api|a", "2|WARN|api|b", "3|WARN|api|c"], 0, 4), {
-          accepted: 3,
-          malformed: 0,
-          outsideWindow: 0,
-          services: [{ service: "api", info: 0, warn: 3, error: 0 }],
-          alerts: [{ service: "api", severity: "warning" }],
-        });
+      async ({ report }) => {
+        assert.deepEqual(
+          await report.summarize(["1|WARN|api|a", "2|WARN|api|b", "3|WARN|api|c"], 0, 4),
+          {
+            accepted: 3,
+            malformed: 0,
+            outsideWindow: 0,
+            services: [{ service: "api", info: 0, warn: 3, error: 0 }],
+            alerts: [{ service: "api", severity: "warning" }],
+          },
+        );
       },
     ],
     [
       "below-threshold services have no alert",
-      ({ report }) => {
+      async ({ report }) => {
         assert.deepEqual(
-          report.summarize(
+          await report.summarize(
             ["1|WARN|api|a", "2|WARN|api|b", "3|ERROR|api|c", "3|INFO|worker|ok"],
             0,
             4,
@@ -265,9 +272,9 @@ await runOracle(
     ],
     [
       "critical precedence and alert ordering",
-      ({ report }) => {
+      async ({ report }) => {
         assert.deepEqual(
-          report.summarize(
+          await report.summarize(
             [
               "1|WARN|z|a",
               "1|WARN|z|b",
@@ -299,8 +306,8 @@ await runOracle(
     ],
     [
       "zero-width report distinguishes malformed from outside",
-      ({ report }) => {
-        assert.deepEqual(report.summarize(["1|ERROR|api|ok", "bad"], 1, 1), {
+      async ({ report }) => {
+        assert.deepEqual(await report.summarize(["1|ERROR|api|ok", "bad"], 1, 1), {
           accepted: 0,
           malformed: 1,
           outsideWindow: 1,
@@ -311,8 +318,8 @@ await runOracle(
     ],
     [
       "report handles frozen line list",
-      ({ report }) => {
-        assert.deepEqual(report.summarize(Object.freeze(["0|INFO|a|hello"]), 0, 1), {
+      async ({ report }) => {
+        assert.deepEqual(await report.summarize(Object.freeze(["0|INFO|a|hello"]), 0, 1), {
           accepted: 1,
           malformed: 0,
           outsideWindow: 0,
@@ -323,10 +330,10 @@ await runOracle(
     ],
     [
       "report validation propagation",
-      ({ report }) => {
-        assert.throws(() => report.summarize(null, 0, 1), TypeError);
-        assert.throws(() => report.summarize([], 2, 1), TypeError);
-        assert.throws(() => report.summarize([], 0, NaN), TypeError);
+      async ({ report }) => {
+        await assert.rejects(async () => await report.summarize(null, 0, 1), TypeError);
+        await assert.rejects(async () => await report.summarize([], 2, 1), TypeError);
+        await assert.rejects(async () => await report.summarize([], 0, NaN), TypeError);
       },
     ],
   ],

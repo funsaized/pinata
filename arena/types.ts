@@ -13,6 +13,7 @@ export interface ArenaTask {
   starterDir: string;
   solutionDir: string; // Offline controls only; never supplied to external adapters.
   oracleFile: string; // Run in a separate bounded process, outside the candidate tree.
+  oracleCaseCount: number; // Trusted expected denominator, never supplied by a candidate.
   units: Unit[];
 }
 export interface AdapterRequest {

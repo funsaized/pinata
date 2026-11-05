@@ -3,8 +3,9 @@
 The coding arena runs repeatable coding assignments and keeps the evidence for each
 trial. It is a maintainer harness, separate from Pinata's runtime and from the
 [performance benchmarks](performance.md). The offline controls exercise the harness
-with scripted changes; they do not measure a model or compare frameworks. No live Piñata, Pi, or OpenCode adapter is supplied or validated; each would need
-to be implemented and validated before making such a comparison.
+with scripted changes, including copied reference solutions; they do not measure a
+model or compare frameworks.
+No live Piñata, Pi, or OpenCode adapter is supplied or validated.
 
 ## Run the offline controls
 
@@ -73,7 +74,10 @@ stderr is retained as a log. See [the shared types](../../arena/types.ts) for th
 request and response fields and the [adapter guide](../../arena/adapters/README.md) for
 wrapper guidance. Honor the requested workflow and repair budget, report actual stage
 events, usage sources and limitations, and use `null` for unavailable measurements.
-External adapters can make paid calls when configured with credentials.
+These are adapter self-reports, not independent verification. All current external
+adapters are unverified and excluded from treatment comparisons until trusted
+supervisor stage evidence exists and is validated. External adapters can make paid
+calls when configured with credentials.
 
 ## Extend the corpus or adapter
 
@@ -89,9 +93,11 @@ directory and increment its version before comparing it with retained trials.
 To add an adapter, implement a wrapper that follows the request and response contract
 in [types.ts](../../arena/types.ts), write candidate changes in the supplied checkout,
 keep evidence under the supplied evidence directory, and report the stages, usage and
-limitations it actually observed. Validate the adapter
-against the same tasks and failure cases before using it for a live comparison. No live Piñata, Pi, or OpenCode implementation has been supplied or verified by
-this pilot.
+limitations it actually observed. A live comparison still requires framework invocation
+and version/configuration capture, trusted supervisor evidence for stage ordering, parallel execution, review
+and repair limits, full dependency provenance, usage accounting, and appropriate
+isolation for untrusted code. Validate these against the same tasks and failure
+cases. Any paid validation requires a later, explicitly approved plan.
 
 ## Make a fair comparison
 
@@ -100,15 +106,20 @@ provider, model ID and version, settings, public prompt, available tools, resour
 time limits, and repair allowance where possible. Record any differences that cannot
 be matched. Compare the same workflow across repeated trials on a comparable host,
 and retain every trial, including failed runs. The four workflow labels describe
-sequential or parallel work, with or without review; the label alone does not prove
-that an external adapter actually performed those stages. Inspect its stage evidence.
+sequential or parallel work, with or without review. An external adapter's label
+and self-reported events do not verify those stages; current external trials are not
+eligible for treatment comparisons. Oracle correctness is separate from treatment
+verification. Results record `candidateCorrect`, treatment status and reasons, and
+`comparisonEligible`; only scripted controls are currently eligible.
 
 Read correctness alongside elapsed time, usage, cost, attempts and repairs. A missing
 measurement is unknown, not zero: `null` cost, for example, means it was not reported;
 zero means a measured or explicitly reported zero. Check the usage source and the
 framework, model, revision and task provenance before pooling results. Trial results
 record source, corpus, prompt, starter, oracle, configuration and lockfile hashes, the
-repository revision and status, and runtime and limits. Execution uses a fixed task,
+repository revision and status, and runtime and limits. Adapter fingerprints cover
+the command and directly identified files only; they do not establish full dependency
+coverage or adapter equivalence. Execution uses a fixed task,
 trial, workflow order, which can confound timing; account for order effects. Avoid treating
 an offline control or a single successful run as evidence of live coding quality or
 speed.
@@ -116,9 +127,21 @@ speed.
 ## Trust boundary
 
 Each candidate starts from the task's starter, and the external oracle and known-good
-solution are kept outside the candidate checkout. This separation helps evaluate the
-result; it is not a security boundary. Git worktrees and subprocess timeouts are not
-sandboxes. Adapters, generated code and oracle commands run with the user's operating
-system permissions and may access the network or other files. Run only trusted code,
-and use an independently secured environment when evaluating untrusted code. See
-[trust and safety](../explanation/trust.md).
+solution are kept outside the candidate checkout. Trusted assertions evaluate
+observations from candidate code in a separate process, and scores travel over a
+dedicated channel checked for the expected complete case vector. This separation
+helps evaluate the result. The candidate worker uses Node `--permission` with
+`--allow-fs-read` for the candidate and worker files; it grants no Node filesystem
+write, child process, worker thread, native addon, or WASI permission. Its environment
+only retains `SYSTEMROOT`, `WINDIR`, `TEMP`, `TMP`, and `TZ` when present; it does
+not inherit credentials or `NODE_OPTIONS`. There is no fallback without the flags.
+The profile is recorded in provenance, but verification remains limited.
+
+This is a resource guardrail, not an operating-system security boundary. The
+[Node permission documentation](https://nodejs.org/docs/latest-v22.x/api/permissions.html)
+explicitly says the model does not protect against malicious code. Network access is
+not restricted, existing file descriptors can bypass permission checks, and Node
+follows symlinks; the arena rejects symlinks in candidate inputs. Adapters and
+generated code may have the user's operating-system permissions. Run only trusted
+code, and use an independently secured environment when evaluating untrusted code.
+See [trust and safety](../explanation/trust.md).

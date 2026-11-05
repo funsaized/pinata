@@ -10,6 +10,18 @@ const cell = (value: unknown) =>
 const number = (value: number | null | undefined, digits = 0) =>
   value == null ? "unknown" : value.toFixed(digits);
 const model = (result: RunResult) => result.response?.model ?? null;
+const correctness = (result: RunResult) =>
+  result.candidateCorrect === true
+    ? "pass"
+    : result.candidateCorrect === false
+      ? "fail"
+      : "unknown";
+const treatment = (result: RunResult) =>
+  result.mode === "external" ? "unverified" : (result.treatment?.status ?? "unverified");
+// External self-reports cannot opt themselves into a comparison. Keep every
+// requested control cell, including interrupted/setup-failed cells, in its group.
+const eligible = (result: RunResult) =>
+  result.mode === "scripted-control" && result.comparisonEligible === true;
 const canonical = (value: unknown): string =>
   JSON.stringify(value, (_key, item: unknown) =>
     item && typeof item === "object" && !Array.isArray(item)
@@ -52,6 +64,14 @@ export function comparisonWarnings(results: RunResult[]): string[] {
       "Some external command sources could not be fingerprinted; adapter equivalence is unknown.",
     );
   const external = results.filter((result) => result.mode === "external");
+  if (external.length) {
+    warnings.push(
+      "External workflow labels and stage events are adapter claims. Supervisor-owned stage evidence and live Piñata/Pi/OpenCode integrations are not implemented; external trials are excluded from treatment comparisons even when their candidates pass the oracle.",
+    );
+    warnings.push(
+      "External adapter source fingerprints have partial coverage: direct command files do not cover imported modules, packages, shell/PATH resolution or remote services. A matching hash does not establish adapter equivalence.",
+    );
+  }
   if (external.some((result) => !model(result) || !model(result)?.version))
     warnings.push(
       "Some external model identities or versions are unknown; model equivalence is unverified.",
@@ -95,9 +115,9 @@ export function renderReport(results: RunResult[]): string {
   const lines = [
     "# Coding arena report",
     "",
-    `${results.length} requested trial cells recorded. ${results.filter((result) => result.status === "completed").length} completed with all oracle checks passing.`,
+    `${results.length} requested trial cells recorded. ${results.filter((result) => result.candidateCorrect === true).length} candidates passed all attributable oracle checks; ${results.filter((result) => treatment(result) === "unverified").length} treatments are unverified. ${results.filter((result) => !eligible(result)).length} trials are excluded from treatment comparisons.`,
     "",
-    "Each row is one requested trial, including failed setup, adapter errors, timeouts and missing responses. Unknown means unavailable; it never means zero. Correctness comes from the external oracle. Model, framework, usage, attempts, repairs and stage events are adapter-reported.",
+    "Each row is one requested trial, including failed setup, adapter errors, timeouts and missing responses. Unknown means unavailable; it never means zero. Candidate correctness comes from the oracle and stable-snapshot checks, independently of execution status and treatment verification. External model, framework, usage, attempts, repairs and stage events are adapter-reported. Verified-control means mechanically checked scripted harness execution, with no live framework claim. Eligibility preserves every requested scripted control in its comparison denominator, including failures; external trials and legacy artifacts without eligibility metadata are ineligible.",
     "",
     "## Interpretation",
     "",
@@ -108,8 +128,8 @@ export function renderReport(results: RunResult[]): string {
     "",
     "## All trials",
     "",
-    "| Batch | Task | Workflow | Trial / order | Mode / control | Status | Oracle | Wall s | Adapter s | Input tokens | Output tokens | USD | Attempts | Repairs |",
-    "| --- | --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+    "| Batch | Task | Requested workflow | Trial / order | Mode / control | Execution status | Candidate correctness | Treatment | Comparison eligible | Oracle score | Wall s | Adapter s | Input tokens | Output tokens | USD | Attempts | Repairs |",
+    "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
   ];
   for (const result of results) {
     const response = result.response;
@@ -121,6 +141,9 @@ export function renderReport(results: RunResult[]): string {
         `${result.trial} / ${result.order}`,
         result.control ?? result.mode,
         result.status,
+        correctness(result),
+        treatment(result),
+        eligible(result) ? "yes" : "no",
         result.oracle ? `${result.oracle.passed}/${result.oracle.total}` : "unknown",
         number(result.elapsedMs == null ? null : result.elapsedMs / 1000, 3),
         number(result.adapterProcess ? result.adapterProcess.elapsedMs / 1000 : null, 3),
@@ -136,15 +159,16 @@ export function renderReport(results: RunResult[]): string {
   }
   lines.push(
     "",
-    "## Trial outcomes by treatment",
+    "## Scripted control treatment comparisons",
     "",
-    "Counts retain every requested cell in the denominator, including unavailable responses and unstarted trials. A correct trial requires a completed adapter and all oracle checks passing. Batches remain separate, so incompatible configurations are never pooled and missing telemetry cannot remove a failure from its treatment. These are descriptive counts, not a framework ranking.",
+    "Only scripted controls enter this table. Counts retain every requested control cell in the denominator, including unavailable responses, invalid treatment evidence and unstarted trials. A successful control requires completed execution, a verified scripted treatment and a passing candidate. Batches remain separate, so incompatible configurations are never pooled and missing telemetry cannot remove a failure from its control group. External trials remain in All trials and the exclusion counts below. These are descriptive harness counts, not a framework ranking.",
     "",
-    "| Task | Batch / mode | Workflow | Completed and correct / requested | Oracle observed / requested | Usage observed / requested |",
+    "| Task | Batch / mode | Workflow | Verified, completed and correct / requested | Oracle observed / requested | Usage observed / requested |",
     "| --- | --- | --- | --- | --- | --- |",
   );
   const groups = new Map<string, RunResult[]>();
   for (const result of results) {
+    if (!eligible(result)) continue;
     const key = `${result.task.id}|${result.batchId} / ${result.mode}|${result.workflow}`;
     groups.set(key, [...(groups.get(key) ?? []), result]);
   }
@@ -158,9 +182,18 @@ export function renderReport(results: RunResult[]): string {
         row.response.usage.costUsd !== null,
     ).length;
     lines.push(
-      `| ${cell(task)} | ${cell(config)} | ${cell(workflow)} | ${rows.filter((row) => row.status === "completed").length}/${rows.length} | ${rows.filter((row) => row.oracle).length}/${rows.length} | ${observed}/${rows.length} |`,
+      `| ${cell(task)} | ${cell(config)} | ${cell(workflow)} | ${rows.filter((row) => row.status === "completed" && row.candidateCorrect === true && treatment(row) === "verified-control").length}/${rows.length} | ${rows.filter((row) => row.oracle).length}/${rows.length} | ${observed}/${rows.length} |`,
     );
   }
+  const excluded = results.filter((result) => result.mode === "external");
+  const legacy = results.filter(
+    (result) => result.mode === "scripted-control" && !eligible(result),
+  );
+  lines.push(
+    "",
+    `Excluded external trials: ${excluded.length}/${results.length} requested cells; ${excluded.filter((result) => result.candidateCorrect === true).length} passing candidates, ${excluded.filter((result) => result.candidateCorrect === false).length} failing candidates, ${excluded.filter((result) => result.candidateCorrect == null).length} unknown correctness. All ${excluded.length} external treatments are unverified, regardless of reported events or counts.`,
+    `Other excluded trials without explicit comparison eligibility: ${legacy.length}/${results.length} requested cells. Their evidence remains in All trials.`,
+  );
   lines.push("", "## Evidence and failures", "");
   for (const result of results) {
     const response = result.response;
@@ -172,7 +205,21 @@ export function renderReport(results: RunResult[]): string {
       "",
       `Starter commit: \`${result.provenance.startingRevision ?? "unknown"}\`. Corpus: \`${result.provenance.corpusSha256 || "unknown"}\`. Prompt: \`${result.provenance.promptSha256}\`.`,
       "",
+      `Candidate correctness: ${correctness(result)}. Treatment: ${treatment(result)}. Comparison eligible: ${eligible(result) ? "yes (scripted control denominator)" : "no"}. Adapter source coverage: ${cell(result.provenance.adapterSourceCoverage ?? "unknown")}.`,
+      "",
     );
+    if (result.treatment?.reasons.length)
+      lines.push(
+        ...result.treatment.reasons.map((reason) => `- Treatment evidence: ${cell(reason)}`),
+        "",
+      );
+    if (result.provenance.adapterSourceLimitations?.length)
+      lines.push(
+        ...result.provenance.adapterSourceLimitations.map(
+          (limitation) => `- Provenance limitation: ${cell(limitation)}`,
+        ),
+        "",
+      );
     if (result.errors.length)
       lines.push(...result.errors.map((error) => `- Failure: ${cell(error)}`), "");
     if (result.oracle?.failed.length)

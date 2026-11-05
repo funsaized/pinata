@@ -4,7 +4,6 @@ import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/pr
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
-import { fileURLToPath } from "node:url";
 import { executeOffline, readAdapterRequest } from "../../arena/adapters/index.ts";
 import { tasks } from "../../arena/corpus/index.ts";
 import type { AdapterRequest, ArenaTask, Workflow } from "../../arena/types.ts";
@@ -279,7 +278,7 @@ test("arena external protocol helper accepts a public request and preserves stdo
   const requestFile = join(root, "request.json");
   await writeFile(requestFile, JSON.stringify(request));
   assert.deepEqual(await readAdapterRequest(requestFile), request);
-  const protocol = fileURLToPath(new URL("../../arena/adapters/protocol.ts", import.meta.url));
+  const protocol = new URL("../../arena/adapters/protocol.ts", import.meta.url).href;
   const wrapper = join(root, "wrapper.mjs");
   await writeFile(
     wrapper,

@@ -50,9 +50,10 @@ function fixture(t: TestContext) {
   const oracleFile = join(root, "oracle.mjs");
   writeFileSync(
     oracleFile,
-    `import {pathToFileURL} from 'node:url';import {join} from 'node:path';
-let ok=false;try{ok=(await import(pathToFileURL(join(process.argv[2],'index.mjs')))).answer===42}catch{}
-console.log(JSON.stringify({passed:ok?1:0,total:1,failed:ok?[]:['answer must equal 42']}));process.exitCode=ok?0:1;`,
+    `import {readFileSync,writeFileSync} from 'node:fs';import {join} from 'node:path';
+const ok=readFileSync(join(process.argv[2],'index.mjs'),'utf8')==='export const answer = 42;\\n';
+const error='answer must equal 42';
+writeFileSync(Number(process.env.ARENA_SCORE_FD),JSON.stringify({schemaVersion:1,passed:ok?1:0,total:1,failed:ok?[]:[error],cases:[ok?{id:0,passed:true}:{id:0,passed:false,error}]}));process.exitCode=ok?0:1;`,
   );
   const task: ArenaTask = {
     id: "fixture",
@@ -62,6 +63,7 @@ console.log(JSON.stringify({passed:ok?1:0,total:1,failed:ok?[]:['answer must equ
     starterDir,
     solutionDir,
     oracleFile,
+    oracleCaseCount: 1,
     units: [{ id: "answer", files: ["index.mjs"], prompt: "Implement answer" }],
   };
   const options: ArenaOptions = {
@@ -123,9 +125,15 @@ test("broken controls retain failing candidates, raw oracle output and full tria
     results: [result],
   } = await runArena({ ...options, offlineMode: "broken" });
   assert.equal(result.status, "failed");
-  assert.deepEqual(result.oracle, { passed: 0, total: 1, failed: ["answer must equal 42"] });
+  assert.deepEqual(result.oracle, {
+    schemaVersion: 1,
+    passed: 0,
+    total: 1,
+    failed: ["answer must equal 42"],
+    cases: [{ id: 0, passed: false, error: "answer must equal 42" }],
+  });
   const dir = evidence(directory, result.runId);
-  assert.match(readFileSync(join(dir, "oracle.stdout.log"), "utf8"), /answer must equal 42/);
+  assert.match(readFileSync(join(dir, "oracle.score.json"), "utf8"), /answer must equal 42/);
   assert.ok(existsSync(join(dir, "adapter-response.json")));
   assert.ok(existsSync(join(dir, "final.diff")));
   assert.match(readFileSync(join(directory, "report.md"), "utf8"), /0\/1/);
@@ -295,7 +303,7 @@ test("oracle-induced file mutations invalidate otherwise passing evaluation", as
   const { options, task } = fixture(t);
   writeFileSync(
     task.oracleFile,
-    `import {writeFileSync} from 'node:fs';import {join} from 'node:path';writeFileSync(join(process.argv[2],'index.mjs'),'export const answer=0;');console.log(JSON.stringify({passed:1,total:1,failed:[]}));`,
+    `import {writeFileSync} from 'node:fs';import {join} from 'node:path';writeFileSync(join(process.argv[2],'index.mjs'),'export const answer=0;');writeFileSync(Number(process.env.ARENA_SCORE_FD),JSON.stringify({schemaVersion:1,passed:1,total:1,failed:[],cases:[{id:0,passed:true}]}));`,
   );
   const {
     directory,
@@ -374,6 +382,7 @@ test("missing telemetry and setup failures remain in the planned treatment denom
   failed.status = "failed";
   failed.response = null;
   failed.oracle = null;
+  failed.candidateCorrect = null;
   failed.provenance.startingRevision = null;
   failed.errors.push("setup failed");
   const report = renderReport([original, failed]);
