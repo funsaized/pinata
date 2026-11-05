@@ -93,7 +93,10 @@ For the in-process backend, values above twice the limits in
 complete scenario over budget can retry twice; execution failures and missing
 measurements fail immediately. Process and herdr-pi runs have execution checks but
 no timing budgets, including when `--ci` is set. CI runs 20 process trials with a
-30-second timeout per trial and a 12-minute step cap, leaving time for artifact upload.
+60-second timeout per trial and a 12-minute step cap, leaving time for artifact upload.
+The trial limit includes startup, warm-up, measurement, and cleanup; it is separate
+from the reported scenario wall time. If the step cap interrupts the cohort, the
+retained partial report remains incomplete and cannot pass comparison validation.
 These are resource limits, not performance gates.
 
 Compare repeated runs on the same quiet machine with the same scenario, backend,

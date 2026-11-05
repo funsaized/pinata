@@ -49,7 +49,7 @@ jobs:
         if: ${{ !cancelled() && steps.dependencies.outcome == 'success' && steps.pi.outcome == 'success' }}
         # Bound 20 trials so a regression leaves time for later evidence and upload.
         timeout-minutes: 12
-        run: node scripts/bench-ci.mjs process --expose-gc bench/process.ts --repeat 5 --timeout-ms 30000 --scenario fanout-1 --scenario fanout-8 --scenario chain --scenario builder
+        run: node scripts/bench-ci.mjs process --expose-gc bench/process.ts --repeat 5 --timeout-ms 60000 --scenario fanout-1 --scenario fanout-8 --scenario chain --scenario builder
       - name: UX benchmark in interactive Pi (pseudo-terminal)
         # `script` provides the terminal; Windows has no equivalent without extra tools.
         if: ${{ !cancelled() && steps.dependencies.outcome == 'success' && steps.pi.outcome == 'success' && runner.os != 'Windows' }}
