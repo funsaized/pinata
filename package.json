@@ -48,6 +48,7 @@
     "eval:live": "node test/quality/engine.ts",
     "bench": "node --expose-gc bench/run.ts",
     "bench:loopback": "node --expose-gc bench/run.ts --provider loopback",
+    "bench:process": "node --expose-gc bench/process.ts",
     "check": "npm run format:check && npm run lint && npm run typecheck",
     "lint": "oxlint test scripts engine bench bin examples/relay/setup.mjs examples/relay/verify.mjs",
     "typecheck": "tsc -p tsconfig.json",

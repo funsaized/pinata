@@ -9,8 +9,8 @@ import { InProcessBackend } from "../../engine/backends/in-process.ts";
 import { ProcessBackend } from "../../engine/backends/process.ts";
 import { HerdrPiBackend } from "../../engine/backends/herdr-pi.ts";
 import type { AgentBackend } from "../../engine/backends/types.ts";
-import { processRss } from "../../engine/core/telemetry.ts";
 import { readFile } from "node:fs/promises";
+import { ChildMemorySampler, type ChildMemory } from "../child-memory.ts";
 import { createEngine, type Engine, type RunHandle } from "../../engine/core/engine.ts";
 import { Limiter } from "../../engine/core/limiter.ts";
 import type { AgentEvent, ModelRef, TaskSpec } from "../../engine/core/types.ts";
@@ -43,8 +43,9 @@ export interface EngineRaw {
   peakRss: number;
   maxRunning: number;
   settledHeapDeltaMB: number;
-  // Agents in their own processes: mean of each agent process's peak RSS (MB).
-  childMemoryMB?: number;
+  backend?: "in-process" | "process" | "herdr-pi";
+  processSpawnedAt?: Record<string, number>;
+  childMemory?: ChildMemory;
   lagP99Ms: number | null;
   cpuMs: number;
   host: string;
@@ -97,6 +98,7 @@ export function benchReply(scenario: Scenario, task: BenchTask, round: number) {
 }
 
 export const MARKER = /\[bench:([a-z][a-z0-9-]{0,31})\]/;
+export const WARM_UP_TASK: BenchTask = { id: "warm-up", role: "scout", rounds: 0 };
 
 export async function runEngineScenario(
   scenario: Scenario,
@@ -116,9 +118,18 @@ export async function runEngineScenario(
   // provider must be reachable from a child (the loopback provider's models.json).
   const kind = (process.env.BENCH_BACKEND ?? "in-process") as "in-process" | "process" | "herdr-pi";
   const childEnv = { PI_CODING_AGENT_DIR: setup.agentDir };
+  const processSpawnedAt: Record<string, number> = {};
+  const readyChildren = new Set<string>();
+  let children: ChildMemorySampler | undefined;
   const backend: AgentBackend =
     kind === "process"
-      ? new ProcessBackend({ env: childEnv })
+      ? new ProcessBackend({
+          env: childEnv,
+          onSpawn: (task) => {
+            processSpawnedAt[task] = now();
+            void children?.sample();
+          },
+        })
       : kind === "herdr-pi"
         ? new HerdrPiBackend({ env: childEnv })
         : new InProcessBackend({
@@ -145,7 +156,11 @@ export async function runEngineScenario(
     const handle = await start(
       launch,
       (e) => {
-        if (e.t === "turn_start") mark(launch.task.id, "turn");
+        if (e.t === "turn_start") {
+          mark(launch.task.id, "turn");
+          readyChildren.add(launch.task.id);
+          void children?.sample();
+        }
         sink(e);
       },
       signal,
@@ -200,11 +215,18 @@ export async function runEngineScenario(
       backend: kind,
     },
   });
-  await warm.done;
+  const warmed = await warm.done;
+  if (warmed.status !== "succeeded" || statuses.succeeded !== 1 || errors.length)
+    throw new Error(
+      `Benchmark warm-up failed: ${JSON.stringify({ status: warmed.status, statuses, errors })}`,
+    );
   for (const key of Object.keys(startedAt)) delete startedAt[key];
   for (const key of Object.keys(settledAt)) delete settledAt[key];
   for (const key of Object.keys(statuses)) delete statuses[key];
   for (const key of Object.keys(setupAt)) delete setupAt[key];
+  for (const key of Object.keys(processSpawnedAt)) delete processSpawnedAt[key];
+  readyChildren.clear();
+  for (const key of Object.keys(trace)) delete trace[key];
   errors.length = 0;
   maxRunning = 0;
   running = 0;
@@ -240,40 +262,35 @@ export async function runEngineScenario(
     () => (peakRss = Math.max(peakRss, process.memoryUsage().rss)),
     process.env.BENCH_NO_SAMPLER ? 1_000_000 : 10,
   );
-  // Agents in their own processes: each one's peak RSS, sampled from the OS.
-  const childPeak = new Map<string, number>();
-  let sampling = false;
-  const children =
-    kind === "in-process"
-      ? undefined
-      : setInterval(async () => {
-          if (sampling) return;
-          sampling = true;
-          try {
-            const pids = new Map<number, string>();
-            // Attached process agents are the backend's children; detached and herdr-pi
-            // agents record their pid in the run directory.
-            if (backend instanceof ProcessBackend)
-              for (const [key, child] of backend.children)
-                pids.set(child.pid, key.slice(key.indexOf("/") + 1));
-            for (const task of scenario.tasks) {
-              const raw = await readFile(
-                join(setup.runsDir, scenario.name, "agents", task.id, "pid.json"),
-                "utf8",
-              ).catch(() => null);
-              const pid = raw ? Number(JSON.parse(raw).pid) : NaN;
-              if (Number.isFinite(pid)) pids.set(pid, task.id);
-            }
-            const rss = await processRss([...pids.keys()]);
-            for (const [pid, mb] of rss)
-              if (mb !== null) {
-                const task = pids.get(pid)!;
-                childPeak.set(task, Math.max(childPeak.get(task) ?? 0, mb));
-              }
-          } finally {
-            sampling = false;
+  // Retain each agent's observed peak and coverage. A missed child stays missing;
+  // it must never silently become the parent's RSS delta.
+  if (kind !== "in-process") {
+    const taskIds = new Set(scenario.tasks.map((task) => task.id));
+    children = new ChildMemorySampler(
+      async () => {
+        const pids = new Map<number, string>();
+        if (backend instanceof ProcessBackend) {
+          for (const [key, child] of backend.children) {
+            const task = key.slice(key.indexOf("/") + 1);
+            if (taskIds.has(task)) pids.set(child.pid, task);
           }
-        }, 200);
+        } else {
+          // Herdr children publish their identity after their extension has loaded.
+          for (const task of scenario.tasks) {
+            const raw = await readFile(
+              join(setup.runsDir, scenario.name, "agents", task.id, "pid.json"),
+              "utf8",
+            ).catch(() => null);
+            const pid = raw ? Number(JSON.parse(raw).pid) : NaN;
+            if (Number.isInteger(pid) && pid > 0) pids.set(pid, task.id);
+          }
+        }
+        return pids;
+      },
+      { ready: () => readyChildren },
+    );
+    children.start();
+  }
   let lag: ReturnType<typeof monitorEventLoopDelay> | undefined;
   try {
     if (process.env.BENCH_NO_LAG) throw new Error("off");
@@ -284,30 +301,36 @@ export async function runEngineScenario(
   }
   const cpu0 = process.cpuUsage();
   const t0 = now();
-  const handle = await engine.run(tasks, {
-    cwd: setup.repo,
-    dir: join(setup.runsDir, scenario.name),
-    limits: { concurrency: 64 },
-    // BENCH_MODE=observe measures observe mode's overhead (E5.2).
-    mode: process.env.BENCH_MODE === "observe" ? "observe" : "lean",
-    allowWrites: true,
-    data: {
-      models: Object.fromEntries(tasks.map((t) => [t.id, setup.model])),
-      instructions: [],
-      codemode: false,
-      backend: kind,
-      config,
-      definitions,
-      prep,
-    },
-  });
-  setup.onRun?.(handle, engine);
-  await handle.done;
-  const wallMs = now() - t0;
-  peakRss = Math.max(peakRss, process.memoryUsage().rss);
-  clearInterval(sampler);
-  if (children) clearInterval(children);
-  lag?.disable();
+  let childMemory: ChildMemory | undefined;
+  let wallMs: number;
+  try {
+    const handle = await engine.run(tasks, {
+      cwd: setup.repo,
+      dir: join(setup.runsDir, scenario.name),
+      limits: { concurrency: 64 },
+      // BENCH_MODE=observe measures observe mode's overhead (E5.2).
+      mode: process.env.BENCH_MODE === "observe" ? "observe" : "lean",
+      allowWrites: true,
+      data: {
+        models: Object.fromEntries(tasks.map((t) => [t.id, setup.model])),
+        instructions: [],
+        codemode: false,
+        backend: kind,
+        config,
+        definitions,
+        prep,
+      },
+    });
+    setup.onRun?.(handle, engine);
+    await handle.done;
+    wallMs = now() - t0;
+    peakRss = Math.max(peakRss, process.memoryUsage().rss);
+  } finally {
+    clearInterval(sampler);
+    lag?.disable();
+    // Drain the last asynchronous OS read before publishing the snapshot.
+    childMemory = await children?.stop();
+  }
   const cpu = process.cpuUsage(cpu0);
   let lagP99Ms: number | null = null;
   try {
@@ -337,9 +360,8 @@ export async function runEngineScenario(
     settledHeapDeltaMB,
     peakRss,
     maxRunning,
-    ...(childPeak.size && {
-      childMemoryMB: [...childPeak.values()].reduce((a, b) => a + b, 0) / childPeak.size,
-    }),
+    backend: kind,
+    ...(kind !== "in-process" && { processSpawnedAt, childMemory }),
     lagP99Ms,
     cpuMs: Math.round((cpu.user + cpu.system) / 1000),
     host: runtimeName(),
@@ -353,35 +375,74 @@ export function summarize(
   firstRequest: Record<string, number>,
   provider: ScenarioResult["provider"],
 ): ScenarioResult {
-  const spawn = scenario.tasks.flatMap((t) =>
-    firstRequest[t.id] !== undefined && raw.startedAt[t.id] !== undefined
-      ? [firstRequest[t.id] - raw.startedAt[t.id]]
-      : [],
+  const observations = (value: (task: BenchTask) => number | undefined) =>
+    Object.fromEntries(
+      scenario.tasks.flatMap((task) => {
+        const sample = value(task);
+        return sample === undefined ? [] : [[task.id, sample]];
+      }),
+    );
+  const difference = (end: number | undefined, start: number | undefined) =>
+    end !== undefined && start !== undefined ? end - start : undefined;
+  const ready = (task: BenchTask) =>
+    task.after?.length ? Math.max(...task.after.map((id) => raw.settledAt[id] ?? NaN)) : undefined;
+  const samples = {
+    spawnMs: observations((task) => difference(firstRequest[task.id], raw.startedAt[task.id])),
+    setupMs: observations((task) => difference(firstRequest[task.id], raw.setupAt?.[task.id])),
+    toolCallMs: observations((task) =>
+      task.after?.length ? undefined : difference(firstRequest[task.id], raw.t0),
+    ),
+    dependentMs: observations((task) => difference(raw.startedAt[task.id], ready(task))),
+    dependentRequestMs: observations((task) => difference(firstRequest[task.id], ready(task))),
+  };
+  const processBackend = raw.backend === "process" || raw.backend === "herdr-pi";
+  const child = raw.childMemory;
+  const peaks = child?.peakRssByAgentMB ?? {};
+  const counts = child?.rssSamplesByAgent ?? {};
+  const readyCounts = child?.readyRssSamplesByAgent ?? {};
+  const missingRssAgents = scenario.tasks
+    .filter(
+      (task) =>
+        !(
+          Number.isFinite(peaks[task.id]) &&
+          peaks[task.id] > 0 &&
+          counts[task.id] > 0 &&
+          readyCounts[task.id] > 0
+        ),
+    )
+    .map((task) => task.id);
+  const startupByAgentMs = observations((task) =>
+    difference(firstRequest[task.id], raw.processSpawnedAt?.[task.id]),
   );
-  const setupMs = scenario.tasks.flatMap((t) =>
-    firstRequest[t.id] !== undefined && raw.setupAt?.[t.id] !== undefined
-      ? [firstRequest[t.id] - raw.setupAt[t.id]]
-      : [],
-  );
-  const toolCall = scenario.tasks
-    .filter((t) => !t.after?.length)
-    .flatMap((t) => (firstRequest[t.id] !== undefined ? [firstRequest[t.id] - raw.t0] : []));
-  const ready = (t: (typeof scenario.tasks)[number]) =>
-    Math.max(...t.after!.map((p) => raw.settledAt[p] ?? Number.NaN));
-  const dependent = scenario.tasks.flatMap((t) =>
-    t.after?.length && raw.startedAt[t.id] !== undefined && Number.isFinite(ready(t))
-      ? [raw.startedAt[t.id] - ready(t)]
-      : [],
-  );
-  const dependentRequest = scenario.tasks.flatMap((t) =>
-    t.after?.length && firstRequest[t.id] !== undefined && Number.isFinite(ready(t))
-      ? [firstRequest[t.id] - ready(t)]
-      : [],
-  );
+  const processMetrics = processBackend
+    ? {
+        startupMs: stat(Object.values(startupByAgentMs)),
+        startupByAgentMs,
+        childPeakRssMB: missingRssAgents.length ? null : stat(Object.values(peaks)),
+        peakRssByAgentMB: peaks,
+        rssSamplesByAgent: counts,
+        readyRssSamplesByAgent: readyCounts,
+        missingRssAgents,
+        sampleIntervalMs: child?.sampleIntervalMs ?? 200,
+        errors: child?.errors ?? [],
+      }
+    : undefined;
   const notes = [
-    raw.childMemoryMB !== undefined
-      ? "memoryPerAgentMB: mean peak RSS of each agent's own Pi process, sampled every 200 ms"
+    processBackend
+      ? "memoryPerAgentMB: mean sampled peak RSS of each agent Pi process; shared pages included, descendants excluded; not simultaneous total memory"
       : "memoryPerAgentMB: (peak RSS - RSS before the run) / most agents running at once",
+    "peakRssMB and cpuMs measure the host process only; child resource use is excluded",
+    "spawnMs: scheduler dispatch to first provider request, including preparation; host warm-up is excluded",
+    ...(processBackend
+      ? [
+          "process.startupMs: child creation to first provider request; fresh agent processes after host warm-up, not cold machine startup",
+          `child RSS: sampled every ${child?.sampleIntervalMs ?? 200} ms, on spawn and turn start; coverage requires a sample after Pi begins a turn; observed peaks are lower bounds`,
+          ...(missingRssAgents.length
+            ? [`child RSS unavailable for: ${missingRssAgents.join(", ")}`]
+            : []),
+          ...(child?.errors ?? []).map((error) => `child RSS sampling error: ${error}`),
+        ]
+      : []),
     `${raw.maxRunning} agents ran at once (limiter opened to 64)`,
     ...raw.errors.slice(0, 5).map((e) => `agent: ${e}`),
   ];
@@ -392,17 +453,22 @@ export function summarize(
     host: raw.host,
     agents: scenario.tasks.length,
     statuses: raw.statuses,
-    spawnMs: stat(spawn),
-    setupMs: stat(setupMs),
-    toolCallMs: stat(toolCall),
-    dependentMs: stat(dependent),
-    dependentRequestMs: stat(dependentRequest),
-    memoryPerAgentMB:
-      raw.childMemoryMB !== undefined
-        ? Math.round(raw.childMemoryMB * 100) / 100
-        : raw.maxRunning
-          ? mb((raw.peakRss - raw.baselineRss) / raw.maxRunning)
-          : null,
+    spawnMs: stat(Object.values(samples.spawnMs)),
+    setupMs: stat(Object.values(samples.setupMs)),
+    toolCallMs: stat(Object.values(samples.toolCallMs)),
+    dependentMs: stat(Object.values(samples.dependentMs)),
+    dependentRequestMs: stat(Object.values(samples.dependentRequestMs)),
+    samples,
+    ...(processMetrics && { process: processMetrics }),
+    memoryPerAgentMB: processBackend
+      ? missingRssAgents.length
+        ? null
+        : Math.round(
+            (Object.values(peaks).reduce((a, b) => a + b, 0) / scenario.tasks.length) * 100,
+          ) / 100
+      : raw.maxRunning
+        ? mb((raw.peakRss - raw.baselineRss) / raw.maxRunning)
+        : null,
     peakRssMB: mb(raw.peakRss),
     settledHeapDeltaMB: raw.settledHeapDeltaMB,
     loopLagP99Ms: raw.lagP99Ms,
@@ -429,11 +495,15 @@ export function fauxStep(
       )
       .join("\n");
     const agent = MARKER.exec(text)?.[1];
-    const task = agent ? byId.get(agent) : undefined;
+    const task = agent === WARM_UP_TASK.id ? WARM_UP_TASK : agent ? byId.get(agent) : undefined;
     if (!task) return ai.fauxAssistantMessage(ai.fauxText("ok"));
     firstRequest[task.id] ??= now();
     const round = messages.filter((m) => m.role === "assistant").length;
-    const reply = benchReply(scenario, task, round);
+    const reply = benchReply(
+      task === WARM_UP_TASK ? { ...scenario, streamChars: 0 } : scenario,
+      task,
+      round,
+    );
     const blocks = [
       ...(reply.text ? [ai.fauxText(reply.text)] : []),
       ...reply.toolCalls.map((c) => ai.fauxToolCall(c.name, c.arguments as any)),

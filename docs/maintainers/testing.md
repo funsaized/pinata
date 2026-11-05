@@ -54,6 +54,7 @@ commit you are testing to see which environments passed.
 node test/engine/pi-smoke.ts
 node test/engine/package-smoke.ts
 npm run bench -- --ci --host pi
+npm run bench:process -- --repeat 5 --scenario fanout-1 --scenario fanout-8
 npm run bench -- --host tui --scenario ux-8
 node bench/viewer.ts
 ```
@@ -68,12 +69,13 @@ The report's `meta.pi` records the version of that selected Pi command.
 
 ### Read a benchmark result
 
-Benchmarks write ignored JSON reports to `bench/results/`. Every requested task must
+Benchmarks write ignored JSON reports and Markdown summaries to `bench/results/`. Every requested task must
 succeed. Reports must include complete launch and dependency samples, with finite,
 nonnegative core measurements.
 
-With `--ci`, every applicable budget metric is required. A value above twice its
-budget in `bench/budgets.json` fails the check. A complete scenario that exceeds its
+With `--ci`, every applicable in-process budget metric is required. A value above
+twice its budget in `bench/budgets.json` fails the check. Process and herdr-pi runs
+have execution checks without timing budgets, even with `--ci`. A complete scenario that exceeds its
 budget can retry twice; only a complete passing retry is accepted. Missing measurements,
 failed execution, or an incomplete retry fail the command. Reports include retry
 diagnostics and are saved even when the command fails. The `attempts` field retains
@@ -90,9 +92,10 @@ CPU, wall time, and event-loop lag answer different questions; see `bench/lib.ts
 for their definitions. `bench/viewer.ts` separately measures viewer startup and RSS
 across three runtime configurations.
 
-Use an explicit `--out` path when retaining several runs: the default filename is
-shared by runs on the same platform and date. Faux and loopback providers make no
-paid calls. These measurements cover coordination overhead. Use live evaluations
+Default report names are unique; `--out` selects a specific path and refuses to
+overwrite an existing JSON report or its Markdown companion. CI retains available
+reports, command logs, and status files for 30 days, including on failure. The
+artifact name identifies the commit, OS, architecture, Node version, run and attempt. Faux and loopback providers make no paid calls. These measurements cover coordination overhead. Use live evaluations
 for coding quality and timed real assignments to measure time saved.
 
 Inside Herdr, `test/engine/herdr.test.ts` and the herdr-pi conformance cases also run; they
@@ -143,12 +146,9 @@ The offline regression tests cover these thresholds and the report/exit-code con
 
 ### What is still unmeasured
 
-- The process benchmark CI step enforces successful completion and required execution
-  measurements, but runs without timing gates. Its startup and per-process RSS need
-  their own budgets; the existing budgets describe in-process agents.
-- Save CI benchmark JSON as artifacts with commit, host, backend, and model/runtime
-  versions in distinct filenames. Current benchmark steps print reports but do not
-  upload them, and later invocations can overwrite the same daily JSON file.
+- Process benchmark comparisons are advisory. Collect repeated CI history on each
+  environment before proposing startup or per-process RSS budgets; the existing
+  budgets describe in-process agents.
 - Retain repeated live evaluation reports, including failed trials. Expand beyond
   the parser fixture to actual scout-to-builder handoff, multi-file changes, review
   repair, and destination integration. The current quality fixture does not measure

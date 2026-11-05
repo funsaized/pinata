@@ -7,14 +7,42 @@ npm run bench -- --ci --host pi
 ```
 
 The suite measures agent startup, dependency scheduling, memory, CPU, and event-loop
-lag. It uses local providers, so it makes no paid model calls. Reports go to
-`bench/results/`; use `--out <path>` to keep separate reports for repeated runs.
+lag using local providers; it makes no paid model calls. Reports are saved in
+`bench/results/` as JSON with a Markdown summary. Keep both when sharing evidence:
+JSON contains the measurements and attempts, while the summary makes the results
+and provenance easier to review. Default filenames are unique. An explicit `--out`
+selects a path and refuses to overwrite an existing report or its Markdown companion.
 
 ## Choose what to measure
 
 The default scenarios cover 1, 8, 32, and 64 parallel tasks, dependent tasks, a
 builder with a reviewer, and streaming agents. To measure another backend, set
 `BENCH_BACKEND=process` or `BENCH_BACKEND=herdr-pi`.
+
+For repeated process-backend measurements against the local loopback provider:
+
+```sh
+npm run bench:process -- --repeat 5 --scenario fanout-1 --scenario fanout-8
+```
+
+Save a named report and compare a later run with it:
+
+```sh
+npm run bench:process -- --repeat 5 --scenario fanout-1 --scenario fanout-8 --out bench/results/process-before.json
+npm run bench:process -- --repeat 5 --scenario fanout-1 --scenario fanout-8 --out bench/results/process-after.json --baseline bench/results/process-before.json
+```
+
+For `bench:process`, an output path inside the checkout must be Git-ignored, such
+as `bench/results/`, so that writing evidence does not change the source fingerprint
+between trials. A path outside the checkout is also allowed.
+
+Each scenario repetition uses a fresh Node host, requires a successful warm-up, and
+starts fresh child processes for the tasks. The process startup samples measure from child
+creation to its first provider request. The comparison is advisory; failed
+execution or missing required measurements still fail the command, but timing deltas
+do not. A partial or mixed baseline cohort is incomparable. Gather CI history
+before proposing process-specific budgets. Existing budgets describe in-process engine targets and
+must not be applied to process startup or per-process memory.
 
 Additional scale scenarios exercise a long queue, many predecessors feeding one
 task, and repeated batches:
@@ -27,21 +55,43 @@ For interactive UI and viewer measurements:
 
 ```sh
 npm run bench -- --host tui --scenario ux-8
-node bench/viewer.ts
+node bench/viewer.ts --runs 3
 ```
 
-## Read the results
+The viewer startup marker records a live snapshot received and a render requested;
+it does not confirm that a frame was painted. The report compares configurations
+with different features, so interpret its startup and memory results as advisory.
 
-Launch-to-first-request time includes scheduling; session setup measures the cost
-of creating the session. Dependency dispatch measures how soon a task starts after
-its predecessors finish. Memory measurements distinguish peak RSS from heap kept
-after garbage collection. `settledHeapDeltaMB` includes retained run history.
+## Read and compare results
+
+After a warm-up run, launch-to-first-request time includes task preparation as
+well as session startup. Session setup measures from the backend setup callback to
+the first request. Dependency dispatch measures how soon a task starts after its
+predecessors finish. In-process per-agent memory is an estimate based on the
+host's peak RSS increase and maximum concurrency. Process per-agent memory is the
+mean of sampled peaks for agent processes; it includes shared pages but excludes
+descendants and is not concurrent total RSS. Sampling can miss short-lived processes
+or peaks, so sampled peaks are lower bounds. Each child needs a sample after its
+`turn_start` event to establish loaded-process coverage. Missing child coverage is
+reported as missing, rather than substituted with host memory. These absolute child RSS peaks and the
+parent RSS delta are different quantities and cannot be compared directly.
+`settledHeapDeltaMB` is host heap retained
+after garbage collection and includes run history. CPU and event-loop lag describe
+the host process, not the combined work of child processes.
 
 With `--ci`, results must include all required measurements and finish every task.
-Values above twice the limits in [bench/budgets.json](../../bench/budgets.json) fail
-the performance check. A complete scenario over budget can retry twice; execution
-failures and missing measurements fail immediately.
+For the in-process backend, values above twice the limits in
+[bench/budgets.json](../../bench/budgets.json) fail the performance check. A
+complete scenario over budget can retry twice; execution failures and missing
+measurements fail immediately. Process and herdr-pi runs have execution checks but
+no timing budgets, including when `--ci` is set.
 
-Compare repeated runs on the same quiet machine and check the runtime and backend
-recorded in each report. For runtime selection, live model evaluations, and CI
-coverage, see [testing](testing.md).
+Compare repeated runs on the same quiet machine with the same scenario, backend,
+provider, host, runtime and configuration. Baseline comparison checks the workload,
+platform, hardware, runtime and configuration for compatibility; a mismatch or
+unknown identity prevents a meaningful comparison. Inspect report provenance, including
+checkout commit, dirty status, lockfile hash, OS, architecture, Node and Pi versions.
+Changes in hardware, load, platform or runtime can dominate the result, so do not
+interpret cross-platform or cross-runtime differences as regressions. CI artifacts
+provide evidence for each environment; they are not interchangeable baselines. For
+runtime selection, live model evaluations, and CI coverage, see [testing](testing.md).
