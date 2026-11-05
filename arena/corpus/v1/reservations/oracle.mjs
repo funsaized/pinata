@@ -7,14 +7,14 @@ await runOracle(
   [
     [
       "ASCII SKU normalization",
-      ({ catalog }) => {
-        assert.equal(catalog.normalizeSku("  ab-09\t"), "AB-09");
-        assert.equal(catalog.normalizeSku("constructor"), "CONSTRUCTOR");
+      async ({ catalog }) => {
+        assert.equal(await catalog.normalizeSku("  ab-09\t"), "AB-09");
+        assert.equal(await catalog.normalizeSku("constructor"), "CONSTRUCTOR");
       },
     ],
     [
       "invalid SKU grammar and type",
-      ({ catalog }) => {
+      async ({ catalog }) => {
         for (const sku of [
           "",
           " ",
@@ -29,16 +29,16 @@ await runOracle(
           1,
           null,
         ]) {
-          assert.throws(() => catalog.normalizeSku(sku), TypeError);
+          await assert.rejects(async () => await catalog.normalizeSku(sku), TypeError);
         }
       },
     ],
-    ["empty stock", ({ catalog }) => assert.deepEqual(catalog.loadStock([]), {})],
+    ["empty stock", async ({ catalog }) => assert.deepEqual(await catalog.loadStock([]), {})],
     [
       "stock canonicalization merges duplicates and keeps zero",
-      ({ catalog }) => {
+      async ({ catalog }) => {
         assert.deepEqual(
-          catalog.loadStock([
+          await catalog.loadStock([
             { sku: "b", quantity: 0 },
             { sku: " a ", quantity: 2 },
             { sku: "A", quantity: 3 },
@@ -49,15 +49,15 @@ await runOracle(
     ],
     [
       "stock handles object-property-looking SKU",
-      ({ catalog }) => {
-        assert.deepEqual(catalog.loadStock([{ sku: "constructor", quantity: 2 }]), {
+      async ({ catalog }) => {
+        assert.deepEqual(await catalog.loadStock([{ sku: "constructor", quantity: 2 }]), {
           CONSTRUCTOR: 2,
         });
       },
     ],
     [
       "stock validation",
-      ({ catalog }) => {
+      async ({ catalog }) => {
         for (const input of [
           null,
           {},
@@ -67,23 +67,23 @@ await runOracle(
           [{ sku: "A", quantity: "2" }],
           [{ sku: "A", quantity: Infinity }],
         ]) {
-          assert.throws(() => catalog.loadStock(input), TypeError);
+          await assert.rejects(async () => await catalog.loadStock(input), TypeError);
         }
       },
     ],
     [
       "stock safe-integer bound",
-      ({ catalog }) => {
-        assert.deepEqual(catalog.loadStock([{ sku: "A", quantity: 9007199254740991 }]), {
+      async ({ catalog }) => {
+        assert.deepEqual(await catalog.loadStock([{ sku: "A", quantity: 9007199254740991 }]), {
           A: 9007199254740991,
         });
-        assert.throws(
-          () => catalog.loadStock([{ sku: "A", quantity: 9007199254740992 }]),
+        await assert.rejects(
+          async () => await catalog.loadStock([{ sku: "A", quantity: 9007199254740992 }]),
           TypeError,
         );
-        assert.throws(
-          () =>
-            catalog.loadStock([
+        await assert.rejects(
+          async () =>
+            await catalog.loadStock([
               { sku: "A", quantity: 9007199254740991 },
               { sku: "a", quantity: 1 },
             ]),
@@ -93,16 +93,16 @@ await runOracle(
     ],
     [
       "stock input immutability",
-      ({ catalog }) => {
+      async ({ catalog }) => {
         const input = Object.freeze([Object.freeze({ sku: " a ", quantity: 2 })]);
-        assert.deepEqual(catalog.loadStock(input), { A: 2 });
+        assert.deepEqual(await catalog.loadStock(input), { A: 2 });
       },
     ],
     [
       "reservation aggregates duplicate demand",
-      ({ reservation }) => {
+      async ({ reservation }) => {
         assert.deepEqual(
-          reservation.reserve({ A: 5, B: 1 }, [
+          await reservation.reserve({ A: 5, B: 1 }, [
             { sku: "a", quantity: 2 },
             { sku: " A ", quantity: 3 },
           ]),
@@ -116,9 +116,9 @@ await runOracle(
     ],
     [
       "reservation duplicate demand can exceed stock",
-      ({ reservation }) => {
+      async ({ reservation }) => {
         assert.deepEqual(
-          reservation.reserve({ A: 4 }, [
+          await reservation.reserve({ A: 4 }, [
             { sku: "A", quantity: 3 },
             { sku: "a", quantity: 2 },
           ]),
@@ -132,9 +132,9 @@ await runOracle(
     ],
     [
       "rejection is atomic across available and short lines",
-      ({ reservation }) => {
+      async ({ reservation }) => {
         assert.deepEqual(
-          reservation.reserve({ A: 5, B: 1 }, [
+          await reservation.reserve({ A: 5, B: 1 }, [
             { sku: "A", quantity: 2 },
             { sku: "B", quantity: 3 },
           ]),
@@ -148,9 +148,9 @@ await runOracle(
     ],
     [
       "missing stock and ASCII shortage order",
-      ({ reservation }) => {
+      async ({ reservation }) => {
         assert.deepEqual(
-          reservation.reserve({ Z: 1 }, [
+          await reservation.reserve({ Z: 1 }, [
             { sku: "z", quantity: 4 },
             { sku: "b", quantity: 3 },
             { sku: "A-1", quantity: 2 },
@@ -169,19 +169,19 @@ await runOracle(
     ],
     [
       "empty reservation returns a distinct stock object",
-      ({ reservation }) => {
+      async ({ reservation }) => {
         const stock = Object.freeze({ A: 0 });
-        const result = reservation.reserve(stock, []);
+        const result = await reservation.reserve(stock, []);
         assert.deepEqual(result, { accepted: true, stock: { A: 0 }, shortages: [] });
         assert.notEqual(result.stock, stock);
       },
     ],
     [
       "reservation input immutability",
-      ({ reservation }) => {
+      async ({ reservation }) => {
         const stock = Object.freeze({ A: 4 });
         const lines = Object.freeze([Object.freeze({ sku: "a", quantity: 2 })]);
-        assert.deepEqual(reservation.reserve(stock, lines), {
+        assert.deepEqual(await reservation.reserve(stock, lines), {
           accepted: true,
           stock: { A: 2 },
           shortages: [],
@@ -191,15 +191,18 @@ await runOracle(
     ],
     [
       "reservation validates positive safe demand",
-      ({ reservation }) => {
+      async ({ reservation }) => {
         for (const quantity of [0, -1, 1.5, "2", NaN, 9007199254740992]) {
-          assert.throws(() => reservation.reserve({ A: 4 }, [{ sku: "A", quantity }]), TypeError);
+          await assert.rejects(
+            async () => await reservation.reserve({ A: 4 }, [{ sku: "A", quantity }]),
+            TypeError,
+          );
         }
-        assert.throws(() => reservation.reserve({}, null), TypeError);
-        assert.throws(() => reservation.reserve({}, [null]), TypeError);
-        assert.throws(
-          () =>
-            reservation.reserve({}, [
+        await assert.rejects(async () => await reservation.reserve({}, null), TypeError);
+        await assert.rejects(async () => await reservation.reserve({}, [null]), TypeError);
+        await assert.rejects(
+          async () =>
+            await reservation.reserve({}, [
               { sku: "A", quantity: 9007199254740991 },
               { sku: "A", quantity: 1 },
             ]),
@@ -209,9 +212,9 @@ await runOracle(
     ],
     [
       "replay uses current stock after each accepted order",
-      ({ replay }) => {
+      async ({ replay }) => {
         assert.deepEqual(
-          replay.fulfill(
+          await replay.fulfill(
             [{ sku: " a ", quantity: 5 }],
             [
               { id: "one", lines: [{ sku: "a", quantity: 3 }] },
@@ -236,9 +239,9 @@ await runOracle(
     ],
     [
       "replay duplicate accepted id ignores invalid lines",
-      ({ replay }) => {
+      async ({ replay }) => {
         assert.deepEqual(
-          replay.fulfill(
+          await replay.fulfill(
             [{ sku: "A", quantity: 3 }],
             [
               { id: "x", lines: [{ sku: "A", quantity: 2 }] },
@@ -257,9 +260,9 @@ await runOracle(
     ],
     [
       "replay rejected ids are also idempotent",
-      ({ replay }) => {
+      async ({ replay }) => {
         assert.deepEqual(
-          replay.fulfill(
+          await replay.fulfill(
             [{ sku: "A", quantity: 1 }],
             [
               { id: "x", lines: [{ sku: "A", quantity: 2 }] },
@@ -282,9 +285,9 @@ await runOracle(
     ],
     [
       "replay order ids compare exactly",
-      ({ replay }) => {
+      async ({ replay }) => {
         assert.deepEqual(
-          replay.fulfill(
+          await replay.fulfill(
             [{ sku: "A", quantity: 3 }],
             [
               { id: "x", lines: [{ sku: "A", quantity: 1 }] },
@@ -305,9 +308,9 @@ await runOracle(
     ],
     [
       "empty replay and stock handoff",
-      ({ replay }) => {
+      async ({ replay }) => {
         assert.deepEqual(
-          replay.fulfill(
+          await replay.fulfill(
             [
               { sku: "a", quantity: 2 },
               { sku: "A", quantity: 3 },
@@ -320,7 +323,7 @@ await runOracle(
     ],
     [
       "replay input immutability",
-      ({ replay }) => {
+      async ({ replay }) => {
         const entries = Object.freeze([Object.freeze({ sku: "A", quantity: 2 })]);
         const orders = Object.freeze([
           Object.freeze({
@@ -328,7 +331,7 @@ await runOracle(
             lines: Object.freeze([Object.freeze({ sku: "A", quantity: 1 })]),
           }),
         ]);
-        assert.deepEqual(replay.fulfill(entries, orders), {
+        assert.deepEqual(await replay.fulfill(entries, orders), {
           stock: { A: 1 },
           outcomes: [{ id: "x", status: "accepted", shortages: [] }],
         });
@@ -336,7 +339,7 @@ await runOracle(
     ],
     [
       "replay validation propagation",
-      ({ replay }) => {
+      async ({ replay }) => {
         for (const orders of [
           null,
           {},
@@ -345,9 +348,12 @@ await runOracle(
           [{ id: 1, lines: [] }],
           [{ id: "x", lines: [{ sku: "A", quantity: 0 }] }],
         ]) {
-          assert.throws(() => replay.fulfill([], orders), TypeError);
+          await assert.rejects(async () => await replay.fulfill([], orders), TypeError);
         }
-        assert.throws(() => replay.fulfill([{ sku: "!", quantity: 0 }], []), TypeError);
+        await assert.rejects(
+          async () => await replay.fulfill([{ sku: "!", quantity: 0 }], []),
+          TypeError,
+        );
       },
     ],
   ],

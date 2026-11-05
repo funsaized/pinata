@@ -20,6 +20,7 @@ import type { AdapterRequest, AdapterResponse, ArenaTask, Workflow } from "./typ
 import type { OfflineMode } from "./adapters/offline.ts";
 import { runProcess, type ProcessResult } from "./process.ts";
 import { renderReport } from "./report.ts";
+import { verifyTreatment, type TreatmentVerification } from "./treatment.ts";
 
 export const workflows: Workflow[] = [
   "sequential",
@@ -68,7 +69,14 @@ export interface FileEntry {
   executable?: boolean;
   target?: string;
 }
-type ProcessSummary = Omit<ProcessResult, "stdout" | "stderr">;
+type ProcessSummary = Omit<ProcessResult, "stdout" | "stderr" | "score">;
+export interface OracleResult {
+  schemaVersion: 1;
+  passed: number;
+  total: number;
+  failed: string[];
+  cases: Array<{ id: number; passed: boolean; error?: string }>;
+}
 export interface RunResult {
   schemaVersion: 1;
   batchId: string;
@@ -86,7 +94,10 @@ export interface RunResult {
   elapsedMs: number | null;
   adapterProcess: ProcessSummary | null;
   response: AdapterResponse | null;
-  oracle: { passed: number; total: number; failed: string[] } | null;
+  oracle: OracleResult | null;
+  candidateCorrect: boolean | null;
+  treatment: TreatmentVerification;
+  comparisonEligible: boolean;
   oracleProcess: ProcessSummary | null;
   errors: string[];
   provenance: {
@@ -95,6 +106,11 @@ export interface RunResult {
     lockfileSha256: string | null;
     arenaSourceSha256: string;
     adapterSourceSha256: string | null;
+    adapterSourceCoverage: "partial" | "complete-harness";
+    adapterSourceLimitations: string[];
+    oracleCaseCount: number;
+    scorerProtocol: "separate-process-v1";
+    candidateRestrictions: { profile: string; osSandbox: false; networkRestricted: false };
     corpusSha256: string;
     starterSha256: string;
     oracleSha256: string;
@@ -305,7 +321,7 @@ function saveResult(directory: string, result: RunResult) {
   renameSync(temp, join(directory, "result.json"));
 }
 function summary(result: ProcessResult): ProcessSummary {
-  const { stdout: _stdout, stderr: _stderr, ...rest } = result;
+  const { stdout: _stdout, stderr: _stderr, score: _score, ...rest } = result;
   return rest;
 }
 function processError(result: ProcessResult, name: string): string | null {
@@ -321,22 +337,39 @@ function canonicalPath(path: string): string {
   const parent = dirname(absolute);
   return parent === absolute ? absolute : join(canonicalPath(parent), relative(parent, absolute));
 }
-function parseOracle(raw: string): NonNullable<RunResult["oracle"]> {
+function parseOracle(raw: string, expectedCount: number): OracleResult {
   const value: unknown = JSON.parse(raw);
   if (
     !record(value) ||
+    value.schemaVersion !== 1 ||
     !Number.isSafeInteger(value.passed) ||
     !Number.isSafeInteger(value.total) ||
-    Number(value.total) < 1 ||
+    value.total !== expectedCount ||
     Number(value.passed) < 0 ||
     Number(value.passed) > Number(value.total) ||
     !Array.isArray(value.failed) ||
     !value.failed.every((item) => typeof item === "string") ||
-    value.failed.length !== Number(value.total) - Number(value.passed)
+    value.failed.length !== Number(value.total) - Number(value.passed) ||
+    !Array.isArray(value.cases) ||
+    value.cases.length !== expectedCount ||
+    !value.cases.every(
+      (entry, index) =>
+        record(entry) &&
+        entry.id === index &&
+        typeof entry.passed === "boolean" &&
+        (entry.passed
+          ? entry.error === undefined
+          : typeof entry.error === "string" && entry.error.length > 0),
+    ) ||
+    value.cases.filter((entry) => entry.passed).length !== value.passed ||
+    json(value.cases.filter((entry) => !entry.passed).map((entry) => entry.error)) !==
+      json(value.failed)
   ) {
-    throw new Error("Invalid oracle response");
+    throw new Error(
+      `Invalid oracle response: expected ${expectedCount} complete, ordered case observations from the trusted score channel`,
+    );
   }
-  return value as NonNullable<RunResult["oracle"]>;
+  return value as unknown as OracleResult;
 }
 
 export interface ArenaOptions {
@@ -392,6 +425,12 @@ export async function runArena(
     throw new Error("Invalid arena options");
   for (const task of options.tasks) {
     if (!/^[a-z0-9][a-z0-9_-]*$/.test(task.id)) throw new Error(`Unsafe task id: ${task.id}`);
+    if (
+      !Number.isSafeInteger(task.oracleCaseCount) ||
+      task.oracleCaseCount < 1 ||
+      task.oracleCaseCount > 10_000
+    )
+      throw new Error(`Invalid expected oracle case count for ${task.id}`);
     for (const unit of task.units)
       for (const path of unit.files) {
         if (
@@ -495,6 +534,12 @@ export async function runArena(
           adapterProcess: null,
           response: null,
           oracle: null,
+          candidateCorrect: null,
+          treatment: {
+            status: "unverified",
+            reasons: ["Execution has not produced trusted stage evidence."],
+          },
+          comparisonEligible: !options.adapter,
           oracleProcess: null,
           errors: [],
           finalFiles: null,
@@ -504,6 +549,23 @@ export async function runArena(
             lockfileSha256: existsSync(lockPath) ? hash(readFileSync(lockPath)) : null,
             arenaSourceSha256: sourceHash,
             adapterSourceSha256: adapterSourceHash,
+            adapterSourceCoverage: options.adapter ? "partial" : "complete-harness",
+            adapterSourceLimitations: options.adapter
+              ? [
+                  "Only directly named absolute files are hashed. Relative wrapper files, imported dependencies, package installations, environment, remote services and model artifacts are not a complete dependency closure.",
+                ]
+              : [
+                  "All arena source files are hashed; runtime and lockfile are recorded separately. No live framework adapter is invoked.",
+                ],
+            oracleCaseCount: task.oracleCaseCount,
+            scorerProtocol: "separate-process-v1",
+            candidateRestrictions: {
+              profile: resolve(task.oracleFile).startsWith(join(arenaDir, "corpus", "v1") + sep)
+                ? "bundled-scorer-node-permission-readonly"
+                : "custom-oracle-unverified",
+              osSandbox: false,
+              networkRestricted: false,
+            },
             corpusSha256: "",
             starterSha256: "",
             oracleSha256: "",
@@ -541,7 +603,13 @@ export async function runArena(
       result.provenance.oracleSha256 = hash(readFileSync(task.oracleFile));
       result.provenance.corpusSha256 = hash(
         json({
-          task: { id: task.id, version: task.version, prompt: task.prompt, units: task.units },
+          task: {
+            id: task.id,
+            version: task.version,
+            prompt: task.prompt,
+            units: task.units,
+            oracleCaseCount: task.oracleCaseCount,
+          },
           startingFiles,
           solution: treeManifest(task.solutionDir),
           oracleSha256: result.provenance.oracleSha256,
@@ -614,23 +682,36 @@ export async function runArena(
         maxLogBytes: limits.maxLogBytes,
         stdoutFile: join(evidence, "oracle.stdout.log"),
         stderrFile: join(evidence, "oracle.stderr.log"),
+        scoreFile: join(evidence, "oracle.score.json"),
+        env: {
+          ...process.env,
+          ARENA_SCORE_FD: "3",
+          ARENA_ORACLE_TIMEOUT_MS: String(limits.oracleTimeoutMs),
+        },
       });
       result.oracleProcess = summary(oracleRun);
+      let oracleCorrect: boolean | null = null;
       try {
-        if (oracleRun.timedOut || oracleRun.error || oracleRun.stdoutTruncated)
-          throw new Error(processError(oracleRun, "Oracle") ?? "Oracle stdout exceeded log cap");
-        result.oracle = parseOracle(oracleRun.stdout);
+        if (oracleRun.timedOut || oracleRun.error || oracleRun.scoreTruncated)
+          throw new Error(
+            processError(oracleRun, "Oracle") ?? "Oracle score channel exceeded log cap",
+          );
+        if (!oracleRun.score?.trim())
+          throw new Error("Oracle produced no result on the trusted score channel");
+        result.oracle = parseOracle(oracleRun.score, task.oracleCaseCount);
         if (oracleRun.code !== (result.oracle.passed === result.oracle.total ? 0 : 1))
           throw new Error("Oracle exit code disagrees with its result");
+        oracleCorrect = result.oracle.passed === result.oracle.total;
         if (result.oracle.passed !== result.oracle.total)
           result.errors.push("Oracle correctness checks failed");
       } catch (error) {
         result.errors.push(errorText(error));
       }
-      if (json(treeManifest(candidate)) !== json(candidateFiles))
+      if (json(treeManifest(candidate)) !== json(candidateFiles)) {
         result.errors.push(
           "Candidate changed during oracle evaluation; correctness result is not attributable to a stable snapshot",
         );
+      } else result.candidateCorrect = oracleCorrect;
     } catch (error) {
       result.errors.push(errorText(error));
     } finally {
@@ -657,10 +738,22 @@ export async function runArena(
             { flag: "wx" },
           );
       } catch (error) {
+        result.candidateCorrect = null;
         result.errors.push(`Final snapshot: ${errorText(error)}`);
       }
       result.elapsedMs = performance.now() - start;
       result.finishedAt = new Date().toISOString();
+      result.treatment = verifyTreatment({
+        mode: result.mode,
+        workflow,
+        unitIds: task.units.map((unit) => unit.id),
+        maxRepairs: limits.maxRepairs,
+        response: result.response,
+      });
+      if (result.mode === "scripted-control" && result.treatment.status !== "verified-control")
+        result.errors.push(
+          "Scripted treatment verification failed: " + result.treatment.reasons.join("; "),
+        );
       result.status = result.errors.length ? "failed" : "completed";
       saveResult(runDir, result);
       writeFileSync(join(directory, "report.md"), renderReport(results));
