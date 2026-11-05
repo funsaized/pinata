@@ -1,14 +1,14 @@
 // Samples only the known agent PIDs. RSS includes shared pages and excludes descendants;
 // each observed maximum is a lower bound, not an OS high-water mark.
 import { processRss } from "../engine/core/telemetry.ts";
+import { rssMethod } from "./rss-reader.ts";
 
 export interface ChildMemory {
   peakRssByAgentMB: Record<string, number>;
   rssSamplesByAgent: Record<string, number>;
   readyRssSamplesByAgent: Record<string, number>;
-  loadedRssWaitByAgentMs: Record<string, number>;
-  loadedRssWaitTimeoutMs: number;
   sampleIntervalMs: number;
+  rssMethod?: string;
   errors: string[];
 }
 
@@ -16,21 +16,16 @@ export class ChildMemorySampler {
   private timer?: ReturnType<typeof setInterval>;
   private pending?: Promise<void>;
   private stopped = false;
-  private generation = 0;
-  private completed = 0;
-  private requested = 0;
-  private readonly waiters: Array<{ generation: number; resolve: () => void }> = [];
+  private resample = false;
   private readonly peaks = new Map<string, number>();
   private readonly counts = new Map<string, number>();
   private readonly readyCounts = new Map<string, number>();
   private readonly errors = new Set<string>();
-  private readonly loadedWaits = new Map<string, Promise<void>>();
-  private readonly loadedWaitMs = new Map<string, number>();
   private readonly discover: () => Promise<Map<number, string>>;
   private readonly read: typeof processRss;
   private readonly ready: () => ReadonlySet<string>;
   readonly intervalMs: number;
-  readonly loadedRssWaitTimeoutMs: number;
+  private readonly method: string;
 
   constructor(
     discover: () => Promise<Map<number, string>>,
@@ -38,14 +33,14 @@ export class ChildMemorySampler {
       intervalMs?: number;
       read?: typeof processRss;
       ready: () => ReadonlySet<string>;
-      loadedRssWaitTimeoutMs?: number;
+      rssMethod?: string;
     },
   ) {
     this.discover = discover;
     this.read = options.read ?? processRss;
     this.ready = options.ready;
     this.intervalMs = options.intervalMs ?? 200;
-    this.loadedRssWaitTimeoutMs = options.loadedRssWaitTimeoutMs ?? 5000;
+    this.method = options.rssMethod ?? rssMethod();
   }
 
   start(): void {
@@ -55,68 +50,17 @@ export class ChildMemorySampler {
 
   sample(): Promise<void> {
     if (this.stopped) return Promise.resolve();
-    // A caller arriving during an OS read needs the next generation: the current
-    // read may have captured readiness before that caller's provider request.
-    const generation = this.generation + 1;
-    this.requested = generation;
-    const done = new Promise<void>((resolve) => this.waiters.push({ generation, resolve }));
-    if (!this.pending) this.drain();
-    return done;
-  }
-
-  private drain(): void {
+    if (this.pending) {
+      this.resample = true;
+      return this.pending;
+    }
     this.pending = (async () => {
-      while (this.completed < this.requested) {
-        this.generation++;
+      do {
+        this.resample = false;
         await this.take();
-        this.completed = this.generation;
-        while (this.waiters[0] && this.waiters[0].generation <= this.completed)
-          this.waiters.shift()!.resolve();
-      }
-    })().finally(() => {
-      this.pending = undefined;
-      // A resolved caller may request a sample between the loop ending and this
-      // finally callback. Its generation must still get an OS read.
-      if (this.completed < this.requested) this.drain();
-    });
-  }
-
-  /** Hold only the first provider response, never an unbounded periodic drain. */
-  waitForReady(agent: string): Promise<void> {
-    const existing = this.loadedWaits.get(agent);
-    if (existing) return existing;
-    const started = performance.now();
-    const waiting = (async () => {
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      try {
-        await Promise.race([
-          this.sample(),
-          new Promise<never>((_resolve, reject) => {
-            timer = setTimeout(
-              () =>
-                reject(
-                  new Error(
-                    `Loaded RSS wait timed out for ${agent} after ${this.loadedRssWaitTimeoutMs} ms`,
-                  ),
-                ),
-              this.loadedRssWaitTimeoutMs,
-            );
-          }),
-        ]);
-        if (!this.readyCounts.get(agent))
-          throw new Error(
-            `Loaded RSS sample unavailable for ${agent} at its first provider request`,
-          );
-      } catch (error) {
-        if (this.errors.size < 10) this.errors.add(String(error));
-        throw error;
-      } finally {
-        clearTimeout(timer);
-        this.loadedWaitMs.set(agent, performance.now() - started);
-      }
-    })();
-    this.loadedWaits.set(agent, waiting);
-    return waiting;
+      } while (this.resample);
+    })().finally(() => (this.pending = undefined));
+    return this.pending;
   }
 
   private async take(): Promise<void> {
@@ -142,14 +86,13 @@ export class ChildMemorySampler {
     this.stopped = true;
     clearInterval(this.timer);
     this.timer = undefined;
-    while (this.pending) await this.pending;
+    await this.pending;
     return {
       peakRssByAgentMB: Object.fromEntries(this.peaks),
       rssSamplesByAgent: Object.fromEntries(this.counts),
       readyRssSamplesByAgent: Object.fromEntries(this.readyCounts),
-      loadedRssWaitByAgentMs: Object.fromEntries(this.loadedWaitMs),
-      loadedRssWaitTimeoutMs: this.loadedRssWaitTimeoutMs,
       sampleIntervalMs: this.intervalMs,
+      rssMethod: this.method,
       errors: [...this.errors],
     };
   }

@@ -14,9 +14,9 @@ import {
 } from "./report.ts";
 import { executionFailures, scenarios } from "./run.ts";
 import { terminateProcessTree } from "./process-tree.ts";
+import { rssMethod } from "./rss-reader.ts";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
-// v2 waits for loaded-child RSS at the first provider request; v1 timing is not comparable.
 export const PROCESS_MEASUREMENT_VERSION = 2;
 
 interface Args {
@@ -149,15 +149,12 @@ export function processTrialFailures(scenario: Scenario, trial: ProcessTrial): s
   )
     failures.push("expected process backend, Node host and loopback provider");
   if (!result.process) return [...failures, "process measurements are missing"];
+  if (result.process.rssMethod !== rssMethod(report.meta.os))
+    failures.push("child RSS method/protocol does not match the measured platform");
   if (result.process.errors?.length) failures.push("child RSS sampling reported errors");
-  const waitLimit = result.process.loadedRssWaitTimeoutMs;
-  if (!Number.isSafeInteger(waitLimit) || Number(waitLimit) <= 0)
-    failures.push("loaded-child RSS wait limit is missing or invalid");
   for (const task of scenario.tasks) {
     if (metric(result, `process.startupByAgentMs.${task.id}`) === null)
       failures.push(`${task.id}: child startup is missing or invalid`);
-    if (metric(result, `process.loadedRssWaitByAgentMs.${task.id}`) === null)
-      failures.push(`${task.id}: loaded-child RSS wait is missing or invalid`);
     const rss = result.process.peakRssByAgentMB?.[task.id];
     const count = result.process.rssSamplesByAgent?.[task.id];
     const readyCount = result.process.readyRssSamplesByAgent?.[task.id];
@@ -555,6 +552,12 @@ export async function main(argv = process.argv.slice(2), run = runTrial): Promis
       };
     await save();
     console.log(`wrote ${output.path}\nwrote ${output.summaryPath}`);
+    for (const failure of report.validation.failures.slice(0, 20))
+      console.error(`process evidence failed: ${failure}`);
+    if (report.validation.failures.length > 20)
+      console.error(
+        `process evidence failed: ${report.validation.failures.length - 20} further validation failures; see the JSON/Markdown report`,
+      );
     return report.validation.passed ? 0 : 1;
   } finally {
     await output.close();

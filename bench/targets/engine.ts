@@ -240,15 +240,11 @@ export async function runEngine(
     join(agentDir, "settings.json"),
     JSON.stringify({ quietStartup: true, retry: { enabled: false } }),
   );
-  let childRequest: ((agent: string) => Promise<void>) | undefined;
   const loopback =
     provider === "loopback"
       ? await startLoopback({
           tokenDelayMs: options.tokenDelayMs,
-          responder: async ({ agent, round }: LoopbackRequestInfo) => {
-            // startLoopback records the first-request timestamp before calling us.
-            // Keep a short-lived child alive until its loaded RSS read completes.
-            if (agent && round === 0) await childRequest?.(agent);
+          responder: ({ agent, round }: LoopbackRequestInfo) => {
             const task =
               agent === WARM_UP_TASK.id ? WARM_UP_TASK : scenario.tasks.find((t) => t.id === agent);
             return task
@@ -301,16 +297,7 @@ export async function runEngine(
         faux.setResponses(Array.from({ length: 100_000 }, () => step));
         registry.registerProvider(faux.provider);
       }
-      raw = await runEngineScenario(scenario, {
-        registry,
-        model,
-        agentDir,
-        repo,
-        runsDir,
-        registerChildRequest: (gate) => {
-          childRequest = gate;
-        },
-      });
+      raw = await runEngineScenario(scenario, { registry, model, agentDir, repo, runsDir });
       if (loopback) firstRequest = Object.fromEntries(loopback.firstRequest);
     }
     const result = summarize(scenario, raw, firstRequest, provider);

@@ -9,7 +9,6 @@ import {
   main,
   processReportFailures,
   processSeries,
-  PROCESS_MEASUREMENT_VERSION,
   type ProcessReport,
 } from "../../bench/process.ts";
 import { terminateProcessTree } from "../../bench/process-tree.ts";
@@ -17,7 +16,6 @@ import type { ReportMeta } from "../../bench/report.ts";
 import { fanout } from "../../bench/scenarios/fanout.ts";
 import { summarize, type EngineRaw } from "../../bench/targets/engine-core.ts";
 import { failureDiagnostics } from "../../bench/targets/engine.ts";
-import { startLoopback } from "../../bench/providers/loopback.ts";
 import { tempDir } from "./helpers.ts";
 
 test("child RSS drains pending reads and samples readiness requests that overlap spawn sampling", async () => {
@@ -87,135 +85,6 @@ test("child RSS records sampling failures and ignores unreadable/nonpositive val
   assert.match((await broken.stop()).errors.join(), /OS probe failed/);
 });
 
-test("loaded RSS response gate waits for a post-request read without waiting for later periodic reads", async (t) => {
-  t.mock.timers.enable({ apis: ["setInterval"] });
-  const releases: Array<() => void> = [];
-  const entered: Array<() => void> = [];
-  const reads = Array.from({ length: 3 }, (_, index) => ({
-    started: new Promise<void>((resolve) => {
-      entered[index] = resolve;
-    }),
-    release: new Promise<void>((resolve) => {
-      releases[index] = resolve;
-    }),
-  }));
-  const ready = new Set<string>();
-  let count = 0;
-  const sampler = new ChildMemorySampler(async () => new Map([[123, "scout"]]), {
-    ready: () => ready,
-    read: async () => {
-      const index = count++;
-      entered[index]!();
-      await reads[index]!.release;
-      return new Map([[123, index === 0 ? 3 : 150]]);
-    },
-  });
-  sampler.start();
-  t.mock.timers.tick(200);
-  await reads[0]!.started;
-  ready.add("scout");
-  const gate = sampler.waitForReady("scout");
-  t.mock.timers.tick(400); // A slow pre-ready Windows probe overlaps the request.
-  releases[0]!();
-  await reads[1]!.started;
-  t.mock.timers.tick(400); // Continuous timer demand must not extend this gate.
-  releases[1]!();
-  await gate;
-  await reads[2]!.started;
-  assert.equal(count, 3);
-  assert.equal(sampler.waitForReady("scout"), gate, "only the first request waits");
-  const stopping = sampler.stop();
-  releases[2]!();
-  const result = await stopping;
-  assert.equal(result.readyRssSamplesByAgent.scout, 2);
-  assert.equal(result.peakRssByAgentMB.scout, 150);
-  assert(result.loadedRssWaitByAgentMs.scout >= 0);
-});
-
-test("short loopback response cannot finish before loaded RSS and its startup timestamp precedes the wait", async (t) => {
-  let release!: () => void;
-  const blocked = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  let reading!: () => void;
-  const entered = new Promise<void>((resolve) => {
-    reading = resolve;
-  });
-  const ready = new Set<string>();
-  let alive = true;
-  const sampler = new ChildMemorySampler(async () => new Map([[123, "scout"]]), {
-    ready: () => ready,
-    read: async () => {
-      reading();
-      await blocked;
-      return new Map([[123, alive ? 160 : null]]);
-    },
-  });
-  const loopback = await startLoopback({
-    tokenDelayMs: 0,
-    responder: async ({ agent }) => {
-      assert.equal(agent, "scout");
-      ready.add(agent);
-      await sampler.waitForReady(agent);
-      return { text: "done" };
-    },
-  });
-  t.after(async () => {
-    release();
-    await loopback.close();
-    await sampler.stop();
-  });
-  let finished = false;
-  const response = fetch(loopback.origin, {
-    method: "POST",
-    body: JSON.stringify({ messages: [{ role: "user", content: "[bench:scout] short task" }] }),
-  }).then(async (response) => {
-    await response.text();
-    finished = true;
-    alive = false;
-  });
-  await entered;
-  assert.equal(finished, false);
-  const timestamp = loopback.firstRequest.get("scout");
-  assert.equal(typeof timestamp, "number");
-  release();
-  await response;
-  const sampled = await sampler.stop();
-  assert.equal(sampled.readyRssSamplesByAgent.scout, 1);
-  assert.equal(sampled.peakRssByAgentMB.scout, 160);
-  assert.equal(loopback.firstRequest.get("scout"), timestamp);
-  assert.deepEqual(loopback.errors, []);
-});
-
-test("loaded RSS waits are bounded and unreadable samples fail without retrying", async () => {
-  let release!: () => void;
-  const blocked = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  let reads = 0;
-  const sampler = new ChildMemorySampler(async () => new Map([[123, "scout"]]), {
-    ready: () => new Set(["scout"]),
-    loadedRssWaitTimeoutMs: 10,
-    read: async () => {
-      reads++;
-      await blocked;
-      return new Map([[123, null]]);
-    },
-  });
-  await assert.rejects(sampler.waitForReady("scout"), /timed out.*10 ms/);
-  release();
-  const timedOut = await sampler.stop();
-  assert.equal(reads, 1);
-  assert.deepEqual(timedOut.readyRssSamplesByAgent, {});
-  assert.match(timedOut.errors.join(), /timed out/);
-  const unreadable = new ChildMemorySampler(async () => new Map([[123, "scout"]]), {
-    ready: () => new Set(["scout"]),
-    read: async () => new Map([[123, null]]),
-  });
-  await assert.rejects(unreadable.waitForReady("scout"), /sample unavailable/);
-  assert.deepEqual((await unreadable.stop()).readyRssSamplesByAgent, {});
-});
-
 const scenario = fanout(2);
 function raw(): EngineRaw {
   return {
@@ -239,9 +108,8 @@ function raw(): EngineRaw {
       peakRssByAgentMB: { "scout-1": 100, "scout-2": 120 },
       rssSamplesByAgent: { "scout-1": 2, "scout-2": 3 },
       readyRssSamplesByAgent: { "scout-1": 1, "scout-2": 2 },
-      loadedRssWaitByAgentMs: { "scout-1": 10, "scout-2": 20 },
-      loadedRssWaitTimeoutMs: 5000,
       sampleIntervalMs: 200,
+      rssMethod: "linux-proc-status-v1",
       errors: [],
     },
   };
@@ -254,10 +122,6 @@ test("process summary preserves independent startup observations and complete ch
   assert.deepEqual(summary.process?.startupByAgentMs, { "scout-1": 15, "scout-2": 20 });
   assert.equal(summary.memoryPerAgentMB, 110);
   assert.equal(summary.peakRssMB, 20, "host RSS must remain separately identified");
-  assert.deepEqual(summary.process?.loadedRssWaitByAgentMs, { "scout-1": 10, "scout-2": 20 });
-  assert.equal(summary.process?.loadedRssWaitTimeoutMs, 5000);
-  assert.equal(summary.wallMs, 80, "measurement waits must not be subtracted from wall time");
-  assert.match(summary.notes!.join(" "), /first-request startup timestamps precede the wait/);
   for (const changed of [
     { childMemory: undefined },
     { childMemory: { ...raw().childMemory!, peakRssByAgentMB: { "scout-1": 100 } } },
@@ -335,7 +199,7 @@ function meta(): ReportMeta {
 function report(): ProcessReport {
   const output: ProcessReport = {
     schemaVersion: 1,
-    measurementVersion: PROCESS_MEASUREMENT_VERSION,
+    measurementVersion: 2,
     meta: meta(),
     repeat: 3,
     workload: [scenario],
@@ -405,10 +269,11 @@ test("process baselines reject incomplete, mixed, missing, mismatched and malfor
       report.measurementVersion = 999;
     },
     (report) => {
-      report.measurementVersion = 1;
+      report.measurementVersion = 1; // Historical v1 evidence is not a v2 baseline.
     },
     (report) => {
-      report.trials[0].report!.results[0].process!.loadedRssWaitByAgentMs = {};
+      report.trials[0].report!.results[0].process!.rssMethod =
+        "windows-persistent-dotnet-working-set-v1";
     },
     (report) => {
       report.trials[0].report!.results[0].process = undefined;
@@ -461,8 +326,6 @@ test("failed repeated trials are all saved and unavailable aggregate statistics 
   assert(saved.series.every((series) => series.summary === null));
   assert.match(await readFile(output.replace(/json$/, "md"), "utf8"), /incomplete/);
   await assert.rejects(main(["--repeat", "1"]), /3 to 100/);
-  await assert.rejects(main(["--timeout-ms", "0"]), /timeout/);
-  await assert.rejects(main(["--timeout-ms", "2147483648"]), /timeout/);
   await assert.rejects(main(["--out", "process-output.json"]), /git-ignored/);
 });
 

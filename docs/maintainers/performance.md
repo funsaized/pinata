@@ -38,14 +38,7 @@ between trials. A path outside the checkout is also allowed.
 
 Each scenario repetition uses a fresh Node host, requires a successful warm-up, and
 starts fresh child processes for the tasks. The process startup samples measure from child
-creation to its first provider request. At the first loopback provider request, the
-benchmark awaits a loaded-child RSS sample before returning a response. It records
-the startup timestamp before that wait, so startup excludes the sampling wait. Wall,
-dependency, host CPU, and event-loop measurements include instrumentation overhead.
-`process.loadedRssWaitByAgentMs` records each agent's first-response gate time,
-including time queued behind another OS sample. These waits may overlap; do not
-sum or subtract them from wall time. The gate timeout is reported as
-`process.loadedRssWaitTimeoutMs`. The comparison is advisory; failed
+creation to its first provider request. The comparison is advisory; failed
 execution or missing required measurements still fail the command, but timing deltas
 do not. A partial or mixed baseline cohort is incomparable. Gather CI history
 before proposing process-specific budgets. Existing budgets describe in-process engine targets and
@@ -79,10 +72,15 @@ host's peak RSS increase and maximum concurrency. Process per-agent memory is th
 mean of sampled peaks for agent processes; it includes shared pages but excludes
 descendants and is not concurrent total RSS. Sampling can miss short-lived processes
 or peaks, so sampled peaks are lower bounds. Each child needs a sample after its
-first loopback provider request establishes it is loaded. That request waits for
-the sample before receiving a response. Missing child coverage is
+`turn_start` event to establish loaded-process coverage. Missing child coverage is
 reported as missing, rather than substituted with host memory. These absolute child RSS peaks and the
 parent RSS delta are different quantities and cannot be compared directly.
+On Windows, the benchmark warms a persistent PowerShell/.NET RSS collector before
+measurement, avoiding a new PowerShell startup for each sample without delaying
+agent responses. Collector readiness and the first positive host query share a
+10-second startup deadline; subsequent queries have a 2-second deadline. Process
+measurement version 2 records and validates the platform
+`rssMethod` protocol; version 1 reports are not comparable with version 2.
 `settledHeapDeltaMB` is host heap retained
 after garbage collection and includes run history. CPU and event-loop lag describe
 the host process, not the combined work of child processes.
@@ -93,11 +91,9 @@ For the in-process backend, values above twice the limits in
 complete scenario over budget can retry twice; execution failures and missing
 measurements fail immediately. Process and herdr-pi runs have execution checks but
 no timing budgets, including when `--ci` is set. CI runs 20 process trials with a
-60-second timeout per trial and a 12-minute step cap, leaving time for artifact upload.
-The trial limit includes startup, warm-up, measurement, and cleanup; it is separate
-from the reported scenario wall time. If the step cap interrupts the cohort, the
-retained partial report remains incomplete and cannot pass comparison validation.
-These are resource limits, not performance gates.
+60-second timeout per trial covering startup, warm-up and cleanup, and a 12-minute
+step cap to leave time for artifact upload. These are resource limits, not
+performance gates.
 
 Compare repeated runs on the same quiet machine with the same scenario, backend,
 provider, host, runtime and configuration. Baseline comparison checks the workload,
@@ -109,9 +105,7 @@ executable or script content identity, including the interpreter for a Node CLI.
 Node-script fingerprint covers its entry point and interpreter; imported modules
 outside the captured source and lockfile are not fully covered, so it does not prove
 full dependency equivalence. An unknown launcher identity or an older report without it is incomparable, even
-when the Pi versions match. Process measurement version 2 includes the awaited RSS
-sample and is not comparable to version 1. Collect fresh matching version 2 cohorts
-before comparing process runs.
+when the Pi versions match.
 Changes in hardware, load, platform or runtime can dominate the result, so do not
 interpret cross-platform or cross-runtime differences as regressions. CI artifacts
 provide evidence for each environment; they are not interchangeable baselines. For
@@ -119,22 +113,30 @@ runtime selection, live model evaluations, and CI coverage, see [testing](testin
 
 ## Local process baseline
 
-The [raw aggregate](../../bench/baselines/process-linux-x64-node24-pi1.1.0-2026-11-05.json)
-and [summary](../../bench/baselines/process-linux-x64-node24-pi1.1.0-2026-11-05.md)
-record a clean checkout of commit `92ff64643f2ba2cf4540cafb0c9246880e8e0a2b` on
-2026-11-05 using process measurement version 1. This historical baseline is not
-comparable to version 2 runs. The run used a Linux x64 cloud VM with five AMD EPYC 9V74 CPUs and
+The [raw aggregate](../../bench/baselines/process-linux-x64-node24-pi1.1.0-v2-2026-11-05.json)
+and [summary](../../bench/baselines/process-linux-x64-node24-pi1.1.0-v2-2026-11-05.md)
+record a clean checkout of commit `f7402f948e532800128925492958e789befd99db` on
+2026-11-05 with measurement version 2. It records that commit, not the current
+checkout. The run used a Linux x64 cloud VM with five AMD EPYC 9V74 CPUs and
 18 GiB memory, Node 24.19.0, native Pi 1.1.0, the process backend and loopback
 provider. There were five trials per scenario and 75 task samples in total, with
 no concurrent benchmark or test tasks. The aggregate embeds every trial.
 
 | Scenario | Median of trial startup p50s (ms) | Median of trial mean child peak RSS (MiB) |
 | -------- | --------------------------------: | ----------------------------------------: |
-| fanout-1 |                           461.640 |                                    143.30 |
-| fanout-8 |                          1259.917 |                                    135.59 |
-| chain    |                           464.690 |                                    142.80 |
-| builder  |                           460.893 |                                    141.75 |
+| fanout-1 |                           464.144 |                                    143.30 |
+| fanout-8 |                          1300.469 |                                    135.86 |
+| chain    |                           470.318 |                                    142.80 |
+| builder  |                           457.431 |                                    141.65 |
 
 These are advisory observations from one host, not a confidence bound or a
-cross-platform budget. Full Pi engine and TUI UX budget checks, three viewer runs
-per variant, and the Pi and package smokes also passed on this checkout.
+cross-platform budget. The earlier [version 1 aggregate](https://github.com/funsaized/pinata/blob/b7f6d0e/bench/baselines/process-linux-x64-node24-pi1.1.0-2026-11-05.json)
+and [summary](https://github.com/funsaized/pinata/blob/b7f6d0e/bench/baselines/process-linux-x64-node24-pi1.1.0-2026-11-05.md)
+remain in Git history as historical evidence and cannot be compared with version 2.
+A prior combined-head Windows Node 22 CI run timed out after 19 of 20 trials; artifact
+`13459461066` retains its evidence. Its preceding completed trial took 25.169 seconds
+overall versus 2.109 seconds measured in the scenario. The cause is unproven; this is
+not a result from the new collector. An earlier Windows Node 24 CI run
+completed every task but lacked loaded RSS samples in three chain trials; its
+[failed artifact](https://github.com/funsaized/pinata/actions/runs/42117768818/artifacts/13458041893)
+is retained for investigation.
