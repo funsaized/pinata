@@ -74,6 +74,8 @@ export interface ScenarioResult {
     readyRssSamplesByAgent: Record<string, number>;
     missingRssAgents: string[];
     sampleIntervalMs: number;
+    // Collector method/protocol; absent only in historical measurement v1 reports.
+    rssMethod?: string;
     errors: string[];
   };
   diagnostics?: Array<{ file: string; tail: string }>;

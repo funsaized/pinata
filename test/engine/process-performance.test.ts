@@ -109,6 +109,7 @@ function raw(): EngineRaw {
       rssSamplesByAgent: { "scout-1": 2, "scout-2": 3 },
       readyRssSamplesByAgent: { "scout-1": 1, "scout-2": 2 },
       sampleIntervalMs: 200,
+      rssMethod: "linux-proc-status-v1",
       errors: [],
     },
   };
@@ -198,7 +199,7 @@ function meta(): ReportMeta {
 function report(): ProcessReport {
   const output: ProcessReport = {
     schemaVersion: 1,
-    measurementVersion: 1,
+    measurementVersion: 2,
     meta: meta(),
     repeat: 3,
     workload: [scenario],
@@ -266,6 +267,13 @@ test("process baselines reject incomplete, mixed, missing, mismatched and malfor
     },
     (report) => {
       report.measurementVersion = 999;
+    },
+    (report) => {
+      report.measurementVersion = 1; // Historical v1 evidence is not a v2 baseline.
+    },
+    (report) => {
+      report.trials[0].report!.results[0].process!.rssMethod =
+        "windows-persistent-dotnet-working-set-v1";
     },
     (report) => {
       report.trials[0].report!.results[0].process = undefined;

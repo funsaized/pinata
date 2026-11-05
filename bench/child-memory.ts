@@ -1,12 +1,14 @@
 // Samples only the known agent PIDs. RSS includes shared pages and excludes descendants;
 // each observed maximum is a lower bound, not an OS high-water mark.
 import { processRss } from "../engine/core/telemetry.ts";
+import { rssMethod } from "./rss-reader.ts";
 
 export interface ChildMemory {
   peakRssByAgentMB: Record<string, number>;
   rssSamplesByAgent: Record<string, number>;
   readyRssSamplesByAgent: Record<string, number>;
   sampleIntervalMs: number;
+  rssMethod?: string;
   errors: string[];
 }
 
@@ -23,15 +25,22 @@ export class ChildMemorySampler {
   private readonly read: typeof processRss;
   private readonly ready: () => ReadonlySet<string>;
   readonly intervalMs: number;
+  private readonly method: string;
 
   constructor(
     discover: () => Promise<Map<number, string>>,
-    options: { intervalMs?: number; read?: typeof processRss; ready: () => ReadonlySet<string> },
+    options: {
+      intervalMs?: number;
+      read?: typeof processRss;
+      ready: () => ReadonlySet<string>;
+      rssMethod?: string;
+    },
   ) {
     this.discover = discover;
     this.read = options.read ?? processRss;
     this.ready = options.ready;
     this.intervalMs = options.intervalMs ?? 200;
+    this.method = options.rssMethod ?? rssMethod();
   }
 
   start(): void {
@@ -83,6 +92,7 @@ export class ChildMemorySampler {
       rssSamplesByAgent: Object.fromEntries(this.counts),
       readyRssSamplesByAgent: Object.fromEntries(this.readyCounts),
       sampleIntervalMs: this.intervalMs,
+      rssMethod: this.method,
       errors: [...this.errors],
     };
   }

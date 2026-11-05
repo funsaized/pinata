@@ -11,6 +11,7 @@ import { HerdrPiBackend } from "../../engine/backends/herdr-pi.ts";
 import type { AgentBackend } from "../../engine/backends/types.ts";
 import { readFile } from "node:fs/promises";
 import { ChildMemorySampler, type ChildMemory } from "../child-memory.ts";
+import { createRssReader } from "../rss-reader.ts";
 import { createEngine, type Engine, type RunHandle } from "../../engine/core/engine.ts";
 import { Limiter } from "../../engine/core/limiter.ts";
 import type { AgentEvent, ModelRef, TaskSpec } from "../../engine/core/types.ts";
@@ -254,6 +255,9 @@ export async function runEngineScenario(
     validateGraph(tasks, { allowWrites: true, definitions }),
     config,
   );
+  // The Windows helper must complete a real working-set query before memory/CPU
+  // baselines and t0, so helper startup never races a short loaded agent.
+  const rssReader = kind === "in-process" ? undefined : await createRssReader();
   if (!process.env.BENCH_NO_GC) gc();
   const baselineRss = process.memoryUsage().rss;
   const baselineHeap = process.memoryUsage().heapUsed;
@@ -287,7 +291,11 @@ export async function runEngineScenario(
         }
         return pids;
       },
-      { ready: () => readyChildren },
+      {
+        ready: () => readyChildren,
+        read: rssReader!.read.bind(rssReader),
+        rssMethod: rssReader!.method,
+      },
     );
     children.start();
   }
@@ -329,7 +337,11 @@ export async function runEngineScenario(
     clearInterval(sampler);
     lag?.disable();
     // Drain the last asynchronous OS read before publishing the snapshot.
-    childMemory = await children?.stop();
+    try {
+      childMemory = await children?.stop();
+    } finally {
+      await rssReader?.close();
+    }
   }
   const cpu = process.cpuUsage(cpu0);
   let lagP99Ms: number | null = null;
@@ -424,6 +436,7 @@ export function summarize(
         readyRssSamplesByAgent: readyCounts,
         missingRssAgents,
         sampleIntervalMs: child?.sampleIntervalMs ?? 200,
+        rssMethod: child?.rssMethod,
         errors: child?.errors ?? [],
       }
     : undefined;
@@ -437,6 +450,7 @@ export function summarize(
       ? [
           "process.startupMs: child creation to first provider request; fresh agent processes after host warm-up, not cold machine startup",
           `child RSS: sampled every ${child?.sampleIntervalMs ?? 200} ms, on spawn and turn start; coverage requires a sample after Pi begins a turn; observed peaks are lower bounds`,
+          `child RSS method: ${child?.rssMethod ?? "historical/unknown"}; collector resource use is excluded from child RSS`,
           ...(missingRssAgents.length
             ? [`child RSS unavailable for: ${missingRssAgents.join(", ")}`]
             : []),
