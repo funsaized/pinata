@@ -157,9 +157,20 @@ test("benchmark provenance identifies the checkout and selected Pi executable", 
   }
   const file = join(dir, "provenance.json");
   assert.equal(
-    await main(["--host", "pi", "--scenario", fanout.name, "--out", file], async () =>
-      result(fanout),
-    ),
+    await main(["--host", "pi", "--scenario", fanout.name, "--out", file], async () => ({
+      ...result(fanout),
+      process: {
+        startupMs: stats(fanout.tasks.length),
+        startupByAgentMs: Object.fromEntries(fanout.tasks.map((task) => [task.id, 1])),
+        childPeakRssMB: stats(fanout.tasks.length),
+        peakRssByAgentMB: Object.fromEntries(fanout.tasks.map((task) => [task.id, 1])),
+        rssSamplesByAgent: Object.fromEntries(fanout.tasks.map((task) => [task.id, 1])),
+        readyRssSamplesByAgent: Object.fromEntries(fanout.tasks.map((task) => [task.id, 1])),
+        missingRssAgents: [],
+        sampleIntervalMs: 200,
+        errors: [],
+      },
+    })),
     0,
   );
   const saved = JSON.parse(await readFile(file, "utf8"));
