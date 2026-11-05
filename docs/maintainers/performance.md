@@ -99,3 +99,24 @@ Changes in hardware, load, platform or runtime can dominate the result, so do no
 interpret cross-platform or cross-runtime differences as regressions. CI artifacts
 provide evidence for each environment; they are not interchangeable baselines. For
 runtime selection, live model evaluations, and CI coverage, see [testing](testing.md).
+
+## Local process baseline
+
+The [raw aggregate](../../bench/baselines/process-linux-x64-node24-pi1.1.0-2026-11-05.json)
+and [summary](../../bench/baselines/process-linux-x64-node24-pi1.1.0-2026-11-05.md)
+record a clean checkout of commit `92ff64643f2ba2cf4540cafb0c9246880e8e0a2b` on
+2026-11-05. The run used a Linux x64 cloud VM with five AMD EPYC 9V74 CPUs and
+18 GiB memory, Node 24.19.0, native Pi 1.1.0, the process backend and loopback
+provider. There were five trials per scenario and 75 task samples in total, with
+no concurrent benchmark or test tasks. The aggregate embeds every trial.
+
+| Scenario | Median of trial startup p50s (ms) | Median of trial mean child peak RSS (MiB) |
+| -------- | --------------------------------: | ----------------------------------------: |
+| fanout-1 |                           461.640 |                                    143.30 |
+| fanout-8 |                          1259.917 |                                    135.59 |
+| chain    |                           464.690 |                                    142.80 |
+| builder  |                           460.893 |                                    141.75 |
+
+These are advisory observations from one host, not a confidence bound or a
+cross-platform budget. Full Pi engine and TUI UX budget checks, three viewer runs
+per variant, and the Pi and package smokes also passed on this checkout.
