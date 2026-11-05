@@ -91,6 +91,10 @@ provider, host, runtime and configuration. Baseline comparison checks the worklo
 platform, hardware, runtime and configuration for compatibility; a mismatch or
 unknown identity prevents a meaningful comparison. Inspect report provenance, including
 checkout commit, dirty status, lockfile hash, OS, architecture, Node and Pi versions.
+Pi launcher paths are informational; comparison checks the resolved runtime kind and
+executable or script content identity, including the interpreter for a Node CLI.
+An unknown launcher identity or an older report without it is incomparable, even
+when the Pi versions match.
 Changes in hardware, load, platform or runtime can dominate the result, so do not
 interpret cross-platform or cross-runtime differences as regressions. CI artifacts
 provide evidence for each environment; they are not interchangeable baselines. For

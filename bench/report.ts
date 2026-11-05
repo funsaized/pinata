@@ -2,9 +2,11 @@
 // in --out cannot destroy an earlier run (or waste a long benchmark).
 import { spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, open, readFile, rename, unlink } from "node:fs/promises";
+import { constants, createReadStream } from "node:fs";
+import { access, mkdir, open, readFile, realpath, rename, stat, unlink } from "node:fs/promises";
 import { arch, cpus, hostname, platform, release, totalmem } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { delimiter, dirname, extname, isAbsolute, join, resolve } from "node:path";
+import { piCommand as processPiCommand } from "../engine/backends/pi-command.ts";
 import { piCommand } from "../test/engine/pi-smoke.ts";
 
 export interface ProvenanceOptions {
@@ -26,6 +28,154 @@ function version(argv: string[]) {
   return result.status === 0 ? result.stdout.trim().split("\n")[0] : "unavailable";
 }
 
+export interface PiRuntimeIdentity {
+  kind: "native" | "node-script" | "unknown";
+  executableSha256: string | null;
+  scriptSha256: string | null;
+  interpreterVersion: string | null;
+  reason?: string;
+}
+
+interface RuntimeCache {
+  files: Map<string, Promise<{ sha256: string; prefix: Buffer }>>;
+  versions: Map<string, string | null>;
+}
+const runtimeCache = (): RuntimeCache => ({ files: new Map(), versions: new Map() });
+
+async function executable(command: string, env: NodeJS.ProcessEnv): Promise<string> {
+  const direct =
+    isAbsolute(command) ||
+    command.includes("/") ||
+    (process.platform === "win32" && command.includes("\\"));
+  const suffixes =
+    process.platform === "win32" && !extname(command)
+      ? ["", ...(env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD").split(";")]
+      : [""];
+  const directories = direct
+    ? [""]
+    : (env.PATH ?? (process.platform === "win32" ? "" : "/usr/bin:/bin")).split(delimiter);
+  for (const directory of directories)
+    for (const suffix of suffixes) {
+      const candidate = direct ? command + suffix : join(directory, command + suffix);
+      try {
+        await access(candidate, constants.X_OK);
+        const resolved = await realpath(candidate);
+        if ((await stat(resolved)).isFile()) return resolved;
+      } catch {
+        /* Try the next PATH entry, as process launch does. */
+      }
+    }
+  throw new Error(`Cannot resolve executable: ${command}`);
+}
+
+function fingerprint(path: string, cache: RuntimeCache) {
+  let pending = cache.files.get(path);
+  if (!pending) {
+    pending = (async () => {
+      const hash = createHash("sha256");
+      let prefix: Buffer | undefined;
+      // Native Pi binaries are large; do not load them into the benchmark host's heap.
+      for await (const bytes of createReadStream(path)) {
+        const chunk = bytes as Buffer;
+        prefix ??= Buffer.from(chunk.subarray(0, 512));
+        hash.update(chunk);
+      }
+      return { sha256: hash.digest("hex"), prefix: prefix ?? Buffer.alloc(0) };
+    })();
+    cache.files.set(path, pending);
+  }
+  return pending;
+}
+
+function nativeExecutable(prefix: Buffer): boolean {
+  if (prefix.length < 4) return false;
+  return (
+    prefix.subarray(0, 4).equals(Buffer.from([0x7f, 0x45, 0x4c, 0x46])) ||
+    prefix.subarray(0, 2).toString() === "MZ" ||
+    [
+      0xfeedface, 0xfeedfacf, 0xcefaedfe, 0xcffaedfe, 0xcafebabe, 0xbebafeca, 0xcafebabf,
+      0xbfbafeca,
+    ].includes(prefix.readUInt32BE(0))
+  );
+}
+
+async function identifyPiRuntime(
+  argv: string[],
+  env: NodeJS.ProcessEnv,
+  cache: RuntimeCache,
+): Promise<PiRuntimeIdentity> {
+  try {
+    if (!argv.length || argv.length > 2) throw new Error("Unsupported Pi command shape");
+    let binary = await executable(argv[0], env);
+    let entry = await fingerprint(binary, cache);
+    let scriptHash: string | null = null;
+    if (argv.length === 2) {
+      if (!/\.(c|m)?js$/.test(argv[1])) throw new Error("Unsupported Pi script");
+      scriptHash = (await fingerprint(await realpath(resolve(argv[1])), cache)).sha256;
+    } else if (entry.prefix.subarray(0, 2).toString() === "#!") {
+      // Follow the interpreter the kernel would use, including PATH for env node.
+      // Complex shell wrappers or env options cannot establish a known identity.
+      const shebang = entry.prefix.toString("utf8").split(/\r?\n/, 1)[0].slice(2).trim();
+      const interpreter =
+        shebang.match(/^\/usr\/bin\/env\s+(node(?:\.exe)?)$/)?.[1] ??
+        shebang.match(/^(\/\S*\/node(?:\.exe)?)$/)?.[1];
+      if (!interpreter) throw new Error("Unsupported Pi interpreter or wrapper");
+      scriptHash = entry.sha256;
+      binary = await executable(interpreter, env);
+      entry = await fingerprint(binary, cache);
+    }
+    if (!nativeExecutable(entry.prefix)) throw new Error("Unrecognized Pi executable format");
+    let interpreterVersion: string | null = null;
+    if (scriptHash !== null) {
+      if (!cache.versions.has(binary)) {
+        const probe = spawnSync(
+          binary,
+          [
+            "-p",
+            "JSON.stringify({name:process.release.name,version:process.version,bun:!!process.versions.bun})",
+          ],
+          {
+            encoding: "utf8",
+            timeout: 10_000,
+            env,
+          },
+        );
+        let nodeVersion: string | null = null;
+        if (probe.status === 0) {
+          try {
+            const info = JSON.parse(probe.stdout.trim());
+            if (info.name === "node" && !info.bun && /^v\d+\.\d+\.\d+/.test(info.version))
+              nodeVersion = info.version;
+          } catch {
+            /* Unrecognized interpreter output remains unknown. */
+          }
+        }
+        cache.versions.set(binary, nodeVersion);
+      }
+      interpreterVersion = cache.versions.get(binary) ?? null;
+      if (!interpreterVersion) throw new Error("Cannot identify the Node interpreter");
+    }
+    return {
+      kind: scriptHash === null ? "native" : "node-script",
+      executableSha256: entry.sha256,
+      scriptSha256: scriptHash,
+      interpreterVersion,
+    };
+  } catch (error) {
+    return {
+      kind: "unknown",
+      executableSha256: null,
+      scriptSha256: null,
+      interpreterVersion: null,
+      reason: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+export function resolvePiRuntime(argv: string[], env: NodeJS.ProcessEnv = process.env) {
+  return identifyPiRuntime(argv, env, runtimeCache());
+}
+
 export async function collectProvenance(root: string, options: ProvenanceOptions) {
   const { workload, ...identity } = options;
   const startedAt = new Date().toISOString();
@@ -45,6 +195,17 @@ export async function collectProvenance(root: string, options: ProvenanceOptions
     files.push([path, await readFile(join(root, path)).then(sha256, () => null)]);
   const lock = await readFile(join(root, "package-lock.json")).catch(() => null);
   const cpu = cpus();
+  const command = piCommand();
+  const childCommand = ["process", "herdr-pi"].includes(options.backend)
+    ? processPiCommand()
+    : null;
+  // Both commands can resolve to the same large native binary. Hash each resolved
+  // file only once per provenance capture, without caching across benchmark runs.
+  const cache = runtimeCache();
+  const selectedRuntime = await identifyPiRuntime(command, process.env, cache);
+  const childRuntime = childCommand
+    ? await identifyPiRuntime(childCommand, process.env, cache)
+    : null;
   return {
     ...identity,
     date: startedAt.slice(0, 10),
@@ -71,8 +232,11 @@ export async function collectProvenance(root: string, options: ProvenanceOptions
     node: process.version,
     v8: process.versions.v8,
     executable: process.execPath,
-    pi: version([...piCommand(), "--version"]),
-    piCommand: piCommand(),
+    pi: version([...command, "--version"]),
+    piCommand: command,
+    piRuntime: selectedRuntime,
+    processPiCommand: childCommand,
+    processPiRuntime: childRuntime,
     runnerGcExposed: typeof globalThis.gc === "function",
     instrumentation: {
       gc: !process.env.BENCH_NO_GC,
@@ -178,6 +342,24 @@ function field(value: unknown, path: string): unknown {
   return value;
 }
 
+function runtimeKey(value: unknown): unknown[] | null {
+  const kind = field(value, "kind");
+  const binary = field(value, "executableSha256");
+  const script = field(value, "scriptSha256");
+  const interpreter = field(value, "interpreterVersion");
+  const hash = (value: unknown) => typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
+  if (!hash(binary)) return null;
+  if (kind === "native" && script === null && interpreter === null) return [kind, binary];
+  if (
+    kind === "node-script" &&
+    hash(script) &&
+    typeof interpreter === "string" &&
+    /^v\d+\.\d+\.\d+/.test(interpreter)
+  )
+    return [kind, binary, script, interpreter];
+  return null;
+}
+
 // This is a compatibility check, not a statistical test or a regression gate.
 // Revisions may differ intentionally. Runtime, workload and hardware must match.
 export function comparisonIssues(left: unknown, right: unknown): string[] {
@@ -219,6 +401,17 @@ export function comparisonIssues(left: unknown, right: unknown): string[] {
   }
   if (field(left, "tokenDelayMs") !== field(right, "tokenDelayMs"))
     issues.push("tokenDelayMs differs");
+  const runtimes = ["piRuntime"];
+  if (
+    [left, right].some((meta) => ["process", "herdr-pi"].includes(String(field(meta, "backend"))))
+  )
+    runtimes.push("processPiRuntime");
+  for (const path of runtimes) {
+    const a = runtimeKey(field(left, path));
+    const b = runtimeKey(field(right, path));
+    if (!a || !b) issues.push(`${path} is unknown`);
+    else if (JSON.stringify(a) !== JSON.stringify(b)) issues.push(`${path} differs`);
+  }
   if ([left, right].some((meta) => field(meta, "ciRun.provider") === "github-actions")) {
     for (const path of ["ciRun.provider", "ciRun.imageOS", "ciRun.imageVersion"]) {
       const a = field(left, path);

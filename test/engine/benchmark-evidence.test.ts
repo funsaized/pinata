@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { readFile, readdir, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, readdir, symlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -10,6 +10,7 @@ import {
   comparisonIssues,
   reportFilename,
   reserveReport,
+  resolvePiRuntime,
 } from "../../bench/report.ts";
 import { executionFailures, main, scenarios } from "../../bench/run.ts";
 import { main as viewer, viewerVariants } from "../../bench/viewer.ts";
@@ -214,7 +215,16 @@ test("process measurement validation requires coverage of every child's loaded R
 });
 
 test("comparison allows different commits but rejects incompatible or unknown evidence", async () => {
-  const meta = { ...(await provenance()), pi: "fixture-pi" };
+  const meta = {
+    ...(await provenance()),
+    pi: "fixture-pi",
+    piRuntime: {
+      kind: "native" as const,
+      executableSha256: "c".repeat(64),
+      scriptSha256: null,
+      interpreterVersion: null,
+    },
+  };
   const other = structuredClone(meta);
   other.source.commit = "a".repeat(40);
   other.source.workingTreeSha256 = "b".repeat(64);
@@ -231,9 +241,124 @@ test("comparison allows different commits but rejects incompatible or unknown ev
     { source: { ...meta.source, lockfileSha256: "different" } },
     { source: { ...meta.source, workingTreeSha256: null } },
     { pi: "unavailable" },
+    { piRuntime: undefined },
+    { piRuntime: { kind: "unknown" } },
   ])
     assert(comparisonIssues(meta, { ...other, ...changes }).length);
   assert(comparisonIssues({}, {}).length);
+});
+
+test("Pi runtime identity distinguishes native from Node CLI and follows file contents across paths", async (t) => {
+  const dir = await tempDir(t);
+  const native = join(dir, "pi-native");
+  // A binary-header fixture is enough to test identity without launching a real Pi.
+  await writeFile(native, Buffer.from([0x7f, 0x45, 0x4c, 0x46, 1, 2, 3, 4]), { mode: 0o755 });
+  const relocated = join(dir, "relocated-pi");
+  await copyFile(native, relocated);
+  const script = join(dir, "cli.js");
+  await writeFile(script, '#!/usr/bin/env node\nconsole.log("1.1.0");\n', { mode: 0o755 });
+  const nativeIdentity = await resolvePiRuntime([native]);
+  const jsIdentity = await resolvePiRuntime([process.execPath, script]);
+  assert.equal(nativeIdentity.kind, "native");
+  assert.equal(jsIdentity.kind, "node-script");
+  assert.equal(jsIdentity.interpreterVersion, process.version);
+  assert.deepEqual(await resolvePiRuntime([relocated]), nativeIdentity);
+  const meta = { ...(await provenance()), pi: "1.1.0", piRuntime: nativeIdentity };
+  assert.deepEqual(
+    comparisonIssues(meta, {
+      ...meta,
+      piCommand: [relocated],
+      piRuntime: await resolvePiRuntime([relocated]),
+    }),
+    [],
+  );
+  assert(comparisonIssues(meta, { ...meta, piRuntime: jsIdentity }).includes("piRuntime differs"));
+  const changed = join(dir, "changed.js");
+  await copyFile(script, changed);
+  assert.deepEqual(await resolvePiRuntime([process.execPath, changed]), jsIdentity);
+  await writeFile(changed, 'console.log("different CLI, same version");\n');
+  assert.notDeepEqual(await resolvePiRuntime([process.execPath, changed]), jsIdentity);
+});
+
+test(
+  "PATH Pi symlinks identify the real file and the interpreter that PATH selects",
+  { skip: process.platform === "win32" },
+  async (t) => {
+    const dir = await tempDir(t);
+    const bin = join(dir, "bin");
+    await mkdir(bin);
+    const script = join(dir, "selected-cli.js");
+    await writeFile(script, '#!/usr/bin/env node\nconsole.log("1.1.0");\n', { mode: 0o755 });
+    await symlink(script, join(bin, "pi"));
+    await symlink(process.execPath, join(bin, "node"));
+    const env = { ...process.env, PATH: bin };
+    const explicit = await resolvePiRuntime([process.execPath, script], env);
+    assert.deepEqual(await resolvePiRuntime(["pi"], env), explicit);
+    const native = join(dir, "native");
+    await writeFile(native, Buffer.from([0x7f, 0x45, 0x4c, 0x46, 1, 2, 3, 4]), { mode: 0o755 });
+    await symlink(native, join(bin, "pi-native"));
+    assert.deepEqual(
+      await resolvePiRuntime(["pi-native"], env),
+      await resolvePiRuntime([native], env),
+    );
+    const missing = await resolvePiRuntime(["absent-pi"], env);
+    assert.equal(missing.kind, "unknown");
+    const shell = join(bin, "wrapper");
+    await writeFile(shell, '#!/bin/sh\nexec node "$@"\n', { mode: 0o755 });
+    assert.equal((await resolvePiRuntime([shell], env)).kind, "unknown");
+    assert.equal((await resolvePiRuntime([shell, script], env)).kind, "unknown");
+
+    const previous = process.env.PINATA_PI;
+    const previousPath = process.env.PATH;
+    t.after(() => {
+      if (previous === undefined) delete process.env.PINATA_PI;
+      else process.env.PINATA_PI = previous;
+      if (previousPath === undefined) delete process.env.PATH;
+      else process.env.PATH = previousPath;
+    });
+    process.env.PINATA_PI = script;
+    process.env.PATH = dir; // Explicit host Node still works; the child cannot resolve PATH node.
+    const meta = await collectProvenance(ROOT, {
+      kind: "engine",
+      provider: "loopback",
+      host: "node",
+      backend: "process",
+      mode: "lean",
+      scenarios: [scenario.name],
+    });
+    assert.equal(meta.piRuntime.kind, "node-script");
+    assert.equal(meta.processPiRuntime?.kind, "unknown");
+    assert.deepEqual(meta.processPiCommand, ["node", script]);
+    assert(comparisonIssues(meta, meta).includes("processPiRuntime is unknown"));
+  },
+);
+
+test("unknown and historical Pi runtime identity never compare, even with matching version strings", async () => {
+  const meta = {
+    ...(await provenance()),
+    pi: "1.1.0",
+    piRuntime: await resolvePiRuntime(["/no/such/pi-runtime"]),
+  };
+  assert(comparisonIssues(meta, meta).includes("piRuntime is unknown"));
+  assert(
+    comparisonIssues({ ...meta, piRuntime: undefined }, { ...meta, piRuntime: undefined }).includes(
+      "piRuntime is unknown",
+    ),
+  );
+  const native = {
+    kind: "native" as const,
+    executableSha256: "c".repeat(64),
+    scriptSha256: null,
+    interpreterVersion: null,
+  };
+  const processMeta = { ...meta, backend: "process", piRuntime: native, processPiRuntime: native };
+  assert.deepEqual(comparisonIssues(processMeta, processMeta), []);
+  assert(
+    comparisonIssues(processMeta, {
+      ...processMeta,
+      processPiRuntime: { ...native, executableSha256: "d".repeat(64) },
+    }).includes("processPiRuntime differs"),
+  );
 });
 
 test(
