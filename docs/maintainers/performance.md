@@ -75,6 +75,9 @@ or peaks, so sampled peaks are lower bounds. Each child needs a sample after its
 `turn_start` event to establish loaded-process coverage. Missing child coverage is
 reported as missing, rather than substituted with host memory. These absolute child RSS peaks and the
 parent RSS delta are different quantities and cannot be compared directly.
+On Windows, the benchmark warms a persistent PowerShell/.NET RSS collector before
+measurement, avoiding a new PowerShell startup for each sample. Process measurement
+version 2 uses this protocol; version 1 reports are not comparable with version 2.
 `settledHeapDeltaMB` is host heap retained
 after garbage collection and includes run history. CPU and event-loop lag describe
 the host process, not the combined work of child processes.
@@ -102,9 +105,9 @@ runtime selection, live model evaluations, and CI coverage, see [testing](testin
 
 ## Local process baseline
 
-The [raw aggregate](../../bench/baselines/process-linux-x64-node24-pi1.1.0-2026-11-05.json)
-and [summary](../../bench/baselines/process-linux-x64-node24-pi1.1.0-2026-11-05.md)
-record a clean checkout of commit `92ff64643f2ba2cf4540cafb0c9246880e8e0a2b` on
+The [raw aggregate](../../bench/baselines/process-linux-x64-node24-pi1.1.0-v2-2026-11-05.json)
+and [summary](../../bench/baselines/process-linux-x64-node24-pi1.1.0-v2-2026-11-05.md)
+record a clean checkout of commit `f7402f948e532800128925492958e789befd99db` on
 2026-11-05. The run used a Linux x64 cloud VM with five AMD EPYC 9V74 CPUs and
 18 GiB memory, Node 24.19.0, native Pi 1.1.0, the process backend and loopback
 provider. There were five trials per scenario and 75 task samples in total, with
@@ -112,11 +115,15 @@ no concurrent benchmark or test tasks. The aggregate embeds every trial.
 
 | Scenario | Median of trial startup p50s (ms) | Median of trial mean child peak RSS (MiB) |
 | -------- | --------------------------------: | ----------------------------------------: |
-| fanout-1 |                           461.640 |                                    143.30 |
-| fanout-8 |                          1259.917 |                                    135.59 |
-| chain    |                           464.690 |                                    142.80 |
-| builder  |                           460.893 |                                    141.75 |
+| fanout-1 |                           464.144 |                                    143.30 |
+| fanout-8 |                          1300.469 |                                    135.86 |
+| chain    |                           470.318 |                                    142.80 |
+| builder  |                           457.431 |                                    141.65 |
 
 These are advisory observations from one host, not a confidence bound or a
-cross-platform budget. Full Pi engine and TUI UX budget checks, three viewer runs
-per variant, and the Pi and package smokes also passed on this checkout.
+cross-platform budget. The earlier [version 1 aggregate](https://github.com/funsaized/pinata/blob/b7f6d0e/bench/baselines/process-linux-x64-node24-pi1.1.0-2026-11-05.json)
+and [summary](https://github.com/funsaized/pinata/blob/b7f6d0e/bench/baselines/process-linux-x64-node24-pi1.1.0-2026-11-05.md)
+remain in Git history as historical evidence. An earlier Windows Node 24 CI run
+completed every task but lacked loaded RSS samples in three chain trials; its
+[failed artifact](https://github.com/funsaized/pinata/actions/runs/42117768818/artifacts/13458041893)
+is retained for investigation.
