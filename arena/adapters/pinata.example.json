@@ -1,0 +1,7 @@
+{
+  "name": "pinata-unverified-template",
+  "command": "node",
+  "args": ["/ABSOLUTE/PATH/TO/YOUR/pinata-adapter.mjs"],
+  "model": null,
+  "timeoutMs": 120000
+}

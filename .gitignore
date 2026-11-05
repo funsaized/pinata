@@ -2,6 +2,7 @@ node_modules/
 *.tgz
 coverage/
 bench/results/
+arena/results/
 .pinata/
 .env
 .env.*
