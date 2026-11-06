@@ -394,10 +394,6 @@ Luna's work with Astra. Fallbacks apply only
 when the preferred model is unavailable or unauthenticated. Use
 [task recovery](../docs/how-to/recover.md) to address failed work.
 
-Use the thinking level Pi actually applies to that model. Pi silently maps some
-levels; for example, DeepSeek `deepseek-flash` turns `xhigh` into `max`. pinata
-treats that change as "not ready" and skips the model, so these configs say `max`.
-
 ## Complete jobs
 
 Each file in [jobs/](jobs/) is an example job for `pinata run` based on a
