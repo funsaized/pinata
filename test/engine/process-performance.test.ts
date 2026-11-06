@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { ChildMemorySampler } from "../../bench/child-memory.ts";
@@ -549,11 +550,20 @@ test(
         `
     import { spawn } from 'node:child_process';
     const nested = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { detached: true, stdio: 'ignore' });
-    console.log(nested.pid);
+    nested.once('error', (error) => {
+      console.error('Nested spawn failed:', error);
+      process.exit(1);
+    });
+    nested.once('spawn', () => process.stdout.write(String(nested.pid) + '\\n'));
     setInterval(() => {}, 1000);
   `,
       ],
-      { detached: true, stdio: ["ignore", "pipe", "pipe"] },
+      {
+        detached: true,
+        stdio: ["ignore", "pipe", "pipe"],
+        // Machine-readable PID output must stay plain even with forced colors.
+        env: { ...process.env, FORCE_COLOR: "1" },
+      },
     );
     let nestedPid = 0;
     t.after(() => {
@@ -566,10 +576,35 @@ test(
           }
     });
     const exited = new Promise<void>((done) => child.once("close", () => done()));
-    nestedPid = await new Promise<number>((done) =>
-      child.stdout.once("data", (data: Buffer) => done(Number(data.toString().trim()))),
-    );
-    assert(nestedPid > 0);
+    let stderr = "";
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk: string) => {
+      stderr += chunk;
+    });
+    const lines = createInterface({ input: child.stdout });
+    try {
+      nestedPid = await new Promise<number>((resolve, reject) => {
+        lines.once("line", (line) => {
+          const pid = Number(line);
+          if (!Number.isInteger(pid) || pid <= 0) {
+            reject(new Error(`Invalid nested PID: ${JSON.stringify(line)}`));
+          } else {
+            resolve(pid);
+          }
+        });
+        // Wait for close so stderr has drained before reporting a startup failure.
+        child.once("close", (code, signal) => {
+          reject(
+            new Error(
+              `Fixture closed before reporting its PID (code=${code}, signal=${signal}): ${stderr}`,
+            ),
+          );
+        });
+        child.once("error", reject);
+      });
+    } finally {
+      lines.close();
+    }
     await terminateProcessTree(child.pid!);
     await exited;
     // Linux may briefly retain an orphan zombie until its init process reaps it.
