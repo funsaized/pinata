@@ -2,34 +2,26 @@
 
 **Pi stays small. Your subagent system should too.**
 
-Pinata is an extensible subagent framework for
-[Pi](https://github.com/earendil-works/pi). Ask Pi to investigate a codebase, split a
-change between builders, or review a patch. Pinata coordinates the tasks and brings back
-changes, findings, and checks you can inspect. Start with the included scout, builder,
-and reviewer; add your own agents and tools as your workflow grows.
+Piñata is a fast, extensible subagent framework for
+[Pi](https://github.com/earendil-works/pi). Ask Pi to split a change between builders and reviewers. Pinata coordinates the tasks and brings back
+changes, findings, and checks you can inspect.
+
+piñata ships only three agent definitions: scout, builder, and reviewer. Add your own agents and tools as your workflow grows.
 
 Pi keeps the harness small and lets you make it yours. Pinata follows that lead.
 
 [![piñata: small core, parallel agents](media/pinata-hero-v2.png)](media/pinata-demo.mp4)
 
-[Watch the demo](media/pinata-demo.mp4) · Ten agents build and review a CLI in a
-70-second accelerated edit of a real Pi session. [Reproduce the job](docs/tutorials/relay.md).
-
 ## Install
 
-Run in your terminal (_manual_):
+Run in your terminal:
 
 ```sh
 pi install npm:pi-pinata
 ```
 
-Reload Pi. You need Pi 1.1.0+, Node 22.19+ (for the `pinata` command), and Git, on
-Linux, macOS, or Windows. [Herdr](https://herdr.dev/) is optional.
-
-This README describes the code in this branch. The npm install gets the published
-package, which may differ; check the package version and matching tagged documentation
-for the features available to you. See [platform setup](docs/how-to/platforms.md) for
-more detail.
+Reload Pi. You need Pi 1.1.0+, Node 22.19+ (for the `pinata` cli), and Git. [Herdr](https://herdr.dev/) is optional. Piñata works on Linux, macOS, and Windows.
+See [platform setup](docs/how-to/platforms.md) for more detail.
 
 ## Try it
 
@@ -55,29 +47,33 @@ tutorial](docs/tutorials/first-run.md) for a guided start.
 
 ## How it works
 
-A run contains tasks, their agents, dependencies, and any file ownership and checks.
-Independent tasks can run in parallel; dependent tasks wait for their inputs. The
-included agents cover three common jobs:
+A run contains tasks, their agents, dependencies, and any file ownership and checks. Piñata
+orchestrates the DAG: independent tasks run in parallel; dependent tasks wait for their inputs. The
+included agents cover three common roles, and can be tailored to your liking:
 
 - **Scout** maps the relevant code and returns a brief.
 - **Builder** makes an assigned change in a separate Git worktree.
 - **Reviewer** examines a specific change and its evidence.
 
-For a larger change, ask Pi to plan a job with ownership, dependencies, checks, and
-independent review. Inspect the plan before running it. Pinata records results and runs
-configured checks; the coordinator handles follow-up decisions and repairs. The handoff
-and integration helpers require independent approval of the exact change. [Build and
-review](docs/tutorials/build-and-review.md) walks through the process.
+Pinata jobs have a defined schema, so Pi or another capable coding agent can read the
+[job format](docs/how-to/headless.md#write-a-job-file), inspect your repository, and turn
+a plan for your goal into a job with ownership, dependencies, checks, and independent review.
+Pinata runs the tasks and configured checks and
+records the results; your coordinator agent invoking pinata decides what to do next, including any repairs.
 
-Worktrees keep patches separate from your checkout; they are not security sandboxes.
-Shell commands and custom tools run with your operating-system permissions and network
+[Build and review](docs/tutorials/build-and-review.md) walks through the process.
+
+Worktrees keep patches separate from your checkout, but they are not security sandboxes.
+Shell commands and custom tools have your operating-system permissions and network
 access. Read [trust and safety](docs/explanation/trust.md) before authorizing work.
 
-Save a plan as a job file to run it from a terminal or CI with `pinata run job.json`.
-Headless execution leaves builder changes in their worktrees; integration is a separate
-step in Pi. See [headless runs](docs/how-to/headless.md), or use the [goal-to-job
-prompt](examples/jobs.md#let-a-coordinator-design-the-job) to have a coordinator design
-a plan for your repository.
+Save the plan as a job file and you can run it from a terminal or CI (outside of pi) with
+`pinata run job.json`. 
+
+Headless runs (currently) leave builder changes in their worktrees; integrate
+them separately in Pi. See [headless runs](docs/how-to/headless.md), or use the
+[goal-to-job prompt](examples/jobs.md#let-a-coordinator-design-the-job) to have a
+coordinator design a plan for your repository.
 
 ## Make it yours
 
