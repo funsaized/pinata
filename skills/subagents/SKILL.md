@@ -1,6 +1,6 @@
 ---
 name: subagents
-description: Delegate explicitly requested work to pinata agents (scout, builder, reviewer, or installed custom agents). Use when the user explicitly asks to delegate, run a subagent or persona, or parallelize assigned work. Do not activate merely because delegation could help an ordinary task.
+description: Plan jobs and delegate explicitly requested work to pinata agents (scout, builder, reviewer, or installed custom agents). Use when the user asks to design or save a Pinata job, delegate, run a subagent or persona, or parallelize assigned work. Do not activate merely because delegation could help an ordinary task.
 license: MIT
 compatibility: Pi >=1.1.0 and Git on Linux, macOS or Windows.
 ---
@@ -10,7 +10,7 @@ compatibility: Pi >=1.1.0 and Git on Linux, macOS or Windows.
 Delegate bounded work, collect evidence, and return the combined outcome. You
 remain responsible for the result. A finished agent is not verified work.
 
-Read `reference.md` (beside this file) before the first run: it lists the tools,
+Read `reference.md` (beside this file) before designing tasks or the first run: it lists the tools,
 task fields, config and result fields.
 
 ## The tools
@@ -64,6 +64,16 @@ next Pi picks the run up, and if Pi exits first a headless host finishes it.
 6. The optional researcher needs pi-web-access loaded in this Pi (or `config.webExtension`).
 
 ## Make each task self-contained
+
+Before decomposing a goal into a task graph or saved job, call `pinata_agents` to
+discover available definitions, including personal and repository agents. Consider
+custom agents alongside the presets and inspect relevant candidates with
+`pinata_agents {"name":"<agent>"}` before assigning work. Choose based on their
+instructions, tools, workspace, defaults, and suitability for the task.
+
+When asked to save a job, read `../../docs/how-to/headless.md#write-a-job-file`
+for the job contract. Preparing a plan does not itself authorize running it;
+honor requests to explain or save the job before execution.
 
 Act as coordinator and evidence reviewer. Split the work into complementary
 questions with distinct deliverables. For an overview, the scout owns local
