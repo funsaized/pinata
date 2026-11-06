@@ -6,12 +6,13 @@ import { distTag, validateRelease } from "../scripts/release-npm.mjs";
 
 const manifest = JSON.parse(await fs.readFile(new URL("../package.json", import.meta.url)));
 const lock = JSON.parse(await fs.readFile(new URL("../package-lock.json", import.meta.url)));
-const [packed] = JSON.parse(
+const packOutput = JSON.parse(
   execFileSync("npm", ["pack", "--dry-run", "--ignore-scripts", "--json"], {
     cwd: new URL("..", import.meta.url),
     encoding: "utf8",
   }),
 );
+const packed = Array.isArray(packOutput) ? packOutput[0] : packOutput[manifest.name];
 const tag = `v${manifest.version}`;
 
 test("release accepts the actual package artifact", () => {

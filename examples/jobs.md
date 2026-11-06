@@ -1,16 +1,17 @@
 # Task and job examples
 
-A job turns a goal into work Pinata can run: named tasks, agents, dependencies,
-file ownership, and checks. Save it as JSON to inspect the plan, adjust it, or run
-it from a terminal or CI. A coordinating agent can write the job for you.
+A job turns a goal into work piñata can run: named tasks, agents, dependencies,
+file ownership, and checks. Job plans are plain JSON files. Create them with your agent, adjust them in your text editor of choice, or run
+it from a terminal or CI. The job schema makes it simple for agents to define work for piñata from an existing plan.
 
 ## Let a coordinator design the job
 
-Give a capable model your goal, repository, and Pinata's
-[task format](../docs/reference/tools.md#task),
-[job format](../docs/how-to/headless.md#write-a-job-file), and
-[configuration reference](../docs/reference/config.md). Pi or another coding agent
-can read those contracts, inspect the code, and write the task objects for you.
+With Pinata installed in Pi, describe your goal and ask Pi to use Pinata. The
+bundled `subagents` skill guides the coordinator in inspecting the repository and
+designing tasks, dependencies, ownership, and checks. The skill directs the
+coordinator to discover your personal and repository agent definitions and consider
+them alongside the presets before decomposing the goal into tasks. Ask it to save a job file
+when you want a reusable plan or headless execution.
 
 The coordinator decides:
 
@@ -29,7 +30,7 @@ running the job. Otherwise, scout, builder, and reviewer cover common coding wor
 For example, ask Pi to prepare a migration:
 
 ```text
-Read Pinata's task, job, and configuration references. Inspect this repository
+Use Pinata to inspect this repository
 and plan the migration from our old logging API to the replacement we selected.
 
 Save a job.json with the necessary agents and concrete acceptance criteria.
