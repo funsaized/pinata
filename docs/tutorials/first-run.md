@@ -1,25 +1,8 @@
 # First run
 
-Send two scouts into your repository to investigate error handling and tests.
-You will watch them work and get findings with file references. They leave your
-files unchanged.
-
-You need Pi 1.1.0 or later, Node 22.19 or later, Git, and a model configured
-and authenticated in Pi. Install Pinata from your terminal, then reload Pi:
-
-```sh
-node --version
-pi --version
-git --version
-pi install npm:pi-pinata
-pi list
-pi --offline --list-models
-```
-
-This exercise sends requests to your configured models and uses tokens. Check
-provider pricing and your [models and limits](../reference/config.md) before
-starting. If you want a prepared repository and a complete coding job, follow
-[Relay](relay.md).
+In this walkthrough, you will send two scouts into your repository: one will map
+how errors are handled, and the other will examine the tests. Here you'll learn how to watch agents
+work, then use their file references to check their findings.
 
 ## 1. Start Pi in a repository
 
@@ -30,17 +13,17 @@ provider. Start Pi in that repository:
 pi
 ```
 
-In the fresh Pi session, enter `/pinata runs` to confirm the command is available.
-Before the first run in this repository, it reports `No pinata runs in this
-repository.` If the command is missing, use `/reload` or restart Pi. This
-inspection does not send a request to a model.
+In the fresh Pi session, enter `/pinata runs` to check that the command is
+available. If this is the first run in the repository, you should see `No pinata
+runs in this repository.` If the command is missing, use `/reload` or restart Pi.
+Checking the run list does not send a request to a model.
 
-If the model list was empty, use `/login` in Pi to authenticate with a provider.
-Then use `/model` to select an authenticated model. The scouts inherit the current
-Pi model unless a configured model or agent definition takes precedence; see
+Subagents inherit the current Pi model unless a configured model or agent definition (recommended) takes precedence; see
 [model selection](../reference/config.md#models).
 
 ## 2. Ask for scouts
+
+Enter this request in Pi:
 
 ```text
 Start two scouts in the background: scout-errors maps how errors are handled;
@@ -50,20 +33,22 @@ run's limits to concurrency 2 and costUsd 1. Stop if the limit is reached;
 do not increase it.
 ```
 
-Pi can delegate the two questions to scouts with `pinata_run`. They investigate
+Pi will use the `pinata_run` tool to delegate the questions to the scouts. They investigate
 in parallel, and Pi can combine their findings when they finish. The $1 limit is
-a reported worker-cost threshold: in-flight requests can overshoot it, and it
-excludes coordinator tokens.
+a threshold for reported worker costs; requests already in flight can overshoot
+it, and coordinator (your main agent) tokens are excluded.
 
 ## 3. Watch them
 
-Above the editor, the widget shows one row per agent: its task ID, a plain status such as
-Running or Done, elapsed time, and current activity. Tokens and cost appear once as run
-totals. The footer shows a one-line summary. Both disappear when the run settles.
-Tool results use readable summaries; Ctrl+O expands the details.
+While the scouts work, the piñata widget can be seen in the TUI. Each agent has a row
+showing its task ID, status (such as Running or Done), elapsed time, and current
+activity.
 
-Press Shift+↓ to jump into a running agent's conversation, then Shift+↑/↓ to move between
-agents and Esc to return. You can also choose a particular agent:
+Token use and cost appear as totals for the run, and the footer shows a
+one-line summary. Both disappear when the run settles.
+
+Press Shift+↓ to open a running agent's conversation. Use Shift+↑/↓ to move between agents and Esc to return. You can
+also target a particular agent directly:
 
 ```text
 /pinata view --task scout-errors
@@ -73,24 +58,25 @@ Press Esc to return. [Watching agents](watching-agents.md) covers the detail vie
 
 ## 4. Read the results
 
-When the run finishes, Pi receives each task's status, summary, and brief. Ask it
-to explain the findings and gaps in coverage; follow the file references to check
-them against the code. You can also inspect the run yourself:
+When the run finishes, Pi receives a status, summary, and brief for each task.
+Ask Pi to explain what the scouts found, including gaps in coverage, then follow
+the file references to check the findings against the code. To inspect the run
+yourself, use:
 
 ```text
 /pinata
 /pinata runs
 ```
 
-`/pinata` shows the latest run; `/pinata runs` lists the runs in this repository. Neither
-sends anything to the model. Everything is kept in `<git common dir>/pinata/<run>`: the
-event log, each task's result and transcript.
+`/pinata` opens the latest run, while `/pinata runs` lists the runs in this
+repository. Neither command sends anything to the model. The run's event log and each
+task's result and transcript are kept in `<git common dir>/pinata/<run>`.
 
 ## What to try next
 
-Give the scouts two questions about code you are changing. They read your live
-checkout, including uncommitted edits, so their findings can help with work already
-in progress. Independent tasks run in parallel; their results stay available after
-the run finishes.
+Try giving the scouts two questions about code you are changing. They read your
+live checkout, including uncommitted edits, so you can use their findings while
+work is in progress. Independent tasks run in parallel, and their results remain
+available after the run finishes.
 
 Next: [build and review a change](build-and-review.md).
