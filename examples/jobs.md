@@ -378,9 +378,7 @@ in the same run.
 Each file in [configs/](configs/) is a `config` object. Copy one to
 `~/.pi/agent/pinata.json` for your defaults, or to a project's `.pi/pinata.json`
 for that project; pinata reads both automatically. You can also paste one into a
-job's `config` field. They use models from a real Pi setup (OpenAI `gpt-6-luna`, `gpt-6-astra`,
-`gpt-6.1-sol`, and DeepSeek `deepseek-flash`). Replace them with models that
-`pi --list-models` and `pi auth check` show as ready on your machine.
+job's `config` field. Update them with the models you use:
 
 | File                                         | When to use it                                                                                       |
 | -------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
@@ -390,10 +388,9 @@ job's `config` field. They use models from a real Pi setup (OpenAI `gpt-6-luna`,
 | [no-codemode.json](configs/no-codemode.json) | A model that handles codemode poorly; raises `maxTurns` to compensate                                |
 | [pinata.config.json](pinata.config.json)     | An example with explicit limits                                                                      |
 
-Pick models and thinking levels by role. Scouts mostly read, so `low` is
-usually enough. A different reviewer model can bring a different perspective;
-judge its review by the findings and evidence it returns. `per-role.json` reviews
-Luna's work with Astra. Reviewers can still miss defects. Fallbacks apply only
+It is recommended to pick models and thinking levels by role. For example, scouts mostly read, so `low` is
+usually enough. A different reviewer model can bring a different perspective; `per-role.json` reviews
+Luna's work with Astra. Fallbacks apply only
 when the preferred model is unavailable or unauthenticated. Use
 [task recovery](../docs/how-to/recover.md) to address failed work.
 
