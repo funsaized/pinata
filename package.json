@@ -46,13 +46,15 @@
     "test:engine": "node --test \"test/engine/**/*.test.ts\"",
     "test:live": "node test/engine/live-smoke.ts",
     "eval:live": "node test/quality/engine.ts",
+    "arena": "node arena/run.ts",
     "bench": "node --expose-gc bench/run.ts",
     "bench:loopback": "node --expose-gc bench/run.ts --provider loopback",
+    "bench:process": "node --expose-gc bench/process.ts",
     "check": "npm run format:check && npm run lint && npm run typecheck",
-    "lint": "oxlint test scripts engine bench bin examples/relay/setup.mjs examples/relay/verify.mjs",
+    "lint": "oxlint test scripts engine bench arena bin examples/relay/setup.mjs examples/relay/verify.mjs",
     "typecheck": "tsc -p tsconfig.json",
-    "format:check": "oxfmt --check package.json tsconfig.json test scripts .github examples README.md docs skills prompts engine bench bin agents",
-    "format": "oxfmt package.json tsconfig.json test scripts .github examples README.md docs skills prompts engine bench bin agents",
+    "format:check": "oxfmt --check package.json tsconfig.json test scripts .github examples README.md docs skills prompts engine bench arena bin agents",
+    "format": "oxfmt package.json tsconfig.json test scripts .github examples README.md docs skills prompts engine bench arena bin agents",
     "test:herdr": "node --test test/engine/herdr.test.ts"
   },
   "devDependencies": {

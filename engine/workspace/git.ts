@@ -10,8 +10,16 @@ export class GitError extends Error {
   readonly code: number | null;
   readonly stderr: string;
   constructor(args: readonly string[], code: number | null, stderr: string) {
+    const lines = stderr.trim().split(/\r?\n/);
+    // Git can print progress before its failure (for example, "Preparing worktree").
+    // Agent failure records keep this message, so retain the actual diagnostic.
+    const diagnostic =
+      lines.findLast((line) => /^(?:fatal|error):/i.test(line)) ??
+      lines.findLast((line) => line.trim()) ??
+      "";
+    const detail = diagnostic.length > 2000 ? `${diagnostic.slice(0, 2000)}…` : diagnostic;
     super(
-      `git ${args.find((a) => !a.startsWith("-")) ?? args[0]} failed (exit ${code}): ${stderr.trim().split("\n")[0] ?? ""}`,
+      `git ${args.find((a) => !a.startsWith("-")) ?? args[0]} failed (exit ${code}): ${detail}`,
     );
     this.code = code;
     this.stderr = stderr;

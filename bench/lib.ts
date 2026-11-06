@@ -58,6 +58,27 @@ export interface ScenarioResult {
   loopLagP99Ms: number | null;
   cpuMs: number | null;
   wallMs: number;
+  // Per-task observations, retained before percentile aggregation.
+  samples?: Record<
+    "spawnMs" | "setupMs" | "toolCallMs" | "dependentMs" | "dependentRequestMs",
+    Record<string, number>
+  >;
+  process?: {
+    // Child creation (ProcessBackend.onSpawn) to its first provider request.
+    startupMs: Stat | null;
+    startupByAgentMs: Record<string, number>;
+    childPeakRssMB: Stat | null;
+    peakRssByAgentMB: Record<string, number>;
+    rssSamplesByAgent: Record<string, number>;
+    // Samples taken after the agent emitted its first turn_start (Pi is loaded).
+    readyRssSamplesByAgent: Record<string, number>;
+    missingRssAgents: string[];
+    sampleIntervalMs: number;
+    // Collector method/protocol; absent only in historical measurement v1 reports.
+    rssMethod?: string;
+    errors: string[];
+  };
+  diagnostics?: Array<{ file: string; tail: string }>;
   notes?: string[];
 }
 

@@ -8,14 +8,11 @@ import { scaleScenarios } from "./scenarios/scale.ts";
 // Options: --provider faux|loopback,
 // --scenario <name> (repeatable), --host node|pi|tui, --token-delay <ms>, --out <file>.
 // --host tui runs interactive Pi under a pseudo-terminal (Linux and macOS; the UX benchmark).
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { arch, cpus, platform, release, totalmem } from "node:os";
+import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import type { Scenario, ScenarioResult } from "./lib.ts";
-import { piCommand } from "../test/engine/pi-smoke.ts";
+import { collectProvenance, reportSummary, reserveReport } from "./report.ts";
 import { fanout } from "./scenarios/fanout.ts";
 import { chain } from "./scenarios/chain.ts";
 import { stress } from "./scenarios/stress.ts";
@@ -86,25 +83,6 @@ function parse(argv: string[]): Args {
   return args;
 }
 
-function version(argv: string[]) {
-  const r = spawnSync(argv[0], argv.slice(1), { encoding: "utf8", timeout: 10_000 });
-  return r.status === 0 ? r.stdout.trim().split("\n")[0] : "unavailable";
-}
-
-async function source() {
-  const git = (...args: string[]) => {
-    const r = spawnSync("git", ["-C", ROOT, ...args], { encoding: "utf8", timeout: 10_000 });
-    return r.status === 0 ? r.stdout.trim() : null;
-  };
-  const status = git("status", "--porcelain", "--untracked-files=normal");
-  const lock = await readFile(join(ROOT, "package-lock.json")).catch(() => null);
-  return {
-    commit: git("rev-parse", "--verify", "HEAD"),
-    dirty: status === null ? null : status.length > 0,
-    lockfileSha256: lock ? createHash("sha256").update(lock).digest("hex") : null,
-  };
-}
-
 async function runScenario(scenario: Scenario, args: Args): Promise<ScenarioResult> {
   const { runEngine } = await import("./targets/engine.ts");
   return runEngine(scenario, {
@@ -133,6 +111,7 @@ export function executionFailures(
   scenario: Scenario,
   result: ScenarioResult,
   budgets: Budget[] = [],
+  backend = process.env.BENCH_BACKEND ?? "in-process",
 ): string[] {
   const failures: string[] = [];
   const fail = (reason: string) => failures.push(`${scenario.name}: ${reason}`);
@@ -168,6 +147,37 @@ export function executionFailures(
   }
   for (const name of ["memoryPerAgentMB", "peakRssMB", "cpuMs", "wallMs"])
     if (metric(result, name) === null) fail(`${name} is missing or invalid`);
+  if (["process", "herdr-pi"].includes(backend) && !result.process)
+    fail("process measurements are missing");
+  if (result.process) {
+    for (const error of result.process.errors ?? []) fail(`process measurement: ${error}`);
+    if (result.process.missingRssAgents?.length)
+      fail(`process RSS missing for ${result.process.missingRssAgents.join(", ")}`);
+    if (!(result.process.sampleIntervalMs > 0) || !Number.isFinite(result.process.sampleIntervalMs))
+      fail("process RSS sample interval is invalid");
+    const statistics = ["childPeakRssMB", ...(backend === "process" ? ["startupMs"] : [])];
+    for (const name of statistics) {
+      if (metric(result, `process.${name}.n`) !== scenario.tasks.length)
+        fail(`process.${name} must measure all ${scenario.tasks.length} tasks`);
+      for (const percentile of ["p50", "p95", "p99", "max"])
+        if (metric(result, `process.${name}.${percentile}`) === null)
+          fail(`process.${name}.${percentile} is missing or invalid`);
+    }
+    for (const task of scenario.tasks) {
+      const rss = result.process.peakRssByAgentMB?.[task.id];
+      const samples = result.process.rssSamplesByAgent?.[task.id];
+      const readySamples = result.process.readyRssSamplesByAgent?.[task.id];
+      if (!Number.isFinite(rss) || rss <= 0 || !Number.isInteger(samples) || samples <= 0)
+        fail(`process RSS must measure task ${task.id}`);
+      if (!Number.isInteger(readySamples) || readySamples <= 0)
+        fail(`process RSS must measure loaded task ${task.id}`);
+      if (backend === "process") {
+        const startup = result.process.startupByAgentMs?.[task.id];
+        if (!Number.isFinite(startup) || startup < 0)
+          fail(`process startup must measure task ${task.id}`);
+      }
+    }
+  }
   for (const budget of budgets.filter((b) => b.scenario === scenario.name))
     if (metric(result, budget.metric) === null) fail(`${budget.metric} is missing or invalid`);
   return [...new Set(failures)];
@@ -194,21 +204,100 @@ export async function main(argv = process.argv.slice(2), run = runScenario): Pro
     args.scenarios.length ? args.scenarios.includes(s.name) : !s.name.startsWith("scale-"),
   );
   if (!selected.length) throw new Error(`No scenario matches ${args.scenarios.join(", ")}`);
-  const budgets: Budget[] = args.ci
-    ? JSON.parse(await readFile(join(ROOT, "bench", "budgets.json"), "utf8")).budgets
-    : [];
+  const backend = process.env.BENCH_BACKEND ?? "in-process";
+  // The published budgets describe the in-process backend. Process startup and
+  // child memory are separate advisory measurements, never this backend's gate.
+  const budgets: Budget[] =
+    args.ci && backend === "in-process"
+      ? JSON.parse(await readFile(join(ROOT, "bench", "budgets.json"), "utf8")).budgets
+      : [];
+  const meta = await collectProvenance(ROOT, {
+    kind: "engine",
+    provider: args.provider,
+    host: args.host,
+    backend,
+    mode: process.env.BENCH_MODE ?? "lean",
+    tokenDelayMs: args.tokenDelayMs,
+    scenarios: selected.map((s) => s.name),
+    workload: selected,
+    argv,
+  });
+  const output = await reserveReport(ROOT, meta, args.out);
   const results: ScenarioResult[] = [];
   const attempts: Record<string, ScenarioResult[]> = {};
-  // Capture provenance before the workload or report output can change the checkout.
-  const startedAt = new Date().toISOString();
-  const revision = await source();
+  const diagnostics: Array<{ scenario: string; attempt: number; message: string; stack?: string }> =
+    [];
+  const policy = budgets.length
+    ? "Completion and measurement coverage are required. In-process performance budgets apply at 2× the target; up to two retries are allowed for complete over-budget runs. Every attempt is retained."
+    : "Completion and measurement coverage are required. Performance measurements are advisory; no timing or memory thresholds are applied.";
+  const report = {
+    schemaVersion: 1,
+    meta: {
+      ...meta,
+      scope: "synthetic orchestration overhead for the selected workload and host",
+      ci: args.ci,
+      budgetFactor: 2,
+      budgets,
+      policy: {
+        execution: "required",
+        performance: budgets.length ? "in-process-budgets" : "advisory",
+        retries: budgets.length ? 2 : 0,
+      },
+    },
+    output: { json: output.path, summary: output.summaryPath },
+    progress: {
+      state: "running",
+      currentScenario: null as string | null,
+      completedAt: null as string | null,
+    },
+    results,
+    attempts,
+    diagnostics,
+    validation: null as { passed: boolean; failures: string[] } | null,
+  };
+  const summary = () =>
+    reportSummary(meta, {
+      title: "Engine benchmark",
+      status: report.validation ? (report.validation.passed ? "PASS" : "FAIL") : "IN PROGRESS",
+      policy,
+      columns: [
+        "Scenario",
+        "Succeeded / tasks",
+        "Spawn p50 ms",
+        "Setup p50 ms",
+        "Wall ms",
+        "Host peak RSS MiB",
+        "Attempts",
+      ],
+      rows: results.map((r) => [
+        r.scenario,
+        `${r.statuses.succeeded ?? 0} / ${r.agents}`,
+        r.spawnMs?.p50 ?? "unavailable",
+        r.setupMs?.p50 ?? "unavailable",
+        r.wallMs,
+        r.peakRssMB ?? "unavailable",
+        attempts[r.scenario]?.length ?? 0,
+      ]),
+      failures: report.validation?.failures,
+    });
+  const checkpoint = () => output.write(report, summary());
   // Preserve every attempt, including over-budget measurements replaced by a passing retry.
   async function attempt(scenario: Scenario): Promise<ScenarioResult> {
+    report.progress.currentScenario = scenario.name;
+    await checkpoint();
     let result: ScenarioResult;
     try {
       result = await run(scenario, args);
     } catch (error) {
-      console.error(`${scenario.name}: ${(error as Error).stack}`);
+      const message = error instanceof Error ? error.message : String(error);
+      const stack = error instanceof Error ? error.stack?.slice(-16_000) : undefined;
+      diagnostics.push({
+        scenario: scenario.name,
+        attempt: (attempts[scenario.name]?.length ?? 0) + 1,
+        message,
+        stack,
+      });
+      console.error(`${scenario.name}: ${stack ?? message}`);
       result = {
         scenario: scenario.name,
         target: "engine",
@@ -225,93 +314,74 @@ export async function main(argv = process.argv.slice(2), run = runScenario): Pro
         loopLagP99Ms: null,
         cpuMs: null,
         wallMs: 0,
-        notes: [`error: ${(error as Error).message}`],
+        notes: [`error: ${message}`],
       };
     }
     (attempts[scenario.name] ??= []).push(structuredClone(result));
+    await checkpoint();
     return result;
   }
-  for (const scenario of selected) {
-    const result = await attempt(scenario);
-    results.push(result);
-    console.log(JSON.stringify(result));
-  }
-  const date = startedAt.slice(0, 10);
-  const report = {
-    schemaVersion: 1,
-    meta: {
-      date,
-      startedAt,
-      source: revision,
-      scope: "synthetic orchestration overhead for the selected workload and host",
-      os: platform(),
-      release: release(),
-      arch: arch(),
-      cpus: cpus().length,
-      memoryGB: Math.round(totalmem() / 1073741824),
-      node: process.version,
-      pi: version([...piCommand(), "--version"]),
-      provider: args.provider,
-      host: args.host,
-      backend: process.env.BENCH_BACKEND ?? "in-process",
-      mode: process.env.BENCH_MODE === "observe" ? "observe" : "lean",
-      tokenDelayMs: args.tokenDelayMs,
-      runnerGcExposed: typeof globalThis.gc === "function",
-      scenarios: selected.map((s) => s.name),
-      ci: args.ci,
-      budgetFactor: 2,
-      budgets,
-    },
-    results,
-    attempts,
-    validation: null as { passed: boolean; failures: string[] } | null,
-  };
-  const out = args.out ?? join(ROOT, "bench", "results", `${platform()}-${date}.json`);
-  await mkdir(dirname(out), { recursive: true });
-  await writeFile(out, JSON.stringify(report, null, 2) + "\n");
-  console.log(`wrote ${out}`);
-  if (args.ci) {
-    // Shared runners are noisy: retry complete over-budget scenarios up to twice. Use the
-    // first passing retry, or retain the initial result if all complete attempts are over.
-    // An execution failure stops retries and fails the run. All measurements remain above.
-    for (let i = 0; i < results.length; i++) {
-      const result = results[i];
-      const scenario = selected.find((s) => s.name === result.scenario)!;
-      if (
-        !scenario ||
-        executionFailures(scenario, result, budgets).length ||
-        !overBudget([result], budgets, 2).length
-      )
-        continue;
-      const attempts = [overBudget([result], budgets, 2).join("; ")];
-      for (let retry = 0; retry < 2; retry++) {
-        const again = await attempt(scenario);
-        const invalid = executionFailures(scenario, again, budgets);
-        if (invalid.length) {
-          attempts.push(invalid.join("; "));
-          results[i] = again;
-          break;
-        }
-        const over = overBudget([again], budgets, 2);
-        attempts.push(over.join("; ") || "within budget");
-        if (!over.length) {
-          results[i] = again;
-          break;
-        }
-      }
-      results[i].notes = [...(results[i].notes ?? []), `CI attempts: ${attempts.join(" | ")}`];
-      console.error(`${result.scenario}: CI attempts: ${attempts.join(" | ")}`);
+  try {
+    await checkpoint();
+    console.log(`benchmark report: ${output.path}`);
+    for (const scenario of selected) {
+      const result = await attempt(scenario);
+      results.push(result);
+      await checkpoint();
+      console.log(JSON.stringify(result));
     }
-    await writeFile(out, JSON.stringify(report, null, 2) + "\n");
+    if (budgets.length) {
+      // Shared runners are noisy: retry complete over-budget scenarios up to twice.
+      // A broken retry fails immediately; all complete failures retain the first result.
+      for (let i = 0; i < results.length; i++) {
+        const result = results[i];
+        const scenario = selected[i];
+        if (
+          executionFailures(scenario, result, budgets, backend).length ||
+          !overBudget([result], budgets, 2).length
+        )
+          continue;
+        const descriptions = [overBudget([result], budgets, 2).join("; ")];
+        for (let retry = 0; retry < 2; retry++) {
+          const again = await attempt(scenario);
+          const invalid = executionFailures(scenario, again, budgets, backend);
+          if (invalid.length) {
+            descriptions.push(invalid.join("; "));
+            results[i] = again;
+            break;
+          }
+          const over = overBudget([again], budgets, 2);
+          descriptions.push(over.join("; ") || "within budget");
+          if (!over.length) {
+            results[i] = again;
+            break;
+          }
+        }
+        results[i].notes = [
+          ...(results[i].notes ?? []),
+          `CI attempts: ${descriptions.join(" | ")}`,
+        ];
+        console.error(`${result.scenario}: CI attempts: ${descriptions.join(" | ")}`);
+        await checkpoint();
+      }
+    }
+    const failures = results.flatMap((result, i) => {
+      const invalid = executionFailures(selected[i], result, budgets, backend);
+      return invalid.length ? invalid : overBudget([result], budgets, 2);
+    });
+    report.validation = { passed: failures.length === 0, failures };
+    report.progress = {
+      state: failures.length ? "failed" : "completed",
+      currentScenario: null,
+      completedAt: new Date().toISOString(),
+    };
+    await checkpoint();
+    console.log(`wrote ${output.path} and ${output.summaryPath}`);
+    for (const failure of failures) console.error(`benchmark failed: ${failure}`);
+    return failures.length ? 1 : 0;
+  } finally {
+    await output.close();
   }
-  const failures = results.flatMap((result, i) => {
-    const invalid = executionFailures(selected[i], result, budgets);
-    return invalid.length ? invalid : overBudget([result], budgets, 2);
-  });
-  report.validation = { passed: failures.length === 0, failures };
-  await writeFile(out, JSON.stringify(report, null, 2) + "\n");
-  for (const failure of failures) console.error(`benchmark failed: ${failure}`);
-  return failures.length ? 1 : 0;
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1])

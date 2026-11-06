@@ -79,7 +79,8 @@ Save the plan as a job file and you can run it from a terminal or CI (outside of
 Headless runs (currently) leave builder changes in their worktrees; integrate
 them separately in Pi. See [headless runs](docs/how-to/headless.md), or use the
 [goal-to-job prompt](examples/jobs.md#let-a-coordinator-design-the-job) to have a
-coordinator design a plan for your repository.
+coordinator design a plan for your repository. Browse the
+[job patterns for delivery, research, UX, accessibility, and data pipelines](examples/jobs.md#where-jobs-help).
 
 ## Make it yours
 
@@ -102,7 +103,7 @@ with file references and unanswered questions.
 ```
 
 Ask Pi to use `api-scout` on a specific API. Personal definitions live in
-the global `.pi` dir or on a per-repo basis in `.pi`. 
+the global `.pi` dir or on a per-repo basis in `.pi`.
 
 Set repository limits, fallbacks, backends, and custom
 tool providers in `.pi/pinata.json`. See [creating agents](docs/how-to/agents.md) and the [configuration

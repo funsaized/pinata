@@ -3,7 +3,7 @@
 // loopback HTTP server.
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as ai from "@earendil-works/pi-ai";
@@ -23,12 +23,50 @@ import {
   summarize,
   supported,
   type EngineRaw,
+  WARM_UP_TASK,
 } from "./engine-core.ts";
 import { piCommand, rpc } from "../../test/engine/pi-smoke.ts";
 
 const ROOT = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
 const FAUX: ModelRef = { provider: "benchfaux", id: "faux-1", thinking: "off" };
 const LOOP: ModelRef = { provider: LOOPBACK_PROVIDER, id: LOOPBACK_MODEL, thinking: "off" };
+
+// Preserve bounded failure evidence before removing the synthetic fixture. Tails
+// are read by offset so a large event log cannot inflate memory or the report.
+export async function failureDiagnostics(
+  runsDir: string,
+  scenario: Scenario,
+): Promise<NonNullable<ScenarioResult["diagnostics"]>> {
+  const files = [
+    "events.jsonl",
+    ...scenario.tasks
+      .slice(0, 4)
+      .flatMap((task) => [
+        join("agents", task.id, "stderr.log"),
+        join("agents", task.id, "events.jsonl"),
+      ]),
+  ];
+  const diagnostics: NonNullable<ScenarioResult["diagnostics"]> = [];
+  for (const file of files) {
+    const handle = await open(join(runsDir, scenario.name, file), "r").catch(() => null);
+    if (!handle) continue;
+    try {
+      const size = (await handle.stat()).size;
+      const buffer = Buffer.alloc(Math.min(size, 4096));
+      const { bytesRead } = await handle.read(
+        buffer,
+        0,
+        buffer.length,
+        Math.max(0, size - buffer.length),
+      );
+      if (bytesRead)
+        diagnostics.push({ file, tail: buffer.subarray(0, bytesRead).toString("utf8") });
+    } finally {
+      await handle.close();
+    }
+  }
+  return diagnostics;
+}
 
 function skipped(
   scenario: Scenario,
@@ -188,6 +226,10 @@ export async function runEngine(
   options: { provider: ScenarioResult["provider"]; host: string; tokenDelayMs: number },
 ): Promise<ScenarioResult> {
   const provider = options.provider;
+  if ((process.env.BENCH_BACKEND ?? "in-process") !== "in-process" && provider !== "loopback")
+    throw new Error(
+      "Process agents require --provider loopback; the faux provider exists only in the host process",
+    );
   const why = supported(scenario);
   if (why) return skipped(scenario, provider, options.host, why);
   const { dir, cwd: repo } = await benchRepository();
@@ -203,8 +245,15 @@ export async function runEngine(
       ? await startLoopback({
           tokenDelayMs: options.tokenDelayMs,
           responder: ({ agent, round }: LoopbackRequestInfo) => {
-            const task = scenario.tasks.find((t) => t.id === agent);
-            return task ? benchReply(scenario, task, round) : { text: "ok" };
+            const task =
+              agent === WARM_UP_TASK.id ? WARM_UP_TASK : scenario.tasks.find((t) => t.id === agent);
+            return task
+              ? benchReply(
+                  task === WARM_UP_TASK ? { ...scenario, streamChars: 0 } : scenario,
+                  task,
+                  round,
+                )
+              : { text: "ok" };
           },
         })
       : undefined;
@@ -254,7 +303,25 @@ export async function runEngine(
     const result = summarize(scenario, raw, firstRequest, provider);
     if (loopback?.errors.length)
       result.notes!.push(...loopback.errors.map((error) => `loopback errors: ${error}`));
+    if (
+      raw.errors.length ||
+      result.statuses.succeeded !== scenario.tasks.length ||
+      loopback?.errors.length
+    )
+      result.diagnostics = await failureDiagnostics(runsDir, scenario);
     return result;
+  } catch (error) {
+    const diagnostics = await failureDiagnostics(
+      runsDir,
+      String(error).includes("warm-up failed")
+        ? { ...scenario, name: `${scenario.name}-warm-up`, tasks: [WARM_UP_TASK] }
+        : scenario,
+    ).catch(() => []);
+    if (diagnostics.length)
+      throw new Error(`${String(error)}\nFailure diagnostics: ${JSON.stringify(diagnostics)}`, {
+        cause: error,
+      });
+    throw error;
   } finally {
     await loopback?.close();
     await rm(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
