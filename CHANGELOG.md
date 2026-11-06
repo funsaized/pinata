@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.1.1 (2026-11-06)
+
+- Add a reproducible offline coding arena with independent scoring and retained
+  benchmark evidence.
+- Improve process benchmark sampling and bound CI evidence collection across platforms.
+- Guide job planning through installed agent discovery and refresh example jobs.
+- Fix terminal color rendering and preserve Git diagnostics when worktree creation fails.
+
 ## 2.0.3 (2026-11-04)
 
 - Repair saved runs from a new Pi session, including finished headless runs. Reuse
