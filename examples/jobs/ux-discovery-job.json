@@ -1,0 +1,74 @@
+{
+  "cwd": "/absolute/path/to/repository",
+  "instructions": [
+    "Install the optional planner definition. Supply the named research files as text with stable, anonymized session/case IDs.",
+    "This read-only job analyzes existing evidence and code. It does not recruit participants, collect analytics, operate a browser, or establish that a design is usable."
+  ],
+  "config": {
+    "limits": {
+      "concurrency": 3,
+      "costUsd": 10,
+      "repairs": 2
+    }
+  },
+  "tasks": [
+    {
+      "id": "interviews",
+      "agent": "scout",
+      "task": "Analyze research/onboarding/interviews.md for observed onboarding failures and successful strategies. Extract evidence by session ID and source location.",
+      "acceptance": [
+        "Separate what participants said or did from interpretations and proposed solutions.",
+        "Retain contradictory cases; do not invent participants, quotes, or prevalence estimates."
+      ]
+    },
+    {
+      "id": "support",
+      "agent": "scout",
+      "task": "Analyze research/onboarding/support.md for recurring onboarding issues, workarounds, and affected journey stages.",
+      "acceptance": [
+        "Cite case IDs and source locations; distinguish duplicate tickets from independent reports.",
+        "Explain sampling limits rather than equating ticket counts with population frequency."
+      ]
+    },
+    {
+      "id": "journey",
+      "agent": "scout",
+      "task": "Inspect src/onboarding and research/onboarding/usability-notes.md. Map the intended journey, validation errors, empty states, and recovery routes. Contrast the implementation with recorded observations.",
+      "acceptance": [
+        "Cite code and notes for each friction point.",
+        "Label source-based usability hypotheses separately from actual observed user behavior."
+      ]
+    },
+    {
+      "id": "synthesis",
+      "agent": "planner",
+      "task": "Group the interview, support, and journey evidence into findings. Propose changes for the most consequential onboarding failures and identify what should be tested with users next.",
+      "acceptance": [
+        "Each finding links observations, interpretation, affected journey stage, proposed change, and confidence.",
+        "Include counterevidence and explain prioritization by user impact and evidence strength."
+      ],
+      "after": ["interviews", "support", "journey"]
+    },
+    {
+      "id": "challenge",
+      "agent": "scout",
+      "task": "Audit the synthesis against the original local evidence. Look for unsupported causal claims, lost minority experiences, fabricated quotes, and solutions that do not address the observed problem.",
+      "acceptance": [
+        "Cite source locations for corrections and counterexamples.",
+        "Return unresolved research questions even when the synthesis seems plausible."
+      ],
+      "after": ["interviews", "support", "journey", "synthesis"]
+    },
+    {
+      "id": "backlog",
+      "agent": "planner",
+      "task": "Turn the evidence and challenge into an ordered UX improvement backlog and a plan for the next usability session. Preserve traceability to the source observations.",
+      "acceptance": [
+        "For each item provide a user outcome, bounded implementation scope, and observable acceptance criteria.",
+        "Define participant tasks and success signals for real usability evaluation; do not claim an agent simulated a user study.",
+        "Separate implementation-ready items from questions needing further research. Return the backlog in the task result."
+      ],
+      "after": ["interviews", "support", "journey", "synthesis", "challenge"]
+    }
+  ]
+}

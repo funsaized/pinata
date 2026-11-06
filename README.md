@@ -79,7 +79,8 @@ Save the plan as a job file and you can run it from a terminal or CI (outside of
 Headless runs (currently) leave builder changes in their worktrees; integrate
 them separately in Pi. See [headless runs](docs/how-to/headless.md), or use the
 [goal-to-job prompt](examples/jobs.md#let-a-coordinator-design-the-job) to have a
-coordinator design a plan for your repository.
+coordinator design a plan for your repository. Browse the
+[job patterns for delivery, research, UX, accessibility, and data pipelines](examples/jobs.md#where-jobs-help).
 
 ## Make it yours
 

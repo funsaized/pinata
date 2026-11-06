@@ -1,0 +1,126 @@
+{
+  "cwd": "/absolute/path/to/repository",
+  "instructions": [
+    "Template for a web repository with recorded checkout findings and existing test:a11y:component and test:a11y:journey scripts. Adapt the paths, behavior requirements, and checks.",
+    "The journey script must build and serve its own worktree, use an isolated port, and clean up. Browser dependencies are already installed; the preset scout and reviewer inspect source and logs only."
+  ],
+  "config": {
+    "limits": {
+      "concurrency": 3,
+      "costUsd": 20,
+      "repairs": 2
+    }
+  },
+  "tasks": [
+    {
+      "id": "audit",
+      "agent": "scout",
+      "task": "Inspect src/components/dialog, src/components/form-field, their tests, and docs/accessibility/checkout-findings.md. Map the recorded keyboard, focus, labeling, and error-recovery defects to specific code and checks.",
+      "acceptance": [
+        "Distinguish recorded human observations, automated findings, and hypotheses from source inspection.",
+        "Name required behavior and existing test helpers for both components; identify issues outside their scope."
+      ]
+    },
+    {
+      "id": "dialog",
+      "agent": "builder",
+      "task": "Fix the recorded dialog keyboard and focus defects using the existing component conventions.",
+      "acceptance": [
+        "Tests cover initial focus, keyboard navigation, Escape behavior, and focus restoration as required by the recorded findings.",
+        "Accessible naming and existing modal behavior are preserved."
+      ],
+      "after": ["audit"],
+      "ownership": ["src/components/dialog", "test/a11y/dialog.test.mjs"],
+      "checks": [
+        {
+          "id": "component",
+          "argv": ["npm", "run", "test:a11y:component", "--", "test/a11y/dialog.test.mjs"],
+          "timeoutMs": 180000
+        }
+      ]
+    },
+    {
+      "id": "review-dialog",
+      "agent": "reviewer",
+      "task": "Review the component patch against the recorded accessibility findings and audit. Check behavior, regression coverage, and what the automated evidence cannot establish. Do not claim WCAG conformance. ",
+      "acceptance": [
+        "Cite concrete defects by file and line and identify the failing scenario.",
+        "Approve only when the assigned change meets its acceptance criteria and its available check evidence supports it."
+      ],
+      "after": ["dialog", "audit"],
+      "reviewOf": "dialog"
+    },
+    {
+      "id": "form-field",
+      "agent": "builder",
+      "task": "Fix recorded form-field labeling and error association defects using the existing component conventions.",
+      "acceptance": [
+        "Tests cover label/control association, required and invalid states, and programmatic association of error text.",
+        "Existing validation and correction flows remain functional."
+      ],
+      "after": ["audit"],
+      "ownership": ["src/components/form-field", "test/a11y/form-field.test.mjs"],
+      "checks": [
+        {
+          "id": "component",
+          "argv": ["npm", "run", "test:a11y:component", "--", "test/a11y/form-field.test.mjs"],
+          "timeoutMs": 180000
+        }
+      ]
+    },
+    {
+      "id": "review-form-field",
+      "agent": "reviewer",
+      "task": "Review the component patch against the recorded accessibility findings and audit. Check behavior, regression coverage, and what the automated evidence cannot establish. Do not claim WCAG conformance. ",
+      "acceptance": [
+        "Cite concrete defects by file and line and identify the failing scenario.",
+        "Approve only when the assigned change meets its acceptance criteria and its available check evidence supports it."
+      ],
+      "after": ["form-field", "audit"],
+      "reviewOf": "form-field"
+    },
+    {
+      "id": "checkout-journey",
+      "agent": "builder",
+      "task": "Add test/a11y/checkout.spec.mjs using the existing browser harness. Exercise the composed dialog and form-field changes through checkout, including opening the dialog, invalid submission, correcting fields, successful completion, and focus restoration.",
+      "acceptance": [
+        "Keyboard journey assertions and the configured automated accessibility scan pass against the composed application.",
+        "Tests exercise actual components and error recovery; do not skip failures or update expected results to conceal regressions.",
+        "List remaining screen-reader, zoom/reflow, and user evaluation work in the result; report component defects for coordinator repair."
+      ],
+      "after": ["audit", "dialog", "form-field", "review-dialog", "review-form-field"],
+      "ownership": ["test/a11y/checkout.spec.mjs"],
+      "checks": [
+        {
+          "id": "checkout",
+          "argv": ["npm", "run", "test:a11y:journey", "--", "test/a11y/checkout.spec.mjs"],
+          "timeoutMs": 300000
+        }
+      ]
+    },
+    {
+      "id": "review-journey",
+      "agent": "reviewer",
+      "task": "Review journey coverage and engine check evidence. Confirm that automated checks are scoped to the tested flow and the result explicitly records remaining human evaluation.",
+      "acceptance": [
+        "Cite concrete defects by file and line and identify the failing scenario.",
+        "Approve only when the assigned change meets its acceptance criteria and its available check evidence supports it."
+      ],
+      "after": ["checkout-journey"],
+      "reviewOf": "checkout-journey"
+    }
+  ],
+  "approval": "Replace with your authorization for the declared dialog, form-field, and checkout test changes and local accessibility checks",
+  "integratedChecks": [
+    {
+      "id": "a11y",
+      "argv": ["npm", "run", "test:a11y"],
+      "timeoutMs": 600000
+    },
+    {
+      "id": "regressions",
+      "argv": ["npm", "test"],
+      "timeoutMs": 600000
+    }
+  ]
+}
