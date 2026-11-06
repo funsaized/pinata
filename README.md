@@ -23,6 +23,12 @@ pi install npm:pi-pinata
 Reload Pi. You need Pi 1.1.0+, Node 22.19+ (for the `pinata` cli), and Git. [Herdr](https://herdr.dev/) is optional. Piñata works on Linux, macOS, and Windows.
 See [platform setup](docs/how-to/platforms.md) for more detail.
 
+By default, Pinata's built-in agents use the current Pi
+model. Agent model definitions can be set in
+`~/.pi/agent/pinata.json` (personal), `.pi/pinata.json` (repository), or a job's
+`config`. Tasks and agent definitions can also specify models; see [model
+configuration](docs/reference/config.md#models) for precedence and fallbacks.
+
 ## Try it
 
 Ask Pi in plain language:
@@ -68,7 +74,7 @@ Shell commands and custom tools have your operating-system permissions and netwo
 access. Read [trust and safety](docs/explanation/trust.md) before authorizing work.
 
 Save the plan as a job file and you can run it from a terminal or CI (outside of pi) with
-`pinata run job.json`. 
+`pinata run job.json`.
 
 Headless runs (currently) leave builder changes in their worktrees; integrate
 them separately in Pi. See [headless runs](docs/how-to/headless.md), or use the
@@ -96,10 +102,10 @@ with file references and unanswered questions.
 ```
 
 Ask Pi to use `api-scout` on a specific API. Personal definitions live in
-`~/.pi/agent/pinata/agents/`. Set repository model choices and limits in
-`.pi/pinata.json`; you can also configure fallbacks, backends, and custom tool
-providers. Model availability depends on your Pi setup and credentials. See [creating
-agents](docs/how-to/agents.md) and the [configuration
+the global `.pi` dir or on a per-repo basis in `.pi`. 
+
+Set repository limits, fallbacks, backends, and custom
+tool providers in `.pi/pinata.json`. See [creating agents](docs/how-to/agents.md) and the [configuration
 reference](docs/reference/config.md).
 
 Pinata uses Pi's sessions, models, tools, and extensions. You can watch and steer agents
