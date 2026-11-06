@@ -9,6 +9,8 @@
 | Fix one well-defined bug                  | [Build and review](../docs/tutorials/build-and-review.md) | An isolated patch, engine-run checks, independent review, then local integration.        |
 | Adapt a job for scripts or CI             | [Task and job examples](jobs.md)                          | JSON templates; replace paths, ownership, checks, and model choices.                     |
 
+For larger workflows, browse [delivery, research, UX, accessibility, and data pipeline jobs](jobs.md#where-jobs-help).
+
 These examples run real agents using your configured models and spend tokens.
 Install Pi and Pinata, configure model credentials, and choose models and limits
 before launching a job. Start with [Relay](relay/README.md) for a ready-made repository.

@@ -28,6 +28,7 @@ and commands. The explanations cover how Pinata works and what its checks establ
 - [Customize Pinata](how-to/customize.md): choose agent definitions, settings, or custom tools.
 - [Design a job](../examples/jobs.md#let-a-coordinator-design-the-job): have a coordinator
   turn your goal into agents, tasks, dependencies, and checks.
+- [Reusable job patterns](../examples/jobs.md#where-jobs-help): delivery pipelines, batch migrations, research, UX, accessibility, and data processing.
 - [Choose a mode](how-to/modes.md): lean or observe.
 - [Choose a backend](how-to/backends.md): in-process, process or herdr-pi.
 - [Use pinata inside Herdr](how-to/herdr.md)
