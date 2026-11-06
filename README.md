@@ -102,7 +102,7 @@ with file references and unanswered questions.
 ```
 
 Ask Pi to use `api-scout` on a specific API. Personal definitions live in
-the global `.pi` dir or on a per-repo basis in `.pi`. 
+the global `.pi` dir or on a per-repo basis in `.pi`.
 
 Set repository limits, fallbacks, backends, and custom
 tool providers in `.pi/pinata.json`. See [creating agents](docs/how-to/agents.md) and the [configuration
