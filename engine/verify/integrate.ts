@@ -1,3 +1,4 @@
+import { assertTime, withDeadline } from "../core/deadline.ts";
 // Optional exact application. The orchestrator owns reconciliation and delivery.
 import { randomUUID } from "node:crypto";
 import { chmod, lstat, mkdir, rename, unlink, writeFile } from "node:fs/promises";
@@ -54,10 +55,12 @@ const POSIX = process.platform !== "win32";
 export async function fileStates(
   root: string,
   paths: readonly string[],
+  signal?: AbortSignal,
 ): Promise<Map<string, FileState>> {
   const states = new Map<string, FileState>();
   const present: string[] = [];
   for (const path of paths) {
+    signal?.throwIfAborted();
     assertNoLinks(root, path);
     const st = await lstat(join(root, path)).catch((error: NodeJS.ErrnoException) => {
       if (error.code === "ENOENT") return null;
@@ -74,6 +77,7 @@ export async function fileStates(
     const ids = (
       await git(root, ["hash-object", "--stdin-paths"], {
         input: present.map((p) => JSON.stringify(p)).join("\n") + "\n",
+        signal,
       })
     )
       .trim()
@@ -94,15 +98,24 @@ async function writeBlob(
   path: string,
   state: Exclude<FileState, null>,
   blobs: BlobReader,
+  signal?: AbortSignal,
 ): Promise<void> {
   const data = await blobs.read(state.blob);
   need(data, `Blob ${state.blob} for ${JSON.stringify(path)} is missing`);
+  signal?.throwIfAborted();
   const file = join(root, path);
   await mkdir(dirname(file), { recursive: true });
   const tmp = join(dirname(file), `.pinata-${randomUUID()}`);
-  await writeFile(tmp, data!, { flag: "wx" });
-  if (POSIX) await chmod(tmp, state.mode === "100755" ? 0o755 : 0o644);
-  await rename(tmp, file);
+  try {
+    await writeFile(tmp, data!, { flag: "wx" });
+    if (POSIX) await chmod(tmp, state.mode === "100755" ? 0o755 : 0o644);
+    signal?.throwIfAborted();
+    await rename(tmp, file);
+  } finally {
+    await unlink(tmp).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== "ENOENT") throw error;
+    });
+  }
 }
 
 async function restore(
@@ -110,25 +123,29 @@ async function restore(
   entries: readonly JournalEntry[],
   to: "before" | "after",
   blobs: BlobReader,
+  signal?: AbortSignal,
 ): Promise<void> {
   const states = await fileStates(
     root,
     entries.map((e) => e.path),
+    signal,
   );
   for (const entry of to === "before" ? [...entries].reverse() : entries) {
+    signal?.throwIfAborted();
     const target = entry[to];
     if (same(states.get(entry.path)!, target)) continue;
-    const now = (await fileStates(root, [entry.path])).get(entry.path)!;
+    const now = (await fileStates(root, [entry.path], signal)).get(entry.path)!;
     need(
       same(now, states.get(entry.path)!),
       `Destination changed before writing ${JSON.stringify(entry.path)}`,
     );
+    signal?.throwIfAborted();
     assertNoLinks(root, entry.path);
     if (target === null)
       await unlink(join(root, entry.path)).catch((error: NodeJS.ErrnoException) => {
         if (error.code !== "ENOENT") throw error;
       });
-    else await writeBlob(root, entry.path, target, blobs);
+    else await writeBlob(root, entry.path, target, blobs, signal);
   }
 }
 
@@ -157,17 +174,18 @@ function entriesFor(evidence: VerifiedChanges): JournalEntry[] {
   return [...merged.values()];
 }
 
-async function journalHead(root: string, journal: Journal): Promise<void> {
+async function journalHead(root: string, journal: Journal, signal?: AbortSignal): Promise<void> {
   need(
     journal.schemaVersion === 2 && journal.destination,
     "Journal has no recorded destination state; reconcile manually using pinata_changes",
   );
   need(
-    (await headCommit(root)) === journal.destination.head,
+    (await headCommit(root, signal)) === journal.destination.head,
     "Destination HEAD moved after application; reconcile this journal manually using pinata_changes",
   );
   need(
-    digest(await git(root, ["ls-files", "--stage", "-z"])) === journal.destination.indexDigest,
+    digest(await git(root, ["ls-files", "--stage", "-z"], { signal })) ===
+      journal.destination.indexDigest,
     "Destination index changed after application; reconcile this journal manually",
   );
   for (const e of journal.entries)
@@ -175,9 +193,14 @@ async function journalHead(root: string, journal: Journal): Promise<void> {
 }
 
 export async function integrate(dir: string, signal?: AbortSignal): Promise<IntegrationResult> {
-  const { record } = await loadChanges(dir);
+  const record = await readRunRecord(dir);
+  return withDeadline(record.deadlineAt, signal, (bounded) => integrateWithin(dir, bounded));
+}
+
+async function integrateWithin(dir: string, signal?: AbortSignal): Promise<IntegrationResult> {
+  const { record } = await loadChanges(dir, signal);
   return withDestination(record.root, async () => {
-    const { evidence } = await loadChanges(dir);
+    const { evidence } = await loadChanges(dir, signal);
     const root = record.root;
     const evidenceDigest = evidence.evidenceDigest;
     const journalPath = join(dir, "integration", "journal.json");
@@ -185,21 +208,22 @@ export async function integrate(dir: string, signal?: AbortSignal): Promise<Inte
       if (error.code === "ENOENT") return null;
       throw error;
     });
-    const blobs = new BlobReader(root);
+    const blobs = new BlobReader(root, signal);
     try {
       need(!signal?.aborted, "Integration cancelled before application");
       if (journal && journal.status !== "rolled_back") {
-        await journalHead(root, journal);
+        await journalHead(root, journal, signal);
         if (journal.evidenceDigest !== evidenceDigest) {
-          await revert(root, journal, journalPath, blobs);
+          await revert(root, journal, journalPath, blobs, signal);
         }
       }
       if (!journal || journal.status === "rolled_back") {
         const entries = entriesFor(evidence);
-        const before = await destination(root);
+        const before = await destination(root, signal);
         const states = await fileStates(
           root,
           entries.map((e) => e.path),
+          signal,
         );
         const conflicts = entries.filter((e) => !same(states.get(e.path)!, e.before));
         need(
@@ -207,7 +231,7 @@ export async function integrate(dir: string, signal?: AbortSignal): Promise<Inte
           `Integration conflicts with changes made since the run started: ${conflicts.map((e) => JSON.stringify(e.path)).join(", ")}. Use pinata_changes for an orchestrator-owned reconciliation.`,
         );
         need(
-          digest(before) === digest(await destination(root)),
+          digest(before) === digest(await destination(root, signal)),
           "Destination changed during integration preflight",
         );
         journal = {
@@ -222,6 +246,7 @@ export async function integrate(dir: string, signal?: AbortSignal): Promise<Inte
       const states = await fileStates(
         root,
         journal.entries.map((e) => e.path),
+        signal,
       );
       for (const e of journal.entries)
         need(
@@ -231,12 +256,14 @@ export async function integrate(dir: string, signal?: AbortSignal): Promise<Inte
       // Resolve every required object before writing the first file.
       for (const e of journal.entries)
         if (e.after) need(await blobs.read(e.after.blob), `Missing integration blob for ${e.path}`);
-      await journalHead(root, journal);
+      await journalHead(root, journal, signal);
       need(
-        (await loadChanges(dir)).evidence.evidenceDigest === evidenceDigest,
+        (await loadChanges(dir, signal)).evidence.evidenceDigest === evidenceDigest,
         "Builder evidence changed before application",
       );
-      await restore(root, journal.entries, "after", blobs);
+      assertTime(record.deadlineAt);
+      need(!signal?.aborted, "Integration cancelled before application");
+      await restore(root, journal.entries, "after", blobs, signal);
       journal.status = "verifying";
       delete journal.verification;
       delete journal.checks;
@@ -280,11 +307,13 @@ async function revert(
   journal: Journal,
   file: string,
   blobs: BlobReader,
+  signal?: AbortSignal,
 ): Promise<void> {
-  await journalHead(root, journal);
+  await journalHead(root, journal, signal);
   const states = await fileStates(
     root,
     journal.entries.map((e) => e.path),
+    signal,
   );
   for (const e of journal.entries)
     need(
@@ -293,7 +322,7 @@ async function revert(
     );
   for (const e of journal.entries)
     if (e.before) need(await blobs.read(e.before.blob), `Missing rollback blob for ${e.path}`);
-  await restore(root, journal.entries, "before", blobs);
+  await restore(root, journal.entries, "before", blobs, signal);
   journal.status = "rolled_back";
   await writeJson(file, journal);
 }

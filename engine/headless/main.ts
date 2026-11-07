@@ -58,6 +58,7 @@ export interface Job {
   cwd?: string;
   approval?: string;
   allowWrites?: boolean;
+  deadlineAt?: number;
   instructions?: string[];
   config?: Record<string, unknown>;
   tasks: unknown[];
@@ -77,6 +78,7 @@ export function jobParams(job: Job, jobFile: string, mode?: "lean" | "observe"):
     allowWrites: job.allowWrites,
     cwd: job.cwd ? (isAbsolute(job.cwd) ? job.cwd : resolve(base, job.cwd)) : process.cwd(),
     ...(job.approval !== undefined && { approval: job.approval }),
+    ...(job.deadlineAt !== undefined && { deadlineAt: job.deadlineAt }),
     ...(job.instructions && { instructions: job.instructions }),
     config: { ...job.config, ...(mode && { mode }) },
     ...(job.integratedChecks && { integratedChecks: job.integratedChecks }),

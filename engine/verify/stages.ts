@@ -1,3 +1,4 @@
+import { assertTime, remaining, withDeadline } from "../core/deadline.ts";
 import { PreparationGate } from "../workspace/preparation.ts";
 import { writes, reviews as isReviewer } from "../core/definitions.ts";
 // Verification stages for the Pi pipeline: builders in worktrees (setup, change capture,
@@ -71,9 +72,14 @@ export async function prepareRun(
   runId: string,
   tasks: readonly Task[],
   config: PinataConfig,
+  deadlineAt?: number,
 ): Promise<RunPrep> {
   try {
-    return await resolveRun(root, runId, tasks, config);
+    const prep = await withDeadline(deadlineAt, undefined, (signal) =>
+      resolveRun(root, runId, tasks, config, deadlineAt, signal),
+    );
+    assertTime(deadlineAt);
+    return prep;
   } catch (error) {
     // Nothing is left behind by a run that never started.
     await dropRefs(root, runId).catch(() => {});
@@ -86,7 +92,10 @@ async function resolveRun(
   runId: string,
   tasks: readonly Task[],
   config: PinataConfig,
+  deadlineAt?: number,
+  signal?: AbortSignal,
 ): Promise<RunPrep> {
+  assertTime(deadlineAt);
   const builders = tasks.some((t) => writes(t));
   const reviews = tasks.filter((t) => t.reviewBase !== undefined || t.reviewPr !== undefined);
   const prep: RunPrep = { subjects: {}, worktreePaths: {} };
@@ -101,18 +110,20 @@ async function resolveRun(
     const directory = await worktreeRunRoot(root, runId, config.worktreeRoot);
     prep.worktreePaths = Object.fromEntries(names.map((name) => [name, join(directory, name)]));
   }
-  if (builders) prep.base = await snapshotBase(root, runId, config.includeUncommitted);
-  if (builders) prep.setup = await resolveSetup(config.setup, root, prep.base!.commit);
+  if (builders) prep.base = await snapshotBase(root, runId, config.includeUncommitted, signal);
+  assertTime(deadlineAt);
+  if (builders) prep.setup = await resolveSetup(config.setup, root, prep.base!.commit, signal);
+  assertTime(deadlineAt);
   const snapshot = reviews.some((t) => t.reviewBase !== undefined)
     ? prep.base?.uncommittedFiles !== undefined && config.includeUncommitted
       ? prep.base
-      : await snapshotBase(root, runId, true)
+      : await snapshotBase(root, runId, true, signal)
     : undefined;
   for (const task of reviews)
     prep.subjects[task.id] =
       task.reviewBase !== undefined
-        ? await localSubject(root, task.reviewBase, snapshot!)
-        : await pullRequestSubject(root, runId, task.reviewPr!, config.passEnv);
+        ? await localSubject(root, task.reviewBase, snapshot!, signal)
+        : await pullRequestSubject(root, runId, task.reviewPr!, config.passEnv, signal);
   return prep;
 }
 
@@ -163,6 +174,7 @@ async function checksIn(
       cwd,
       env: environment(data(run).config?.passEnv ?? []),
       logDir: join(run.dir, "checks", task.id),
+      deadlineAt: run.deadlineAt,
       signal,
     },
     {
@@ -218,8 +230,8 @@ export function verificationStages(): PipelineStages {
           const path = worktreePath(run, task.id);
           // A builder an earlier Pi started keeps its worktree exactly as it is.
           if (options.reattach && existsSync(path)) {
-            const head = line(await git(path, ["rev-parse", "HEAD"]));
-            return Worktree.create(run.cwd, path, head);
+            const head = line(await git(path, ["rev-parse", "HEAD"], { signal }));
+            return Worktree.create(run.cwd, path, head, signal);
           }
           const base = d.prep.base!;
           const predecessors = builderAncestors(run, task).map((b) => {
@@ -227,9 +239,11 @@ export function verificationStages(): PipelineStages {
             if (!changes) throw new Error(`Dependency ${b.id} has no verified changes`);
             return changes;
           });
-          const composed = await composeBase(run.cwd, base.commit, predecessors);
-          const tree = await Worktree.create(run.cwd, path, composed.commit);
+          const composed = await composeBase(run.cwd, base.commit, predecessors, signal);
+          const tree = await Worktree.create(run.cwd, path, composed.commit, signal);
+          signal.throwIfAborted();
           await copyIncluded(run.cwd, path);
+          signal.throwIfAborted();
           if (d.prep.setup?.command) {
             try {
               await provision({
@@ -242,7 +256,7 @@ export function verificationStages(): PipelineStages {
                 root: run.cwd,
                 passEnv: d.config?.passEnv ?? [],
                 logDir: join(run.dir, "setup", task.id),
-                timeoutMs: run.limits.taskMs,
+                timeoutMs: remaining(run.deadlineAt, run.limits.taskMs),
                 signal,
               });
             } catch (error) {
@@ -262,6 +276,7 @@ export function verificationStages(): PipelineStages {
             run.cwd,
             worktreePath(run, name),
             d.prep.subjects[task.id].head,
+            signal,
           ).then((t) => new ReadOnlyTree(t.path));
           d.worktrees.set(name, pending);
         }
@@ -270,7 +285,7 @@ export function verificationStages(): PipelineStages {
       return undefined;
     },
 
-    async reviewTarget(run, task) {
+    async reviewTarget(run, task, _prepared, signal) {
       // Only reviewers touch the disk here: a reader's prepare stays free of I/O, so agents in a
       // burst start without waiting behind each other's tool work.
       if (!isReviewer(task)) return undefined;
@@ -281,21 +296,18 @@ export function verificationStages(): PipelineStages {
         const b = builderData(settled);
         if (!settled || settled.status !== "succeeded" || !b || !settled.fingerprint)
           throw new Error(`Review target ${task.reviewOf} is not verified`);
-        if ((await writeTree(b.worktree)) !== b.changes.tree)
+        if ((await writeTree(b.worktree, undefined, signal)) !== b.changes.tree)
           throw new Error(
             `Review target ${task.reviewOf} changed after verification; repair and re-review`,
           );
         const diff = join(reviews, `${task.id}.diff`);
         await writeFile(
           diff,
-          await git(run.cwd, [
-            "diff-tree",
-            "-p",
-            "--binary",
-            "--no-renames",
-            b.changes.base,
-            b.changes.tree,
-          ]),
+          await git(
+            run.cwd,
+            ["diff-tree", "-p", "--binary", "--no-renames", b.changes.base, b.changes.tree],
+            { signal },
+          ),
           { mode: 0o600 },
         );
         const target = run.tasks.get(task.reviewOf)!;
@@ -318,7 +330,7 @@ export function verificationStages(): PipelineStages {
       }
       const subject = data(run).prep.subjects[task.id];
       if (!subject) return undefined;
-      const { diff, changedFiles } = await subjectDiff(run.cwd, subject);
+      const { diff, changedFiles } = await subjectDiff(run.cwd, subject, signal);
       const file = join(reviews, `${task.id}.diff`);
       await writeFile(file, diff, { mode: 0o600 });
       return {
@@ -335,9 +347,9 @@ export function verificationStages(): PipelineStages {
       if (writes(task) && workspace instanceof Worktree) {
         if (!outcome.result && verdict.failureStage === "result")
           return { ...verdict, retry: "result-only" };
-        if (await workspace.headMoved())
+        if (await workspace.headMoved(signal))
           return failed(verdict, "The builder moved HEAD; commits are the coordinator's");
-        const changes = await workspace.capture();
+        const changes = await workspace.capture(signal);
         const ci = caseInsensitive(run.cwd);
         const unowned = changes.changes
           .filter((c) => !owns(task.ownership, c.path, ci))
@@ -386,12 +398,20 @@ export function verificationStages(): PipelineStages {
               `Required check ${bad?.id ?? "?"} failed${bad?.reason ? ` (${bad.reason})` : ` (exit ${bad?.code})`}`,
               "verification",
               {
-                data: data as never,
+                data: {
+                  ...data,
+                  checkFailure: {
+                    stage: "verification",
+                    workspace: workspace.path,
+                    predecessors: task.after,
+                    check: bad ?? null,
+                  },
+                } as never,
               },
             );
           }
           // Checks must not change the deliverable.
-          const after = await workspace.capture();
+          const after = await workspace.capture(signal);
           if (after.tree !== changes.tree)
             return failed(
               verdict,
@@ -402,7 +422,7 @@ export function verificationStages(): PipelineStages {
         }
         const hash = builderFingerprint(data, result);
         if (verdict.status === "succeeded")
-          await retainArtifact(run.cwd, run.id, task.id, hash, data);
+          await retainArtifact(run.cwd, run.id, task.id, hash, data, signal);
         return {
           ...verdict,
           data: data as never,
@@ -413,9 +433,9 @@ export function verificationStages(): PipelineStages {
       if (task.evidenceChecks.length && verdict.result && verdict.status !== "failed") {
         const cwd = workspace?.path ?? run.cwd;
         const { before, checks, after } = await serially(cwd, async () => {
-          const before = await liveFingerprint(cwd);
+          const before = await liveFingerprint(cwd, signal);
           const checks = await checksIn(run, task, task.evidenceChecks, cwd, signal);
-          return { before, checks, after: await liveFingerprint(cwd) };
+          return { before, checks, after: await liveFingerprint(cwd, signal) };
         });
         if (before !== after)
           return failed(
@@ -433,7 +453,7 @@ export function verificationStages(): PipelineStages {
       }
       if (task.reviewOf) {
         const b = builderData(run.results.get(task.reviewOf));
-        if (!b || (await writeTree(b.worktree)) !== b.changes.tree)
+        if (!b || (await writeTree(b.worktree, undefined, signal)) !== b.changes.tree)
           return failed(verdict, "Review target changed during review; repair and re-review");
       }
       void LiveWorkspace;

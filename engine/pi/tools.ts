@@ -117,6 +117,7 @@ export function schemas() {
     ),
   });
   const config = object({
+    reviewPolicy: optional(choices(["optional", "required"])),
     models: optional(Type.Record(string(), model)),
     fallbacks: optional(Type.Record(string(), Type.Array(model, { maxItems: 5 }))),
     toolProviders: optional(
@@ -138,6 +139,7 @@ export function schemas() {
   return {
     run: object({
       tasks: Type.Array(task, { minItems: 1 }),
+      deadlineAt: optional(Type.Number({ minimum: 1 })),
       background: optional(
         Type.Boolean({
           description: "Return at once; the result arrives later as a follow-up message.",
@@ -155,7 +157,11 @@ export function schemas() {
           "Required when any builder is present: the user's authorization for these local writes.",
         ),
       ),
-      instructions: optional(strings("Instructions for every task.")),
+      instructions: optional(
+        strings(
+          "Instructions for every task; combined caller and trusted host instructions are limited to 128 KiB and never truncated.",
+        ),
+      ),
       config: optional(config),
       integratedChecks: optional(Type.Array(check)),
       noIntegratedChecksReason: optional(string()),
@@ -178,6 +184,7 @@ export function schemas() {
       run,
       task: taskId(),
       feedback: string("What to fix, from the review or failure."),
+      background: optional(Type.Boolean()),
     }),
     integrate: object({ run }),
     changes: object({ run }),
@@ -191,7 +198,7 @@ export function schemas() {
 }
 
 export const DESCRIPTIONS = {
-  run: "Delegate bounded tasks to pinata agents and run them now. Choose scout, builder, reviewer, or an installed custom definition; pinata_agents lists them. Writers change owned files in isolated worktrees. Foreground by default: waits, streams progress and returns compact results. background:true returns the run id and delivers the results later as a follow-up message; do not poll. approval is required when any builder is present.",
+  run: "Delegate bounded tasks to pinata agents and run them now. Choose scout, builder, reviewer, or an installed custom definition; pinata_agents lists them. Writers change owned files in isolated worktrees. Foreground by default: waits, streams progress and returns compact results. background:true returns the run id and delivers the results later as a follow-up message; do not poll. Independent review is optional by default; config.reviewPolicy:required requires bound reviewers. Assigned reviews always bind. approval is required when any builder is present. after must include dependencies needed by configured checks as well as implementation.",
   status:
     'Read pinata status: the latest run, a run, or one task. detail:"result" returns a task\'s full result; detail:"transcript" returns a bounded transcript excerpt and the file path. Read-only; do not poll running runs.',
   steer:
@@ -199,13 +206,13 @@ export const DESCRIPTIONS = {
   cancel:
     "Cancel a run or one of its agents. Cancelled agents settle as cancelled; nothing else is undone.",
   repair:
-    "Re-run a builder in its original run and worktree with feedback (from a rejected review or a failure), within limits.repairs. Pass the builder ID, not its reviewer ID. Its checks and reviewers run again and blocked dependents can continue. Keep this run ID for pinata_changes and pinata_integrate after success; a standalone review cannot replace this run's approval. Waits for the result.",
+    "Re-run a builder in its original run and worktree with feedback (from a rejected review or a failure), within limits.repairs. Pass the builder ID, not its reviewer ID. Its checks and reviewers run again and blocked dependents can continue. Keep this run ID for pinata_changes and pinata_integrate after success; a standalone review cannot replace this run's approval. Waits for the result by default; background:true returns promptly and delivers actionable notices and final results. Completed downstream work requires a new run.",
   integrate:
-    "Optionally apply approved builder artifacts exactly and run destination checks. The orchestrator calls this; never automatic. HEAD may advance if affected files still match. Conflicts require pinata_changes and orchestrator reconciliation. Never stages or commits. Builder reviews remain scoped to their original bases.",
+    "Apply eligible checked builder artifacts exactly and run destination checks. The orchestrator calls this; never automatic. HEAD may advance if affected files still match. Conflicts require pinata_changes and orchestrator reconciliation. Never stages or commits. Builder reviews remain scoped to their original bases.",
   changes:
     "Return verified builder artifacts, recorded bases, checks, reviews and immutable patches for orchestrator-owned integration. Does not change the destination checkout. Evidence is about the original artifacts, not the current destination.",
   verify:
-    "Run checks on the current destination without applying builder changes. Uses the run's integratedChecks unless checks is supplied. Records the exact tree and whether it contains the approved outputs. Does not grant independent review or claim reconciliation is correct. No checks means not_run, not verified.",
+    "Run checks on the current destination without applying builder changes. Uses the run's integratedChecks unless checks is supplied. Records the exact tree and whether it contains the recorded outputs. Does not grant independent review or claim reconciliation is correct. No checks means not_run, not verified.",
   rollback:
     "Restore the checkout from the run's integration journal, where files still match what integration wrote. Needs confirm:true.",
 };
@@ -396,7 +403,9 @@ export function registerTools(pi: ExtensionAPI, host: PinataHost): void {
           return ok({
             run: handle.id,
             dir: handle.dir,
-            status: "running",
+            status: handle.view().status,
+            reviewPolicy: handle.view().reviewPolicy,
+            deadlineAt: handle.view().deadlineAt,
             background: true,
             notices,
           });
@@ -465,12 +474,23 @@ export function registerTools(pi: ExtensionAPI, host: PinataHost): void {
     outputSchema: Type.Object({ result: Type.Unknown() }),
     annotations: { readOnlyHint: false },
     async execute(_id, input, signal, onUpdate, ctx) {
-      const params = input as { run: string; task: string; feedback: string };
+      const params = input as { run: string; task: string; feedback: string; background?: boolean };
       try {
         const found = await host.find(params.run, ctx.cwd);
         const { id } = found;
         const handle = found.handle ?? (await host.resumeDir(found.dir, ctx, true));
         host.engine(ctx).repair(id, params.task, params.feedback);
+        if (params.background) {
+          await host.markBackground(handle);
+          deliverWhenDone(pi, host, handle);
+          return ok({
+            run: id,
+            task: params.task,
+            attempt: handle.view().seq,
+            status: handle.view().agents[params.task].status,
+            background: true,
+          });
+        }
         const view = await host.foreground(handle, signal, (text, v) =>
           onUpdate?.({
             content: [{ type: "text", text }],

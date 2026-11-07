@@ -1,6 +1,7 @@
 // Backend contracts live in engine/core/types.ts; this module re-exports them for backends.
 export type {
   AgentBackend,
+  AgentAttachment,
   AgentEventInput,
   AgentHandle,
   AgentLaunch,

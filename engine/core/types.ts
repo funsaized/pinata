@@ -108,7 +108,14 @@ export interface ToolRecord {
 }
 
 export type EventBody =
-  | { t: "run_started"; tasks: TaskSpec[]; mode: Mode; definitions?: Definitions }
+  | {
+      t: "run_started";
+      deadlineAt?: number;
+      reviewPolicy?: import("./policy.ts").ReviewPolicy;
+      tasks: TaskSpec[];
+      mode: Mode;
+      definitions?: Definitions;
+    }
   | { t: "agent_queued"; task?: TaskSpec; repair?: boolean } // task: added or requeued after run_started
   | { t: "agent_started"; backend: BackendKind | "fake"; model: ModelRef; workspace: WorkspaceRef }
   | { t: "turn_start"; turn: number }
@@ -139,7 +146,7 @@ export type EventBody =
       toolCalls: number;
     }
   | { t: "run_settled"; status: RunStatus; usage: Usage; stopped?: boolean }
-  | { t: "run_resumed"; reason: string } // a settled run reopened (a repair)
+  | { t: "run_resumed"; reason: string; deadlineAt?: number } // a settled run reopened (a repair)
   | { t: "telemetry"; sample: TelemetrySample }; // observe mode, at most every 2 s
 
 // Observe-mode telemetry for a run: the host process, and each agent process (M6).
@@ -288,6 +295,9 @@ export interface AgentHandle {
   detach?(): Promise<void>;
 }
 
+// Following an existing process needs its identity and logs, not a fresh launch/workspace.
+export type AgentAttachment = Pick<AgentLaunch, "run" | "task" | "mode" | "transcript">;
+
 export interface AgentBackend {
   readonly kind: BackendKind | "fake";
   start(
@@ -298,7 +308,7 @@ export interface AgentBackend {
   // Follows an agent an earlier Pi started detached (still running, or finished while Pi was
   // away). Null when there is nothing to reattach to.
   reattach?(
-    launch: AgentLaunch,
+    launch: AgentAttachment,
     sink: (e: AgentEventInput) => void,
     signal: AbortSignal,
   ): Promise<AgentHandle | null>;

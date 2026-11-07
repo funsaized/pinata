@@ -1,3 +1,5 @@
+import { reviewPolicy, savedReviewPolicy, type ReviewPolicy } from "./policy.ts";
+import { assertTime, capDeadline, remaining } from "./deadline.ts";
 import {
   writes,
   reviews,
@@ -88,6 +90,8 @@ export type Verdict = Omit<Settled, "usage" | "turns" | "toolCalls" | "model"> &
 };
 
 export interface RunContext {
+  readonly deadlineAt?: number;
+  readonly reviewPolicy?: ReviewPolicy;
   readonly id: string;
   readonly dir: string;
   readonly cwd: string;
@@ -141,6 +145,8 @@ export interface Pipeline {
 }
 
 export interface RunOptions {
+  reviewPolicy?: ReviewPolicy;
+  deadlineAt?: number;
   cwd?: string;
   dir?: string; // run directory; default <git common dir>/pinata/<id>
   id?: string;
@@ -152,6 +158,8 @@ export interface RunOptions {
 }
 
 export interface ResumeOptions {
+  reviewPolicy?: ReviewPolicy;
+  deadlineAt?: number;
   settled?: boolean; // load a settled run without scheduling; explicit repair reopens it
   cwd?: string; // the repository the run works in
   limits?: Partial<Limits>;
@@ -264,7 +272,7 @@ export function basicPipeline(
           persona: "",
           brief: task.task,
           budgets: {
-            deadline: Date.now() + run.limits.taskMs,
+            deadline: Date.now() + remaining(run.deadlineAt, run.limits.taskMs),
             maxTurns: run.limits.maxTurns,
             maxToolCalls: run.limits.maxToolCalls,
           },
@@ -466,15 +474,22 @@ export function createEngine(options: EngineOptions): Engine {
 
   async function startAgent(run: RunState, id: string) {
     const state = run.agents.get(id)!;
+    const expired = run.deadlineAt !== undefined && run.deadlineAt <= clock.now();
+    if (expired && !state.reattach) {
+      cancelRun(run, new StopSignal("run deadline exceeded", "failed"));
+      return;
+    }
     const task = state.task;
     state.status = "running";
     const controller = new AbortController();
     state.controller = controller;
+    if (expired) cancelRun(run, new StopSignal("run deadline exceeded", "failed"));
     // The wall clock is an explicit timer: AbortSignal.any() holds its sources weakly, so an
     // AbortSignal.timeout() kept only there can be garbage-collected before it fires.
+    const workerDeadline = clock.now() + remaining(run.deadlineAt, run.limits.taskMs, clock.now());
     const deadline = setTimeout(
       () => controller.abort(new StopSignal("deadline exceeded", "failed")),
-      run.limits.taskMs,
+      remaining(run.deadlineAt, run.limits.taskMs, clock.now()),
     );
     (deadline as { unref?: () => void }).unref?.();
     const signal = AbortSignal.any([run.controller.signal, controller.signal]);
@@ -502,26 +517,6 @@ export function createEngine(options: EngineOptions): Engine {
       for (let attempt = 0; attempt < 2; attempt++) {
         const resultOnly = attempt > 0;
         const following = reattach && attempt === 0;
-        prepared = await pipeline.prepare(run, task, signal, {
-          resultOnly,
-          ...(following && { reattach: true }),
-        });
-        // An agent being reattached is followed even when cancelled meanwhile, so its
-        // process is stopped through the handle.
-        if (signal.aborted && !following) throw signal.reason;
-        // A reattached agent enforced its own budgets while no Pi was watching.
-        if (!following && !state.budget) {
-          state.budget = new AgentBudget(
-            {
-              maxTurns: prepared.launch.budgets.maxTurns,
-              maxToolCalls: prepared.launch.budgets.maxToolCalls,
-              maxCostUsd: prepared.launch.budgets.maxCostUsd,
-            },
-            (reason) => controller.abort(new StopSignal(reason, "failed")),
-          );
-          // A result-only retry after reattachment shares this attempt's budget.
-          Object.assign(state.budget, state.observed);
-        }
         // Older logs have totals but no durable source position. Reconcile those
         // detached outboxes from their final outcome instead of charging a replay.
         const legacy =
@@ -540,9 +535,14 @@ export function createEngine(options: EngineOptions): Engine {
         };
         if (following) {
           const handle = backend.reattach
-            ? await backend.reattach(prepared.launch, sink, signal)
+            ? await backend.reattach(
+                { run: run.id, task, mode: run.mode, transcript: run.store.transcriptPath(id) },
+                sink,
+                signal,
+              )
             : null;
           if (!handle) {
+            signal.throwIfAborted();
             verdict = {
               status: "cancelled",
               summary: `${LOST}; /pinata rerun starts it again`,
@@ -553,15 +553,48 @@ export function createEngine(options: EngineOptions): Engine {
             break;
           }
           state.handle = handle;
-        } else state.handle = await backend.start(prepared.launch, sink, signal);
+        }
+        // Own the recovered process before workspace validation, which can fail or be
+        // cancelled. An expired resume follows only to stop it and recover its usage.
+        if (!following || !signal.aborted) {
+          prepared = await pipeline.prepare(run, task, signal, {
+            resultOnly,
+            ...(following && { reattach: true }),
+          });
+          prepared.launch.budgets.deadline = Math.min(
+            prepared.launch.budgets.deadline,
+            workerDeadline,
+          );
+          // An agent being reattached is followed even when cancelled meanwhile, so its
+          // process is stopped through the handle.
+          if (!following && clock.now() >= workerDeadline)
+            throw new StopSignal("deadline exceeded", "failed");
+          if (signal.aborted && !following) throw signal.reason;
+          // A reattached agent enforced its own budgets while no Pi was watching.
+          if (!following && !state.budget) {
+            state.budget = new AgentBudget(
+              {
+                maxTurns: prepared.launch.budgets.maxTurns,
+                maxToolCalls: prepared.launch.budgets.maxToolCalls,
+                maxCostUsd: prepared.launch.budgets.maxCostUsd,
+              },
+              (reason) => controller.abort(new StopSignal(reason, "failed")),
+            );
+            // A result-only retry after reattachment shares this attempt's budget.
+            Object.assign(state.budget, state.observed);
+          }
+        }
+        if (!following) state.handle = await backend.start(prepared!.launch, sink, signal);
+        const activeHandle = state.handle;
+        if (!activeHandle) throw new Error("Backend returned no agent handle");
         // Pi is exiting and the run survives it: leave the agent running.
-        if (run.detached && state.handle.detach) {
+        if (run.detached && activeHandle.detach) {
           detaching = true;
-          await state.handle.detach();
+          await activeHandle.detach();
           return;
         }
         trace(run.id, id, "following");
-        outcome = await state.handle.done;
+        outcome = await activeHandle.done;
         if (following && (!sourced || legacy)) {
           // Detached outcomes include records already consumed by the previous host. Only
           // their unobserved remainder is new spend; missing processes keep recovered usage.
@@ -587,10 +620,12 @@ export function createEngine(options: EngineOptions): Engine {
           };
           break;
         }
-        verdict = await pipeline.verify(run, task, prepared, outcome, signal);
+        verdict = await pipeline.verify(run, task, prepared!, outcome, signal);
+        signal.throwIfAborted();
+        if (clock.now() >= workerDeadline) throw new StopSignal("deadline exceeded", "failed");
         trace(run.id, id, `verified ${verdict.status}`);
         if (verdict.retry !== "result-only" || resultOnly) break;
-        await state.handle.dispose().catch(() => {});
+        await activeHandle.dispose().catch(() => {});
         state.handle = undefined;
       }
     } catch (error) {
@@ -705,13 +740,17 @@ export function createEngine(options: EngineOptions): Engine {
   function cancelRun(run: RunState, reason: StopSignal) {
     if (!run.controller.signal.aborted) run.controller.abort(reason);
     run.scheduler.stop();
-    for (const [id, state] of run.agents)
-      if (state.status === "queued")
+    for (const [id, state] of run.agents) {
+      if (state.status !== "queued") continue;
+      // Queued reattachments already own live processes, even without a scheduling slot.
+      if (state.reattach) void startAgent(run, id);
+      else
         settleQuiet(run, id, {
           status: "cancelled",
           summary: reason.message,
           reason: reason.message,
         });
+    }
     maybeFinish(run);
   }
 
@@ -766,7 +805,12 @@ export function createEngine(options: EngineOptions): Engine {
     limits: Limits;
     tasks: Task[];
     store: RunStore;
-    opts: { policy?: "allSettled" | "failFast"; data?: Record<string, unknown> };
+    opts: {
+      reviewPolicy?: ReviewPolicy;
+      deadlineAt?: number;
+      policy?: "allSettled" | "failFast";
+      data?: Record<string, unknown>;
+    };
   }): RunState {
     const controller = new AbortController();
     const graph = new Graph(p.tasks);
@@ -778,6 +822,8 @@ export function createEngine(options: EngineOptions): Engine {
       cwd: p.cwd,
       mode: p.mode,
       limits: p.limits,
+      deadlineAt: p.opts.deadlineAt,
+      reviewPolicy: p.opts.reviewPolicy,
       signal: controller.signal,
       tasks: graph.tasks,
       results: new Map<string, Settled>(),
@@ -828,9 +874,12 @@ export function createEngine(options: EngineOptions): Engine {
   }
 
   function startJobDeadline(run: RunState) {
-    const deadline = setTimeout(() => {
-      if (!run.finished) cancelRun(run, new StopSignal("run deadline exceeded", "failed"));
-    }, run.limits.jobMs);
+    const deadline = setTimeout(
+      () => {
+        if (!run.finished) cancelRun(run, new StopSignal("run deadline exceeded", "failed"));
+      },
+      remaining(run.deadlineAt, run.limits.jobMs, clock.now()),
+    );
     deadline.unref?.();
     void run.done.then(() => clearTimeout(deadline));
   }
@@ -860,8 +909,15 @@ export function createEngine(options: EngineOptions): Engine {
       const tasks = validateGraph(specs, {
         allowWrites: opts.allowWrites ?? false,
         definitions: opts.data?.definitions as Definitions | undefined,
+        reviewPolicy: opts.reviewPolicy,
       });
       const limits = validateLimits(opts.limits ?? {});
+      opts = {
+        ...opts,
+        reviewPolicy: reviewPolicy(opts.reviewPolicy),
+        deadlineAt: capDeadline(clock.now() + limits.jobMs, opts.deadlineAt),
+      };
+      assertTime(opts.deadlineAt, clock.now());
       const cwd = opts.cwd ?? process.cwd();
       const id = opts.id ?? randomUUID();
       const dir =
@@ -874,6 +930,8 @@ export function createEngine(options: EngineOptions): Engine {
       for (const listener of runListeners) listener(handle);
       emit(run, undefined, {
         t: "run_started",
+        deadlineAt: run.deadlineAt,
+        reviewPolicy: run.reviewPolicy,
         tasks: tasks.map(taskSpec),
         definitions: taskDefinitions(tasks),
         mode,
@@ -897,6 +955,15 @@ export function createEngine(options: EngineOptions): Engine {
       // A live run is already followed; a finished one in memory is replaced by the log.
       const existing = runs.get(first.run);
       if (existing && !existing.finished) return handleOf(existing);
+      opts = {
+        ...opts,
+        reviewPolicy: savedReviewPolicy(first),
+        deadlineAt: capDeadline(
+          first.deadlineAt,
+          ...events.flatMap((event) => (event.t === "run_resumed" ? [event.deadlineAt] : [])),
+          opts.deadlineAt,
+        ),
+      };
       const before = replayView(events, first.run);
       if (before.status !== "running" && !opts.settled)
         throw new Error(`Run ${first.run} has settled`);
@@ -924,7 +991,10 @@ export function createEngine(options: EngineOptions): Engine {
         store,
         opts,
       });
-      run.current = before;
+      run.current = {
+        ...before,
+        ...(run.deadlineAt !== undefined && { deadlineAt: run.deadlineAt }),
+      };
       run.seq = before.seq;
       run.usage = before.usage;
       // Settled agents keep their verdicts and results; running ones are followed again.
@@ -963,10 +1033,14 @@ export function createEngine(options: EngineOptions): Engine {
       for (const listener of runListeners) listener(handle);
       if (before.status !== "running") {
         run.finished = true;
-        run.resolve(before);
+        run.resolve(run.current);
         return handle;
       }
-      emit(run, undefined, { t: "run_resumed", reason: opts.reason ?? "Pi restarted" });
+      emit(run, undefined, {
+        t: "run_resumed",
+        reason: opts.reason ?? "Pi restarted",
+        deadlineAt: run.deadlineAt,
+      });
       if (run.mode === "observe") startTelemetry(run);
       startJobDeadline(run);
       pumpAll();
@@ -975,6 +1049,7 @@ export function createEngine(options: EngineOptions): Engine {
     },
     rerun(id) {
       const run = runs.get(id);
+      assertTime(run?.deadlineAt, clock.now());
       if (!run) throw new Error(`Unknown run ${id}`);
       if (run.controller.signal.aborted) throw new Error("The run was stopped; start a new run");
       const lost = [...run.agents.values()].filter(
@@ -988,7 +1063,12 @@ export function createEngine(options: EngineOptions): Engine {
       if (run.finished) {
         run.finished = false;
         run.done = new Promise<RunView>((resolve) => (run.resolve = resolve));
-        emit(run, undefined, { t: "run_resumed", reason: "rerun of tasks lost when Pi exited" });
+        emit(run, undefined, {
+          t: "run_resumed",
+          reason: "rerun of tasks lost when Pi exited",
+          deadlineAt: run.deadlineAt,
+        });
+        startJobDeadline(run);
         if (run.mode === "observe") startTelemetry(run);
       }
       for (const name of reopened) {
@@ -1044,6 +1124,7 @@ export function createEngine(options: EngineOptions): Engine {
     },
     repair(id, task, feedback) {
       const run = runs.get(id);
+      assertTime(run?.deadlineAt, clock.now());
       if (!run) throw new Error(`Unknown run ${id}`);
       const state = run.agents.get(task);
       if (!state) throw new Error(`Unknown task ${task} in run ${id}`);
@@ -1082,7 +1163,11 @@ export function createEngine(options: EngineOptions): Engine {
       if (run.finished) {
         run.finished = false;
         run.done = new Promise<RunView>((resolve) => (run.resolve = resolve));
-        emit(run, undefined, { t: "run_resumed", reason: `repair of ${task}` });
+        emit(run, undefined, {
+          t: "run_resumed",
+          reason: `repair of ${task}`,
+          deadlineAt: run.deadlineAt,
+        });
         startJobDeadline(run);
         if (run.mode === "observe") startTelemetry(run);
       }

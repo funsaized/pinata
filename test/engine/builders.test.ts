@@ -6,6 +6,8 @@ import { fauxAssistantMessage, fauxText, fauxToolCall } from "@earendil-works/pi
 import type { AgentEvent, TaskSpec } from "../../engine/core/types.ts";
 import { fauxWorld, type FauxTurn } from "./faux.ts";
 import { spec } from "./helpers.ts";
+import { verificationStages } from "../../engine/verify/stages.ts";
+import { Worktree } from "../../engine/workspace/worktree.ts";
 
 const node = process.execPath;
 const call = (name: string, args: Record<string, any>) =>
@@ -80,6 +82,34 @@ const builder = (id: string, s: Scenario, extra: Partial<TaskSpec> = {}) =>
   });
 const reviewer = (id: string, of: string, s: Scenario = {}) =>
   spec(id, "reviewer", { task: JSON.stringify(s), reviewOf: of, after: [of] });
+
+test("a deadline during final builder capture fails verification and retains no approval fingerprint", async (t) => {
+  const stages = verificationStages();
+  const verify = stages.verify!;
+  stages.verify = async (run, task, prepared, ...args) => {
+    assert(prepared.workspace instanceof Worktree);
+    const capture = prepared.workspace.capture.bind(prepared.workspace);
+    let captures = 0;
+    prepared.workspace.capture = async (signal) => {
+      if (++captures === 2)
+        await new Promise((resolve) =>
+          setTimeout(resolve, Math.max(1, run.deadlineAt! - Date.now() + 25)),
+        );
+      return capture(signal);
+    };
+    return verify(run, task, prepared, ...args);
+  };
+  const world = await fauxWorld(t, responder, { stages });
+  const handle = await world.run([builder("build", { write: { "a.txt": "new" } })], {
+    allowWrites: true,
+    limits: { jobMs: 1500 },
+  });
+  const view = await handle.done;
+  assert.equal(view.status, "failed");
+  assert.equal(handle.results().get("build")?.failureStage, "verification");
+  assert.equal(handle.results().get("build")?.fingerprint, undefined);
+  assert.match(view.agents.build.reason!, /deadline exceeded/);
+});
 
 test("a builder works in a worktree, its checks run, and its reviewer sees the diff and binds the fingerprint", async (t) => {
   const world = await fauxWorld(t, responder, { files: { "a.txt": "old\n", "b.txt": "B\n" } });
@@ -400,4 +430,86 @@ test("a reviewer cannot approve a worktree mutated after builder verification", 
   const view = await handle.done;
   assert.equal(view.agents.review.status, "failed");
   assert.match(view.agents.review.reason!, /changed during review/);
+});
+
+test("check dependencies are explicit: isolated fixtures work and downstream compatibility sees both predecessors", async (t) => {
+  const starter = "export function emptyState(){throw new Error('starter store')}\n";
+  const world = await fauxWorld(t, responder, {
+    files: {
+      "store.mjs": starter,
+      "storage.mjs": "// starter\n",
+      "validation.mjs": "// starter\n",
+    },
+  });
+  const store = builder("store", {
+    write: { "store.mjs": "export const emptyState=()=>({tickets:[],nextId:1});\n" },
+  });
+  const validation = builder("validation", {
+    write: { "validation.mjs": "export const valid=()=>true;\n" },
+  });
+  const storageSource = "export const encode=JSON.stringify; export const decode=JSON.parse;\n";
+  const check = (script: string) => [
+    { id: "roundtrip", argv: [node, "--input-type=module", "-e", script] },
+  ];
+  const siblingCheck =
+    "import assert from 'node:assert/strict'; import {emptyState} from './store.mjs'; import {encode,decode} from './storage.mjs'; assert.deepEqual(decode(encode(emptyState())),emptyState());";
+  const failed = await world.run(
+    [
+      store,
+      validation,
+      builder(
+        "storage",
+        { write: { "storage.mjs": storageSource } },
+        { after: ["validation"], checks: check(siblingCheck) },
+      ),
+    ],
+    { allowWrites: true },
+  );
+  await failed.done;
+  assert.equal(failed.view().agents.storage.status, "failed");
+  const result = failed.results().get("storage")!;
+  const diagnostic = result.data!.checkFailure as {
+    stage: string;
+    workspace: string;
+    predecessors: string[];
+    check: { id: string; argv: string[]; stdout: string; stderr: string };
+  };
+  assert.equal(result.failureStage, "verification");
+  assert.equal(diagnostic.stage, "verification");
+  assert.deepEqual(diagnostic.predecessors, ["validation"]);
+  assert.equal(diagnostic.check.id, "roundtrip");
+  assert.deepEqual(diagnostic.check.argv, check(siblingCheck)[0].argv);
+  assert.match(await readFile(diagnostic.check.stderr, "utf8"), /starter store/);
+  assert.equal(await readFile(join(diagnostic.workspace, "store.mjs"), "utf8"), starter);
+  assert(
+    !result.reason!.includes("missing dependency"),
+    "failure records observation, not an inferred diagnosis",
+  );
+
+  const fixtureCheck =
+    "import assert from 'node:assert/strict'; import {encode,decode} from './storage.mjs'; const state={tickets:[],nextId:1}; assert.deepEqual(decode(encode(state)),state);";
+  const passing = await world.run(
+    [
+      store,
+      validation,
+      builder(
+        "storage",
+        { write: { "storage.mjs": storageSource } },
+        { after: ["validation"], checks: check(fixtureCheck) },
+      ),
+      builder(
+        "compatibility",
+        {},
+        { ownership: ["compat.txt"], after: ["store", "storage"], checks: check(siblingCheck) },
+      ),
+    ],
+    { allowWrites: true },
+  );
+  const view = await passing.done;
+  assert.equal(view.status, "succeeded", JSON.stringify(view.agents));
+  const storage = passing.results().get("storage")!.data!.worktree as string;
+  assert.equal(await readFile(join(storage, "store.mjs"), "utf8"), starter);
+  const downstream = passing.results().get("compatibility")!.data!.worktree as string;
+  assert.match(await readFile(join(downstream, "store.mjs"), "utf8"), /tickets/);
+  assert.equal(await readFile(join(downstream, "storage.mjs"), "utf8"), storageSource);
 });

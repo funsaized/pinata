@@ -73,6 +73,7 @@ async function integrated(
   const handle = await world.run(tasks, { allowWrites: true });
   await writeRunRecord(handle.dir, {
     id: handle.id,
+    reviewPolicy: "optional",
     root: world.repo,
     head,
     tasks: validateGraph(tasks, { allowWrites: true }).map(taskSpec),
@@ -130,13 +131,17 @@ test("integration applies approved changes without staging or committing; rollba
   await assert.rejects(rollback(handle.dir), /Already rolled back/);
 });
 
-test("integration needs every task succeeded and a current approving review per builder", async (t) => {
+test("integration needs every task succeeded; explicit and legacy reviews remain binding", async (t) => {
   const rejected = await integrated(t, { "a.txt": "a" }, [
     build("build", { "a.txt": "b" }),
     review("review", "build", "changes_requested"),
   ]);
   await assert.rejects(integrate(rejected.handle.dir), /Every task must succeed/);
   const unreviewed = await integrated(t, { "a.txt": "a" }, [build("build", { "a.txt": "b" })]);
+  const path = join(unreviewed.handle.dir, "run.json");
+  const legacy = JSON.parse(await readFile(path, "utf8"));
+  delete legacy.reviewPolicy;
+  await writeFile(path, JSON.stringify(legacy));
   await assert.rejects(integrate(unreviewed.handle.dir), /Independent review required for build/);
 });
 
@@ -572,3 +577,51 @@ test(
     assert.equal(await readFile(join(world.repo, "keep.txt"), "utf8"), "keep");
   },
 );
+
+test("optional review still enforces every assigned review and its exact fingerprint", async (t) => {
+  const { readRunRecord } = await import("../../engine/verify/record.ts");
+  const { handle } = await integrated(t, { "a.txt": "a" }, [
+    build("build", { "a.txt": "b" }),
+    review("r", "build"),
+  ]);
+  const record = await readRunRecord(handle.dir);
+  await writeRunRecord(handle.dir, { ...record, reviewPolicy: "optional" });
+  assert.equal((await handoff(handle.dir)).builders[0].reviews.length, 1);
+  const path = join(handle.dir, "results", "r.json");
+  const saved = JSON.parse(await readFile(path, "utf8"));
+  saved.result.review.fingerprint = "stale";
+  await writeFile(path, JSON.stringify(saved));
+  await assert.rejects(handoff(handle.dir), /rejected or stale/);
+  await assert.rejects(integrate(handle.dir), /rejected or stale/);
+});
+
+test("expired integration refuses writes and deadline interruption keeps a recoverable journal", async (t) => {
+  const { readRunRecord } = await import("../../engine/verify/record.ts");
+  const { world, handle } = await integrated(
+    t,
+    { "a.txt": "a" },
+    [build("build", { "a.txt": "b" }), review("r", "build")],
+    [{ id: "long", argv: [node, "-e", "setInterval(()=>{},1000)"], timeoutMs: 30_000 }],
+  );
+  const record = await readRunRecord(handle.dir);
+  await writeRunRecord(handle.dir, { ...record, deadlineAt: Date.now() - 1 });
+  await assert.rejects(integrate(handle.dir), /deadline/i);
+  assert.equal(await readFile(join(world.repo, "a.txt"), "utf8"), "a");
+  assert(!existsSync(join(handle.dir, "integration", "journal.json")));
+  await writeRunRecord(handle.dir, { ...record, deadlineAt: Date.now() + 4000 });
+  const started = performance.now();
+  const result = await integrate(handle.dir);
+  assert.equal(result.status, "verification_failed");
+  assert(performance.now() - started < 7000);
+  const journal = JSON.parse(await readFile(result.journal, "utf8"));
+  assert.equal(journal.status, "verification_failed");
+  assert.equal(journal.verification.status, "verification_failed");
+  assert.equal(await readFile(join(world.repo, "a.txt"), "utf8"), "b");
+  await assert.rejects(integrate(handle.dir), /deadline/i);
+  assert.equal(
+    (await rollback(handle.dir)).status,
+    "rolled_back",
+    "recovery remains available after expiry",
+  );
+  assert.equal(await readFile(join(world.repo, "a.txt"), "utf8"), "a");
+});

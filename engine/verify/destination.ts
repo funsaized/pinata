@@ -1,3 +1,4 @@
+import { withDeadline } from "../core/deadline.ts";
 // Destination checks are separate from applying artifacts and from independent review.
 import { randomUUID } from "node:crypto";
 import { open, unlink } from "node:fs/promises";
@@ -10,7 +11,7 @@ import { git, line, zsplit } from "../workspace/git.ts";
 import { headCommit } from "../workspace/snapshot.ts";
 import { environment, runChecks, type CheckEvidence } from "./checks.ts";
 import { loadChanges, need, type VerifiedChanges } from "./evidence.ts";
-import type { RunRecord } from "./record.ts";
+import { readRunRecord, type RunRecord } from "./record.ts";
 
 export interface Destination {
   head: string;
@@ -18,15 +19,15 @@ export interface Destination {
   indexDigest: string;
 }
 
-export async function destination(root: string): Promise<Destination> {
-  const head = await headCommit(root);
+export async function destination(root: string, signal?: AbortSignal): Promise<Destination> {
+  const head = await headCommit(root, signal);
   need(
-    !(await git(root, ["ls-files", "-u", "-z"])),
+    !(await git(root, ["ls-files", "-u", "-z"], { signal })),
     "Resolve the destination's unmerged index first",
   );
-  const indexDigest = digest(await git(root, ["ls-files", "--stage", "-z"]));
-  const tree = await writeTree(root);
-  need(head === (await headCommit(root)), "Destination HEAD changed during capture; retry");
+  const indexDigest = digest(await git(root, ["ls-files", "--stage", "-z"], { signal }));
+  const tree = await writeTree(root, undefined, signal);
+  need(head === (await headCommit(root, signal)), "Destination HEAD changed during capture; retry");
   return { head, tree, indexDigest };
 }
 
@@ -80,12 +81,26 @@ export async function checkDestination(
   options: VerificationOptions = {},
   signal?: AbortSignal,
 ): Promise<DestinationVerification> {
+  return withDeadline(record.deadlineAt, signal, (bounded) =>
+    checkDestinationWithin(dir, record, evidence, options, bounded),
+  );
+}
+
+async function checkDestinationWithin(
+  dir: string,
+  record: RunRecord,
+  evidence: VerifiedChanges,
+  options: VerificationOptions,
+  signal?: AbortSignal,
+): Promise<DestinationVerification> {
+  // A pre-cancelled verification may still record a receipt, but executes no checks.
+  const captureSignal = signal?.aborted ? undefined : signal;
   const checks = options.checks ?? record.integratedChecks;
   validateChecks(checks, "destination checks");
   const noChecksReason = checks.length
     ? null
     : (options.noChecksReason ?? record.noIntegratedChecksReason);
-  const before = await destination(record.root);
+  const before = await destination(record.root, captureSignal);
   // Inspect the captured destination tree, not a caller's application claim.
   const expected = new Map<string, { blob: string; mode: string } | null>();
   for (const b of evidence.builders)
@@ -93,7 +108,9 @@ export async function checkDestination(
       expected.set(c.path, c.status === "D" ? null : { blob: c.newBlob, mode: c.newMode });
   const differingPaths: string[] = [];
   const actual = new Map(
-    zsplit(await git(record.root, ["ls-tree", "-r", "-z", before.tree])).map((entry) => {
+    zsplit(
+      await git(record.root, ["ls-tree", "-r", "-z", before.tree], { signal: captureSignal }),
+    ).map((entry) => {
       const tab = entry.indexOf("\t");
       return [entry.slice(tab + 1), entry.slice(0, tab).split(" ")] as const;
     }),
@@ -113,7 +130,7 @@ export async function checkDestination(
   const folder = join(dir, "verification", attempt);
   await privateDir(folder);
   const ref = `refs/pinata/${record.id}/verification/${attempt}`;
-  await git(record.root, ["update-ref", `${ref}/before`, before.tree]);
+  await git(record.root, ["update-ref", `${ref}/before`, before.tree], { signal: captureSignal });
   const receipt = join(folder, "result.json");
   const result: DestinationVerification = {
     schemaVersion: 1,
@@ -138,11 +155,14 @@ export async function checkDestination(
       cwd: record.root,
       env: environment(record.passEnv),
       logDir: folder,
+      deadlineAt: record.deadlineAt,
       signal,
     });
-    result.after = await destination(record.root);
-    await git(record.root, ["update-ref", `${ref}/after`, result.after.tree]);
-    const current = (await loadChanges(dir)).evidence;
+    result.after = await destination(record.root, captureSignal);
+    await git(record.root, ["update-ref", `${ref}/after`, result.after.tree], {
+      signal: captureSignal,
+    });
+    const current = (await loadChanges(dir, captureSignal)).evidence;
     if (
       digest(before) !== digest(result.after) ||
       evidence.evidenceDigest !== current.evidenceDigest
@@ -163,8 +183,8 @@ export async function checkDestination(
       result.reason = checks.length ? null : (noChecksReason ?? "No destination checks configured");
     }
   } catch (error) {
-    result.status = "source_changed";
-    result.reason = (error as Error).message;
+    result.status = signal?.aborted ? "verification_failed" : "source_changed";
+    result.reason = signal?.aborted ? "cancelled" : (error as Error).message;
   }
   await atomicJson(receipt, result);
   await atomicJson(join(dir, "verification", "latest.json"), result);
@@ -176,11 +196,13 @@ export async function verifyDestination(
   options: VerificationOptions = {},
   signal?: AbortSignal,
 ) {
-  const { record } = await loadChanges(dir);
-  return withDestination(record.root, async () => {
-    const current = await loadChanges(dir);
-    return checkDestination(dir, current.record, current.evidence, options, signal);
-  });
+  const record = await readRunRecord(dir);
+  return withDeadline(record.deadlineAt, signal, (bounded) =>
+    withDestination(record.root, async () => {
+      const current = await loadChanges(dir, bounded?.aborted ? undefined : bounded);
+      return checkDestination(dir, current.record, current.evidence, options, bounded);
+    }),
+  );
 }
 
 export async function verificationStatus(dir: string) {

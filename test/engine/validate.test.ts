@@ -208,3 +208,33 @@ test("added tasks are validated against the existing graph", () => {
   const added = validateGraph([task("s", "scout", { after: ["a"] })], { existing });
   assert.deepEqual(added[0].after, ["a"]);
 });
+
+test("strict review preflight reports all uncovered writers, while optional permits them", () => {
+  const tasks = [builder("first", ["a"]), builder("second", ["b"])];
+  assert.equal(validateGraph(tasks, { allowWrites: true }).length, 2);
+  assert.throws(
+    () => validateGraph(tasks, { allowWrites: true, reviewPolicy: "required" }),
+    /Independent review required for: first, second/,
+  );
+  assert.equal(
+    validateGraph(
+      [
+        ...tasks,
+        reviewer("review-a", { reviewOf: "first", after: ["first"] }),
+        reviewer("review-b", { reviewOf: "second", after: ["second"] }),
+      ],
+      { allowWrites: true, reviewPolicy: "required" },
+    ).length,
+    4,
+  );
+});
+
+test("new configuration defaults and legacy saved policy are deliberately distinct", async () => {
+  const { validateConfig } = await import("../../engine/pi/config.ts");
+  const { savedReviewPolicy } = await import("../../engine/core/policy.ts");
+  assert.equal(validateConfig().config.reviewPolicy, "optional");
+  assert.equal(savedReviewPolicy({}), "required");
+  assert.equal(savedReviewPolicy({ reviewPolicy: "optional" }), "optional");
+  for (const reviewPolicy of ["off", "strict", null, 1])
+    assert.throws(() => validateConfig({ reviewPolicy }), /reviewPolicy/);
+});

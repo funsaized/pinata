@@ -22,19 +22,20 @@ export async function composeBase(
   root: string,
   base: string,
   changeSets: readonly ChangeSet[],
+  signal?: AbortSignal,
 ): Promise<{ commit: string; tree: string }> {
-  const baseTree = line(await git(root, ["rev-parse", `${base}^{tree}`]));
+  const baseTree = line(await git(root, ["rev-parse", `${base}^{tree}`], { signal }));
   if (!changeSets.some((c) => c.changes.length)) return { commit: base, tree: baseTree };
   const tmp = await mkdtemp(join(tmpdir(), "pinata-compose-"));
   try {
     const env = { GIT_INDEX_FILE: join(tmp, "index") };
-    await git(root, ["read-tree", base], { env });
+    await git(root, ["read-tree", base], { env, signal });
     for (const set of changeSets) {
       if (!set.changes.length) continue;
       const paths = set.changes.map((c) => c.path);
       const current = new Map<string, { mode: string; blob: string }>();
       for (const entry of zsplit(
-        await git(root, ["ls-files", "-s", "-z", "--", ...paths], { env }),
+        await git(root, ["ls-files", "-s", "-z", "--", ...paths], { env, signal }),
       )) {
         const tab = entry.indexOf("\t");
         const [mode, blob] = entry.slice(0, tab).split(" ");
@@ -54,15 +55,16 @@ export async function composeBase(
           c.status === "D" ? `0 ${ZERO}\t${c.path}` : `${c.newMode} ${c.newBlob}\t${c.path}`,
         )
         .join("\0");
-      await git(root, ["update-index", "-z", "--index-info"], { env, input: input + "\0" });
+      await git(root, ["update-index", "-z", "--index-info"], { env, signal, input: input + "\0" });
     }
-    const tree = line(await git(root, ["write-tree"], { env }));
+    const tree = line(await git(root, ["write-tree"], { env, signal }));
     const commit = line(
       await git(
         root,
         ["commit-tree", "--no-gpg-sign", "-p", base, "-m", "pinata: predecessor changes", tree],
         {
           env: { ...env, ...IDENTITY },
+          signal,
         },
       ),
     );
@@ -95,34 +97,50 @@ export class Worktree implements Workspace {
   }
 
   // Creates the worktree, or reuses it when it already exists at this base (repairs).
-  static async create(root: string, path: string, baseCommit: string): Promise<Worktree> {
-    const baseTree = line(await git(root, ["rev-parse", `${baseCommit}^{tree}`]));
-    const existing = await git(path, ["rev-parse", "HEAD"], { allowFailure: true }).catch(() => "");
+  static async create(
+    root: string,
+    path: string,
+    baseCommit: string,
+    signal?: AbortSignal,
+  ): Promise<Worktree> {
+    const baseTree = line(await git(root, ["rev-parse", `${baseCommit}^{tree}`], { signal }));
+    const existing = await git(path, ["rev-parse", "HEAD"], { allowFailure: true, signal }).catch(
+      () => "",
+    );
     if (line(existing) !== baseCommit) {
       await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-      await git(root, ["worktree", "add", "--detach", path, baseCommit]);
+      await git(root, ["worktree", "add", "--detach", path, baseCommit], { signal });
     }
-    const gitDir = line(await git(path, ["rev-parse", "--absolute-git-dir"]));
+    const gitDir = line(await git(path, ["rev-parse", "--absolute-git-dir"], { signal }));
     const tree = new Worktree(root, path, baseCommit, baseTree, gitDir);
     // A fresh checkout's index entries are racily clean, so every capture would rehash every
     // file. Refresh the private capture index once while the builder works.
     tree.warmTimer = setTimeout(() => {
       tree.warmTimer = undefined;
-      if (existsSync(path)) void tree.warm().catch(() => {});
+      if (existsSync(path)) void tree.warm(signal).catch(() => {});
     }, WARM_AFTER_MS);
     (tree.warmTimer as { unref?: () => void }).unref?.();
     return tree;
   }
 
-  private exclusive<T>(work: () => Promise<T>): Promise<T> {
-    const next = this.serial.then(work, work);
+  private exclusive<T>(work: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+    const next = this.serial.then(async () => {
+      signal?.throwIfAborted();
+      try {
+        return await work();
+      } finally {
+        // A killed git add can leave our private index locked. The subprocess has
+        // exited and this queue still owns the index, so a later repair can reuse it.
+        if (signal?.aborted) await rm(`${this.captureIndex}.lock`, { force: true });
+      }
+    });
     this.serial = next.catch(() => {});
     return next;
   }
 
   // Brings the capture index up to date without reporting changes.
-  warm(): Promise<string> {
-    return this.exclusive(() => writeTree(this.path, this.captureIndex));
+  warm(signal?: AbortSignal): Promise<string> {
+    return this.exclusive(() => writeTree(this.path, this.captureIndex, signal), signal);
   }
 
   // The worktree's content as a tree id: equal trees mean equal content.
@@ -130,16 +148,19 @@ export class Worktree implements Workspace {
     return (await this.capture()).tree;
   }
 
-  capture(): Promise<ChangeSet> {
+  capture(signal?: AbortSignal): Promise<ChangeSet> {
     // A capture brings the index up to date itself; the pending warm-up is not needed.
     if (this.warmTimer) clearTimeout(this.warmTimer);
     this.warmTimer = undefined;
-    return this.exclusive(() => capture(this.path, this.baseTree, this.captureIndex));
+    return this.exclusive(
+      () => capture(this.path, this.baseTree, this.captureIndex, signal),
+      signal,
+    );
   }
 
   // A builder must not move HEAD (commits are the coordinator's).
-  async headMoved(): Promise<boolean> {
-    return line(await git(this.path, ["rev-parse", "HEAD"])) !== this.baseCommit;
+  async headMoved(signal?: AbortSignal): Promise<boolean> {
+    return line(await git(this.path, ["rev-parse", "HEAD"], { signal })) !== this.baseCommit;
   }
 
   // Worktrees outlive their agents (reviews and integration read them).

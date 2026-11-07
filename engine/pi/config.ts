@@ -1,3 +1,4 @@
+import { reviewPolicy, type ReviewPolicy } from "../core/policy.ts";
 // Pinata configuration layers: ~/.pi/agent/pinata.json, then
 // <repo>/.pi/pinata.json, then the run's own config. models, fallbacks and limits merge per
 // entry; other keys are replaced whole.
@@ -14,6 +15,7 @@ import {
 import { checkedKeys, need, strings, validateLimits, validateModel } from "../core/validate.ts";
 
 export interface PinataConfig {
+  reviewPolicy: ReviewPolicy;
   models: Partial<Record<string, ModelRef>>;
   fallbacks: Partial<Record<string, ModelRef[]>>;
   limits: Limits;
@@ -38,6 +40,7 @@ export const RETIRED: Record<string, string> = {
 };
 
 const KEYS = [
+  "reviewPolicy",
   "models",
   "toolProviders",
   "fallbacks",
@@ -127,6 +130,7 @@ export function validateConfig(input: unknown = {}): { config: PinataConfig; not
     need(typeof v.webExtension === "string" && v.webExtension, "webExtension must be a path");
   return {
     config: {
+      reviewPolicy: reviewPolicy(v.reviewPolicy),
       models: v.models ?? {},
       toolProviders: v.toolProviders ?? {},
       fallbacks: v.fallbacks ?? {},

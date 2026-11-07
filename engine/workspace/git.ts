@@ -1,3 +1,4 @@
+import { killTree } from "../verify/checks.ts";
 // git through argv, never a shell, with bounded output. Works the same on Linux, macOS and
 // Windows. Callers pass `-z` forms when they parse paths.
 import { spawn } from "node:child_process";
@@ -50,17 +51,27 @@ export function gitBuffer(
   args: readonly string[],
   options: GitOptions = {},
 ): Promise<{ code: number | null; stdout: Buffer; stderr: string }> {
+  options.signal?.throwIfAborted();
   return new Promise((resolve, reject) => {
     const child = spawn("git", ["-C", cwd, ...PORTABLE, ...args], {
       env: { ...process.env, GIT_TERMINAL_PROMPT: "0", LC_ALL: "C", ...options.env },
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
-      signal: options.signal,
+      detached: options.signal !== undefined && process.platform !== "win32",
     });
     const chunks: Buffer[] = [];
     let size = 0;
     let stderr = "";
     let failed: Error | undefined;
+    const abort = () => {
+      failed =
+        options.signal?.reason instanceof Error
+          ? options.signal.reason
+          : new Error("Git operation cancelled");
+      if (child.pid) killTree(child.pid);
+    };
+    options.signal?.addEventListener("abort", abort, { once: true });
+    if (options.signal?.aborted) abort();
     child.stdout.on("data", (chunk: Buffer) => {
       size += chunk.length;
       if (size > (options.maxBytes ?? MAX_OUTPUT)) {
@@ -71,8 +82,11 @@ export function gitBuffer(
     child.stderr.setEncoding("utf8").on("data", (d: string) => {
       if (stderr.length < 64_000) stderr += d;
     });
-    child.on("error", reject);
+    child.on("error", (error) => {
+      failed ??= error;
+    });
     child.on("close", (code) => {
+      options.signal?.removeEventListener("abort", abort);
       if (failed) return reject(failed);
       const stdout = Buffer.concat(chunks);
       if (code !== 0 && !options.allowFailure) return reject(new GitError(args, code, stderr));

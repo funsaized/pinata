@@ -2,14 +2,21 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { registerCommands } from "./commands.ts";
 import { deliverWhenDone, registerDelivery } from "./delivery.ts";
-import { PinataHost } from "./host.ts";
+import { PinataHost, type HostOptions } from "./host.ts";
 import { registerTools } from "./tools.ts";
 import { PinataUI } from "./ui.ts";
 
 export default async function pinata(pi: ExtensionAPI): Promise<void> {
+  await registerPinata(pi);
+}
+
+export async function registerPinata(
+  pi: ExtensionAPI,
+  options: HostOptions = {},
+): Promise<PinataHost | undefined> {
   // Recursion guard: agents (and anything they start) never get pinata tools.
   if (process.env.PINATA_AGENT) return;
-  const host = new PinataHost(pi);
+  const host = new PinataHost(pi, undefined, options);
   host.ui = new PinataUI(pi);
   void host.owner();
   registerTools(pi, host);
@@ -39,4 +46,5 @@ export default async function pinata(pi: ExtensionAPI): Promise<void> {
     // In-process agents cannot outlive this Pi: cancel them cleanly and flush their logs.
     await host.shutdown(event.reason === "reload" ? "parent reload" : "parent exit");
   });
+  return host;
 }

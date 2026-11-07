@@ -1,3 +1,6 @@
+import { isDelivered } from "./delivery-state.ts";
+import { assertTime, capDeadline } from "../core/deadline.ts";
+import { savedReviewPolicy } from "../core/policy.ts";
 import { writes, taskSpec, taskTools, validateSnapshots } from "../core/definitions.ts";
 import { discoverAgents, resolveTasks } from "./definitions.ts";
 import { resolveToolExtensions } from "./tool-providers.ts";
@@ -38,7 +41,26 @@ import { RunServer } from "../ipc/server.ts";
 export const RESEARCH_UNAVAILABLE =
   "Research tasks need pi-web-access, which is not loaded in this Pi. Install it with `pi install git:github.com/nicobailon/pi-web-access`, or set config.webExtension.";
 
+export const RUN_INSTRUCTIONS_MAX_BYTES = 128 * 1024;
+
+function runInstructions(value: unknown = []): string[] {
+  if (
+    !Array.isArray(value) ||
+    !value.every((item) => typeof item === "string" && !item.includes("\0")) ||
+    Buffer.byteLength(JSON.stringify(value)) > RUN_INSTRUCTIONS_MAX_BYTES
+  )
+    throw new ValidationError(
+      "Run instructions must be an array of strings totaling at most 128 KiB",
+    );
+  return [...value];
+}
+
+export interface HostOptions {
+  instructions?: string[];
+}
+
 export interface RunParams {
+  deadlineAt?: number;
   tasks: TaskSpec[];
   background?: boolean;
   survive?: boolean;
@@ -73,6 +95,12 @@ export interface CompactTask {
   };
   engineChecks?: { passed: number; failed: number; notRun: number; noChecksReason?: string };
   checkoutChanged?: boolean;
+  checkFailure?: {
+    stage: "verification";
+    workspace: string;
+    predecessors: string[];
+    check: unknown;
+  };
   truncated?: boolean;
   recovery?: ReviewRecovery;
   artifact?: {
@@ -81,6 +109,7 @@ export interface CompactTask {
     baseTree: string;
     resultTree: string;
     fingerprint: string;
+    reviewState: "unassigned" | "pending" | "approved" | "rejected";
   };
 }
 
@@ -111,6 +140,8 @@ export function reviewRecovery(id: string, view: RunView): ReviewRecovery | unde
 }
 
 export interface CompactRun {
+  reviewPolicy?: import("../core/policy.ts").ReviewPolicy;
+  deadlineAt?: number;
   run: string;
   dir: string;
   status: string;
@@ -128,6 +159,18 @@ export interface CompactRun {
 }
 
 const PROGRESS_MS = 250; // at most 4 updates per second
+
+function artifactReviewState(
+  id: string,
+  view: RunView,
+): "unassigned" | "pending" | "approved" | "rejected" {
+  const reviewers = view.tasks.filter((task) => task.reviewOf === id);
+  if (!reviewers.length) return "unassigned";
+  if (reviewers.some((task) => view.agents[task.id]?.status === "rejected")) return "rejected";
+  return reviewers.every((task) => view.agents[task.id]?.status === "succeeded")
+    ? "approved"
+    : "pending";
+}
 
 export function compactTask(id: string, view: RunView, settled: Settled | undefined): CompactTask {
   const a = view.agents[id];
@@ -171,6 +214,8 @@ export function compactTask(id: string, view: RunView, settled: Settled | undefi
       ...(task?.noChecksReason && { noChecksReason: task.noChecksReason.slice(0, 512) }),
     };
   }
+  const checkFailure = settled?.data?.checkFailure;
+  if (checkFailure) out.checkFailure = checkFailure as CompactTask["checkFailure"];
   if (b?.changes) out.changedFiles = b.changes.changes.map((change) => change.path);
   if (
     (a.workspaceMode === "worktree" || (!a.workspaceMode && a.role === "builder")) &&
@@ -184,6 +229,7 @@ export function compactTask(id: string, view: RunView, settled: Settled | undefi
       baseTree: b.changes.base,
       resultTree: b.changes.tree,
       fingerprint: settled.fingerprint,
+      reviewState: artifactReviewState(id, view),
     };
   for (const field of [
     "data",
@@ -193,6 +239,7 @@ export function compactTask(id: string, view: RunView, settled: Settled | undefi
     "blockers",
     "changedFiles",
     "reason",
+    "checkFailure",
   ] as const) {
     if (Buffer.byteLength(JSON.stringify(out)) <= DEPENDENCY_CAP) break;
     delete out[field];
@@ -229,6 +276,8 @@ export function compactRun(
   const nextOffset = offset + tasks.length < view.order.length ? offset + tasks.length : undefined;
   return {
     run: view.run,
+    deadlineAt: view.deadlineAt,
+    reviewPolicy: view.reviewPolicy,
     dir,
     status: view.status,
     costUsd: view.usage.cost,
@@ -302,6 +351,12 @@ export function continueHeadless(dir: string, root: string): void {
 
 export class PinataHost {
   readonly pi: ExtensionAPI;
+  readonly options: HostOptions;
+  readonly deliveryCleanups = new Map<string, () => void>();
+
+  subscribe(run: string, consumer: (event: AgentEvent) => void): () => void {
+    return this.engineInstance?.subscribe(run, consumer) ?? (() => {});
+  }
   private engineInstance: Engine | undefined;
   private readonly cache = new RuntimeCache();
   private registry: ExtensionContext["modelRegistry"] | undefined;
@@ -309,6 +364,7 @@ export class PinataHost {
   readonly handles = new Map<string, RunHandle>();
   private readonly stages: PipelineStages;
   private shuttingDown = false;
+  private shutdownTask: Promise<void> | undefined;
   // Runs whose background completion is delivered as a follow-up message.
   readonly background = new Set<string>();
   // The widget, footer and live overlay; absent in tests that need no UI.
@@ -328,8 +384,15 @@ export class PinataHost {
     return this.ownerIdentity;
   }
 
-  constructor(pi: ExtensionAPI, stages: PipelineStages = verificationStages()) {
+  constructor(
+    pi: ExtensionAPI,
+    stages: PipelineStages = verificationStages(),
+    options: HostOptions = {},
+  ) {
     this.pi = pi;
+    this.options = {
+      instructions: runInstructions(options.instructions),
+    };
     this.stages = stages;
   }
 
@@ -393,14 +456,22 @@ export class PinataHost {
     params: RunParams,
     ctx: ExtensionContext,
   ): Promise<{ handle: RunHandle; notices: string[] }> {
+    const startedAt = Date.now();
     const root = await repositoryRoot(params.cwd ?? ctx.cwd);
     const layered = layeredConfig(params.config ?? {}, root);
     const config = layered.config;
+    const deadlineAt = capDeadline(startedAt + config.limits.jobMs, params.deadlineAt);
+    assertTime(deadlineAt);
     const resolved = resolveTasks(params.tasks, discoverAgents(root));
     const tasks = validateGraph(resolved.tasks, {
       allowWrites: params.allowWrites !== false,
       definitions: resolved.definitions,
+      reviewPolicy: config.reviewPolicy,
     });
+    const instructions = runInstructions([
+      ...runInstructions(this.options.instructions),
+      ...runInstructions(params.instructions),
+    ]);
     const hasWrites = tasks.some(writes);
     if (hasWrites && !(typeof params.approval === "string" && params.approval.trim()))
       throw new ValidationError(
@@ -423,13 +494,16 @@ export class PinataHost {
     const engine = this.engine(ctx);
     const id = randomUUID();
     // Snapshot, setup and review subjects; invalid subjects fail here, before any agent starts.
-    const prep = await prepareRun(root, id, tasks, config);
+    const prep = await prepareRun(root, id, tasks, config, deadlineAt);
+    assertTime(deadlineAt);
     const data: PiRunData & Record<string, unknown> = {
       prep,
+      reviewPolicy: config.reviewPolicy,
+      deadlineAt,
       definitions: resolved.definitions,
       toolExtensions,
       models,
-      instructions: params.instructions ?? [],
+      instructions,
       codemode: config.codemode,
       backend: config.backend,
       survive: params.survive === true,
@@ -441,8 +515,36 @@ export class PinataHost {
     };
     // A JSON copy for run.json, before the pipeline adds runtime state to `data`.
     const saved = JSON.parse(JSON.stringify(data)) as Record<string, unknown>;
+    const dir = join(await runsRoot(root), id);
+    // What integration needs after a reload: the run's tasks, base HEAD and checks.
+    await writeRunRecord(dir, {
+      id,
+      root,
+      head: prep.base?.head ?? (await headCommit(root)),
+      schemaVersion: 2,
+      deadlineAt,
+      reviewPolicy: config.reviewPolicy,
+      definitions: resolved.definitions,
+      tasks: tasks.map(taskSpec),
+      allowWrites: hasWrites,
+      integratedChecks: params.integratedChecks ?? [],
+      noIntegratedChecksReason: params.noIntegratedChecksReason ?? null,
+      passEnv: config.passEnv,
+      taskMs: config.limits.taskMs,
+      resume: {
+        mode: this.mode(config),
+        limits: config.limits as unknown as Record<string, unknown>,
+        data: saved,
+        survive: params.survive === true,
+        background: params.background === true,
+        owner: await this.owner(),
+      },
+    });
     const handle = await engine.run(tasks.map(taskSpec), {
       id,
+      dir,
+      deadlineAt,
+      reviewPolicy: config.reviewPolicy,
       cwd: root,
       mode: this.mode(config),
       limits: config.limits,
@@ -455,28 +557,6 @@ export class PinataHost {
     this.ui?.follow(handle, engine);
     // Observe mode starts the run's socket with the run; lean mode on the first /pinata view --external.
     if (handle.view().mode === "observe") await this.serve(handle);
-    // What integration needs after a reload: the run's tasks, base HEAD and checks.
-    await writeRunRecord(handle.dir, {
-      id: handle.id,
-      root,
-      head: prep.base?.head ?? (await headCommit(root)),
-      schemaVersion: 2,
-      definitions: resolved.definitions,
-      tasks: tasks.map(taskSpec),
-      allowWrites: hasWrites,
-      integratedChecks: params.integratedChecks ?? [],
-      noIntegratedChecksReason: params.noIntegratedChecksReason ?? null,
-      passEnv: config.passEnv,
-      taskMs: config.limits.taskMs,
-      resume: {
-        mode: handle.view().mode,
-        limits: config.limits as unknown as Record<string, unknown>,
-        data: saved,
-        survive: params.survive === true,
-        background: params.background === true,
-        owner: await this.owner(),
-      },
-    });
     if (params.survive) this.survivors.add(handle.id);
     // Inside Herdr, a settled run shows a Herdr notification.
     if (insideHerdr())
@@ -486,6 +566,16 @@ export class PinataHost {
         )
         .catch(() => {});
     return { handle, notices: [...layered.notices, ...resolved.notices] };
+  }
+
+  async markBackground(handle: RunHandle): Promise<void> {
+    const record = await readRunRecord(handle.dir);
+    if (record.resume && !record.resume.background)
+      await writeRunRecord(handle.dir, {
+        ...record,
+        resume: { ...record.resume, background: true },
+      });
+    this.background.add(handle.id);
   }
 
   // Starts (or returns) the run's socket server, for viewers.
@@ -607,17 +697,24 @@ export class PinataHost {
     }
   }
 
-  async shutdown(reason: string): Promise<void> {
+  shutdown(reason: string, options: { survive?: boolean } = {}): Promise<void> {
+    this.shutdownTask ??= this.stop(reason, options);
+    return this.shutdownTask;
+  }
+
+  private async stop(reason: string, options: { survive?: boolean }): Promise<void> {
     this.shuttingDown = true;
+    for (const cleanup of this.deliveryCleanups.values()) cleanup();
+    this.deliveryCleanups.clear();
     while (this.starting.size) await Promise.allSettled(this.starting);
     // Surviving runs still working when Pi exits continue in a headless host (E8.4). A reload
     // resumes them in the reloaded extension instead.
     const continuing =
-      reason === "parent exit"
+      options.survive !== false && reason === "parent exit"
         ? [...this.survivors].filter((id) => this.handles.get(id)?.view().status === "running")
         : [];
     await this.engineInstance?.shutdown(reason, {
-      detach: (run) => this.survivors.has(run.id),
+      detach: (run) => options.survive !== false && this.survivors.has(run.id),
     });
     for (const id of continuing) {
       const dir = this.handles.get(id)!.dir;
@@ -686,9 +783,15 @@ export class PinataHost {
     const handle = await this.engine(ctx)
       .resume(dir, {
         cwd: record.root,
+        deadlineAt: record.deadlineAt,
+        reviewPolicy: savedReviewPolicy(record),
         limits: resume.limits,
         allowWrites: record.allowWrites,
-        data: { ...resume.data },
+        data: {
+          ...resume.data,
+          reviewPolicy: savedReviewPolicy(record),
+          deadlineAt: record.deadlineAt,
+        },
         reason,
         settled,
       })
@@ -711,13 +814,12 @@ export class PinataHost {
     if (!root) return [];
     const out: RunHandle[] = [];
     for (const dir of (await listRuns(await runsRoot(root))).slice(0, 50)) {
-      if (existsSync(join(dir, "delivered.json"))) continue;
       const record = await readRunRecord(dir).catch(() => null);
       if (!record?.resume?.background || this.handles.has(record.id)) continue;
       const owner = record.resume.owner;
       if (owner && owner.pid !== process.pid && (await alive(owner))) continue;
       const view = await replay(dir).catch(() => null);
-      if (!view || view.status === "running") continue;
+      if (!view || view.status === "running" || (await isDelivered(dir, view))) continue;
       const results = new Map<string, Settled>();
       for (const id of view.order) {
         const saved = (await this.readResult(dir, id)) as (Settled & { task?: string }) | null;

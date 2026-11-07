@@ -27,6 +27,7 @@ import { piCommand } from "./pi-command.ts";
 import { alive, identify, stopChild, stopIdentity, type ProcessIdentity } from "./supervise.ts";
 import type {
   AgentBackend,
+  AgentAttachment,
   AgentHandle,
   AgentLaunch,
   AgentOutcome,
@@ -107,7 +108,7 @@ function partialText(message: any): { text: string; thinking: string } | undefin
 }
 
 // An agent's files: <run>/agents/<task>/ (a temporary directory outside a run).
-export async function agentFiles(launch: AgentLaunch) {
+export async function agentFiles(launch: Pick<AgentAttachment, "task" | "transcript">) {
   const runDir = launch.transcript ? dirname(dirname(launch.transcript)) : undefined;
   const dir = runDir
     ? join(runDir, "agents", launch.task.id)
@@ -204,7 +205,7 @@ class Records {
     };
   }
 
-  snapshot(launch: AgentLaunch, messages: unknown[]): AgentSnapshot {
+  snapshot(launch: AgentAttachment, messages: unknown[]): AgentSnapshot {
     return {
       meta: { run: launch.run, agent: launch.task.id, role: launch.task.role, backend: "process" },
       status: "running",
@@ -346,7 +347,7 @@ export class ProcessBackend implements AgentBackend {
   }
 
   async reattach(
-    launch: AgentLaunch,
+    launch: AgentAttachment,
     sink: (e: AgentEventInput) => void,
     signal: AbortSignal,
   ): Promise<AgentHandle | null> {
@@ -367,7 +368,7 @@ export class ProcessBackend implements AgentBackend {
 export function followDetached(
   files: AgentFiles,
   identity: ProcessIdentity,
-  launch: AgentLaunch,
+  launch: AgentAttachment,
   sink: (e: AgentEventInput) => void,
   signal: AbortSignal,
   child: ChildProcess | undefined,

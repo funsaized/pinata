@@ -7,7 +7,8 @@ import { GLYPHS, clean, duration, runSummary, short, statusLabel, usageText } fr
 function taskLine(task: CompactTask): string {
   const glyph = GLYPHS[task.status as keyof typeof GLYPHS] ?? "·";
   const note = clean(task.reason ?? task.summary);
-  return `${glyph} ${clean(task.id)} · ${statusLabel(task.status)}${note ? ` — ${note.slice(0, 180)}` : ""}`;
+  const review = task.artifact?.reviewState === "unassigned" ? " · not independently reviewed" : "";
+  return `${glyph} ${clean(task.id)} · ${statusLabel(task.status)}${review}${note ? ` — ${note.slice(0, 180)}` : ""}`;
 }
 
 export function resultLines(run: CompactRun, expanded = false): string[] {
@@ -38,7 +39,7 @@ const TITLES: Record<string, string> = {
   repair: "Repair task",
   changes: "Inspect changes",
   verify: "Verify checkout",
-  integrate: "Apply reviewed changes",
+  integrate: "Apply checked changes",
   rollback: "Undo integration",
   cancel: "Cancel work",
 };
@@ -65,7 +66,7 @@ function checkLines(value: any): string[] {
   const reason = value.reason ?? value.noChecksReason;
   if (reason) lines.push(clean(reason));
   if (value.application === "different")
-    lines.push("Checkout differs from the reviewed builder changes.");
+    lines.push("Checkout differs from the recorded builder changes.");
   if (value.freshness && value.freshness !== "current")
     lines.push(
       `Verification is ${clean(value.freshness)}; it does not confirm the current checkout.`,
@@ -132,7 +133,7 @@ function summary(
   if (value?.text) return value.text.split("\n").map(clean);
   if (name === "changes")
     return [
-      `Reviewed changes ready to inspect · Run ${short(value?.run ?? args.run ?? "")}`,
+      `Checked changes ready to inspect · Run ${short(value?.run ?? args.run ?? "")}`,
       "Your checkout has not been changed or checked by this operation.",
       "Expand for patches and check evidence.",
     ];

@@ -83,10 +83,11 @@ export async function resolveSetup(
   setup: string | false | undefined,
   root: string,
   commit: string,
+  signal?: AbortSignal,
 ): Promise<Setup> {
   if (setup === false) return { command: null, source: "disabled" };
   if (typeof setup === "string") return { command: setup, source: "config" };
-  const files = zsplit(await git(root, ["ls-tree", "--name-only", "-z", commit]));
+  const files = zsplit(await git(root, ["ls-tree", "--name-only", "-z", commit], { signal }));
   const commands: string[] = [];
   const lockfiles: string[] = [];
   for (const ecosystem of ECOSYSTEMS) {

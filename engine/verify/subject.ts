@@ -22,8 +22,12 @@ export function subjectFingerprint(subject: Subject): string {
   return createHash("sha256").update(JSON.stringify(subject)).digest("hex");
 }
 
-async function nonEmpty(root: string, subject: Subject): Promise<Subject> {
-  const diff = await git(root, ["diff", "--name-only", "--no-renames", subject.base, subject.head]);
+async function nonEmpty(root: string, subject: Subject, signal?: AbortSignal): Promise<Subject> {
+  const diff = await git(
+    root,
+    ["diff", "--name-only", "--no-renames", subject.base, subject.head],
+    { signal },
+  );
   if (!diff.trim())
     throw new SubjectError(
       `Nothing to review: ${subject.head.slice(0, 12)} has no changes from its base`,
@@ -36,20 +40,28 @@ export async function localSubject(
   root: string,
   ref: string,
   snapshot: { head: string; commit: string },
+  signal?: AbortSignal,
 ): Promise<Subject> {
   let target: string;
   try {
-    target = line(await git(root, ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]));
+    target = line(
+      await git(root, ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`], { signal }),
+    );
   } catch {
+    signal?.throwIfAborted();
     throw new SubjectError(`reviewBase ${JSON.stringify(ref)} is not a commit in this repository`);
   }
-  const base = line(await git(root, ["merge-base", target, snapshot.head]));
-  return nonEmpty(root, {
-    kind: base === snapshot.head ? "uncommitted" : "branch",
-    ref,
-    base,
-    head: snapshot.commit,
-  });
+  const base = line(await git(root, ["merge-base", target, snapshot.head], { signal }));
+  return nonEmpty(
+    root,
+    {
+      kind: base === snapshot.head ? "uncommitted" : "branch",
+      ref,
+      base,
+      head: snapshot.commit,
+    },
+    signal,
+  );
 }
 
 function run(
@@ -57,7 +69,9 @@ function run(
   cwd: string,
   env: NodeJS.ProcessEnv,
   timeoutMs = 120_000,
+  signal?: AbortSignal,
 ): Promise<{ code: number | null; stdout: string; stderr: string }> {
+  signal?.throwIfAborted();
   return new Promise((resolve, reject) => {
     // gh may be a .cmd launcher on Windows.
     const { file, args, verbatim } = launch(argv, env);
@@ -73,11 +87,19 @@ function run(
     });
     let stdout = "";
     let stderr = "";
-    const timer = setTimeout(() => child.pid !== undefined && killTree(child.pid), timeoutMs);
+    const abort = () => child.pid !== undefined && killTree(child.pid);
+    const timer = setTimeout(abort, timeoutMs);
+    signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) abort();
     child.stdout.setEncoding("utf8").on("data", (d: string) => (stdout += d));
     child.stderr.setEncoding("utf8").on("data", (d: string) => (stderr += d));
     child.on("error", (e) => (clearTimeout(timer), reject(e)));
-    child.on("close", (code) => (clearTimeout(timer), resolve({ code, stdout, stderr })));
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", abort);
+      if (signal?.aborted) reject(signal.reason);
+      else resolve({ code, stdout, stderr });
+    });
   });
 }
 
@@ -132,6 +154,7 @@ export async function pullRequestSubject(
   runId: string,
   number: number,
   passEnv: readonly string[] = [],
+  signal?: AbortSignal,
 ): Promise<Subject> {
   const env = networkEnv(passEnv);
   let view;
@@ -141,8 +164,10 @@ export async function pullRequestSubject(
       root,
       env,
       60_000,
+      signal,
     );
   } catch {
+    signal?.throwIfAborted();
     throw new SubjectError("Reviewing a pull request needs the GitHub CLI (gh) on PATH, signed in");
   }
   if (view.code !== 0)
@@ -163,6 +188,7 @@ export async function pullRequestSubject(
   let lastError = "";
   let fetched = false;
   for (const source of sources) {
+    signal?.throwIfAborted();
     const r = await run(
       [
         "git",
@@ -178,6 +204,8 @@ export async function pullRequestSubject(
       ],
       root,
       env,
+      120_000,
+      signal,
     );
     if (r.code === 0) {
       fetched = true;
@@ -186,48 +214,59 @@ export async function pullRequestSubject(
     lastError = r.stderr.trim().slice(0, 500);
   }
   if (!fetched) throw new SubjectError(`Could not fetch pull request ${number}: ${lastError}`);
-  const head = line(await git(root, ["rev-parse", "--verify", headRef]));
+  const head = line(await git(root, ["rev-parse", "--verify", headRef], { signal }));
   if (head !== pr.headRefOid)
     throw new SubjectError(
       `Pull request ${number} changed while it was fetched; ask again to review the new head`,
     );
   const base = line(
-    await git(root, ["merge-base", line(await git(root, ["rev-parse", baseRef])), head]),
+    await git(
+      root,
+      ["merge-base", line(await git(root, ["rev-parse", baseRef], { signal })), head],
+      {
+        signal,
+      },
+    ),
   );
-  return nonEmpty(root, {
-    kind: "pull-request",
-    ref: pr.baseRefName,
-    base,
-    head,
-    pr: { number, title: String(pr.title ?? "").slice(0, 300), url: pr.url },
-  });
+  return nonEmpty(
+    root,
+    {
+      kind: "pull-request",
+      ref: pr.baseRefName,
+      base,
+      head,
+      pr: { number, title: String(pr.title ?? "").slice(0, 300), url: pr.url },
+    },
+    signal,
+  );
 }
 
 // The diff and changed files a reviewer of a subject reads.
 export async function subjectDiff(
   root: string,
   subject: Subject,
+  signal?: AbortSignal,
 ): Promise<{ diff: string; changedFiles: Array<{ status: string; path: string }> }> {
-  const diff = await git(root, [
-    "diff",
-    "--no-ext-diff",
-    "--no-textconv",
-    "--no-renames",
-    "--binary",
-    subject.base,
-    subject.head,
-    "--",
-  ]);
-  const fields = zsplit(
-    await git(root, [
+  const diff = await git(
+    root,
+    [
       "diff",
-      "--name-status",
+      "--no-ext-diff",
+      "--no-textconv",
       "--no-renames",
-      "-z",
+      "--binary",
       subject.base,
       subject.head,
       "--",
-    ]),
+    ],
+    { signal },
+  );
+  const fields = zsplit(
+    await git(
+      root,
+      ["diff", "--name-status", "--no-renames", "-z", subject.base, subject.head, "--"],
+      { signal },
+    ),
   );
   const changedFiles: Array<{ status: string; path: string }> = [];
   for (let i = 0; i + 1 < fields.length; i += 2)

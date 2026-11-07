@@ -67,6 +67,9 @@ for (const mode of ["lean", "observe"] as const) {
       const backend: AgentBackend = {
         kind: "fake",
         async start(launch, sink, signal) {
+          return this.reattach!(launch, sink, signal).then((handle) => handle!);
+        },
+        async reattach(launch, sink, signal) {
           // Use the actual detached reader, but no model process or provider.
           const files = { ...(await agentFiles(launch)), events: join(dir, "outbox.jsonl") };
           const records = tail
@@ -90,9 +93,6 @@ for (const mode of ["lean", "observe"] as const) {
             undefined,
             0,
           );
-        },
-        async reattach(launch, sink, signal) {
-          return this.start(launch, sink, signal);
         },
       };
       const make = () => createEngine({ backends: { fake: backend }, defaultBackend: "fake" });
@@ -227,7 +227,7 @@ test("rehydration and lost-agent rerun retain already observed usage without a u
 
 for (const emitTail of [true, false]) {
   test(`reattachment accounts ${emitTail ? "live tail" : "outcome-only"} spend once and enforces aggregate cost`, async (t) => {
-    const { run } = await fakeEngine(t, () => ({ usage }));
+    const { run, backend } = await fakeEngine(t, () => ({ usage }));
     const handle = await run([spec("a"), spec("after", "scout", { after: ["a"] })], {
       mode: "observe",
     });
@@ -246,7 +246,7 @@ for (const emitTail of [true, false]) {
       () => (emitTail ? { usage } : { events: [] }),
     );
     tail.reattach = async (launch, sink, signal) => {
-      const attached = await tail.start(launch, sink, signal);
+      const attached = await tail.start({ ...backend.starts[0].launch, ...launch }, sink, signal);
       return {
         ...attached,
         done: attached.done.then((outcome) => ({

@@ -37,6 +37,8 @@ export interface AgentView {
   model?: ModelRef;
   workspace?: WorkspaceRef;
   queuedAt?: number;
+  attemptSeq?: number;
+  settledSeq?: number;
   startedAt?: number;
   settledAt?: number;
   turns: number;
@@ -59,6 +61,8 @@ export interface AgentView {
 }
 
 export interface RunView {
+  reviewPolicy?: import("./policy.ts").ReviewPolicy;
+  deadlineAt?: number;
   run: string;
   mode: Mode;
   status: "running" | RunStatus;
@@ -163,6 +167,8 @@ function apply(view: RunView, e: AgentEvent): RunView {
         mode: e.mode,
         status: "running",
         startedAt: e.at,
+        ...(e.deadlineAt !== undefined && { deadlineAt: e.deadlineAt }),
+        reviewPolicy: e.reviewPolicy ?? "required",
         tasks: e.tasks,
         order: e.tasks.map((t) => t.id),
         agents,
@@ -192,6 +198,7 @@ function apply(view: RunView, e: AgentEvent): RunView {
           ...view.agents,
           [id]: {
             ...fresh,
+            attemptSeq: e.seq,
             ...(existing.workspaceMode && { workspaceMode: existing.workspaceMode }),
             usage: existing.usage,
             turns: existing.turns,
@@ -321,6 +328,7 @@ function apply(view: RunView, e: AgentEvent): RunView {
         ...a,
         status: e.status,
         settledAt: e.at,
+        settledSeq: e.seq,
         summary: e.summary,
         ...(e.reason !== undefined && { reason: e.reason }),
         usage: addUsage(a.previous?.usage ?? ZERO_USAGE, e.usage),
@@ -339,7 +347,11 @@ function apply(view: RunView, e: AgentEvent): RunView {
       return { ...view, telemetry: e.sample };
     case "run_resumed": {
       const { settledAt: _settled, ...rest } = view;
-      return { ...rest, status: "running" };
+      return {
+        ...rest,
+        status: "running",
+        ...(e.deadlineAt !== undefined && { deadlineAt: e.deadlineAt }),
+      };
     }
   }
 }

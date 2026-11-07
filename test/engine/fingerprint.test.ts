@@ -32,3 +32,26 @@ test("a failed measurement is not reused", async () => {
   fail = false;
   assert.equal(await cache.get("/repo", 0), "ok");
 });
+
+test("cancellation preserves other fingerprint readers and stops abandoned measurements", async () => {
+  const signals: AbortSignal[] = [];
+  const cache = new FingerprintCache(async (_root, signal) => {
+    signals.push(signal!);
+    return new Promise<string>((_resolve, reject) => {
+      signal!.addEventListener("abort", () => reject(signal!.reason), { once: true });
+    });
+  });
+  const first = new AbortController();
+  const second = new AbortController();
+  const one = cache.get("/repo", 0, first.signal);
+  const two = cache.get("/repo", 0, second.signal);
+  first.abort(new Error("first cancelled"));
+  await assert.rejects(one, /first cancelled/);
+  assert.equal(signals.length, 1);
+  assert.equal(signals[0].aborted, false, "the second reader still needs this measurement");
+  second.abort(new Error("second cancelled"));
+  await assert.rejects(two, /second cancelled/);
+  assert.equal(signals[0].aborted, true);
+  await assert.rejects(cache.get("/repo", 0, second.signal), /second cancelled/);
+  assert.equal(signals.length, 1, "an expired request starts no measurement");
+});

@@ -144,3 +144,26 @@ test(
     assert.deepEqual(JSON.parse(await readFile(r.stdout, "utf8")), args);
   },
 );
+
+test("a check shares the remaining run deadline and an expired check never starts", async (t) => {
+  const dir = await tempDir(t);
+  const started = performance.now();
+  const result = await runCheck(
+    {
+      id: "deadline",
+      argv: [node, "-e", "setInterval(()=>{},1000)"],
+      timeoutMs: 30_000,
+    },
+    { cwd: dir, env: environment(), logDir: dir, deadlineAt: Date.now() + 150 },
+  );
+  assert.equal(result.passed, false);
+  assert.equal(result.reason, "timed out");
+  assert(performance.now() - started < 3000, "deadline plus process cleanup grace");
+  await assert.rejects(
+    runCheck(
+      { id: "expired", argv: [node, "-e", "throw Error('must not start')"] },
+      { cwd: dir, env: environment(), logDir: dir, deadlineAt: Date.now() - 1 },
+    ),
+    /deadline/i,
+  );
+});

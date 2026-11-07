@@ -1,3 +1,4 @@
+import { remaining } from "../core/deadline.ts";
 import { atomicJson, privateDir } from "../core/store.ts";
 import { writes, taskTools, type Definitions } from "../core/definitions.ts";
 import { validateToolExtensions, type ToolExtension } from "./tool-providers.ts";
@@ -131,7 +132,7 @@ export function piPipeline(stages: PipelineStages = {}): Pipeline {
       const workspace =
         (await stages.prepareWorkspace?.(run, task, signal, {
           reattach: options.reattach === true,
-        })) ?? new LiveWorkspace(run.cwd);
+        })) ?? new LiveWorkspace(run.cwd, undefined, signal);
       // A result-only attempt inspects and reports; it cannot write.
       const canWrite = writes(task) && !resultOnly;
       const reviewTarget = await stages.reviewTarget?.(run, task, { workspace }, signal);
@@ -145,7 +146,7 @@ export function piPipeline(stages: PipelineStages = {}): Pipeline {
           predecessors.map(({ id, role, status, path }) => ({ id, agent: role, status, path })),
         );
       }
-      const remaining =
+      const remainingCost =
         run.limits.costUsd === undefined
           ? undefined
           : Math.max(0, run.limits.costUsd - run.view().usage.cost);
@@ -169,10 +170,10 @@ export function piPipeline(stages: PipelineStages = {}): Pipeline {
             resultOnly,
           }),
           budgets: {
-            deadline: Date.now() + run.limits.taskMs,
+            deadline: Date.now() + remaining(run.deadlineAt, run.limits.taskMs),
             maxTurns: run.limits.maxTurns,
             maxToolCalls: run.limits.maxToolCalls,
-            ...(remaining !== undefined && { maxCostUsd: remaining }),
+            ...(remainingCost !== undefined && { maxCostUsd: remainingCost }),
           },
           agent: {
             run: run.id,

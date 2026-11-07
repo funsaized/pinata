@@ -1,3 +1,4 @@
+import { reviewPolicy, type ReviewPolicy } from "./policy.ts";
 import { agentName, writes, reviews, validateSnapshots, type Definitions } from "./definitions.ts";
 // Task and graph validation. Errors name the task and field.
 import {
@@ -232,6 +233,7 @@ export function ancestors(
 }
 
 export interface GraphRules {
+  reviewPolicy?: ReviewPolicy;
   // Builders need an approval recorded by the caller.
   allowWrites?: boolean;
   definitions?: Definitions;
@@ -296,6 +298,15 @@ export function validateGraph(inputs: unknown, rules: GraphRules = {}): Task[] {
     return found;
   };
   const writers = all.filter(writes);
+  if (reviewPolicy(rules.reviewPolicy) === "required") {
+    const uncovered = writers.filter(
+      (task) => !all.some((review) => reviews(review) && review.reviewOf === task.id),
+    );
+    need(
+      !uncovered.length,
+      `Independent review required for: ${uncovered.map((task) => task.id).join(", ")}`,
+    );
+  }
   const added = new Set(tasks);
   for (const [index, task] of writers.entries())
     for (const other of writers.slice(index + 1)) {

@@ -21,26 +21,30 @@ export interface Base {
   uncommittedFiles: string[];
 }
 
-export async function headCommit(root: string): Promise<string> {
-  return line(await git(root, ["rev-parse", "--verify", "HEAD"]));
+export async function headCommit(root: string, signal?: AbortSignal): Promise<string> {
+  return line(await git(root, ["rev-parse", "--verify", "HEAD"], { signal }));
 }
 
 export async function snapshotBase(
   root: string,
   runId: string,
   includeUncommitted = true,
+  signal?: AbortSignal,
 ): Promise<Base> {
-  const head = await headCommit(root);
-  const headTree = line(await git(root, ["rev-parse", `${head}^{tree}`]));
+  const head = await headCommit(root, signal);
+  const headTree = line(await git(root, ["rev-parse", `${head}^{tree}`], { signal }));
   if (!includeUncommitted) return { head, commit: head, tree: headTree, uncommittedFiles: [] };
   const tmp = await mkdtemp(join(tmpdir(), "pinata-index-"));
   try {
     const env = { GIT_INDEX_FILE: join(tmp, "index") };
-    const index = resolve(root, line(await git(root, ["rev-parse", "--git-path", "index"])));
+    const index = resolve(
+      root,
+      line(await git(root, ["rev-parse", "--git-path", "index"], { signal })),
+    );
     if (!(await copyIndex(index, env.GIT_INDEX_FILE)))
-      await git(root, ["read-tree", head], { env });
-    await git(root, ["add", "--all"], { env });
-    const tree = line(await git(root, ["write-tree"], { env }));
+      await git(root, ["read-tree", head], { env, signal });
+    await git(root, ["add", "--all"], { env, signal });
+    const tree = line(await git(root, ["write-tree"], { env, signal }));
     if (tree === headTree) return { head, commit: head, tree, uncommittedFiles: [] };
     const commit = line(
       await git(
@@ -48,12 +52,13 @@ export async function snapshotBase(
         ["commit-tree", "--no-gpg-sign", "-p", head, "-m", "pinata: uncommitted changes", tree],
         {
           env: { ...env, ...IDENTITY },
+          signal,
         },
       ),
     );
-    await git(root, ["update-ref", `refs/pinata/${runId}/base`, commit]);
+    await git(root, ["update-ref", `refs/pinata/${runId}/base`, commit], { signal });
     const files = zsplit(
-      await git(root, ["diff", "--name-only", "-z", "--no-renames", head, commit]),
+      await git(root, ["diff", "--name-only", "-z", "--no-renames", head, commit], { signal }),
     );
     return { head, commit, tree, uncommittedFiles: files };
   } finally {

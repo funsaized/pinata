@@ -19,7 +19,7 @@ import {
 import { piCommand } from "./pi-command.ts";
 import { agentFiles, followDetached, piArgs, type AgentFiles } from "./process.ts";
 import type { ProcessIdentity } from "./supervise.ts";
-import type { AgentBackend, AgentHandle, AgentLaunch } from "./types.ts";
+import type { AgentAttachment, AgentBackend, AgentHandle, AgentLaunch } from "./types.ts";
 
 // How long Pi in a new pane has to load the agent extension (which writes pid.json).
 export const PANE_START_MS = 30_000;
@@ -135,7 +135,7 @@ export class HerdrPiBackend implements AgentBackend {
   }
 
   async reattach(
-    launch: AgentLaunch,
+    launch: AgentAttachment,
     sink: (e: AgentEventInput) => void,
     signal: AbortSignal,
   ): Promise<AgentHandle | null> {

@@ -20,21 +20,25 @@ export const ZERO = "0".repeat(40);
 // Writes the worktree's current content as a tree object and returns its id. With `indexFile`,
 // that private index is kept between captures (created from the worktree's index the first
 // time), so later captures only rehash files whose stat data changed.
-export async function writeTree(worktree: string, indexFile?: string): Promise<string> {
+export async function writeTree(
+  worktree: string,
+  indexFile?: string,
+  signal?: AbortSignal,
+): Promise<string> {
   const tmp = indexFile ? undefined : await mkdtemp(join(tmpdir(), "pinata-capture-"));
   try {
     const env = { GIT_INDEX_FILE: indexFile ?? join(tmp!, "index") };
     if (!indexFile || !(await stat(indexFile).catch(() => null))) {
       const index = resolve(
         worktree,
-        line(await git(worktree, ["rev-parse", "--git-path", "index"])),
+        line(await git(worktree, ["rev-parse", "--git-path", "index"], { signal })),
       );
       await copyIndex(index, env.GIT_INDEX_FILE);
     }
     // The untracked cache, kept in the private index, lets later captures skip directories
     // whose contents did not change.
-    await git(worktree, ["-c", "core.untrackedCache=true", "add", "-A"], { env });
-    return line(await git(worktree, ["write-tree"], { env }));
+    await git(worktree, ["-c", "core.untrackedCache=true", "add", "-A"], { env, signal });
+    return line(await git(worktree, ["write-tree"], { env, signal }));
   } finally {
     if (tmp) await rm(tmp, { recursive: true, force: true });
   }
@@ -60,18 +64,26 @@ export function parseRaw(out: string): Change[] {
   return changes;
 }
 
-export async function diffTrees(cwd: string, base: string, tree: string): Promise<Change[]> {
+export async function diffTrees(
+  cwd: string,
+  base: string,
+  tree: string,
+  signal?: AbortSignal,
+): Promise<Change[]> {
   if (base === tree) return [];
-  return parseRaw(await git(cwd, ["diff-tree", "-r", "-z", "--no-renames", "--raw", base, tree]));
+  return parseRaw(
+    await git(cwd, ["diff-tree", "-r", "-z", "--no-renames", "--raw", base, tree], { signal }),
+  );
 }
 
 export async function capture(
   worktree: string,
   baseTree: string,
   indexFile?: string,
+  signal?: AbortSignal,
 ): Promise<ChangeSet> {
-  const tree = await writeTree(worktree, indexFile);
-  return { base: baseTree, tree, changes: await diffTrees(worktree, baseTree, tree) };
+  const tree = await writeTree(worktree, indexFile, signal);
+  return { base: baseTree, tree, changes: await diffTrees(worktree, baseTree, tree, signal) };
 }
 
 export function fingerprint(value: {
@@ -96,16 +108,23 @@ export class BlobReader {
   private queue: Array<{ resolve: (b: Buffer | null) => void; reject: (e: Error) => void }> = [];
   private closed = false;
 
-  constructor(cwd: string) {
+  constructor(cwd: string, signal?: AbortSignal) {
+    signal?.throwIfAborted();
     this.child = spawn("git", ["-C", cwd, ...PORTABLE, "cat-file", "--batch"], {
       stdio: ["pipe", "pipe", "ignore"],
       windowsHide: true,
+    });
+    const abort = () => this.child.kill("SIGKILL");
+    signal?.addEventListener("abort", abort, { once: true });
+    this.child.on("error", (error) => {
+      for (const queued of this.queue.splice(0)) queued.reject(error);
     });
     this.child.stdout.on("data", (chunk: Buffer) => {
       this.buffer = Buffer.concat([this.buffer, chunk]);
       this.drain();
     });
     this.child.on("close", () => {
+      signal?.removeEventListener("abort", abort);
       this.closed = true;
       for (const q of this.queue.splice(0)) q.reject(new Error("git cat-file exited"));
     });

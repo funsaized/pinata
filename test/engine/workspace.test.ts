@@ -9,6 +9,8 @@ import { dropRefs, snapshotBase } from "../../engine/workspace/snapshot.ts";
 import { Worktree, composeBase } from "../../engine/workspace/worktree.ts";
 import { gitRepo } from "./faux.ts";
 import { tempDir } from "./helpers.ts";
+import { alive, identify } from "../../engine/backends/supervise.ts";
+import { killTree } from "../../engine/verify/checks.ts";
 
 async function repo(
   t: Parameters<typeof tempDir>[0],
@@ -22,6 +24,45 @@ async function repo(
 }
 
 const POSIX = process.platform !== "win32";
+
+test("cancelling capture kills a stuck Git filter and leaves the private index reusable", async (t) => {
+  const { dir, root, git } = await repo(t);
+  const tree = await Worktree.create(root, join(dir, "tree"), git("rev-parse", "HEAD").trim());
+  const marker = join(dir, "filter.pid");
+  const filter = join(dir, "filter.mjs");
+  await writeFile(
+    filter,
+    `import { writeFileSync } from "node:fs"; writeFileSync(${JSON.stringify(marker)}, String(process.pid)); setInterval(() => {}, 1000);`,
+  );
+  git(
+    "config",
+    "filter.stuck.clean",
+    `${JSON.stringify(process.execPath.replaceAll("\\", "/"))} ${JSON.stringify(filter.replaceAll("\\", "/"))}`,
+  );
+  await writeFile(join(tree.path, ".gitattributes"), "a.txt filter=stuck\n");
+  await writeFile(join(tree.path, "a.txt"), "changed\n");
+  const controller = new AbortController();
+  t.after(() => controller.abort());
+  const pending = tree.capture(controller.signal);
+  const rejected = assert.rejects(pending, /capture cancelled/);
+  let pid = 0;
+  for (let i = 0; i < 500 && !pid; i++) {
+    pid = Number(await readFile(marker, "utf8").catch(() => "0"));
+    if (!pid) await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  assert(pid, "Git filter started");
+  const processIdentity = await identify(pid);
+  t.after(() => killTree(pid));
+  assert(processIdentity);
+  controller.abort(new Error("capture cancelled"));
+  await rejected;
+  assert.equal(await alive(processIdentity), false, "the filter process was reaped");
+  await rm(join(tree.path, ".gitattributes"));
+  assert.deepEqual(
+    (await tree.capture()).changes.map((change) => change.path),
+    ["a.txt"],
+  );
+});
 
 test("the snapshot includes uncommitted and untracked work and leaves the user's index alone", async (t) => {
   const { root, git } = await repo(t);

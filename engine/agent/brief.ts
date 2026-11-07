@@ -137,7 +137,7 @@ function checksText(checks: readonly Check[]): string {
 function workspaceText(input: BriefInput): string {
   const { workspace, task } = input;
   if (workspace.kind === "worktree" && writes(task))
-    return `Your workspace is an isolated git worktree of the repository at ${workspace.path}, created from the checkout as it was when the run started, including uncommitted changes. Edit files only inside your ownership.`;
+    return `Your workspace is an isolated git worktree of the repository at ${workspace.path}, created from the checkout as it was when the run started, including uncommitted changes. It includes only declared predecessor changes, not eventual sibling outputs. Checks must use those predecessors or independent fixtures. Edit files only inside your ownership.`;
   if (workspace.kind === "worktree")
     return `Your workspace is the reviewed builder's worktree at ${workspace.path}. It is read-only for you.`;
   return `Your workspace is the user's live checkout at ${workspace.path}. Read it; do not modify it. Files can change while you work.`;

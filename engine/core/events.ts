@@ -47,7 +47,13 @@ const isUsage = (v: unknown): v is Usage =>
 
 // Field checks per event type, beyond the envelope.
 const BODY: Record<EventType, (e: any) => boolean> = {
-  run_started: (e) => Array.isArray(e.tasks) && (e.mode === "lean" || e.mode === "observe"),
+  run_started: (e) =>
+    Array.isArray(e.tasks) &&
+    (e.mode === "lean" || e.mode === "observe") &&
+    (e.deadlineAt === undefined || (Number.isSafeInteger(e.deadlineAt) && e.deadlineAt > 0)) &&
+    (e.reviewPolicy === undefined ||
+      e.reviewPolicy === "optional" ||
+      e.reviewPolicy === "required"),
   agent_queued: (e) =>
     (e.task === undefined || (typeof e.task === "object" && e.task !== null)) &&
     (e.repair === undefined || typeof e.repair === "boolean"),
@@ -95,7 +101,9 @@ const BODY: Record<EventType, (e: any) => boolean> = {
     isUsage(e.usage) &&
     isCount(e.turns) &&
     isCount(e.toolCalls),
-  run_resumed: (e) => isString(e.reason, 64_000),
+  run_resumed: (e) =>
+    isString(e.reason, 64_000) &&
+    (e.deadlineAt === undefined || (Number.isSafeInteger(e.deadlineAt) && e.deadlineAt > 0)),
   telemetry: (e) =>
     typeof e.sample === "object" &&
     e.sample !== null &&

@@ -1,3 +1,4 @@
+import { assertTime, remaining } from "../core/deadline.ts";
 // Runs builder checks and evidence checks: argv without a shell, the approved environment,
 // a timeout with process-tree kill, and bounded, hashed logs. A failed check fails the builder.
 import { spawn, spawnSync } from "node:child_process";
@@ -173,6 +174,7 @@ export interface CheckEvidence {
 }
 
 export interface CheckOptions {
+  deadlineAt?: number;
   cwd: string;
   env: NodeJS.ProcessEnv;
   logDir: string;
@@ -182,6 +184,8 @@ export interface CheckOptions {
 
 export async function runCheck(check: Check, options: CheckOptions): Promise<CheckEvidence> {
   await mkdir(options.logDir, { recursive: true, mode: 0o700 });
+  assertTime(options.deadlineAt);
+  options.signal?.throwIfAborted();
   const stdoutPath = join(options.logDir, `check-${check.id}.stdout.log`);
   const stderrPath = join(options.logDir, `check-${check.id}.stderr.log`);
   const started = performance.now();
@@ -220,16 +224,22 @@ export async function runCheck(check: Check, options: CheckOptions): Promise<Che
         ),
       );
     }
+    let hard: ReturnType<typeof setTimeout> | undefined;
     const stop = (why: string) => {
+      if (reason) return;
       reason ??= why;
       if (!child.pid) return;
       terminateTree(child.pid);
-      const hard = setTimeout(() => child.pid && killTree(child.pid), KILL_GRACE_MS);
+      hard = setTimeout(() => child.pid && killTree(child.pid), KILL_GRACE_MS);
       hard.unref();
     };
-    const timer = setTimeout(() => stop("timed out"), check.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+    const timer = setTimeout(
+      () => stop("timed out"),
+      remaining(options.deadlineAt, check.timeoutMs ?? DEFAULT_TIMEOUT_MS),
+    );
     const onAbort = () => stop("cancelled");
     options.signal?.addEventListener("abort", onAbort, { once: true });
+    if (options.signal?.aborted) onAbort();
     const collect = (
       stream: NodeJS.ReadableStream,
       log: NodeJS.WritableStream,
@@ -247,6 +257,7 @@ export async function runCheck(check: Check, options: CheckOptions): Promise<Che
     child.on("error", (e) => (launchError = `cannot launch: ${e.message}`));
     child.on("close", (code, signal) => {
       clearTimeout(timer);
+      if (hard) clearTimeout(hard);
       options.signal?.removeEventListener("abort", onAbort);
       // Leave nothing running in the check's process group.
       if (child.pid && process.platform !== "win32") killTree(child.pid);

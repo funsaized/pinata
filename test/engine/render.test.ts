@@ -63,7 +63,7 @@ test("summaries show engine failures and checkout verification limitations witho
   const result = render("verify", ok(verification));
   assert.match(result, /Checks failed/);
   assert.match(result, /test — Exit 1/);
-  assert.match(result, /Checkout differs from the reviewed/);
+  assert.match(result, /Checkout differs from the recorded/);
   assert.match(result, /Verification is historical/);
   assert.match(render("verify", ok(verification), true), /"application": "different"/);
 });

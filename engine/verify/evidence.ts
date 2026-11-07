@@ -1,3 +1,4 @@
+import { savedReviewPolicy, type ReviewPolicy } from "../core/policy.ts";
 import { writes, reviews as isReviewer } from "../core/definitions.ts";
 // Evidence describes an immutable builder artifact, never the current destination.
 import { createHash } from "node:crypto";
@@ -48,9 +49,12 @@ export async function retainArtifact(
   task: string,
   hash: string,
   data: Pick<BuilderData, "baseCommit" | "changes">,
+  signal?: AbortSignal,
 ): Promise<void> {
   for (const [name, oid] of Object.entries({ base: data.baseCommit, tree: data.changes.tree }))
-    await git(root, ["update-ref", `refs/pinata/${run}/evidence/${task}/${hash}/${name}`, oid]);
+    await git(root, ["update-ref", `refs/pinata/${run}/evidence/${task}/${hash}/${name}`, oid], {
+      signal,
+    });
 }
 
 export interface VerifiedBuilder {
@@ -70,6 +74,7 @@ export interface VerifiedBuilder {
 export interface VerifiedChanges {
   schemaVersion: 1;
   scope: "builder-artifacts";
+  reviewPolicy?: ReviewPolicy;
   run: string;
   startHead: string;
   evidenceDigest: string;
@@ -113,7 +118,9 @@ export function safeChange(path: string, oldMode: string, newMode: string): void
 
 export async function loadChanges(
   dir: string,
+  signal?: AbortSignal,
 ): Promise<{ record: RunRecord; evidence: VerifiedChanges }> {
+  signal?.throwIfAborted();
   const record = await readRunRecord(dir);
   need(record.allowWrites, "Integration is not authorized for this run");
   const tasks = validateGraph(record.tasks, { allowWrites: true, definitions: record.definitions });
@@ -124,6 +131,7 @@ export async function loadChanges(
   );
   const results = new Map<string, Settled>();
   for (const task of tasks) {
+    signal?.throwIfAborted();
     const saved = await readJson<Settled>(join(dir, "results", `${task.id}.json`));
     need(
       saved.status === "succeeded" && view.agents[task.id]?.status === "succeeded",
@@ -133,6 +141,7 @@ export async function loadChanges(
   }
   const builders: VerifiedBuilder[] = [];
   for (const task of ordered(tasks).filter((t) => writes(t))) {
+    signal?.throwIfAborted();
     const saved = results.get(task.id)!;
     const data = saved.data as unknown as BuilderData | undefined;
     need(
@@ -144,12 +153,12 @@ export async function loadChanges(
       `Builder ${task.id} evidence is stale or corrupt`,
     );
     need(
-      line(await git(record.root, ["rev-parse", `${data.baseCommit}^{tree}`])) ===
+      line(await git(record.root, ["rev-parse", `${data.baseCommit}^{tree}`], { signal })) ===
         data.changes.base,
       `Builder ${task.id} base does not match its evidence`,
     );
     need(
-      digest(await diffTrees(record.root, data.changes.base, data.changes.tree)) ===
+      digest(await diffTrees(record.root, data.changes.base, data.changes.tree, signal)) ===
         digest(data.changes.changes),
       `Builder ${task.id} change manifest does not match its trees`,
     );
@@ -175,7 +184,10 @@ export async function loadChanges(
         );
       }
     const reviews = tasks.filter((t) => isReviewer(t) && t.reviewOf === task.id);
-    need(reviews.length, `Independent review required for ${task.id}`);
+    need(
+      savedReviewPolicy(record) === "optional" || reviews.length,
+      `Independent review required for ${task.id}`,
+    );
     for (const review of reviews) {
       const r = results.get(review.id)!.result?.review;
       need(
@@ -212,11 +224,13 @@ export async function loadChanges(
   const evidence = {
     schemaVersion: 1 as const,
     scope: "builder-artifacts" as const,
+    reviewPolicy: savedReviewPolicy(record),
     run: record.id,
     startHead: record.head,
     evidenceDigest: digest({
       run: record.id,
       head: record.head,
+      ...(record.reviewPolicy !== undefined && { reviewPolicy: savedReviewPolicy(record) }),
       builders: builders.map((b) => ({ ...b, checks: b.checks.map(checkIdentity) })),
     }),
     builders,
