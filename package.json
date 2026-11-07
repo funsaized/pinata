@@ -55,7 +55,10 @@
     "typecheck": "tsc -p tsconfig.json",
     "format:check": "oxfmt --check package.json tsconfig.json test scripts .github examples README.md docs skills prompts engine bench arena bin agents",
     "format": "oxfmt package.json tsconfig.json test scripts .github examples README.md docs skills prompts engine bench arena bin agents",
-    "test:herdr": "node --test test/engine/herdr.test.ts"
+    "test:herdr": "node --test test/engine/herdr.test.ts",
+    "arena:bootstrap": "node arena/bootstrap.ts",
+    "arena:local": "node arena/local-run.ts",
+    "arena:doctor": "node arena/doctor.ts"
   },
   "devDependencies": {
     "@earendil-works/pi-ai": "1.1.0",

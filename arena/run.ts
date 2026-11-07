@@ -2,18 +2,18 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { executeOffline, type OfflineMode } from "./adapters/offline.ts";
-import { tasks } from "./corpus/index.ts";
-import { parseAdapterConfig, runArena, workflows, type ArenaOptions } from "./runner.ts";
+import { tasks, allTasks } from "./corpus/index.ts";
+import { parseAdapterConfig, runArena, externalWorkflows, type ArenaOptions } from "./runner.ts";
 import type { AdapterRequest, ArenaTask, Workflow } from "./types.ts";
 
 const help = `Usage: npm run arena -- [--offline | --adapter CONFIG --allow-external]
   --out DIR                    Output parent (default arena/results)
   --trials N                   Repetitions per task/workflow (default 1, max 100)
-  --task ID[,ID...]             Corpus tasks (default all)
-  --workflow NAME[,NAME...]     Workflows (default all four)
+  --task ID[,ID...]             Corpus tasks (default three small controls; team-board opt-in)
+  --workflow NAME[,NAME...]     Workflows (default four controls; native requires adapter)
   --mode MODE                  known-good, noop, broken, repair-control
   --timeout-ms N               Adapter timeout (default config timeout or 60000)
-  --oracle-timeout-ms N        Oracle timeout (default 10000)
+  --oracle-timeout-ms N        Oracle timeout (task default; small controls 10000)
   --max-repairs N              Repair budget (default 1)
   --max-log-bytes N            Per-stream log cap (default 1048576)
 Offline runs are scripted harness controls, not model benchmarks.
@@ -67,16 +67,16 @@ export function parseArgs(argv: string[]): ArenaOptions {
       case "--task": {
         const ids = value.split(",");
         if (
-          ids.some((id) => !tasks.some((task) => task.id === id)) ||
+          ids.some((id) => !allTasks.some((task) => task.id === id)) ||
           new Set(ids).size !== ids.length
         )
           throw new Error(`Unknown or repeated task: ${value}`);
-        options.tasks = ids.map((id) => tasks.find((task) => task.id === id)!);
+        options.tasks = ids.map((id) => allTasks.find((task) => task.id === id)!);
         break;
       }
       case "--workflow": {
         const names = value.split(",");
-        if (names.some((name) => !workflows.includes(name as Workflow)))
+        if (names.some((name) => !externalWorkflows.includes(name as Workflow)))
           throw new Error(`Unknown workflow: ${value}`);
         options.workflows = names as Workflow[];
         break;

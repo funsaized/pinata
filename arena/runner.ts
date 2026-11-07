@@ -19,6 +19,7 @@ import { fileURLToPath } from "node:url";
 import type { AdapterRequest, AdapterResponse, ArenaTask, Workflow } from "./types.ts";
 import type { OfflineMode } from "./adapters/offline.ts";
 import { runProcess, type ProcessResult } from "./process.ts";
+import { validateUnitGraph } from "./task-graph.ts";
 import { renderReport } from "./report.ts";
 import { verifyTreatment, type TreatmentVerification } from "./treatment.ts";
 
@@ -28,6 +29,7 @@ export const workflows: Workflow[] = [
   "sequential-review",
   "parallel-review",
 ];
+export const externalWorkflows: Workflow[] = [...workflows, "native"];
 const arenaDir = dirname(fileURLToPath(import.meta.url));
 const repoDir = dirname(arenaDir);
 const workerFile = join(arenaDir, "run.ts");
@@ -373,6 +375,7 @@ function parseOracle(raw: string, expectedCount: number): OracleResult {
 }
 
 export interface ArenaOptions {
+  signal?: AbortSignal;
   out: string;
   tasks: ArenaTask[];
   workflows?: Workflow[];
@@ -393,6 +396,8 @@ export async function runArena(
   if (options.adapter && !options.allowExternal)
     throw new Error("External commands require --allow-external; they may invoke paid models");
   const selectedWorkflows = options.workflows ?? workflows;
+  if (!options.adapter && selectedWorkflows.includes("native"))
+    throw new Error("The native workflow requires an external adapter");
   const trials = options.trials ?? 1;
   const mode = options.offlineMode ?? "known-good";
   const adapter = options.adapter
@@ -400,7 +405,9 @@ export async function runArena(
     : { name: "scripted-control", command: process.execPath, args: [workerFile], model: null };
   const limits = {
     timeoutMs: options.timeoutMs ?? adapter.timeoutMs ?? 60_000,
-    oracleTimeoutMs: options.oracleTimeoutMs ?? 10_000,
+    oracleTimeoutMs:
+      options.oracleTimeoutMs ??
+      Math.max(10_000, ...options.tasks.map((task) => task.oracleTimeoutMs ?? 10_000)),
     maxRepairs: options.maxRepairs ?? 1,
     maxLogBytes: options.maxLogBytes ?? 1024 * 1024,
     ...treeLimits,
@@ -411,7 +418,7 @@ export async function runArena(
     trials > 100 ||
     !options.tasks.length ||
     !selectedWorkflows.length ||
-    !selectedWorkflows.every((workflow) => workflows.includes(workflow)) ||
+    !selectedWorkflows.every((workflow) => externalWorkflows.includes(workflow)) ||
     new Set(selectedWorkflows).size !== selectedWorkflows.length ||
     new Set(options.tasks.map((task) => task.id)).size !== options.tasks.length ||
     Object.values(limits).some((limit) => !Number.isSafeInteger(limit) || limit < 0) ||
@@ -424,6 +431,7 @@ export async function runArena(
   )
     throw new Error("Invalid arena options");
   for (const task of options.tasks) {
+    validateUnitGraph(task.units);
     if (!/^[a-z0-9][a-z0-9_-]*$/.test(task.id)) throw new Error(`Unsafe task id: ${task.id}`);
     if (
       !Number.isSafeInteger(task.oracleCaseCount) ||
@@ -560,7 +568,9 @@ export async function runArena(
             oracleCaseCount: task.oracleCaseCount,
             scorerProtocol: "separate-process-v1",
             candidateRestrictions: {
-              profile: resolve(task.oracleFile).startsWith(join(arenaDir, "corpus", "v1") + sep)
+              profile: ["v1", "v2"].some((version) =>
+                resolve(task.oracleFile).startsWith(join(arenaDir, "corpus", version) + sep),
+              )
                 ? "bundled-scorer-node-permission-readonly"
                 : "custom-oracle-unverified",
               osSandbox: false,
@@ -591,6 +601,7 @@ export async function runArena(
       }
   writeFileSync(join(directory, "report.md"), renderReport(results));
   for (const { task, workflow, result, runDir, candidate, evidence } of planned) {
+    if (options.signal?.aborted) break;
     const runId = result.runId;
     result.status = "running";
     result.startedAt = new Date().toISOString();
@@ -641,6 +652,7 @@ export async function runArena(
         args = [workerFile, "--offline-worker", workerInput];
       }
       const adapterRun = await runProcess({
+        signal: options.signal,
         command: adapter.command,
         args,
         cwd: candidate,
@@ -668,6 +680,7 @@ export async function runArena(
         result.errors.push(errorText(error));
       }
       saveResult(runDir, result);
+      if (options.signal?.aborted) throw new Error("Arena canceled by user");
       const candidateFiles = treeManifest(candidate);
       if (candidateFiles.some((file) => file.kind === "symlink"))
         throw new Error("Candidate symlink prohibited; oracle skipped");
@@ -675,6 +688,7 @@ export async function runArena(
         flag: "wx",
       });
       const oracleRun = await runProcess({
+        signal: options.signal,
         command: process.execPath,
         args: [task.oracleFile, candidate],
         cwd: dirname(task.oracleFile),

@@ -94,3 +94,21 @@ export const tasks: ArenaTask[] = definitions.map(({ id, title, units, oracleCas
     units,
   };
 });
+
+// Larger projects are opt-in so the dependency-free offline control matrix stays small.
+const board = new URL("./v2/team-board/", import.meta.url);
+export const projectTasks: ArenaTask[] = [
+  {
+    id: "team-board",
+    version: 2,
+    title: "Full-stack Team Board with optimistic concurrency and browser verification",
+    prompt: readFileSync(new URL("prompt.md", board), "utf8"),
+    starterDir: fileURLToPath(new URL("starter/", board)),
+    solutionDir: fileURLToPath(new URL("solution/", board)),
+    oracleFile: fileURLToPath(new URL("oracle.mjs", board)),
+    oracleCaseCount: 33,
+    oracleTimeoutMs: 60000,
+    units: JSON.parse(readFileSync(new URL("units.json", board), "utf8")),
+  },
+];
+export const allTasks = [...tasks, ...projectTasks];

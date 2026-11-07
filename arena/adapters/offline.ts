@@ -83,6 +83,8 @@ export async function executeOffline(
   task: ArenaTask,
   mode: OfflineMode = "known-good",
 ): Promise<AdapterResponse> {
+  if (request.workflow === "native")
+    throw new Error("Native workflow requires an external adapter");
   const events: Event[] = [];
   let attempts = 0;
   let repairs = 0;

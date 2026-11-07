@@ -1,11 +1,18 @@
 // Versioned protocol shared by the corpus, runner, and adapters.
-export type Workflow = "sequential" | "parallel" | "sequential-review" | "parallel-review";
+export type Workflow =
+  | "sequential"
+  | "parallel"
+  | "sequential-review"
+  | "parallel-review"
+  | "native";
 export interface Unit {
+  after?: string[]; // Public dependency hints for whole-task native planning.
   id: string;
   prompt: string;
   files: string[];
 }
 export interface ArenaTask {
+  oracleTimeoutMs?: number;
   id: string;
   version: number;
   title: string;

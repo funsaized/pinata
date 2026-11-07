@@ -1,0 +1,3 @@
+export function styles() {
+  return `:root{font-family:system-ui;color:#172b4d;background:#f4f7fb}body{max-width:1100px;margin:3rem auto;padding:0 1rem}h1{letter-spacing:-.04em}form,.filters{display:flex;gap:.75rem;flex-wrap:wrap;margin:1.5rem 0}input,select,button{font:inherit;padding:.65rem;border:1px solid #ccd5e1;border-radius:.5rem}button{cursor:pointer;background:#143e77;color:white}#board{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1rem}article{background:white;padding:1.2rem;border:1px solid #d9e1ec;border-radius:.8rem;display:grid;gap:.6rem}article h3,article p{margin:0;overflow-wrap:anywhere}article button{width:100%}#error{color:#a21a2f;min-height:1.5em}@media(max-width:600px){form>*{width:100%}}`;
+}

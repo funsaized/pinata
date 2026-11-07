@@ -72,3 +72,16 @@ isolation appropriate for untrusted code. Any paid validation requires a later,
 explicitly approved plan. External commands can run arbitrary local code and may
 spend money when configured with provider credentials. No live framework or paid
 model validation is part of this pilot.
+
+## Native local pilot
+
+`native.ts` provides whole-task coordinator adapters for Codex, plain Pi (solo),
+and Piñata. They use the `native` workflow and remain unverified. Piñata explicitly
+loads this checkout's extension and requires a successful `pinata_run` followed
+by verified `pinata_integrate` output before reporting completion.
+
+Run `npm run arena:bootstrap`, `npm run arena:doctor`, then `npm run arena:local`
+for the terminal wizard. Use `npm run arena:local -- --preview` to inspect the
+plan-and-execute prompt without any model calls. See the
+[local pilot guide](../../docs/maintainers/coding-arena.md#local-native-system-pilot-codex-piñata-and-pi)
+for configuration, evidence, project requirements and comparison limitations.

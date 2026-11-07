@@ -5,7 +5,8 @@ trial. It is a maintainer harness, separate from Pinata's runtime and from the
 [performance benchmarks](performance.md). The offline controls exercise the harness
 with scripted changes, including copied reference solutions; they do not measure a
 model or compare frameworks.
-No live Piñata, Pi, or OpenCode adapter is supplied or validated.
+Local native adapters for Codex, Piñata and plain Pi are supplied as an unverified
+pilot; no live model validation is claimed.
 
 ## Run the offline controls
 
@@ -151,3 +152,125 @@ follows symlinks; the arena rejects symlinks in candidate inputs. Adapters and
 generated code may have the user's operating-system permissions. Run only trusted
 code, and use an independently secured environment when evaluating untrusted code.
 See [trust and safety](../explanation/trust.md).
+
+## Local native-system pilot: Codex, Piñata and Pi
+
+The human entry point is a project plan prompt, sent to one orchestrating agent.
+The coordinator plans ownership, dependency DAG, parallel work, integration and
+checks, then executes the plan using its framework. The arena does not launch a
+fresh agent for each module. The `native` workflow labels this condition separately
+from prescribed sequential/parallel controls.
+
+### Start locally
+
+Install/configure Pi and Codex normally, and have Chromium on PATH. No Node packages
+are needed for the benchmark app itself. Bootstrap machine-local configs:
+
+```sh
+npm run arena:bootstrap
+npm run arena:doctor
+npm run arena:local
+```
+
+The last command opens a terminal wizard: choose Codex, Piñata, Pi solo, or all
+three; choose the full app or a smoke task; choose workers/repetitions; inspect the
+configuration and start. Model usage is consumed only after starting. Outside a
+terminal, explicit `--allow-external` is required. Bootstrap overwrites the three
+generated `arena/local/{codex,pi,pinata}.json` files; these are ignored by Git.
+Credentials are used by the installed CLIs, never copied into generated configs.
+Agent executable paths are pinned outside npm's injected node_modules bins, so
+the project's Pi devDependency cannot silently replace your installed Pi.
+Doctor checks executable startup and configs, not authentication or model access.
+
+Defaults: `openai/gpt-6-luna`, max thinking, four concurrent workers (excluding the
+coordinator), twenty minutes per project, one repetition. Pi is a solo baseline;
+its worker count does not create delegation tools. Piñata loads this checkout's
+extension explicitly, delegates through `pinata_run`, and must call
+`pinata_integrate` to apply builder worktrees before the arena scores the checkout.
+
+Preview the plan prompt without launching anything:
+
+```sh
+npm run arena:local -- --agent codex --preview
+npm run arena:local -- --agent pinata --preview
+```
+
+Preview paths are illustrative. Real execution creates a fresh candidate and passes
+that path to the coordinator. The exact live prompt is retained as
+`evidence/plan-prompt.txt`, with the command in `invocation.json` and bounded raw
+framework logs in `native.stdout.jsonl` and `native.stderr.log`.
+
+For scripts, run a single project or a matched three-system round:
+
+```sh
+npm run arena:local -- --agent codex --allow-external
+npm run arena:local -- --agent all --concurrency 4 --trials 2 --allow-external
+# Fast plumbing smoke check instead of the full app:
+npm run arena:local -- --agent codex --task checkout --allow-external
+```
+
+`--task` also accepts `reservations`, `incidents`, `team-board`, or `all`.
+Each framework receives a fresh checkout with the same task version and model
+settings. Each batch retains its own report; the command prints scores, errors and
+report paths. Framework order is fixed, so timings can have order effects.
+
+### The larger assignment
+
+The default `team-board` project is a twelve-module full-stack app: immutable
+validation and querying, optimistic revisions, idempotent writes, durable JSON
+state, HTTP transport, safe rendering, and browser UI controls. Six foundation
+units can start independently. State/API and rendering branches then join at the
+browser client and server. Public dependency hints are validated for unknown IDs,
+duplicates and cycles, and passed to the coordinator. They do not force a specific
+agent scheduling strategy.
+
+Its independent oracle has 33 cases covering pure contracts, real loopback HTTP,
+concurrent writes, and fresh headless Chromium create/filter/advance/delete,
+conflict and escaping flows. The development suite additionally checks persistence
+across a disk-backed restart. The scored server runs with memory storage because
+the candidate worker has no filesystem write permission; serialization/cache
+contracts are scored separately. Full disk persistence is therefore a public
+requirement, not a fully scored candidate property yet.
+
+Chromium uses a temporary profile and no user browser session. Set
+`ARENA_CHROMIUM_BIN` when it is not named `chromium`. The app oracle gets a
+60-second budget and explicitly enables candidate networking where Node requires
+`--allow-net`; this permission is not restricted to loopback by Node. The three
+small tasks and default four-workflow offline control matrix stay unchanged.
+Select the project explicitly with the ordinary runner's `--task team-board`.
+
+### Interpretation and limits
+
+Codex and Piñata are instructed to delegate; Pi is deliberately the solo baseline.
+Codex keeps user configuration while overriding parent/worker model defaults,
+reasoning and worker concurrency. Custom roles/explicit spawn settings may still
+differ. Pi disables discovered extensions, skills, context files, templates and
+MCP; Piñata explicitly adds its extension. These differences are recorded
+limitations, not an assertion of perfect tool or sandbox equivalence.
+See [Codex subagent configuration](https://learn.chatgpt.com/docs/agent-configuration/subagents).
+
+Native review and iteration are allowed within the wall-clock budget. `maxRepairs`
+configures Piñata engine repairs, not a shared enforced iteration limit. Worker
+counts have framework-specific semantics. Available usage events remain in raw
+logs; total tokens, cost, attempts and repairs remain null pending reliable
+complete accounting. External runs remain unverified and comparison-ineligible.
+An oracle pass establishes candidate correctness for the tested contracts, not
+proof of delegation or matched resource use. Piñata's observed successful run and
+verified integration are sanity checks on its output, not trusted supervision.
+
+Bootstrap, doctor, preview, offline controls and tests make no model calls. Live
+framework validation must be started explicitly. This is not an OS sandbox;
+use independent isolation for untrusted generated code.
+
+Codex native runs intentionally persist their sessions: `--ephemeral` is omitted
+because subagent startup can require the parent rollout in the thread store.
+Known thread-context/spawn errors fail the native trial even if Codex exits zero.
+Ctrl+C in the launcher kills its supervised process group, stops queued trials,
+and retains interrupted/pending evidence. Codex sessions remain in its normal
+session store; arena logs remain under the batch directory.
+
+Team Board v2 corrects the Advance browser assertion: it verifies server state and
+visible status text while accepting labels such as "Status: doing". The v1 scorer
+is retained for reproducibility; historical scores are not rewritten. This changes
+the task/scorer version, not the public assignment. Re-evaluations of retained
+candidates must be reported separately from their original trial scores.

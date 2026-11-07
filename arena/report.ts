@@ -291,7 +291,7 @@ const positiveInteger = (value: unknown): value is number =>
   Number.isSafeInteger(value) && Number(value) > 0;
 const measurement = (value: unknown) =>
   value === null || (typeof value === "number" && Number.isFinite(value) && value >= 0);
-const workflowNames = ["sequential", "parallel", "sequential-review", "parallel-review"];
+const workflowNames = ["sequential", "parallel", "sequential-review", "parallel-review", "native"];
 
 function artifact(path: string, directory = false): void {
   const stat = lstatSync(path, { throwIfNoEntry: false });
@@ -326,6 +326,7 @@ function manifestAt(path: string): BatchManifest {
     !value.workflows.length ||
     !value.workflows.every((workflow) => workflowNames.includes(workflow)) ||
     new Set(value.workflows).size !== value.workflows.length ||
+    (value.mode === "scripted-control" && value.workflows.includes("native")) ||
     !Array.isArray(value.tasks) ||
     !value.tasks.length ||
     !value.tasks.every(

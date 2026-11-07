@@ -19,7 +19,7 @@ export function verifyTreatment(input: TreatmentInput): TreatmentVerification {
   if (mode === "external") {
     const reasons = [
       "External stage events, attempts and repairs are adapter-reported; supervisor-owned workflow evidence is not implemented.",
-      "No live Piñata, Pi or OpenCode integration is verified by this harness.",
+      "No live framework integration is verified by this harness.",
     ];
     if (!response?.events.length) reasons.push("No stage events were supplied.");
     if (response?.attempts == null || response.repairs == null)

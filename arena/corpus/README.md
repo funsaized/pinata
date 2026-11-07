@@ -37,3 +37,22 @@ environment.
 Changing a prompt, starter, solution, or expected result changes the task definition:
 create a new version directory and increment `ArenaTask.version` before using the
 changed corpus for comparisons with retained historical trials.
+
+## Opt-in full-stack project
+
+`projectTasks` adds `team-board` without changing the default small offline matrix.
+`allTasks` is the CLI selection registry. The project has twelve public module
+owners, six independent foundation branches, and validated `after` dependency
+hints. The native coordinator receives the full project brief, plans its own DAG,
+and executes through its framework.
+
+Its 33-case oracle checks pure APIs, real HTTP requests and a fresh Chromium
+browser profile. Chromium is required for a passing project result; missing browser
+checks remain failures in the denominator. The optional development browser test
+skips when Chromium is absent. Reference persistence is also tested across restart;
+scored candidate storage is in-memory plus serialization tests, because the worker
+retains its filesystem-read-only profile. Project scoring opts into networking
+where Node requires `--allow-net`; it does not claim network isolation.
+
+Use `npm run arena:local` for the wizard or preview the complete orchestration
+prompt with `npm run arena:local -- --agent codex --preview`.

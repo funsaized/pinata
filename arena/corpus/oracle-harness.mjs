@@ -115,7 +115,7 @@ function restoreInputAliases(originalArgs, remoteArgs, value) {
   return restore(value);
 }
 
-function startWorker(root, names) {
+function startWorker(root, names, options) {
   const outerBudget = Number(process.env.ARENA_ORACLE_TIMEOUT_MS ?? 10_000);
   const budget = Math.max(
     1,
@@ -130,6 +130,9 @@ function startWorker(root, names) {
     process.execPath,
     [
       "--permission",
+      ...(options.network && process.allowedNodeEnvironmentFlags.has("--allow-net")
+        ? ["--allow-net"]
+        : []),
       `--allow-fs-read=${root}`,
       `--allow-fs-read=${workerFile}`,
       workerFile,
@@ -368,7 +371,7 @@ export function emitOracleResult(result) {
 // the restricted child. This is not an OS sandbox: Node permissions have limits,
 // including network and already-open descriptors; container/UID isolation remains
 // necessary for hostile submissions.
-export async function runOracle(candidateDir, names, cases) {
+export async function runOracle(candidateDir, names, cases, options = {}) {
   let worker;
   let loadError;
   const outcomes = [];
@@ -377,7 +380,7 @@ export async function runOracle(candidateDir, names, cases) {
     if (!Array.isArray(names) || names.some((name) => !/^[a-z][a-z0-9-]*$/i.test(name))) {
       throw new Error("Invalid oracle module names");
     }
-    worker = startWorker(root, names);
+    worker = startWorker(root, names, options);
     await worker.ready;
   } catch (error) {
     loadError = error;

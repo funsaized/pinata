@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { isAbsolute } from "node:path";
+import { validateUnitGraph } from "../task-graph.ts";
 import type { AdapterRequest, AdapterResponse } from "../types.ts";
 
 /** Public request reader for operator-implemented external adapter commands. */
@@ -10,7 +11,7 @@ export async function readAdapterRequest(path: string): Promise<AdapterRequest> 
     request.schemaVersion !== 1 ||
     typeof request.runId !== "string" ||
     typeof request.startingRevision !== "string" ||
-    !["sequential", "parallel", "sequential-review", "parallel-review"].includes(
+    !["sequential", "parallel", "sequential-review", "parallel-review", "native"].includes(
       request.workflow,
     ) ||
     typeof request.cwd !== "string" ||
@@ -46,6 +47,7 @@ export async function readAdapterRequest(path: string): Promise<AdapterRequest> 
   ) {
     throw new Error("Invalid arena adapter request (expected protocol version 1)");
   }
+  validateUnitGraph(request.task.units);
   return request;
 }
 

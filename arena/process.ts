@@ -29,7 +29,11 @@ export async function runProcess(options: {
   stderrFile: string;
   scoreFile?: string; // A pipe owned only by the trusted scorer, separate from stdout.
   env?: NodeJS.ProcessEnv;
+  signal?: AbortSignal;
+  failOnStderr?: RegExp;
+  newProcessGroup?: boolean; // Nested adapters can remain in the arena supervisor group.
 }): Promise<ProcessResult> {
+  const ownGroup = process.platform !== "win32" && options.newProcessGroup !== false;
   const started = performance.now();
   const streams: Array<{ fd: number; chunks: Buffer[]; size: number; truncated: boolean }> = [];
   try {
@@ -63,14 +67,16 @@ export async function runProcess(options: {
   return new Promise((resolve) => {
     let timedOut = false;
     let error: string | null = null;
+    let stderrTail = "";
     let finished = false;
     let killTimer: ReturnType<typeof setTimeout> | undefined;
     let closeTimer: ReturnType<typeof setTimeout> | undefined;
     let child: ReturnType<typeof spawn>;
+    let abort: (() => void) | undefined;
     let timeout: ReturnType<typeof setTimeout> | undefined;
     const kill = (signal: NodeJS.Signals) => {
       try {
-        if (process.platform !== "win32" && child?.pid) process.kill(-child.pid, signal);
+        if (ownGroup && child?.pid) process.kill(-child.pid, signal);
         else child?.kill(signal);
       } catch {
         /* Already exited. */
@@ -79,9 +85,10 @@ export async function runProcess(options: {
     const finish = (code: number | null, signal: string | null) => {
       if (finished) return;
       finished = true;
-      // Always reap remaining group members, including children that closed their
-      // pipes before the leader exited or ignored SIGTERM during timeout cleanup.
+      // Group-owning supervisors reap descendants, including those that closed
+      // their pipes early. Nested processes stay in their supervisor's group.
       kill("SIGKILL");
+      if (abort) options.signal?.removeEventListener("abort", abort);
       if (timeout) clearTimeout(timeout);
       if (killTimer) clearTimeout(killTimer);
       if (closeTimer) clearTimeout(closeTimer);
@@ -110,12 +117,25 @@ export async function runProcess(options: {
         cwd: options.cwd,
         env: options.env ?? process.env,
         shell: false,
-        detached: process.platform !== "win32",
+        detached: ownGroup,
         stdio: options.scoreFile ? ["ignore", "pipe", "pipe", "pipe"] : ["ignore", "pipe", "pipe"],
       });
     } catch (cause) {
       error = String(cause);
       finish(null, null);
+      return;
+    }
+    abort = () => {
+      error = "Process canceled";
+      kill("SIGKILL");
+      child.stdout?.destroy();
+      child.stderr?.destroy();
+      if (options.scoreFile) (child.stdio[3] as Readable | null)?.destroy();
+      finish(null, "SIGKILL");
+    };
+    options.signal?.addEventListener("abort", abort, { once: true });
+    if (options.signal?.aborted) {
+      abort();
       return;
     }
     timeout = setTimeout(() => {
@@ -149,6 +169,15 @@ export async function runProcess(options: {
             error = String(cause);
             finish(null, null);
           }
+        }
+        if (index === 1 && options.failOnStderr)
+          stderrTail = (stderrTail + chunk.toString("utf8")).slice(-8192);
+        if (index === 1 && options.failOnStderr?.test(stderrTail)) {
+          error = "Process reported a fatal framework error";
+          kill("SIGKILL");
+          child.stdout?.destroy();
+          child.stderr?.destroy();
+          finish(null, "SIGKILL");
         }
       });
       readable?.on("error", (cause) => {
