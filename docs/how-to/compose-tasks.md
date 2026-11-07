@@ -114,7 +114,3 @@ For example, if builder A's check imports a file that builder B creates, add bui
 to builder A's `after` list. Otherwise, the check may run before that file is available,
 even if builder A's own code doesn't need it. If a check needs changes from both builders,
 you can instead run it in a separate task that lists both in `after`.
-
-Assigned reviews still apply. To keep a consumer from starting before approval, list
-the reviewer in its prerequisites. Repair won't silently replay downstream writers that
-have already finished, so a rejected upstream artifact may require a new run.
