@@ -135,26 +135,15 @@ services remain outside the snapshot. See [events](../reference/events.md).
 
 A host can provide instructions for every worker in a run. Pinata saves them with
 the run and includes them in worker briefs, including during resume and repair.
-They do not give workers extra permissions. Workers with the same definition and
-tools still receive the same system prompt.
 
 Each new run has a saved wall-clock deadline. Preparation, work, checks, repairs,
-and destination operations all count against it. Individual tasks and checks can
-have shorter limits. Resume and repair do not reset the clock. Older runs without
-a saved deadline keep their previous duration limits. The arena separately limits
-the total time for a trial, including its runs and cleanup. See
+and destination operations all count against it.
+
+Individual tasks and checks can specify specific, shorter limits. Time accumulates across operations: resume and repair do not reset the clock. See
 [run limits](../reference/config.md#saved-review-policy-and-deadlines) for details.
 
 ## Background results
 
 Background runs notify the coordinator when a task fails or a reviewer requests
-changes, even if other work is still running. Related failures are grouped together.
-The coordinator can then decide whether to repair, cancel, or start a new run.
-
-Notices have stable IDs, but a crash can cause one to be sent again. Pinata checks
-the current run state before acting on a repair. A repaired run also sends a new
+changes, even if other work is still running. The coordinator can then decide whether to repair, cancel, or start a new run. A repaired run also sends a new
 final result when it finishes.
-
-The arena keeps its Pi coordinator running while workers and follow-up messages
-are active. This gives the coordinator time to respond to failures and choose when
-to integrate. The arena stops its workers when the trial ends.
