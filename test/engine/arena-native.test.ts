@@ -50,6 +50,15 @@ test("native invocation sends the whole task and enables Codex subagents with ma
   const pinata = nativeInvocation("pinata", req);
   assert.ok(pinata.args.some((arg) => arg.endsWith("arena/adapters/coordinator.ts")));
   assert.ok(pinata.prompt!.includes("pinata_integrate"));
+  assert.ok(pinata.prompt!.includes("finish your current response promptly"));
+  assert.ok(pinata.prompt!.includes("corrected run with the remaining time"));
+  const input = JSON.parse(pinata.input!);
+  assert.equal(input.type, "prompt");
+  assert.equal(
+    JSON.parse(input.message.slice("/pinata-arena-execute ".length)),
+    pinata.prompt,
+    "RPC receives the same operational guidance retained in the prompt",
+  );
   assert.ok(
     pinata.prompt!.includes('"reviewer":{"provider":"openai","id":"gpt-6-luna","thinking":"max"}'),
   );

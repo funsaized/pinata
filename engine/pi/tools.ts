@@ -198,7 +198,7 @@ export function schemas() {
 }
 
 export const DESCRIPTIONS = {
-  run: "Delegate bounded tasks to pinata agents and run them now. Choose scout, builder, reviewer, or an installed custom definition; pinata_agents lists them. Writers change owned files in isolated worktrees. Foreground by default: waits, streams progress and returns compact results. background:true returns the run id and delivers the results later as a follow-up message; do not poll. Independent review is optional by default; config.reviewPolicy:required requires bound reviewers. Assigned reviews always bind. approval is required when any builder is present. after must include dependencies needed by configured checks as well as implementation.",
+  run: "Delegate bounded tasks to pinata agents and run them now. Choose scout, builder, reviewer, or an installed custom definition; pinata_agents lists them. Writers change owned files in isolated worktrees. Foreground by default: waits, streams progress and returns compact results. background:true returns the run id and delivers the results later as a follow-up message. End your turn promptly when no actionable work remains so delivery can resume you; do not poll or keep reasoning to wait. Independent review is optional by default; config.reviewPolicy:required requires bound reviewers. Assigned reviews always bind. approval is required when any builder is present. after must include dependencies needed by configured checks as well as implementation.",
   status:
     'Read pinata status: the latest run, a run, or one task. detail:"result" returns a task\'s full result; detail:"transcript" returns a bounded transcript excerpt and the file path. Read-only; do not poll running runs.',
   steer:

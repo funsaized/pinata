@@ -195,6 +195,13 @@ npm run arena:local -- --agent codex --preview
 npm run arena:local -- --agent pinata --preview
 ```
 
+Background coordinators must end their current turn when no actionable work remains:
+follow-up notices resume them after that turn, while the RPC host keeps the session
+alive. Continuing to reason about waiting can delay intervention until the trial
+timeout. Inspect failed check evidence against the public contract before repairing;
+coordinator-authored checks can also be incorrect. Changed checks require a corrected
+run, while eligible implementation repairs stay in the existing run.
+
 Preview paths are illustrative. Real execution creates a fresh candidate and passes
 that path to the coordinator. The exact live prompt is retained as
 `evidence/plan-prompt.txt`, with the command in `invocation.json` and bounded raw

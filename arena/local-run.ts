@@ -118,7 +118,7 @@ for (const [i, config] of configs.entries()) {
     );
     if (preview)
       console.log(
-        `\n=== ${agents[i]} / ${task.id}: prompt preview (illustrative paths) ===\n${invocation.args.at(-1)}\n`,
+        `\n=== ${agents[i]} / ${task.id}: prompt preview (illustrative paths) ===\n${invocation.prompt ?? invocation.args.at(-1)}\n`,
       );
   }
   if (!preview)

@@ -108,6 +108,8 @@ export function nativeInvocation(agent: NativeAgent, request: AdapterRequest, ex
     shared.push(
       "You are the Piñata coordinator. Use pinata_run to delegate implementation; do not implement files yourself.",
       "Design the job from the public units, using builder ownership, dependencies, and reviewers where useful. Use background:true and survive:false so actionable notices can reach you while other branches run. Use background:true for repair when unrelated work remains.",
+      "After starting background work, finish your current response promptly when you have no other actionable work. Do not keep thinking or calling tools to wait: follow-up notices are delivered after your turn ends, and the RPC host keeps the session alive.",
+      "Inspect failure evidence before cancelling or restarting. A failed coordinator-authored check can itself be wrong; compare it with the public contract. Repair implementation defects in the existing run when eligible. If the check or dependency plan must change, start a corrected run with the remaining time; do not ask workers to satisfy a contradictory assertion.",
       `Pass deadlineAt:${deadlineAt} to each pinata_run so planning and earlier runs consume the remaining trial allowance. The arena supervisor independently stops the entire trial at its wall-clock limit.`,
       `The user authorizes implementation, review, repairs and local integration of this arena assignment within ${request.cwd}. Record that scope in approval.`,
       `Pass this config to every pinata_run: ${JSON.stringify({
