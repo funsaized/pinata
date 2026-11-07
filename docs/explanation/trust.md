@@ -33,14 +33,9 @@ new launch; imported dependencies and remote services remain outside that check.
 
 ## Independent review
 
-New runs can integrate checked changes without an independent reviewer. To require
-one for every writer, set `reviewPolicy: "required"`. Older runs without a saved
-policy still require review, even if your configuration changes.
+Runs default to integrate checked changes without an independent reviewer. Pinata allows for a strict review-before-apply mode as it relates to your current branch. To require an independent review for every writer, set `reviewPolicy: "required"`.
 
-Any reviewer you assign must approve the exact change before it can be integrated.
-A change that passes checks without a reviewer has not been independently reviewed.
-Destination checks do not review a combined or reconciled change either.
+Any reviewer you assign must approve the exact change before it can be integrated into the target branch.
 
 The other protections still apply: Pinata requires authorization, checks ownership
 and evidence, detects destination conflicts, and records writes for rollback.
-Configured checks must pass.
