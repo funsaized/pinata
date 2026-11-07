@@ -9,6 +9,9 @@ known bug and a test command. Set [models and limits](../reference/config.md) be
 starting; the run spends tokens. Replace the duration bug below with your own paths,
 bug, and checks, or use [Relay](relay.md) for a ready-made starter.
 
+This reviewed-delivery recipe explicitly uses `config.reviewPolicy: "required"`.
+Ordinary new runs default to optional review; any assigned reviews remain binding.
+
 ## 1. Ask for the change
 
 ```text

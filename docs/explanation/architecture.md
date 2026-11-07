@@ -29,6 +29,9 @@ the result.
 
 Agents that must outlive Pi run detached: their events go to a file that any later Pi (or a
 headless host) can follow, and the host steers them through a control file.
+Reattachment needs only the run/task identity, mode and transcript location. The engine
+obtains the existing process handle before preparing a workspace, so an expired or
+cancelled resume can still stop workers and recover their recorded usage.
 
 ## Agents
 
@@ -79,7 +82,12 @@ When a builder finishes, Pinata:
 1. Captures its changes as a Git tree.
 2. Checks ownership and compares the actual changes with the builder's report.
 3. Runs the configured checks and fingerprints the result.
-4. Gives the reviewer that exact change and its check evidence.
+4. Gives any assigned reviewer that exact change and its check evidence.
+
+Independent review is optional for new runs. Required mode preflights every writer
+for a bound reviewer, and records without a saved policy retain required review.
+Assigned reviews remain binding in both modes. An unreviewed checked artifact is
+not labeled approved.
 
 The reviewer's verdict is tied to the fingerprint and original base and result.
 Private Git refs retain those commits and trees. `pinata_changes` exports them for
@@ -92,7 +100,7 @@ staging them, and runs destination checks. Conflicts go back to the coordinator.
 `pinata_verify` runs destination checks separately. It records HEAD, the content
 tree, check results, and whether the approved changes are present exactly.
 Builder reviews still apply to their original patches; a combined or reconciled
-change needs its own review. A per-checkout lock coordinates destination changes
+change does not inherit independent review. A per-checkout lock coordinates destination changes
 across Pinata processes. External Git commands and editors operate outside this lock.
 
 ## Storage
@@ -104,7 +112,7 @@ Run records live in `<git common dir>/pinata/<run>`, in private directories (070
 | `events.jsonl`             | The run's event log.                                  |
 | `run.json`                 | Saved configuration, definitions, and worktree paths. |
 | `results/`, `transcripts/` | Task results and agent conversations.                 |
-| `handoffs/<digest>/`       | Reviewed artifacts exported for integration.          |
+| `handoffs/<digest>/`       | Checked artifacts exported for integration.           |
 | `verification/<attempt>/`  | Destination check results and logs.                   |
 | `integration/journal.json` | The record of applied changes used for rollback.      |
 
@@ -121,3 +129,29 @@ by digest. Tasks reference that table; `run_started` carries the same snapshots.
 repair, and rerun use saved definitions even if local files change or disappear. Required
 extension entry-file hashes are checked before new launches. Dependencies and external
 services remain outside the snapshot. See [events](../reference/events.md).
+
+## Shared contracts and lifetime
+
+A host can supply trusted shared instructions. The
+composed run instructions are saved and inserted into first-message briefs for
+builders, reviewers, resumed workers and repairs. System prompts remain stable
+for the same definition/tool configuration. Shared assignment text never grants
+additional ownership or tools.
+
+New runs persist `deadlineAt` before worker launch. Preparation, queues, workers,
+checks, repair and destination operations share the same cap; task and check
+durations can shorten it. Events expose the deadline for replay and status.
+Legacy records have no inferred historical deadline. The arena owns the outer trial
+timeout and process cleanup; it supplies the remaining allowance for each run without
+adding a host-level deadline to Pinata.
+
+Pi delivery subscribes to engine settlement events for background work. It groups
+failure cascades, persists stable notice IDs separately from task state, and sends
+actionable follow-ups. Sending precedes recording delivery, so crash recovery may
+repeat an ID; actions still revalidate state. Final delivery belongs to a settlement
+sequence and can occur again after repair.
+
+The native arena coordinator uses a managed Pi RPC command. The adapter keeps
+stdin open while the parent, workers and deliveries are active, then closes it on
+the command's completion response. This supports early intervention with
+`survive:false`; it does not depend on single-shot print mode staying alive.

@@ -2,6 +2,7 @@
   "cwd": "/absolute/path/to/repository",
   "approval": "Replace with your approval for two independent builders, two reviews, and local integration",
   "config": {
+    "reviewPolicy": "required",
     "models": {
       "default": {
         "provider": "openai",

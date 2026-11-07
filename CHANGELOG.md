@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Default new runs to optional independent review; add strict `reviewPolicy: "required"`.
+  Assigned reviews remain binding and legacy saved runs retain required review.
+- Persist shared public instructions and one absolute deadline across preparation,
+  workers, checks, repair, resume and destination operations.
+- Report actionable background failures early and support nonblocking repair.
+- Run the native arena coordinator in a managed Pi RPC session, validated with scripted
+  responses; preserve public assignment delivery and arena-owned trial timeout cleanup.
+- Explain check dependencies and retain actionable workspace/check diagnostics.
+
 ## 2.1.1 (2026-11-06)
 
 - Add a reproducible offline coding arena with independent scoring and retained

@@ -30,3 +30,17 @@ Custom tool providers are trusted code running with your permissions. Each provi
 is responsible for its tools' side effects, including in read-only workspaces.
 Configure providers deliberately. Saved entry-file hashes detect changes before a
 new launch; imported dependencies and remote services remain outside that check.
+
+## Optional independent review
+
+New runs default to `reviewPolicy: "optional"`: a coordinator may integrate a
+checked artifact without assigning an independent reviewer. Strict `"required"`
+mode requires one for every writer before launch. Every explicitly assigned
+reviewer must approve the current fingerprint under either policy. Legacy saved
+runs without a policy retain required review; reloading configuration cannot relax it.
+
+Optional review changes only whether a reviewer must be assigned. Authorization,
+ownership, configured checks, evidence integrity, destination conflicts and
+journaled application retain their gates. An empty review list means not independently
+reviewed, never approved. Destination checks do not independently review a combined
+or reconciled change.

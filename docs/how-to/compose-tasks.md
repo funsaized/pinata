@@ -54,7 +54,9 @@ in advance or order the work. The default starting base includes uncommitted cha
 
 ## Review and verify the result
 
-Give each builder a reviewer with `reviewOf` set to that builder's ID, and list the same
+Choose reviewers where independent review is useful. New runs default to optional
+review; select `config.reviewPolicy: "required"` to require one for every writer.
+Assign a reviewer with `reviewOf` set to that builder's ID, and list the same
 ID in `after`. The reviewer receives the captured patch and evidence for that builder.
 Use `reviewBase` or `reviewPr` to review existing changes instead.
 
@@ -65,7 +67,19 @@ the destination checkout when integrating or verifying. Select commands that exe
 the acceptance criteria. A builder needs checks or an explicit `noChecksReason`.
 
 A successful headless run leaves patches in worktrees. Inspect the results and reviews,
-then integrate through Pi; integration applies approved patches and runs the destination
+then integrate through Pi; integration applies eligible checked patches and runs the destination
 checks. If no destination checks are configured, an applied result is unverified. For
 commands, statuses, and recovery, see the [tools reference](../reference/tools.md) and
 [recovery guide](recover.md).
+
+## Include check dependencies
+
+`after` must cover code imported by configured checks, even when the implementation
+itself does not use that predecessor. Workers see the base plus declared predecessor
+changes, not eventual sibling output. For example, an isolated storage unit check can
+construct `{tickets: [], nextId: 1}` directly instead of importing a sibling's
+`emptyState`. Put store/storage compatibility checks in a task after both builders.
+
+Assigned reviews remain binding. To keep a consumer from starting before approval,
+list the reviewer in its prerequisites. Repair refuses to replay completed downstream
+writers silently, so a rejected upstream artifact may require a new run.

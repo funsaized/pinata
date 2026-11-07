@@ -9,6 +9,9 @@ and authenticated in Pi. The agents spend tokens, so check your provider's prici
 and the job limits before running. The exercise itself has no dependencies to
 install.
 
+This reviewed-delivery recipe explicitly uses `config.reviewPolicy: "required"`.
+Ordinary new runs default to optional review; any assigned reviews remain binding.
+
 ## 1. Create your starter repository
 
 Install Pinata if you have not already, then find its installed path:

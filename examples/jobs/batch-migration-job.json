@@ -6,6 +6,7 @@
     "The replacement logger dependency is already available. Adapt the explicit package list, ownership, and commands before running."
   ],
   "config": {
+    "reviewPolicy": "required",
     "limits": {
       "concurrency": 3,
       "costUsd": 20,

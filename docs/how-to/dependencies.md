@@ -150,3 +150,18 @@ cache directory while no runs are active.
 
 Related: [setup reference](../reference/config.md#setup) ·
 [trust and safety](../explanation/trust.md)
+
+## Dependencies of checks
+
+A configured check runs in the same isolated workspace as its builder: the run's
+base plus declared predecessor changes. Declare check dependencies in `after`,
+just like implementation dependencies. Pinata does not infer imports from commands.
+
+For an isolated storage unit check, construct a canonical state fixture instead of
+importing `emptyState` from an independent store builder. Put a compatibility check
+after both store and storage so both implementations are available.
+
+Check failures retain the command/ID, workspace, declared predecessors, failure
+stage and stdout/stderr paths. Read the logs before diagnosing a missing dependency.
+A failed command still fails the task. Setup and checks share the run's saved
+deadline; retrying setup or repairing a builder does not start a fresh job budget.

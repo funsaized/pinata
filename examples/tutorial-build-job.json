@@ -5,6 +5,7 @@
     "Work only on the greeting whitespace fix. Do not install dependencies, stage, commit, push, publish, or deploy."
   ],
   "config": {
+    "reviewPolicy": "required",
     "models": {
       "default": {
         "provider": "REPLACE_WITH_APPROVED_PROVIDER",

@@ -43,7 +43,7 @@ map duration parsing in a repository named `repo` next to the job file:
 Choose a model configured on your machine and replace the task and path. The
 [examples](../../examples/) folder has complete jobs you can adapt.
 
-A job requires `tasks`. It also accepts `config`, `approval`, `instructions`,
+A job requires `tasks`. It also accepts `config`, `approval`, `deadlineAt`, `instructions`,
 `integratedChecks`, and `noIntegratedChecksReason`. `cwd` is relative to the job
 file; omit it to use the current shell directory. `background` and `survive` are
 options for Pi's `pinata_run` tool, not this command.
@@ -75,7 +75,7 @@ For jobs with writers, record the authorized scope in `approval`. Exit code 0
 means every task and its configured checks succeeded. Builder patches remain in
 their worktrees until you apply them; the destination checkout is not yet verified.
 
-Open Pi in the repository and ask it to inspect the saved run, apply its approved
+Open Pi in the repository and ask it to inspect the saved run, apply its eligible checked
 changes, and run its destination checks. Pi uses `pinata_integrate` for this step.
 Follow [build and review](../tutorials/build-and-review.md) for the full sequence.
 
@@ -102,3 +102,9 @@ pinata resume <run>
 ```
 
 Set `PINATA_NO_CONTINUE=1` to stop Pi from starting headless hosts.
+
+New jobs default to optional independent review. Set `config.reviewPolicy: "required"`
+for a reviewed-delivery recipe; every explicitly assigned review remains binding under
+either policy. Legacy saved runs retain required review when no policy was recorded.
+The saved `deadlineAt` covers preparation through destination integration and checks.
+Integrate within that remaining time; a later Pi session cannot renew it.

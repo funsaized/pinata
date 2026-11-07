@@ -2,12 +2,12 @@
 
 Find the run first, then choose the recovery action for its state:
 
-| What happened                       | What to do                                                           |
-| ----------------------------------- | -------------------------------------------------------------------- |
-| Pi closed while work was running    | Reopen Pi in the same repository; rerun tasks that were cancelled.   |
-| A builder check or review failed    | Repair the builder in the original run, then collect a fresh review. |
-| An applied patch needs to be undone | Roll back the integration if the checkout has not changed.           |
-| Work is finished                    | Clean up panes and preserved worktrees.                              |
+| What happened                       | What to do                                                               |
+| ----------------------------------- | ------------------------------------------------------------------------ |
+| Pi closed while work was running    | Reopen Pi in the same repository; rerun tasks that were cancelled.       |
+| A builder check or review failed    | Repair the builder in the original run, then rerun any assigned reviews. |
+| An applied patch needs to be undone | Roll back the integration if the checkout has not changed.               |
+| Work is finished                    | Clean up panes and preserved worktrees.                                  |
 
 ## Find out what happened
 
@@ -55,7 +55,7 @@ the result's `recovery` field identifies the builder and supplies a `pinata_repa
 call targeting that builder.
 
 `pinata_repair` continues in the same worktree, up to `limits.repairs`. The builder's
-checks and independent review run again, and blocked downstream tasks can then
+checks and any assigned independent reviews run again, and blocked downstream tasks can then
 finish. Once every required task succeeds, inspect with `pinata_changes` and apply
 with `pinata_integrate`, both using the original run ID. Integration requires the
 approval recorded in that run, even if you have started other reviews since.
@@ -113,3 +113,22 @@ The same cleanup commands work from a shell:
 pinata gc
 pinata gc --confirm
 ```
+
+## Saved contracts and remaining time
+
+New runs preserve their review policy, composed instructions and absolute
+`deadlineAt`. Reloading configuration, resuming or repairing does not replace the
+assignment, relax reviews or renew the time budget. Legacy records without review
+policy keep required review; legacy records without a deadline keep their duration
+behavior. An expired resume still attaches to surviving workers to stop them and
+recover usage, without preparing new workspaces or launching new model calls.
+
+Background runs send actionable failure notices before unrelated branches finish.
+The stable notice ID supports deduplication after crashes; delivery is not exactly
+once. `pinata_repair` waits by default; add `background:true` to return promptly
+and receive follow-ups. The engine revalidates eligibility when repair is requested.
+Cancel running dependents first. Completed downstream writers require a new run.
+
+Expired integration cannot begin writes. If time expires during application or checks,
+inspect the retained journal and receipt; interruption is not success. Rollback remains
+available when its recorded destination and file-state guards pass.

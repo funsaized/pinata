@@ -5,18 +5,18 @@ Full human reference: `../../docs/` (read only if this is not enough).
 
 ## Tools
 
-| Tool               | Parameters and effect                                                                                                                                                                                                                                   |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pinata_agents`    | `{name?}`. List installed definitions or inspect one agent's tools, workspace, defaults, and source.                                                                                                                                                    |
-| `pinata_run`       | `{tasks, background?, survive?, cwd?, approval?, instructions?, config?, integratedChecks?, noIntegratedChecksReason?}`. Creates and starts a run. `approval` is required with builders. `survive` (with `background`) keeps the run going if Pi exits. |
-| `pinata_status`    | `{run?, task?, offset?, limit?, detail?: "summary" \| "result" \| "transcript"}`. Read-only. Without `run`, the latest run. Follow `nextOffset` to read subsequent pages.                                                                               |
-| `pinata_steer`     | `{run, task, message, as?: "steer" \| "followUp"}`. Message a running agent; recorded and shown to its reviewer.                                                                                                                                        |
-| `pinata_cancel`    | `{run, task?}`. Cancel a run or one agent.                                                                                                                                                                                                              |
-| `pinata_repair`    | `{run, task, feedback}`. Re-run a builder in its worktree with feedback, within `limits.repairs`; its reviews run again.                                                                                                                                |
-| `pinata_changes`   | `{run}`. Return immutable builder artifacts, actual bases, patches, checks and approving reviews; leave the destination unchanged.                                                                                                                      |
-| `pinata_verify`    | `{run, checks?, noChecksReason?}`. Check the current destination without applying changes; defaults to the run's `integratedChecks`.                                                                                                                    |
-| `pinata_integrate` | `{run}`. Apply approved builder changes to the checkout and run `integratedChecks`. Never stages or commits.                                                                                                                                            |
-| `pinata_rollback`  | `{run, confirm: true}`. Restore the checkout from the latest integration journal where files still match.                                                                                                                                               |
+| Tool               | Parameters and effect                                                                                                                                                                                                                                                |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pinata_agents`    | `{name?}`. List installed definitions or inspect one agent's tools, workspace, defaults, and source.                                                                                                                                                                 |
+| `pinata_run`       | `{tasks, background?, survive?, cwd?, approval?, deadlineAt?, instructions?, config?, integratedChecks?, noIntegratedChecksReason?}`. Creates and starts a run. `approval` is required with builders. `survive` (with `background`) keeps the run going if Pi exits. |
+| `pinata_status`    | `{run?, task?, offset?, limit?, detail?: "summary" \| "result" \| "transcript"}`. Read-only. Without `run`, the latest run. Follow `nextOffset` to read subsequent pages.                                                                                            |
+| `pinata_steer`     | `{run, task, message, as?: "steer" \| "followUp"}`. Message a running agent; recorded and shown to its reviewer.                                                                                                                                                     |
+| `pinata_cancel`    | `{run, task?}`. Cancel a run or one agent.                                                                                                                                                                                                                           |
+| `pinata_repair`    | `{run, task, feedback, background?}`. Re-run a builder in its worktree with feedback, within `limits.repairs`; its reviews run again.                                                                                                                                |
+| `pinata_changes`   | `{run}`. Return immutable builder artifacts, actual bases, patches, checks and any assigned reviews; leave the destination unchanged.                                                                                                                                |
+| `pinata_verify`    | `{run, checks?, noChecksReason?}`. Check the current destination without applying changes; defaults to the run's `integratedChecks`.                                                                                                                                 |
+| `pinata_integrate` | `{run}`. Apply eligible checked builder changes to the checkout and run `integratedChecks`. Never stages or commits.                                                                                                                                                 |
+| `pinata_rollback`  | `{run, confirm: true}`. Restore the checkout from the latest integration journal where files still match.                                                                                                                                                            |
 
 `run` accepts a unique prefix of the run id. Tools return JSON and report errors
 as failed tool results. A completed call can still report failed tasks: read the
@@ -80,12 +80,13 @@ Usage is reported as tokens and dollars per run.
 ## Integration evidence
 
 The orchestrator invokes integration tools; workers cannot, and the engine never applies
-changes automatically. `pinata_changes` requires all tasks to succeed and each builder
-to have current approving reviews. Its versioned manifest includes the starting HEAD,
+changes automatically. `pinata_changes` requires all tasks and checks to succeed and every assigned reviewer to approve the
+current artifact. Reviewers may be omitted under the default optional policy.
+Required-policy and legacy runs require a bound reviewer for every writer. Its versioned manifest includes the starting HEAD,
 actual per-builder base commit/tree (including uncommitted snapshots and predecessor
 changes), result tree, fingerprint, dependency order, changes, check logs and review
 bindings. Patches come from recorded Git objects, not the live worktree. Repaired output
-needs fresh review and a new handoff. Earlier handoffs remain historical artifacts.
+needs fresh approval from its assigned reviewers and a new handoff. Earlier handoffs remain historical artifacts.
 
 `pinata_integrate` permits HEAD advancement when affected paths still match their
 recorded before-states. Conflicts require orchestrator reconciliation, never an automatic
@@ -105,3 +106,50 @@ An explicit `checks` list replaces the run's destination checks for that invocat
 source through a private index; the user's index is unchanged. Ignored dependencies,
 external services and the environment are not content-attested. Check omissions remain
 explicit and never count as passed. Receipt logs survive subsequent verification attempts.
+
+## Policy, contracts, and time
+
+New runs use `config.reviewPolicy: "optional"`. `"required"` rejects graphs with
+uncovered writers before preparation or model calls. Once a reviewer is assigned,
+its current approval remains binding under either policy. The policy is saved;
+configuration changes do not alter existing runs. Older records without a policy
+retain required review. There is no integration bypass.
+
+Run-level `instructions` reach every worker. Trusted host instructions are prepended
+and cannot be removed by an empty caller array. The combined JSON payload is limited
+to 128 KiB; oversized contracts are rejected, never truncated. These instructions are
+saved for resume and repair. They do not expand ownership or tool permissions.
+
+`deadlineAt` is an optional positive integer epoch timestamp in milliseconds.
+New runs save the earlier of start + `limits.jobMs` and the requested timestamp. Preparation, queues, workers, checks, repair and destination
+operations share it. `taskMs` and check timeouts are further upper bounds.
+Resume and repair never refresh this deadline. Legacy records retain duration-based
+behavior. The arena separately enforces its total trial timeout and stops its coordinator
+and workers; Pinata has no enclosing session deadline.
+
+## Early intervention
+
+Background runs deliver bounded actionable notices before unrelated branches finish.
+A notice includes stable run/task/attempt identities, reason, evidence paths, affected
+dependents, a current repair-eligibility hint, and remaining time. Cascaded blockers
+are grouped with the failed predecessor. Revalidate the current state when acting;
+delivery is recoverable, not exactly once across a crash.
+
+`pinata_repair` still waits by default. `background: true` returns the target,
+attempt and current status promptly, then sends notices and final results. It never
+repairs automatically. Running dependents must be cancelled first; completed downstream
+writers require a new run and are never silently replayed.
+
+Configured checks run against the base plus declared predecessor changes.
+`after` must cover check dependencies as well as implementation dependencies.
+Prefer independent fixtures for isolated unit checks, and downstream checks for
+compatibility between modules. A failed check remains a failure: inspect its ID,
+argv, workspace, declared predecessors, failure stage and full stdout/stderr paths.
+Compact `checkFailure` and full result evidence retain these details without
+guessing that a failure means a missing dependency. To wait for a review before
+starting downstream work, list the reviewer in `after`.
+
+Compact run results expose `reviewPolicy` and `deadlineAt`; writer artifacts expose
+`reviewState` (`unassigned`, `pending`, `approved`, or `rejected`).
+`unassigned` means not independently reviewed. The exported manifest adds
+`reviewPolicy` and retains the actual `reviews` array, which may be empty.

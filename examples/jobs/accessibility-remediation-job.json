@@ -5,6 +5,7 @@
     "The journey script must build and serve its own worktree, use an isolated port, and clean up. Browser dependencies are already installed; the preset scout and reviewer inspect source and logs only."
   ],
   "config": {
+    "reviewPolicy": "required",
     "limits": {
       "concurrency": 3,
       "costUsd": 20,

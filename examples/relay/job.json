@@ -140,6 +140,7 @@
     }
   ],
   "config": {
+    "reviewPolicy": "required",
     "models": {
       "scout": {
         "provider": "REPLACE_WITH_APPROVED_PROVIDER",

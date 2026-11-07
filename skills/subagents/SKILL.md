@@ -27,8 +27,8 @@ task fields, config and result fields.
 - `pinata_steer` sends a running agent a message (`steer` or `followUp`).
 - `pinata_cancel` cancels a run or one agent.
 - `pinata_repair` re-runs a builder in its worktree with review feedback.
-- `pinata_changes` returns immutable reviewed artifacts, bases, patches and check logs.
-- `pinata_integrate` optionally applies approved artifacts exactly and runs destination checks.
+- `pinata_changes` returns immutable checked artifacts, bases, patches and check logs.
+- `pinata_integrate` applies eligible checked artifacts exactly and runs destination checks.
 - `pinata_verify` checks the current destination without applying changes.
 - `pinata_rollback` restores the checkout from the integration journal.
 
@@ -92,8 +92,9 @@ predecessors' results into the dependent's first message.
 - `reviewer`: independent adversarial review of an actual change.
 
 Use only the agents the job needs. For a well-specified fix with known files,
-acceptance criteria and checks, use a builder and then an independent reviewer
-(`reviewOf` the builder, also in `after`). `/pinata-fix` prepares this.
+acceptance criteria and checks, a builder may suffice. Add an independent reviewer
+where useful (`reviewOf` the builder, also in `after`). `/pinata-fix` explicitly
+selects the reviewed recipe with `config.reviewPolicy: "required"`.
 Independent builders need non-overlapping `ownership`. To review existing work,
 use reviewers with `reviewBase` (`HEAD` for uncommitted changes, a branch for
 everything since it) or `reviewPr`; `/pinata-review` does this.
@@ -119,9 +120,10 @@ Use `pinata_agents` for discovery; copy the packaged planner/researcher examples
 Read-only tasks can omit acceptance criteria. Writers still require ownership,
 checks or a reason, and authorization. Review-target agents still require a bound target.
 
-The engineering flow below is a recipe for reviewed code. Its guarded handoff and exact
-integration tools require current approvals. Generic results can contain unreviewed
-artifacts; label their checks and review state accurately.
+New runs default to `config.reviewPolicy: "optional"`; `"required"` requires a
+bound reviewer for every writer before launch. Every assigned review remains binding.
+Saved runs retain their policy; legacy records without one retain required review.
+Label an unassigned review as not independently reviewed, never approved.
 
 ## Collect, reconcile and recover
 
@@ -136,7 +138,8 @@ artifacts; label their checks and review state accurately.
   run ID for `pinata_changes` and `pinata_integrate` after all required tasks
   succeed, including previously blocked dependents. Do not create a standalone
   review to replace a rejected review or switch to whichever run is latest.
-- Own integration after every builder has a current approving review. Read
+- Own integration after all tasks and configured checks succeed and every assigned
+  reviewer approves the current artifact. Read
   `pinata_changes` for the original bases, immutable patches, checks and reviews.
   Use `pinata_integrate` for exact application when affected files still match;
   it journals writes, leaves the index unchanged, and runs integrated checks.
@@ -151,3 +154,26 @@ artifacts; label their checks and review state accurately.
 Return the run id, each task's outcome, the actual verification, unresolved
 issues, and any approval needed. Do not claim deployment or publication without
 direct evidence and action-specific authorization.
+
+## Check dependencies, notices, and time
+
+`after` covers dependencies of configured checks as well as implementation.
+A worktree contains the base plus declared predecessor changes, not all siblings.
+Prefer independent fixtures for isolated unit checks. Put store/storage compatibility
+checks downstream of both implementations. If a consumer must wait for approval,
+make the reviewer a prerequisite; no automatic review barrier is added.
+
+Use shared run `instructions` for exact public contracts, including field limits,
+defaults and errors. Trusted host instructions cannot be omitted; the composed
+instructions are saved for repair and resume and capped at 128 KiB without truncation.
+They do not expand task ownership or permissions.
+
+Background failures produce early notices with evidence, affected dependents and a
+repair-eligibility hint. Act on the current state; notices can repeat a stable ID after
+a crash. Use `pinata_repair {run, task, feedback, background:true}` to repair without
+waiting for unrelated branches. Running dependents must be cancelled first; completed
+downstream writers require a new run and are not silently replayed.
+
+New runs save `deadlineAt`, the wall-clock cutoff bounded by `jobMs` and an optional
+explicit timestamp. Preparation, workers, checks, repair and destination operations share it.
+Repair and resume never renew it. Leave time for integration and verification.

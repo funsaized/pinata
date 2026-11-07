@@ -7,6 +7,7 @@
     "Use deterministic code for parsing and arithmetic. Agents inspect anomalies and coordinate execution; they must not hand-author rows or invent missing values. Large or sensitive datasets need an external artifact strategy instead of Git patches."
   ],
   "config": {
+    "reviewPolicy": "required",
     "limits": {
       "concurrency": 3,
       "costUsd": 15,

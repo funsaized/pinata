@@ -6,6 +6,7 @@
     "Each check must finish and clean up its own fixtures; no persistent server or production service is required."
   ],
   "config": {
+    "reviewPolicy": "required",
     "limits": {
       "concurrency": 3,
       "costUsd": 30,

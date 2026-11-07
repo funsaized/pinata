@@ -3,7 +3,7 @@
 **Pi stays small. Your subagent system should too.**
 
 Piñata is a fast, extensible subagent framework for
-[Pi](https://github.com/earendil-works/pi). Ask Pi to split a change between builders and reviewers. Pinata coordinates the tasks and brings back
+[Pi](https://github.com/earendil-works/pi). Ask Pi to split a change between builders and add reviewers where useful. Pinata coordinates the tasks and brings back
 changes, findings, and checks you can inspect.
 
 piñata ships only three agent definitions: scout, builder, and reviewer. Add your own agents and tools as your workflow grows.
@@ -66,6 +66,13 @@ Pinata jobs have a defined schema, so Pi or another capable coding agent can rea
 a plan for your goal into a job with ownership, dependencies, checks, and independent review.
 Pinata runs the tasks and configured checks and
 records the results; your coordinator agent invoking pinata decides what to do next, including any repairs.
+
+Independent review is optional by default for new runs. Set
+`config.reviewPolicy: "required"` for strict review of every writer. Assigned reviews
+always remain binding, and legacy saved runs keep their review requirements.
+Passing checks, ownership, exact evidence and conflict protection still apply.
+Background failures can reach the coordinator before unrelated work finishes;
+repairs and integration remain its decisions. A saved deadline bounds the whole run.
 
 [Build and review](docs/tutorials/build-and-review.md) walks through the process.
 

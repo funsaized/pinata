@@ -36,6 +36,7 @@ Use the same object inside `pinata_run`'s `config` for one run. Put `ownership`,
 | `models`             | `{default?, [agentName]?}`, each `{provider, id, thinking}`                                             |
 | `fallbacks`          | `{agentName: [model, …]}`, at most 5, used when the preferred model is unknown or has no authentication |
 | `limits`             | See below                                                                                               |
+| `reviewPolicy`       | `optional` for new runs; `required` requires a bound independent reviewer for every writer              |
 | `mode`               | `lean`; or `observe` (see [modes](../how-to/modes.md))                                                  |
 | `backend`            | `in-process`; or `process`, `herdr-pi` (see [backends](../how-to/backends.md))                          |
 | `codemode`           | `true`: agents get Pi's `codemode` tool                                                                 |
@@ -157,3 +158,36 @@ directories and, on Windows, the system variables), plus `passEnv` names and
 
 `pi`, `herdr`, `session`, `workspaceReuse`, and `limits.startupMs` have no effect.
 Pinata ignores them and prints a notice.
+
+## Saved review policy and deadlines
+
+`reviewPolicy` accepts only `optional` or `required` in personal, repository and
+per-run config. The coordinator chooses whether to assign reviewers in optional
+mode; every assigned review remains binding. Required mode reports all uncovered
+writers before preparing worktrees or launching models. Neither mode relaxes
+checks, ownership, artifact fingerprints, conflict detection or integration journals.
+
+The resolved policy is saved once. Legacy records without it keep required review,
+even when current configuration says optional. `mode` continues to control
+observability only.
+
+The optional top-level `pinata_run.deadlineAt` (also a job-file field) is a positive
+integer epoch timestamp in milliseconds. New runs save the earliest of run start
+plus `jobMs` and this timestamp. Each worker gets
+the lesser of its `taskMs` budget and the remaining run time; configured checks
+also use the remaining time. Preparation, repair, resume, integration and verification
+cannot renew the deadline. Expired runs cannot launch workers or begin integration.
+Interrupted writes retain their journal for recovery; rollback remains available.
+
+Legacy records without a deadline keep their earlier duration-based behavior.
+No deadline is inferred from a historical record's creation date.
+
+Programmatic hosts may pass `{instructions}` to `registerPinata` or
+the third `PinataHost` constructor argument. Shared instructions and caller
+instructions are composed once and saved, with a combined 128 KiB JSON limit.
+An oversized public contract is rejected rather than truncated.
+
+The arena owns its total trial timeout, including planning and replacement runs. Its
+adapter supplies remaining time to the coordinator and reserves time for integration
+and cleanup. The supervisor stops the coordinator and its workers at the trial limit;
+Pinata does not maintain a separate host/session deadline.

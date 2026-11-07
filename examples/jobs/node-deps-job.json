@@ -3,6 +3,7 @@
   "approval": "Replace with your approval to fix the failing unit test with Luna, run npm test, and integrate locally",
   "instructions": ["Follow the repository's AGENTS.md. Do not stage, commit, push, or publish."],
   "config": {
+    "reviewPolicy": "required",
     "models": {
       "default": {
         "provider": "openai",
