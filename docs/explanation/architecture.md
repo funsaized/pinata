@@ -29,9 +29,9 @@ the result.
 
 Agents that must outlive Pi run detached: their events go to a file that any later Pi (or a
 headless host) can follow, and the host steers them through a control file.
-Reattachment needs only the run/task identity, mode and transcript location. The engine
-obtains the existing process handle before preparing a workspace, so an expired or
-cancelled resume can still stop workers and recover their recorded usage.
+When a run resumes, Pinata reconnects to its workers before preparing their
+workspaces. This lets it stop workers and recover their usage even if the run
+has expired or been cancelled.
 
 ## Agents
 
@@ -84,10 +84,10 @@ When a builder finishes, Pinata:
 3. Runs the configured checks and fingerprints the result.
 4. Gives any assigned reviewer that exact change and its check evidence.
 
-Independent review is optional for new runs. Required mode preflights every writer
-for a bound reviewer, and records without a saved policy retain required review.
-Assigned reviews remain binding in both modes. An unreviewed checked artifact is
-not labeled approved.
+Independent review is optional for new runs. In required mode, each writer needs
+a reviewer before work starts. Older runs with no saved policy still require review.
+In either mode, an assigned reviewer must approve the change. Passing checks alone
+does not mean a change has been independently reviewed.
 
 The reviewer's verdict is tied to the fingerprint and original base and result.
 Private Git refs retain those commits and trees. `pinata_changes` exports them for
@@ -98,10 +98,10 @@ starting contents, records its writes in a journal, applies the patches without
 staging them, and runs destination checks. Conflicts go back to the coordinator.
 
 `pinata_verify` runs destination checks separately. It records HEAD, the content
-tree, check results, and whether the approved changes are present exactly.
+tree, check results, and whether the recorded changes are present exactly.
 Builder reviews still apply to their original patches; a combined or reconciled
-change does not inherit independent review. A per-checkout lock coordinates destination changes
-across Pinata processes. External Git commands and editors operate outside this lock.
+change does not inherit independent review. A per-checkout lock coordinates
+destination changes across Pinata processes. External Git commands and editors operate outside this lock.
 
 ## Storage
 
@@ -130,28 +130,29 @@ repair, and rerun use saved definitions even if local files change or disappear.
 extension entry-file hashes are checked before new launches. Dependencies and external
 services remain outside the snapshot. See [events](../reference/events.md).
 
-## Shared contracts and lifetime
+## Shared instructions and time limits
 
-A host can supply trusted shared instructions. The
-composed run instructions are saved and inserted into first-message briefs for
-builders, reviewers, resumed workers and repairs. System prompts remain stable
-for the same definition/tool configuration. Shared assignment text never grants
-additional ownership or tools.
+A host can provide instructions for every worker in a run. Pinata saves them with
+the run and includes them in worker briefs, including during resume and repair.
+They do not give workers extra permissions. Workers with the same definition and
+tools still receive the same system prompt.
 
-New runs persist `deadlineAt` before worker launch. Preparation, queues, workers,
-checks, repair and destination operations share the same cap; task and check
-durations can shorten it. Events expose the deadline for replay and status.
-Legacy records have no inferred historical deadline. The arena owns the outer trial
-timeout and process cleanup; it supplies the remaining allowance for each run without
-adding a host-level deadline to Pinata.
+Each new run has a saved wall-clock deadline. Preparation, work, checks, repairs,
+and destination operations all count against it. Individual tasks and checks can
+have shorter limits. Resume and repair do not reset the clock. Older runs without
+a saved deadline keep their previous duration limits. The arena separately limits
+the total time for a trial, including its runs and cleanup. See [run limits](../reference/config.md#saved-review-policy-and-deadlines) for details.
 
-Pi delivery subscribes to engine settlement events for background work. It groups
-failure cascades, persists stable notice IDs separately from task state, and sends
-actionable follow-ups. Sending precedes recording delivery, so crash recovery may
-repeat an ID; actions still revalidate state. Final delivery belongs to a settlement
-sequence and can occur again after repair.
+## Background results
 
-The native arena coordinator uses a managed Pi RPC command. The adapter keeps
-stdin open while the parent, workers and deliveries are active, then closes it on
-the command's completion response. This supports early intervention with
-`survive:false`; it does not depend on single-shot print mode staying alive.
+Background runs notify the coordinator when a task fails or a reviewer requests
+changes, even if other work is still running. Related failures are grouped together.
+The coordinator can then decide whether to repair, cancel, or start a new run.
+
+Notices have stable IDs, but a crash can cause one to be sent again. Pinata checks
+the current run state before acting on a repair. A repaired run also sends a new
+final result when it finishes.
+
+The arena keeps its Pi coordinator running while workers and follow-up messages
+are active. This gives the coordinator time to respond to failures and choose when
+to integrate. The arena stops its workers when the trial ends.
