@@ -29,8 +29,8 @@ the result.
 
 Agents that must outlive Pi run detached: their events go to a file that any later Pi (or a
 headless host) can follow, and the host steers them through a control file.
-When a run resumes, Pinata reconnects to its workers before preparing their
-workspaces. This lets it stop workers and recover their usage even if the run
+When a run resumes, Pinata reconnects to any running workers before preparing
+their workspaces. This lets it stop workers and recover their usage even if the run
 has expired or been cancelled.
 
 ## Agents
@@ -101,7 +101,8 @@ staging them, and runs destination checks. Conflicts go back to the coordinator.
 tree, check results, and whether the recorded changes are present exactly.
 Builder reviews still apply to their original patches; a combined or reconciled
 change does not inherit independent review. A per-checkout lock coordinates
-destination changes across Pinata processes. External Git commands and editors operate outside this lock.
+destination changes across Pinata processes. External Git commands and editors
+operate outside this lock.
 
 ## Storage
 
@@ -141,7 +142,8 @@ Each new run has a saved wall-clock deadline. Preparation, work, checks, repairs
 and destination operations all count against it. Individual tasks and checks can
 have shorter limits. Resume and repair do not reset the clock. Older runs without
 a saved deadline keep their previous duration limits. The arena separately limits
-the total time for a trial, including its runs and cleanup. See [run limits](../reference/config.md#saved-review-policy-and-deadlines) for details.
+the total time for a trial, including its runs and cleanup. See
+[run limits](../reference/config.md#saved-review-policy-and-deadlines) for details.
 
 ## Background results
 

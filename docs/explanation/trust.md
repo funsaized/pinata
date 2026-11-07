@@ -31,16 +31,16 @@ is responsible for its tools' side effects, including in read-only workspaces.
 Configure providers deliberately. Saved entry-file hashes detect changes before a
 new launch; imported dependencies and remote services remain outside that check.
 
-## Optional independent review
+## Independent review
 
-New runs default to `reviewPolicy: "optional"`: a coordinator may integrate a
-checked artifact without assigning an independent reviewer. Strict `"required"`
-mode requires one for every writer before launch. Every explicitly assigned
-reviewer must approve the current fingerprint under either policy. Legacy saved
-runs without a policy retain required review; reloading configuration cannot relax it.
+New runs can integrate checked changes without an independent reviewer. To require
+one for every writer, set `reviewPolicy: "required"`. Older runs without a saved
+policy still require review, even if your configuration changes.
 
-Optional review changes only whether a reviewer must be assigned. Authorization,
-ownership, configured checks, evidence integrity, destination conflicts and
-journaled application retain their gates. An empty review list means not independently
-reviewed, never approved. Destination checks do not independently review a combined
-or reconciled change.
+Any reviewer you assign must approve the exact change before it can be integrated.
+A change that passes checks without a reviewer has not been independently reviewed.
+Destination checks do not review a combined or reconciled change either.
+
+The other protections still apply: Pinata requires authorization, checks ownership
+and evidence, detects destination conflicts, and records writes for rollback.
+Configured checks must pass.
