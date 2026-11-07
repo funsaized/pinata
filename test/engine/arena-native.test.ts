@@ -48,12 +48,10 @@ test("native invocation sends the whole task and enables Codex subagents with ma
   assert.ok(pi.args.includes("--no-extensions"));
   assert.ok(!pi.args.includes("-e"));
   const pinata = nativeInvocation("pinata", req);
-  assert.ok(pinata.args.some((arg) => arg.endsWith("engine/pi/extension.ts")));
-  assert.ok(pinata.args.at(-1)!.includes("pinata_integrate"));
+  assert.ok(pinata.args.some((arg) => arg.endsWith("arena/adapters/coordinator.ts")));
+  assert.ok(pinata.prompt!.includes("pinata_integrate"));
   assert.ok(
-    pinata.args
-      .at(-1)!
-      .includes('"reviewer":{"provider":"openai","id":"gpt-6-luna","thinking":"max"}'),
+    pinata.prompt!.includes('"reviewer":{"provider":"openai","id":"gpt-6-luna","thinking":"max"}'),
   );
   assert.throws(() => nativeInvocation("codex", { ...req, workflow: "sequential" }), /native/);
   assert.throws(

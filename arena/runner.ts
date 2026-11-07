@@ -501,7 +501,7 @@ export async function runArena(
     limitations: [
       "Candidate separation is not an operating-system sandbox.",
       "External model, usage and workflow claims are adapter-reported, not independently verified.",
-      "On Windows timeout terminates the direct child; descendant cleanup is best effort.",
+      "Process cleanup uses POSIX groups or Windows taskkill /T; independently detached processes require cooperative host shutdown.",
     ],
   };
   writeFileSync(join(directory, "manifest.json"), json(manifest), { flag: "wx" });
@@ -632,6 +632,7 @@ export async function runArena(
       git(["commit", "--quiet", "--allow-empty", "-m", "arena starter"], candidate);
       result.provenance.startingRevision = git(["rev-parse", "HEAD"], candidate);
       const request: AdapterRequest = {
+        deadlineAt: Date.now() + limits.timeoutMs,
         schemaVersion: 1,
         runId,
         task: { id: task.id, version: task.version, prompt: task.prompt, units: task.units },
@@ -656,7 +657,7 @@ export async function runArena(
         command: adapter.command,
         args,
         cwd: candidate,
-        timeoutMs: limits.timeoutMs,
+        timeoutMs: Math.max(1, request.deadlineAt! - Date.now()),
         maxLogBytes: limits.maxLogBytes,
         stdoutFile: join(evidence, "adapter.stdout.log"),
         stderrFile: join(evidence, "adapter.stderr.log"),

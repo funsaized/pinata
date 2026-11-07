@@ -1,3 +1,4 @@
+import { assertTime, capDeadline, remaining } from "../../engine/core/deadline.ts";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join, isAbsolute } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,6 +20,11 @@ export function nativeInvocation(agent: NativeAgent, request: AdapterRequest, ex
     throw new Error("Agent executable must be an absolute path");
   if (request.workflow !== "native") throw new Error("Native adapters require --workflow native");
   if (!request.model) throw new Error("Native adapters require an explicit model");
+  const deadlineAt = capDeadline(request.deadlineAt, Date.now() + request.limits.timeoutMs)!;
+  assertTime(deadlineAt);
+  const remainingMs = remaining(deadlineAt, request.limits.timeoutMs);
+  // Advisory reserve for integration, verification and cleanup, scaled for short trials.
+  const reserveMs = Math.min(60_000, Math.floor(request.limits.timeoutMs * 0.15));
   const { provider, id, settings } = request.model;
   const thinking = settings.thinking ?? "max";
   const concurrency = settings.concurrency ?? 4;
@@ -34,6 +40,7 @@ export function nativeInvocation(agent: NativeAgent, request: AdapterRequest, ex
     `Public unit boundaries: ${JSON.stringify(request.task.units)}`,
     "You may inspect, test, review and fix your implementation within the time budget.",
     `Time budget: ${request.limits.timeoutMs}ms. Do not inspect task-specific materials outside the candidate checkout. Framework configuration, runtime dependencies and framework-managed worktrees/evidence may live elsewhere.`,
+    `Session deadlineAt: ${deadlineAt}; remaining: ${remainingMs}ms; integration/verification/cleanup reserve: ${reserveMs}ms. Consider this reserve before starting additional work; it does not guarantee completion.`,
     "Do not search for arena reference solutions or hidden oracles. Do not commit changes.",
   ];
   if (agent === "codex") {
@@ -71,9 +78,7 @@ export function nativeInvocation(agent: NativeAgent, request: AdapterRequest, ex
     };
   }
   const args = [
-    "--print",
-    "--mode",
-    "json",
+    ...(agent === "pinata" ? ["--mode", "rpc"] : ["--print", "--mode", "json"]),
     "--no-session",
     "--offline",
     "--no-extensions",
@@ -93,11 +98,17 @@ export function nativeInvocation(agent: NativeAgent, request: AdapterRequest, ex
       "Work directly using Pi's built-in coding tools. This is the solo baseline; do not start other coding agents.",
     );
   } else {
-    args.push("-e", join(root, "engine/pi/extension.ts"), "--tools", "read,grep,find,ls,pinata_*");
+    args.push(
+      "-e",
+      join(root, "arena/adapters/coordinator.ts"),
+      "--tools",
+      "read,grep,find,ls,pinata_*",
+    );
     const model = { provider, id, thinking };
     shared.push(
       "You are the Piñata coordinator. Use pinata_run to delegate implementation; do not implement files yourself.",
-      "Design the job from the public units, using builder ownership, dependencies, and reviewers where useful. Wait for completion (background:false).",
+      "Design the job from the public units, using builder ownership, dependencies, and reviewers where useful. Use background:true and survive:false so actionable notices can reach you while other branches run. Use background:true for repair when unrelated work remains.",
+      `Pass deadlineAt:${deadlineAt} to each pinata_run so planning and earlier runs consume the remaining trial allowance. The arena supervisor independently stops the entire trial at its wall-clock limit.`,
       `The user authorizes implementation, review, repairs and local integration of this arena assignment within ${request.cwd}. Record that scope in approval.`,
       `Pass this config to every pinata_run: ${JSON.stringify({
         models: { default: model, builder: model, reviewer: model, scout: model },
@@ -108,16 +119,31 @@ export function nativeInvocation(agent: NativeAgent, request: AdapterRequest, ex
         limits: {
           concurrency,
           repairs: request.limits.maxRepairs,
-          taskMs: request.limits.timeoutMs,
-          jobMs: request.limits.timeoutMs,
+          taskMs: Math.max(1, remainingMs),
+          jobMs: Math.max(1, remainingMs),
         },
       })}`,
+      "after covers implementation AND check dependencies. Worktrees contain the base plus declared predecessors, not eventual siblings. Prefer independent state fixtures for isolated unit checks; put cross-module compatibility checks downstream of both implementations.",
+      "Assigned reviews are binding. If a consumer must wait for approval, depend on the reviewer. Completed downstream writers are not silently replayed by repair; plan a new run when necessary.",
       "For dependency-free builders, provide useful checks or an honest noChecksReason. Supply integratedChecks or noIntegratedChecksReason.",
       "After a successful run, call pinata_integrate with its run ID. Builder patches alone are insufficient: the final candidate checkout must contain the implementation.",
       "Use only builder, reviewer and scout roles. Keep all worker models and reasoning settings as configured above.",
     );
   }
-  return { command: executable ?? "pi", args: [...args, "--", shared.join("\n\n")] };
+  const prompt = shared.join("\n\n");
+  return agent === "pinata"
+    ? {
+        command: executable ?? "pi",
+        args,
+        prompt,
+        input:
+          JSON.stringify({
+            type: "prompt",
+            id: "arena",
+            message: "/pinata-arena-execute " + JSON.stringify(prompt),
+          }) + "\n",
+      }
+    : { command: executable ?? "pi", args: [...args, "--", prompt] };
 }
 
 export function pinataIntegrated(stdout: string): boolean {
@@ -125,6 +151,12 @@ export function pinataIntegrated(stdout: string): boolean {
   for (const line of stdout.split("\n")) {
     try {
       const event = JSON.parse(line);
+      if (
+        event.type === "message_end" &&
+        event.message?.customType === "pinata-result" &&
+        event.message.details?.status === "succeeded"
+      )
+        ran = true;
       if (event.type !== "tool_execution_end" || event.isError) continue;
       const result = event.result?.details?.result;
       if (event.toolName === "pinata_run" && result?.status === "succeeded") ran = true;
@@ -142,14 +174,34 @@ export async function executeNative(
   request: AdapterRequest,
   executable?: string,
 ): Promise<AdapterResponse> {
+  request = {
+    ...request,
+    deadlineAt: capDeadline(request.deadlineAt, Date.now() + request.limits.timeoutMs),
+  };
+  assertTime(request.deadlineAt);
   const invocation = nativeInvocation(agent, request, executable);
   mkdirSync(request.evidenceDir, { recursive: true });
   const started = performance.now();
+  // Start cancellation before the hard trial cutoff, leaving time to reap workers.
+  const cleanupMs =
+    agent === "pinata"
+      ? Math.min(3000, Math.floor(request.limits.timeoutMs * 0.1))
+      : Math.min(1500, Math.floor(request.limits.timeoutMs * 0.05));
   const run = async (label: string, command: string, args: string[], timeoutMs: number) =>
     runProcess({
       command,
       args,
+      ...(label === "native" &&
+        "input" in invocation && { input: invocation.input, inputCompletionId: "arena" }),
       newProcessGroup: false,
+      ...(agent === "pinata" && label === "native" && { terminationGraceMs: cleanupMs }),
+      ...(agent === "pinata" &&
+        label === "native" && {
+          env: {
+            ...process.env,
+            PINATA_ARENA_REQUEST: join(request.evidenceDir, "coordinator-request.json"),
+          },
+        }),
       failOnStderr: agent === "codex" && label === "native" ? codexSpawnFailure : undefined,
       cwd: request.cwd,
       timeoutMs,
@@ -157,17 +209,32 @@ export async function executeNative(
       stdoutFile: join(request.evidenceDir, `${label}.stdout.jsonl`),
       stderrFile: join(request.evidenceDir, `${label}.stderr.log`),
     });
-  const version = await run("version", invocation.command, ["--version"], 10000);
+  if (agent === "pinata")
+    writeFileSync(join(request.evidenceDir, "coordinator-request.json"), JSON.stringify(request), {
+      flag: "wx",
+      mode: 0o600,
+    });
+  const version = await run(
+    "version",
+    invocation.command,
+    ["--version"],
+    remaining(request.deadlineAt, 10000),
+  );
   if (version.code !== 0 || version.error || version.timedOut)
     throw new Error("Agent version check failed; inspect version.stderr.log");
-  writeFileSync(join(request.evidenceDir, "plan-prompt.txt"), invocation.args.at(-1)! + "\n");
+  writeFileSync(
+    join(request.evidenceDir, "plan-prompt.txt"),
+    ("prompt" in invocation ? invocation.prompt : invocation.args.at(-1)!) + "\n",
+  );
   writeFileSync(
     join(request.evidenceDir, "invocation.json"),
     JSON.stringify(invocation, null, 2) + "\n",
   );
-  const remaining = request.limits.timeoutMs - (performance.now() - started) - 1500;
-  if (remaining <= 0) throw new Error("No time remaining after version check");
-  const result = await run("native", invocation.command, invocation.args, remaining);
+  const remainingMs =
+    remaining(request.deadlineAt, request.limits.timeoutMs - (performance.now() - started)) -
+    cleanupMs;
+  if (remainingMs <= 0) throw new Error("No time remaining after version check");
+  const result = await run("native", invocation.command, invocation.args, remainingMs);
   const integrated =
     agent !== "pinata" || (!result.stdoutTruncated && pinataIntegrated(result.stdout));
   const delegationFailed = agent === "codex" && codexSpawnFailure.test(result.stderr);

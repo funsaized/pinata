@@ -1,3 +1,4 @@
+import { validateDeadline } from "../../engine/core/deadline.ts";
 import { readFile } from "node:fs/promises";
 import { isAbsolute } from "node:path";
 import { validateUnitGraph } from "../task-graph.ts";
@@ -47,6 +48,7 @@ export async function readAdapterRequest(path: string): Promise<AdapterRequest> 
   ) {
     throw new Error("Invalid arena adapter request (expected protocol version 1)");
   }
+  validateDeadline(request.deadlineAt);
   validateUnitGraph(request.task.units);
   return request;
 }

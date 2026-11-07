@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { openSync, closeSync, writeSync } from "node:fs";
 import { performance } from "node:perf_hooks";
 import type { Readable } from "node:stream";
+import { killTree } from "../engine/verify/checks.ts";
 
 export interface ProcessResult {
   code: number | null;
@@ -21,6 +22,8 @@ export interface ProcessResult {
 // or logs without bound. POSIX process groups also cover descendants holding pipes.
 export async function runProcess(options: {
   command: string;
+  input?: string; // RPC command; keep stdin open until the managed session exits.
+  inputCompletionId?: string; // Close stdin after this RPC response, triggering graceful shutdown.
   args: string[];
   cwd: string;
   timeoutMs: number;
@@ -32,6 +35,7 @@ export async function runProcess(options: {
   signal?: AbortSignal;
   failOnStderr?: RegExp;
   newProcessGroup?: boolean; // Nested adapters can remain in the arena supervisor group.
+  terminationGraceMs?: number; // Allow a managed coordinator to cancel its workers first.
 }): Promise<ProcessResult> {
   const ownGroup = process.platform !== "win32" && options.newProcessGroup !== false;
   const started = performance.now();
@@ -68,6 +72,7 @@ export async function runProcess(options: {
     let timedOut = false;
     let error: string | null = null;
     let stderrTail = "";
+    let stdoutTail = "";
     let finished = false;
     let killTimer: ReturnType<typeof setTimeout> | undefined;
     let closeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -76,7 +81,8 @@ export async function runProcess(options: {
     let timeout: ReturnType<typeof setTimeout> | undefined;
     const kill = (signal: NodeJS.Signals) => {
       try {
-        if (ownGroup && child?.pid) process.kill(-child.pid, signal);
+        if (process.platform === "win32" && child?.pid) killTree(child.pid);
+        else if (ownGroup && child?.pid) process.kill(-child.pid, signal);
         else child?.kill(signal);
       } catch {
         /* Already exited. */
@@ -118,12 +124,18 @@ export async function runProcess(options: {
         env: options.env ?? process.env,
         shell: false,
         detached: ownGroup,
-        stdio: options.scoreFile ? ["ignore", "pipe", "pipe", "pipe"] : ["ignore", "pipe", "pipe"],
+        stdio: options.scoreFile
+          ? ["ignore", "pipe", "pipe", "pipe"]
+          : [options.input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
       });
     } catch (cause) {
       error = String(cause);
       finish(null, null);
       return;
+    }
+    if (options.input !== undefined) {
+      child.stdin?.on("error", () => {});
+      child.stdin?.write(options.input);
     }
     abort = () => {
       error = "Process canceled";
@@ -141,14 +153,15 @@ export async function runProcess(options: {
     timeout = setTimeout(() => {
       timedOut = true;
       kill("SIGTERM");
-      killTimer = setTimeout(() => kill("SIGKILL"), 150);
+      const graceMs = options.terminationGraceMs ?? 150;
+      killTimer = setTimeout(() => kill("SIGKILL"), graceMs);
       // Detached grandchildren can escape a process group. Keep the harness bounded.
       closeTimer = setTimeout(() => {
         child.stdout?.destroy();
         child.stderr?.destroy();
         if (options.scoreFile) (child.stdio[3] as Readable | null)?.destroy();
         finish(child.exitCode, child.signalCode);
-      }, 500);
+      }, graceMs + 350);
     }, options.timeoutMs);
     [
       child.stdout,
@@ -157,6 +170,22 @@ export async function runProcess(options: {
     ].forEach((readable, index) => {
       readable?.on("data", (chunk: Buffer) => {
         if (finished) return;
+        if (index === 0 && options.inputCompletionId) {
+          stdoutTail += chunk.toString("utf8");
+          let newline: number;
+          while ((newline = stdoutTail.indexOf("\n")) !== -1) {
+            const line = stdoutTail.slice(0, newline);
+            stdoutTail = stdoutTail.slice(newline + 1);
+            try {
+              const response = JSON.parse(line);
+              if (response.type === "response" && response.id === options.inputCompletionId)
+                child.stdin?.end();
+            } catch {
+              // Diagnostics and truncated large events are not command completion.
+            }
+          }
+          stdoutTail = stdoutTail.slice(-64 * 1024);
+        }
         const stream = streams[index];
         const kept = chunk.subarray(0, Math.max(0, options.maxLogBytes - stream.size));
         if (kept.length < chunk.length) stream.truncated = true;

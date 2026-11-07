@@ -24,6 +24,7 @@ export interface ArenaTask {
   units: Unit[];
 }
 export interface AdapterRequest {
+  deadlineAt?: number;
   schemaVersion: 1;
   runId: string;
   task: { id: string; version: number; prompt: string; units: Unit[] };
