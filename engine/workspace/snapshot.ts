@@ -25,6 +25,11 @@ export async function headCommit(root: string, signal?: AbortSignal): Promise<st
   return line(await git(root, ["rev-parse", "--verify", "HEAD"], { signal }));
 }
 
+// Detached checkouts return HEAD; attached checkouts return the full branch ref.
+export async function headBranch(root: string, signal?: AbortSignal): Promise<string> {
+  return line(await git(root, ["rev-parse", "--symbolic-full-name", "HEAD"], { signal }));
+}
+
 export async function snapshotBase(
   root: string,
   runId: string,

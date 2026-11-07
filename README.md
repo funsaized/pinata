@@ -83,8 +83,9 @@ access. Read [trust and safety](docs/explanation/trust.md) before authorizing wo
 Save the plan as a job file and you can run it from a terminal or CI (outside of pi) with
 `pinata run job.json`.
 
-Headless runs (currently) leave builder changes in their worktrees; integrate
-them separately in Pi. See [headless runs](docs/how-to/headless.md), or use the
+Headless writer runs apply successful changes and run destination checks automatically.
+Use `--no-apply` to keep the artifacts separate, then `pinata integrate <run>` to apply
+them later. See [headless runs](docs/how-to/headless.md), or use the
 [goal-to-job prompt](examples/jobs.md#let-a-coordinator-design-the-job) to have a
 coordinator design a plan for your repository. Browse the
 [job patterns for delivery, research, UX, accessibility, and data pipelines](examples/jobs.md#where-jobs-help).

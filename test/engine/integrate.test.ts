@@ -16,7 +16,7 @@ import {
   withDestination,
 } from "../../engine/verify/destination.ts";
 import { integrationStatus } from "../../engine/pi/ui.ts";
-import { headCommit } from "../../engine/workspace/snapshot.ts";
+import { headBranch, headCommit } from "../../engine/workspace/snapshot.ts";
 import { fauxWorld, type FauxTurn } from "./faux.ts";
 import { spec } from "./helpers.ts";
 
@@ -76,6 +76,7 @@ async function integrated(
     reviewPolicy: "optional",
     root: world.repo,
     head,
+    branch: await headBranch(world.repo),
     tasks: validateGraph(tasks, { allowWrites: true }).map(taskSpec),
     allowWrites: true,
     integratedChecks: checks,
@@ -577,6 +578,20 @@ test(
     assert.equal(await readFile(join(world.repo, "keep.txt"), "utf8"), "keep");
   },
 );
+
+test("branch switches at the same commit prevent integration retries and rollback", async (t) => {
+  const { world, handle } = await integrated(t, { "a.txt": "a" }, [
+    build("build", { "a.txt": "b" }),
+  ]);
+  const branch = await headBranch(world.repo);
+  await integrate(handle.dir);
+  world.fixture.git("checkout", "-b", "other");
+  await assert.rejects(integrate(handle.dir), /branch changed/);
+  await assert.rejects(rollback(handle.dir), /branch changed/);
+  assert.equal(await readFile(join(world.repo, "a.txt"), "utf8"), "b");
+  world.fixture.git("checkout", branch.slice("refs/heads/".length));
+  assert.equal((await rollback(handle.dir)).status, "rolled_back");
+});
 
 test("optional review still enforces every assigned review and its exact fingerprint", async (t) => {
   const { readRunRecord } = await import("../../engine/verify/record.ts");

@@ -43,7 +43,7 @@ map duration parsing in a repository named `repo` next to the job file:
 Choose a model configured on your machine and replace the task and path. The
 [examples](../../examples/) folder has complete jobs you can adapt.
 
-A job requires `tasks`. It also accepts `config`, `approval`, `deadlineAt`, `instructions`,
+A job requires `tasks`. It also accepts `config`, `approval`, `deadlineAt`, `instructions`, `integration`,
 `integratedChecks`, and `noIntegratedChecksReason`. `cwd` is relative to the job
 file; omit it to use the current shell directory. `background` and `survive` are
 options for Pi's `pinata_run` tool, not this command.
@@ -58,29 +58,43 @@ pinata run job.json --watch
 ```
 
 The command starts `pi` in print mode with only Pinata's headless extension.
-Text output prints one line per state change; `--json` prints the run's events as JSONL.
+Text output prints progress and the delivery result. `--json` prints task events as
+JSONL, followed by `integration_started` and `integration_finished` (or
+`integration_failed`) records when applying changes. The journal and verification
+receipt retain the delivery evidence; `pinata logs` reads the task event log.
 `--watch` (or observe mode) starts the run's socket and prints the `pinata view` command
 on stderr.
 
-| Exit code | Meaning                       |
-| --------- | ----------------------------- |
-| 0         | every task succeeded          |
-| 1         | a task failed or was rejected |
-| 2         | the job file is invalid       |
-| 3         | the run was cancelled         |
+| Exit code | Meaning                                          |
+| --------- | ------------------------------------------------ |
+| 0         | tasks and requested delivery succeeded           |
+| 1         | a task, integration, or destination check failed |
+| 2         | the job file is invalid                          |
+| 3         | the run was cancelled                            |
 
 ## Apply a builder's changes
 
-For jobs with writers, record the authorized scope in `approval`. Exit code 0
-means every task and its configured checks succeeded. Builder patches remain in
-their worktrees until you apply them; the destination checkout is not yet verified.
+For jobs with writers, record the authorized scope in `approval`. Once every task
+and assigned review succeeds, Pinata applies the captured changes to the starting
+checkout and runs `integratedChecks`. It leaves the changes unstaged and uncommitted.
+Provide destination checks or an explicit `noIntegratedChecksReason`; omitted checks
+produce `applied_unverified`, never `verified`.
 
-Open Pi in the repository and ask it to inspect the saved run, apply its eligible checked
-changes, and run its destination checks. Pi uses `pinata_integrate` for this step.
-Follow [build and review](../tutorials/build-and-review.md) for the full sequence.
+To inspect the artifacts before applying them, use `--no-apply` or set
+`"integration": "manual"` in the job. The default is `"on-success"`.
 
-`pinata run` finishes after the task graph completes. Run integration separately
-through Pi; that step applies the patches and runs `integratedChecks`.
+```sh
+pinata run job.json --no-apply
+pinata integrate <run>
+pinata integrate <run> --json
+```
+
+`integrate` uses the same checks and journal as Pi's `pinata_integrate` tool, without
+starting Pi or making model calls. It targets the run's saved checkout and branch.
+Unrelated commits are allowed; branch switches and changes to affected files stop
+application. A failed destination check leaves applied changes and evidence for
+inspection. Retrying integration uses the journal and reruns the checks. See
+[recovery](recover.md) for repairs, reconciliation, and rollback.
 
 ## Read a run's log
 
@@ -103,8 +117,11 @@ pinata resume <run>
 
 Set `PINATA_NO_CONTINUE=1` to stop Pi from starting headless hosts.
 
+Resume keeps the saved delivery choice. Runs started through Pi remain under the
+coordinator's control; moving them to a headless host does not enable automatic application.
+
 New jobs default to optional independent review. Set `config.reviewPolicy: "required"`
 for a reviewed-delivery recipe; every explicitly assigned review remains binding under
 either policy. Legacy saved runs retain required review when no policy was recorded.
 The saved `deadlineAt` covers preparation through destination integration and checks.
-Integrate within that remaining time; a later Pi session cannot renew it.
+Automatic and explicit integration use that remaining time; neither renews it.

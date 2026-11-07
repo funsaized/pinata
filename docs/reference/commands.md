@@ -72,17 +72,20 @@ builder and reviewer; `/pinata-review [base|PR]` reviews existing changes. `/sco
 
 ## Other terminal commands
 
-The installed `pinata` command starts the `pi` binary (`PINATA_PI` selects another one).
+The installed `pinata` command uses the `pi` binary (`PINATA_PI` selects another one).
+`pinata integrate` runs directly in Node and needs no Pi session.
 
-| Command                                                     | Does                               |
-| ----------------------------------------------------------- | ---------------------------------- |
-| `pinata logs [run] [--task <task>] [--follow] [--json]`     | Print recorded events              |
-| `pinata run <job.json> [--mode observe] [--json] [--watch]` | Run a job headless                 |
-| `pinata resume <run>`                                       | Continue a run that outlived Pi    |
-| `pinata agents [list\|show <name>\|validate]`               | Inspect reusable agent definitions |
-| `pinata gc [--confirm]`                                     | Same cleanup as `/pinata gc`       |
-| `pinata help`                                               | Command help                       |
+| Command                                                                  | Does                                           |
+| ------------------------------------------------------------------------ | ---------------------------------------------- |
+| `pinata logs [run] [--task <task>] [--follow] [--json]`                  | Print recorded events                          |
+| `pinata run <job.json> [--no-apply] [--mode observe] [--json] [--watch]` | Run a job and deliver successful changes       |
+| `pinata integrate <run> [--json]`                                        | Apply saved changes and run destination checks |
+| `pinata resume <run>`                                                    | Continue a run that outlived Pi                |
+| `pinata agents [list\|show <name>\|validate]`                            | Inspect reusable agent definitions             |
+| `pinata gc [--confirm]`                                                  | Same cleanup as `/pinata gc`                   |
+| `pinata help`                                                            | Command help                                   |
 
-Headless run exit codes: 0 succeeded, 1 failed, 2 invalid job, 3 cancelled.
+Headless run exit codes: 0 tasks and requested delivery succeeded, 1 failed,
+2 invalid job, 3 cancelled. Integration failures also exit nonzero.
 `--watch` enables an external viewer for a headless run. Recovery commands retain their
 separate meanings: `resume` continues a saved run; `rerun` restarts lost tasks.

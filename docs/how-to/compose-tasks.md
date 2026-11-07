@@ -98,9 +98,9 @@ Use run-level `integratedChecks` to test the combined changes
 in the destination checkout during integration or verification. Strong subagent systems choose commands that
 test the acceptance criteria. Pinata requires that each builder have checks or an explicit `noChecksReason`.
 
-A successful headless run leaves patches in worktrees. Inspect the results and reviews,
-then integrate through Pi. Integration applies eligible checked patches and runs the
-destination checks. Without destination checks, an applied result is unverified. See the
+A successful headless writer run applies its checked patches and runs destination
+checks. Use `--no-apply` to inspect artifacts first, then `pinata integrate <run>`.
+Without destination checks, an applied result is unverified. See the
 [tools reference](../reference/tools.md) and [recovery guide](recover.md) for commands,
 statuses, and recovery.
 

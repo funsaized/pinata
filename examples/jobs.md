@@ -48,8 +48,8 @@ Once the plan is ready, Pi can run it, inspect the saved results, repair builder
 in the same run, and integrate approved changes. Pinata executes the declared
 dependencies; the coordinator makes the follow-up decisions. An optional `planner`
 worker returns a proposal for the coordinator to turn into tasks and launch.
-For headless execution, use [`pinata run`](../docs/how-to/headless.md); applying the
-result remains a separate step.
+For headless execution, [`pinata run`](../docs/how-to/headless.md) applies successful
+changes and runs destination checks. Use `--no-apply` to inspect the artifacts first.
 
 ## Where jobs help
 
@@ -231,8 +231,8 @@ Before reusing a graph:
 4. Choose configured models and adjust concurrency, time, cost, and repair limits.
    The larger templates inherit your models; their dollar limits are example caps,
    not cost estimates. Use bounded batches when the target list is large.
-5. Inspect results before integration. `pinata run` completes the graph and leaves
-   patches in worktrees; integration and destination checks are separate. A failed
+5. `pinata run` applies successful changes and runs destination checks. Use
+   `--no-apply` to inspect results first, then `pinata integrate <run>`. A failed
    or rejected predecessor blocks downstream summaries too, so inspect saved task
    results when a batch fails. If a repair would invalidate completed downstream
    builders, create a new run; see [recovery](../docs/how-to/recover.md).

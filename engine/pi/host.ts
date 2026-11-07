@@ -33,8 +33,9 @@ import { piPipeline, type PipelineStages, type PiRunData } from "./pipeline.ts";
 import { RuntimeCache, inherited, selectModel } from "./runtime.ts";
 import { prepareRun, verificationStages } from "../verify/stages.ts";
 import { readRunRecord, writeRunRecord, type RunRecord } from "../verify/integrate.ts";
+import type { IntegrationMode } from "../verify/record.ts";
 import { alive, identify } from "../backends/supervise.ts";
-import { headCommit } from "../workspace/snapshot.ts";
+import { headBranch, headCommit } from "../workspace/snapshot.ts";
 import { agentMessages, type PinataUI } from "./ui.ts";
 import { RunServer } from "../ipc/server.ts";
 
@@ -60,6 +61,7 @@ export interface HostOptions {
 }
 
 export interface RunParams {
+  integration?: IntegrationMode;
   deadlineAt?: number;
   tasks: TaskSpec[];
   background?: boolean;
@@ -478,6 +480,21 @@ export class PinataHost {
         "approval is required when the run has builders: record the user's authorization for these local writes",
       );
     validateChecks(params.integratedChecks ?? [], "integratedChecks");
+    const integration = params.integration ?? "manual";
+    if (integration !== "manual" && integration !== "on-success")
+      throw new ValidationError('integration must be "on-success" or "manual"');
+    if (
+      hasWrites &&
+      integration === "on-success" &&
+      !params.integratedChecks?.length &&
+      !(
+        typeof params.noIntegratedChecksReason === "string" &&
+        params.noIntegratedChecksReason.trim()
+      )
+    )
+      throw new ValidationError(
+        "Automatic integration requires integratedChecks or noIntegratedChecksReason",
+      );
     const toolExtensions = resolveToolExtensions(
       tasks.flatMap(taskTools),
       config,
@@ -493,9 +510,12 @@ export class PinataHost {
       ).model;
     const engine = this.engine(ctx);
     const id = randomUUID();
+    const branch = await headBranch(root);
     // Snapshot, setup and review subjects; invalid subjects fail here, before any agent starts.
     const prep = await prepareRun(root, id, tasks, config, deadlineAt);
     assertTime(deadlineAt);
+    if (branch !== (await headBranch(root)))
+      throw new Error("Destination branch changed during preparation; start a new run");
     const data: PiRunData & Record<string, unknown> = {
       prep,
       reviewPolicy: config.reviewPolicy,
@@ -521,6 +541,8 @@ export class PinataHost {
       id,
       root,
       head: prep.base?.head ?? (await headCommit(root)),
+      branch,
+      integration,
       schemaVersion: 2,
       deadlineAt,
       reviewPolicy: config.reviewPolicy,

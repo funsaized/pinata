@@ -46,8 +46,8 @@ Pi, Pinata, model credentials, and replacing its model placeholders. Follow the
 
 `cwd` is `.` relative to the generated job. The job uses portable paths and omits
 `background` and `survive`. Destination checks are `all-tests` (`node --test`)
-and `expected-report` (`node verify.mjs`). Headless execution leaves integration to
-the coordinator. Model and limit fields are documented in [configuration](config.md).
+and `expected-report` (`node verify.mjs`). Headless execution applies successful
+changes and runs both checks. Model and limit fields are documented in [configuration](config.md).
 
 ## CLI contract
 

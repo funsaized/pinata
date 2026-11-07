@@ -22,8 +22,8 @@ function npm(args: string[], cwd: string) {
 async function main() {
   const dir = await mkdtemp(join(tmpdir(), "pinata-package-smoke-"));
   try {
-    const packed = JSON.parse(
-      npm(["pack", "--json", "--ignore-scripts", "--pack-destination", dir], ROOT),
+    const packed = Object.values<{ files: Array<{ path: string }>; filename: string }>(
+      JSON.parse(npm(["pack", "--json", "--ignore-scripts", "--pack-destination", dir], ROOT)),
     )[0];
     const files: string[] = packed.files.map((f: { path: string }) => f.path.replaceAll("\\", "/"));
     for (const need of [
@@ -215,6 +215,24 @@ async function main() {
       assert.equal(result?.status, "succeeded", JSON.stringify(end).slice(0, 2000));
       await pi.wait((r) => r.type === "agent_settled");
       await integrationSmoke(pi);
+      const integrated = pi.records.findLast(
+        (r) => r.type === "tool_execution_end" && r.toolName === "pinata_integrate",
+      );
+      const run = integrated?.result?.details?.result?.run;
+      assert.equal(typeof run, "string");
+      const applied = spawnSync(
+        process.execPath,
+        [join(installed, "bin", "pinata.mjs"), "integrate", run, "--json"],
+        {
+          cwd: repo,
+          env: { ...env, PINATA_PI: "missing-pi-executable" },
+          encoding: "utf8",
+          timeout: 30_000,
+        },
+      );
+      assert.equal(applied.status, 0, applied.stderr || applied.stdout);
+      const delivery = JSON.parse(applied.stdout.trim().split("\n").at(-1)!);
+      assert.equal(delivery.status, "verified");
       console.log(JSON.stringify({ ok: true, files: files.length, commands: names.length }));
     } finally {
       await pi.close();

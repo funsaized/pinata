@@ -129,7 +129,8 @@ needs fresh approval from its assigned reviewers and a new handoff. Earlier hand
 
 `pinata_integrate` applies eligible checked patches and runs the destination checks. HEAD
 may have advanced since the run began, as long as affected paths still match their
-recorded starting contents. Pinata refuses conflicts before writing; the coordinator
+recorded starting contents and the checkout remains on the starting branch.
+Pinata refuses conflicts before writing; the coordinator
 must resolve them and arrange fresh checks and review of the combined change.
 
 The result includes a verification receipt and one of these statuses:

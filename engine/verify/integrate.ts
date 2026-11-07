@@ -7,7 +7,7 @@ import { atomicJson, privateDir, readJson } from "../core/store.ts";
 import { BlobReader, digest } from "../workspace/changes.ts";
 import { git } from "../workspace/git.ts";
 import { assertNoLinks } from "../workspace/paths.ts";
-import { headCommit } from "../workspace/snapshot.ts";
+import { headBranch, headCommit } from "../workspace/snapshot.ts";
 import type { CheckEvidence } from "./checks.ts";
 import { loadChanges, need, safeChange, type VerifiedChanges } from "./evidence.ts";
 import {
@@ -184,6 +184,10 @@ async function journalHead(root: string, journal: Journal, signal?: AbortSignal)
     "Destination HEAD moved after application; reconcile this journal manually using pinata_changes",
   );
   need(
+    (await headBranch(root, signal)) === journal.destination.branch,
+    "Destination branch changed after application; return to the original branch",
+  );
+  need(
     digest(await git(root, ["ls-files", "--stage", "-z"], { signal })) ===
       journal.destination.indexDigest,
     "Destination index changed after application; reconcile this journal manually",
@@ -202,6 +206,13 @@ async function integrateWithin(dir: string, signal?: AbortSignal): Promise<Integ
   return withDestination(record.root, async () => {
     const { evidence } = await loadChanges(dir, signal);
     const root = record.root;
+    if (record.branch !== undefined) {
+      need(
+        (await headBranch(root, signal)) === record.branch &&
+          (record.branch !== "HEAD" || (await headCommit(root, signal)) === record.head),
+        "Destination branch changed since the run started; return to the original branch",
+      );
+    }
     const evidenceDigest = evidence.evidenceDigest;
     const journalPath = join(dir, "integration", "journal.json");
     let journal = await readJson<Journal>(journalPath).catch((error: NodeJS.ErrnoException) => {
@@ -220,6 +231,12 @@ async function integrateWithin(dir: string, signal?: AbortSignal): Promise<Integ
       if (!journal || journal.status === "rolled_back") {
         const entries = entriesFor(evidence);
         const before = await destination(root, signal);
+        need(
+          record.branch === undefined ||
+            (before.branch === record.branch &&
+              (record.branch !== "HEAD" || before.head === record.head)),
+          "Destination branch changed during integration preflight",
+        );
         const states = await fileStates(
           root,
           entries.map((e) => e.path),

@@ -4,6 +4,8 @@ import { join } from "node:path";
 import type { Check, TaskSpec } from "../core/types.ts";
 import { atomicJson, privateDir, readJson } from "../core/store.ts";
 
+export type IntegrationMode = "on-success" | "manual";
+
 // What the host records when a run starts, for integration after a reload.
 export interface RunRecord {
   schemaVersion?: 2;
@@ -13,6 +15,8 @@ export interface RunRecord {
   id: string;
   root: string;
   head: string; // the user's HEAD when the run started
+  branch?: string;
+  integration?: IntegrationMode;
   tasks: TaskSpec[];
   allowWrites: boolean;
   integratedChecks: Check[];
@@ -41,5 +45,11 @@ export async function readRunRecord(dir: string): Promise<RunRecord> {
     throw new Error(`Unsupported run record schema: ${record.schemaVersion}`);
   savedReviewPolicy(record);
   validateDeadline(record.deadlineAt);
+  if (
+    record.integration !== undefined &&
+    record.integration !== "manual" &&
+    record.integration !== "on-success"
+  )
+    throw new Error('integration must be "on-success" or "manual"');
   return record;
 }

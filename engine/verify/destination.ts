@@ -8,18 +8,20 @@ import type { Check } from "../core/types.ts";
 import { validateChecks } from "../core/validate.ts";
 import { digest, writeTree } from "../workspace/changes.ts";
 import { git, line, zsplit } from "../workspace/git.ts";
-import { headCommit } from "../workspace/snapshot.ts";
+import { headBranch, headCommit } from "../workspace/snapshot.ts";
 import { environment, runChecks, type CheckEvidence } from "./checks.ts";
 import { loadChanges, need, type VerifiedChanges } from "./evidence.ts";
 import { readRunRecord, type RunRecord } from "./record.ts";
 
 export interface Destination {
   head: string;
+  branch: string;
   tree: string;
   indexDigest: string;
 }
 
 export async function destination(root: string, signal?: AbortSignal): Promise<Destination> {
+  const branch = await headBranch(root, signal);
   const head = await headCommit(root, signal);
   need(
     !(await git(root, ["ls-files", "-u", "-z"], { signal })),
@@ -28,7 +30,11 @@ export async function destination(root: string, signal?: AbortSignal): Promise<D
   const indexDigest = digest(await git(root, ["ls-files", "--stage", "-z"], { signal }));
   const tree = await writeTree(root, undefined, signal);
   need(head === (await headCommit(root, signal)), "Destination HEAD changed during capture; retry");
-  return { head, tree, indexDigest };
+  need(
+    branch === (await headBranch(root, signal)),
+    "Destination branch changed during capture; retry",
+  );
+  return { head, branch, tree, indexDigest };
 }
 
 // A lock per worktree, shared by every Pinata process. Never guess that an abandoned lock

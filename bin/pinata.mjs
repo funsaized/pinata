@@ -2,12 +2,12 @@
 // The pinata command line.
 //   pinata view [run] [--task <task>]   attach a viewer to a live run, or open a finished one from its log
 //   pinata logs [run] [--task <task>] [--follow] [--json]   print a run's log
-//   pinata run <job.json> [--mode observe] [--json] [--watch]   run a job headless
+//   pinata run <job.json> [--no-apply] [--mode observe] [--json] [--watch]
+//   pinata integrate <run> [--json]   apply checked changes without starting Pi
 //   pinata resume <run>         continue a run that outlived its Pi
-// Runs live in <git common dir>/pinata/<run>; a live run has link.json (its socket). Both
-// commands run in the pi binary (the viewer interactively, logs in print mode).
+// Runs live in <git common dir>/pinata/<run>; a live run has link.json (its socket).
 import { spawn } from "node:child_process";
-import { existsSync, writeSync } from "node:fs";
+import { existsSync, readFileSync, writeSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseViewArgs } from "../engine/viewer/arguments.mjs";
@@ -17,9 +17,10 @@ const USAGE = `Usage:
   pinata agents [list|show <name>|validate]   inspect reusable agent definitions
   pinata view [run] [--task <task>]                 attach a viewer to a live run, or replay a finished one
   pinata logs [run] [--task <task>] [--follow] [--json]   print a run's recorded events
-  pinata run <job.json> [--mode observe] [--json] [--watch]   run a job headless
+  pinata run <job.json> [--no-apply] [--mode observe] [--json] [--watch]   run and deliver a job headless
       exit codes: 0 succeeded, 1 failed, 2 invalid job, 3 cancelled
   pinata resume <run>                      continue a run that outlived its Pi
+  pinata integrate <run> [--json]          apply checked changes and run destination checks
   pinata gc [--confirm]                    preview run cleanup and close finished panes
 
 run: a run id prefix or a run directory. view prefers active work, then the latest saved run;
@@ -61,7 +62,22 @@ function startPi(extension, piArgs, env, stdin) {
     },
   );
   child.on("error", (error) => fail(`could not start Pi (${pi}): ${error.message}`));
-  child.on("exit", (code) => process.exit(code ?? 0));
+  let cancelled = false;
+  const interrupt = () => {
+    cancelled = true;
+    child.kill("SIGINT");
+  };
+  const terminate = () => {
+    cancelled = true;
+    child.kill("SIGTERM");
+  };
+  process.on("SIGINT", interrupt);
+  process.on("SIGTERM", terminate);
+  child.on("exit", (code, signal) => {
+    process.removeListener("SIGINT", interrupt);
+    process.removeListener("SIGTERM", terminate);
+    process.exit(cancelled || signal ? 3 : (code ?? 1));
+  });
 }
 
 async function logs(args) {
@@ -91,20 +107,21 @@ function run(args) {
       if (mode !== undefined) fail("Use --mode only once");
       mode = args[++i];
       if (mode !== "lean" && mode !== "observe") fail("--mode is lean or observe");
-    } else if (["--json", "--watch"].includes(arg)) {
+    } else if (["--json", "--watch", "--no-apply"].includes(arg)) {
       if (flags.has(arg)) fail(`Use ${arg} only once`);
       flags.add(arg);
     } else if (arg.startsWith("-")) fail(`Unknown option ${arg}`);
     else if (job) fail(`Unexpected argument ${arg}`);
     else job = arg;
   }
-  if (!job) fail("Usage: pinata run <job.json> [--mode observe] [--json] [--watch]");
+  if (!job) fail("Usage: pinata run <job.json> [--no-apply] [--mode observe] [--json] [--watch]");
   if (!existsSync(job)) fail(`No job file ${job}`);
   const spec = {
     job: resolve(job),
     ...(mode && { mode }),
     json: flags.has("--json"),
     watch: flags.has("--watch"),
+    noApply: flags.has("--no-apply"),
   };
   startPi(["headless", "main.ts"], ["-p", `/pinata-run ${JSON.stringify(spec)}`], {}, "ignore");
 }
@@ -130,7 +147,33 @@ try {
   else if (command === "logs") await logs(rest);
   else if (command === "run") run(rest);
   else if (command === "resume") await resume(rest);
-  else if (command === "agents") {
+  else if (command === "integrate") {
+    const args = rest.filter((arg) => arg !== "--json");
+    if (args.length !== 1 || args[0].startsWith("-") || rest.length - args.length > 1)
+      fail("Usage: pinata integrate <run> [--json]");
+    // Node skips native type stripping in node_modules. Load only our engine sources.
+    const { registerHooks, stripTypeScriptTypes } = await import("node:module");
+    const engineUrl = new URL("../engine/", import.meta.url).href;
+    const hooks = registerHooks({
+      load(url, context, nextLoad) {
+        if (!url.startsWith(engineUrl) || !url.endsWith(".ts")) return nextLoad(url, context);
+        return {
+          format: "module",
+          source: stripTypeScriptTypes(readFileSync(new URL(url), "utf8"), { sourceUrl: url }),
+          shortCircuit: true,
+        };
+      },
+    });
+    try {
+      const { integrateCommand } = await import("../engine/headless/integration.ts");
+      process.exitCode = await integrateCommand(args[0], {
+        json: rest.includes("--json"),
+        write: (line) => writeSync(1, line + "\n"),
+      });
+    } finally {
+      hooks.deregister();
+    }
+  } else if (command === "agents") {
     const action = rest[0] ?? "list";
     if (
       !["list", "show", "validate"].includes(action) ||

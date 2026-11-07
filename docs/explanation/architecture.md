@@ -97,6 +97,11 @@ The coordinator chooses when to integrate. `pinata_integrate` checks each file's
 starting contents, records its writes in a journal, applies the patches without
 staging them, and runs destination checks. Conflicts go back to the coordinator.
 
+Headless writer jobs call the same integrator automatically after task success.
+`--no-apply` or `integration: "manual"` leaves delivery for later; `pinata integrate`
+applies a saved run without Pi. The host saves this choice and the starting branch.
+Resume preserves the choice, and integration refuses a branch switch.
+
 `pinata_verify` runs destination checks separately. It records HEAD, the content
 tree, check results, and whether the recorded changes are present exactly.
 Builder reviews still apply to their original patches; a combined or reconciled

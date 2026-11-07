@@ -2,7 +2,7 @@ import { discoverAgents } from "../pi/definitions.ts";
 // The headless host: a Pi extension that `pinata` runs in print mode (the E5.6 decision: the
 // pi binary, no extra runtime). Its commands print to stdout and never send a model turn.
 //   pi -p --no-session --no-extensions --extension engine/headless/main.ts "/pinata-run <json>"
-// Exit codes: 0 every task succeeded, 1 failure, 2 invalid job, 3 cancelled.
+// Exit codes: 0 requested work succeeded, 1 failure, 2 invalid job, 3 cancelled.
 import { existsSync, writeSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
@@ -15,6 +15,8 @@ import { gcText } from "../pi/commands.ts";
 import { followEvents } from "../sources/log.ts";
 import { JsonReporter, TextReporter, type Reporter } from "./reporters.ts";
 import { resolveView, type ViewArgs } from "../viewer/selection.ts";
+import { readRunRecord, type IntegrationMode } from "../verify/record.ts";
+import { deliver, withInterrupt, type DeliveryOptions } from "./integration.ts";
 
 export const EXIT = { succeeded: 0, failed: 1, invalid: 2, cancelled: 3 } as const;
 
@@ -55,6 +57,7 @@ export async function printLogs(
 
 // A job file (examples/*.json), mapped to pinata_run parameters.
 export interface Job {
+  integration?: IntegrationMode;
   cwd?: string;
   approval?: string;
   allowWrites?: boolean;
@@ -69,11 +72,18 @@ export interface Job {
 export function jobParams(job: Job, jobFile: string, mode?: "lean" | "observe"): RunParams {
   if (!job || typeof job !== "object" || !Array.isArray(job.tasks))
     throw new ValidationError("A job file is a JSON object with a tasks array");
+  if (
+    job.integration !== undefined &&
+    job.integration !== "manual" &&
+    job.integration !== "on-success"
+  )
+    throw new ValidationError('integration must be "on-success" or "manual"');
   const builders = job.tasks.some((t) => (t as { role?: unknown })?.role === "builder");
   if (builders && job.allowWrites === false)
     throw new ValidationError("The job has builders but allowWrites is false");
   const base = dirname(resolve(jobFile));
   return {
+    integration: job.integration ?? "on-success",
     tasks: job.tasks as RunParams["tasks"],
     allowWrites: job.allowWrites,
     cwd: job.cwd ? (isAbsolute(job.cwd) ? job.cwd : resolve(base, job.cwd)) : process.cwd(),
@@ -91,6 +101,21 @@ export interface RunArgs {
   mode?: "lean" | "observe";
   json?: boolean;
   watch?: boolean;
+  noApply?: boolean;
+}
+
+async function finishRun(
+  host: PinataHost,
+  handle: RunHandle,
+  options: DeliveryOptions,
+): Promise<number> {
+  const view = await host.foreground(handle, options.signal);
+  if (options.signal?.aborted) return EXIT.cancelled;
+  if (view.status !== "succeeded") return exitCode(view);
+  const record = await readRunRecord(handle.dir);
+  if (record.allowWrites && record.integration === "on-success")
+    return deliver(handle.dir, handle.id, options);
+  return EXIT.succeeded;
 }
 
 // Runs a job in the foreground, reporting each state change. Returns the exit code.
@@ -100,10 +125,12 @@ export async function runJob(
   ctx: ExtensionCommandContext,
   write: (line: string) => void = out,
   note: (line: string) => void = err,
+  signal?: AbortSignal,
 ): Promise<number> {
   let params: RunParams;
   try {
     params = jobParams(JSON.parse(await readFile(args.job, "utf8")) as Job, args.job, args.mode);
+    if (args.noApply) params.integration = "manual";
   } catch (error) {
     note(`pinata: ${(error as Error).message}`);
     return EXIT.invalid;
@@ -126,7 +153,7 @@ export async function runJob(
       `pinata: watch with \`pinata view ${handle.id.slice(0, 8)}\` (run directory ${handle.dir})`,
     );
   }
-  return exitCode(await host.foreground(handle, undefined));
+  return finishRun(host, handle, { json: args.json, write, signal });
 }
 
 // Keeps the host alive while a run is in flight: detached agents are unref'd children, so
@@ -142,8 +169,22 @@ async function held<T>(work: () => Promise<T>): Promise<T> {
 
 export default function headless(pi: ExtensionAPI): void {
   const host = new PinataHost(pi);
+  let pending: Promise<number> | undefined;
+  async function execute(work: (signal: AbortSignal) => Promise<number>): Promise<number> {
+    pending = held(() => withInterrupt(work)).catch((error) => {
+      err(`pinata: ${(error as Error).message}`);
+      return EXIT.failed;
+    });
+    try {
+      return await pending;
+    } finally {
+      pending = undefined;
+    }
+  }
   pi.on("session_shutdown", async () => {
     await host.shutdown("headless host exit");
+    // Pi's signal handler must wait for destination checks and their journal to close.
+    await pending;
   });
   pi.registerCommand("pinata-agents", {
     description: "List, inspect, or validate agent definitions",
@@ -177,11 +218,8 @@ export default function headless(pi: ExtensionAPI): void {
   pi.registerCommand("pinata-run", {
     description: "Run a pinata job file (headless)",
     handler: async (raw, ctx) => {
-      process.exitCode = await held(() => runJob(host, JSON.parse(raw) as RunArgs, ctx)).catch(
-        (error) => {
-          err(`pinata: ${(error as Error).message}`);
-          return EXIT.failed;
-        },
+      process.exitCode = await execute((signal) =>
+        runJob(host, JSON.parse(raw) as RunArgs, ctx, out, err, signal),
       );
     },
   });
@@ -198,7 +236,9 @@ export default function headless(pi: ExtensionAPI): void {
         const stop = engine.onRun((run) => engine.subscribe(run.id, (e) => reporter.push(e)));
         const handle = await host.resumeDir(dir, ctx);
         stop();
-        process.exitCode = exitCode(await held(() => host.foreground(handle, undefined)));
+        process.exitCode = await execute((signal) =>
+          finishRun(host, handle, { write: err, signal }),
+        );
       } catch (error) {
         err(`pinata: ${(error as Error).message}`);
         process.exitCode = EXIT.failed;
