@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
+import { join } from "node:path";
 import {
   createAgentSession,
   createBashToolDefinition,
   createPowerShellToolDefinition,
   createCodemodeExtension,
   DefaultResourceLoader,
-  loadProjectContextFiles,
+  loadSkills,
   SettingsManager,
   type AgentSession,
   type AgentSessionEvent,
@@ -18,6 +19,8 @@ import {
   canonicalJson,
   definitionSchema,
   DomainError,
+  digestValue,
+  workspacePlanSchema,
   type ArtifactRef,
   type BackendCapabilities,
   type BackendHandle,
@@ -33,6 +36,10 @@ import {
 } from "../contracts/index.ts";
 import { checkpointConversation, openConversation } from "../agent/conversation.ts";
 import { reportTool, workerExtension } from "../agent/extension.ts";
+import { memoryTools } from "../agent/memory.ts";
+import { materializeSkills, readLoadout, verifyProviders } from "../definitions/resources.ts";
+import { freezeInstructions } from "../context/instructions.ts";
+import { importConversationSeed, readConversationSeed } from "../context/conversation.ts";
 
 export type SessionProcesses = {
   bash: BashOperations;
@@ -44,6 +51,7 @@ export type InProcessOptions = {
   agentDir: string;
   codemode?: boolean;
   extensions?: string[];
+  memoryProject?: string;
   createProcesses?(launch: BackendLaunch): SessionProcesses;
 };
 
@@ -55,7 +63,10 @@ export class InProcessBackend implements BackendPort {
     available: true,
     steer: true,
     continuation: true,
-    conversationSeed: false,
+    conversationSeed: true,
+    skills: true,
+    memory: true,
+    fallbacks: true,
     surviving: false,
     cleanup: "confirmed",
   };
@@ -80,15 +91,10 @@ export class InProcessBackend implements BackendPort {
         Buffer.from(await launch.artifacts.read(launch.worker.definition)).toString("utf8"),
       ),
     );
-    if (definition.pinata.skills.length)
+    if (definition.pinata.skills.length && !launch.worker.loadout)
       throw new DomainError(
         "unsupported",
         "Skills require an immutable resolved loadout before this backend can launch",
-      );
-    if (launch.worker.context)
-      throw new DomainError(
-        "unsupported",
-        "Parent context import is not supported by this backend yet",
       );
     if (
       launch.worker.tools.some((name) => name === "bash" || name === "powershell") &&
@@ -109,6 +115,12 @@ export class InProcessBackend implements BackendPort {
     try {
       processes = this.options.createProcesses?.(launch);
       const manager = await openConversation(launch);
+      if (launch.worker.context && !launch.continuation)
+        importConversationSeed(
+          manager,
+          await readConversationSeed(launch.worker.context, launch.artifacts),
+          model,
+        );
       const initialEntryCount = manager.getEntryCount();
       const initialBranch = manager.getLeafId();
       let isFinished = false;
@@ -127,6 +139,63 @@ export class InProcessBackend implements BackendPort {
       let reported: ArtifactRef | undefined;
       let reportingError: string | undefined;
       const retained: ArtifactRef[] = [];
+      const instructions = await freezeInstructions({
+        cwd: launch.cwd,
+        agentDir: this.options.agentDir,
+        artifacts: launch.artifacts,
+      });
+      retained.push(instructions.artifact);
+      const loadout = launch.worker.loadout
+        ? await readLoadout(launch.worker.loadout, launch.artifacts)
+        : undefined;
+      if (
+        loadout &&
+        (loadout.agent !== launch.worker.agent ||
+          digestValue(loadout.definition) !== digestValue(launch.worker.definition))
+      )
+        throw new DomainError("conflict", "Frozen loadout differs from the accepted definition");
+      const skillPaths = loadout
+        ? await materializeSkills(
+            loadout.skills,
+            launch.artifacts,
+            join(launch.storeDirectory, "resources", launch.worker.id),
+          )
+        : [];
+      const selectedSkills = loadSkills({
+        cwd: launch.cwd,
+        agentDir: this.options.agentDir,
+        skillPaths,
+        includeDefaults: false,
+      });
+      if (selectedSkills.diagnostics.length || selectedSkills.skills.length !== skillPaths.length)
+        throw new DomainError("context_unavailable", "Frozen skills could not be loaded exactly");
+      const providerPaths = loadout ? await verifyProviders(loadout) : [];
+      let memory: Awaited<ReturnType<typeof memoryTools>> | undefined;
+      if (launch.worker.grants.memory.scope !== "none") {
+        let project = this.options.memoryProject;
+        if (launch.worker.workspacePlan) {
+          const plan = workspacePlanSchema.parse(
+            JSON.parse(
+              Buffer.from(await launch.artifacts.read(launch.worker.workspacePlan)).toString(
+                "utf8",
+              ),
+            ),
+          );
+          if (
+            plan.run !== launch.ref.run ||
+            plan.worker !== launch.worker.id ||
+            plan.destination !== launch.cwd
+          )
+            throw new DomainError(
+              "capability_denied",
+              "Memory workspace binding differs from the frozen plan",
+            );
+          project = plan.source;
+        }
+        if (!project)
+          throw new DomainError("unsupported", "Scoped memory requires a host-bound project root");
+        memory = await memoryTools(launch, project);
+      }
       const usage: UsageObservation[] = [];
       const pendingInputs = new Map<string, { message: InboxMessage; entryId?: string }>();
       const consumed = new Set<string>();
@@ -142,6 +211,7 @@ export class InProcessBackend implements BackendPort {
         "find",
         "ls",
         reportTool,
+        ...(memory?.names ?? []),
       ]);
 
       const enqueue = (operation: () => Promise<void>): void => {
@@ -181,6 +251,8 @@ export class InProcessBackend implements BackendPort {
         worker: launch.worker,
         root: launch.cwd,
         codemode: this.options.codemode ?? false,
+        outputType: definition.outputType,
+        runtimeTools: memory?.names,
         async onReport(report) {
           reported = await launch.artifacts.put(Buffer.from(canonicalJson(report)));
           summary = report.summary;
@@ -231,20 +303,22 @@ export class InProcessBackend implements BackendPort {
         noPromptTemplates: true,
         noThemes: true,
         noContextFiles: true,
-        additionalExtensionPaths: this.options.extensions ?? [],
+        additionalExtensionPaths: [
+          ...new Set([...(this.options.extensions ?? []), ...providerPaths]),
+        ],
         extensionFactories: [
           extension,
           processExtension,
+          ...(memory ? [memory.extension] : []),
           ...(this.options.codemode ? [createCodemodeExtension({ models: false })] : []),
         ],
-        agentsFilesOverride: () => ({
-          agentsFiles: loadProjectContextFiles({
-            cwd: launch.cwd,
-            agentDir: this.options.agentDir,
-          }),
-        }),
+        agentsFilesOverride: () => ({ agentsFiles: instructions.files }),
+        skillsOverride: () => selectedSkills,
         systemPromptOverride: () => undefined,
-        appendSystemPromptOverride: () => [definition.instructions],
+        appendSystemPromptOverride: () => [
+          definition.instructions,
+          ...(memory ? [memory.prompt] : []),
+        ],
       });
       await loader.reload();
       const created = await createAgentSession({
@@ -256,7 +330,12 @@ export class InProcessBackend implements BackendPort {
         sessionManager: manager,
         settingsManager: settings,
         resourceLoader: loader,
-        tools: [...launch.worker.tools, reportTool, ...(this.options.codemode ? ["codemode"] : [])],
+        tools: [
+          ...launch.worker.tools,
+          reportTool,
+          ...(memory?.names ?? []),
+          ...(this.options.codemode ? ["codemode"] : []),
+        ],
       });
       session = created.session;
       const activeSession = session;

@@ -279,7 +279,11 @@ class ScriptedWorkspace implements WorkspacePort {
   readonly captured: string[] = [];
   readonly released: string[] = [];
   prepareHook?: (request: WorkspaceRequest, signal: AbortSignal) => Promise<void>;
+  releaseHook?: (prepared: PreparedWorkspace) => Promise<void>;
   captureError?: Error;
+  captureErrors?: string[];
+  captureSnapshot?: ArtifactRef;
+  recover?: WorkspacePort["recover"];
 
   constructor(directory: string) {
     this.directory = directory;
@@ -302,15 +306,20 @@ class ScriptedWorkspace implements WorkspacePort {
     prepared: PreparedWorkspace;
     ref: AssignmentRef;
     cleanup: CleanupReceipt;
-  }): Promise<{ artifacts: [] }> {
+  }): Promise<{ artifacts: []; errors?: string[]; snapshot?: ArtifactRef }> {
     assert.equal(request.cleanup.status, "stopped");
     if (this.captureError) throw this.captureError;
     this.captured.push(assignmentKey(request.ref));
-    return { artifacts: [] };
+    return {
+      artifacts: [],
+      ...(this.captureErrors ? { errors: this.captureErrors } : {}),
+      ...(this.captureSnapshot ? { snapshot: this.captureSnapshot } : {}),
+    };
   }
 
   async release(request: { prepared: PreparedWorkspace; cleanup: CleanupReceipt }): Promise<void> {
     assert.equal(request.cleanup.status, "stopped");
+    await this.releaseHook?.(request.prepared);
     this.released.push(request.prepared.identity);
     this.leases.delete(request.prepared.identity);
   }
@@ -728,6 +737,113 @@ test(
 );
 
 test(
+  "runtime failure stops preparation without inventing a cancellation or blocking settlement",
+  { timeout: 10_000 },
+  async (t) => {
+    const fixture = await world(t);
+    const preparing = deferred<void>();
+    fixture.workspace.prepareHook = async (request, signal) => {
+      if (request.ref.worker !== "dependent") return;
+      preparing.resolve();
+      await new Promise<void>((resolve) => {
+        if (signal.aborted) resolve();
+        else signal.addEventListener("abort", () => resolve(), { once: true });
+      });
+      throw new PreparationFailure("Preparation stopped after runtime failure", {
+        cleanup: {
+          status: "stopped",
+          ownerEpoch: request.ownerEpoch,
+          identities: [],
+          evidence: [],
+        },
+        artifacts: [],
+      });
+    };
+    fixture.workspace.releaseHook = async (prepared) => {
+      if (prepared.identity !== assignmentKey(ref("base"))) return;
+      await preparing.promise;
+      throw new Error("Writer release failed after settlement");
+    };
+    accepted(
+      await fixture.runtime.execute(
+        {
+          requestId: "create",
+          command: { kind: "create", workers: [worker("base"), worker("dependent", ["base"])] },
+        },
+        caller,
+      ),
+    );
+    await fixture.backend.complete(ref("base"));
+    const waiting = await fixture.runtime.wait({}, caller);
+    assert.equal(waiting.status, "settled");
+    assert.deepEqual(
+      waiting.results.map((result) => [
+        result.ref.worker,
+        result.execution.phase === "ended" ? result.execution.reason : result.execution.phase,
+      ]),
+      [
+        ["base", "completed"],
+        ["dependent", "failed"],
+      ],
+    );
+    const state = await fixture.status();
+    assert.deepEqual(state.cancelled, {});
+    assert.equal(fixture.backend.launches.length, 1);
+    assert.equal(
+      state.attempts[`${assignmentKey(ref("dependent"))}/attempt/1`].outcome?.reason,
+      "failed",
+    );
+    assert.equal((await fixture.runtime.close()).status, "owner_unconfirmed");
+    assert.equal(fixture.runtime.diagnostics().length, 1);
+    assert.match(
+      fixture.runtime.diagnostics()[0].message,
+      /Writer release failed after settlement/,
+    );
+  },
+);
+
+test(
+  "shutdown during preparation retains a failed result without an accepted cancellation",
+  { timeout: 10_000 },
+  async (t) => {
+    const fixture = await world(t);
+    const preparing = deferred<void>();
+    fixture.workspace.prepareHook = async (request, signal) => {
+      preparing.resolve();
+      await new Promise<void>((resolve) => {
+        if (signal.aborted) resolve();
+        else signal.addEventListener("abort", () => resolve(), { once: true });
+      });
+      throw new PreparationFailure("Preparation stopped during shutdown", {
+        cleanup: {
+          status: "stopped",
+          ownerEpoch: request.ownerEpoch,
+          identities: [],
+          evidence: [],
+        },
+        artifacts: [],
+      });
+    };
+    accepted(
+      await fixture.runtime.execute(
+        { requestId: "create", command: { kind: "create", workers: [worker("base")] } },
+        caller,
+      ),
+    );
+    await preparing.promise;
+    assert.equal((await fixture.runtime.close()).status, "closed");
+    const state = await fixture.status();
+    assert.deepEqual(state.cancelled, {});
+    assert.deepEqual(state.results[assignmentKey(ref("base"))].result.execution, {
+      phase: "ended",
+      reason: "failed",
+      cleanup: "confirmed",
+    });
+    assert.deepEqual(fixture.runtime.diagnostics(), []);
+  },
+);
+
+test(
   "unconfirmed cleanup retains the writer lease and capacity and blocks explicit continuation",
   { timeout: 10_000 },
   async (t) => {
@@ -943,6 +1059,91 @@ test(
       ).length,
       2,
     );
+  },
+);
+
+test(
+  "explicit preparation recovery retains partial workspace evidence without launching a backend",
+  { timeout: 10_000 },
+  async (t) => {
+    const fixture = await world(t, { execution: false });
+    accepted(
+      await fixture.runtime.execute(
+        { requestId: "create", command: { kind: "create", workers: [worker("base")] } },
+        caller,
+      ),
+    );
+    await fixture.runtime.close();
+    const store = await DurableStore.open({ directory: fixture.directory });
+    const attemptId = `${assignmentKey(ref("base"))}/attempt/1`;
+    const originalEpoch = store.owner.epoch;
+    const transitions: Transition[] = [
+      { kind: "assignment_state", ref: ref("base"), execution: { phase: "preparing" } },
+      {
+        kind: "attempt_started",
+        attempt: {
+          id: attemptId,
+          ref: ref("base"),
+          ordinal: 1,
+          backend: "in-process",
+          ownerEpoch: originalEpoch,
+        },
+      },
+      {
+        kind: "effect_intent",
+        effect: { id: `${attemptId}/prepare`, ref: ref("base"), kind: "prepare" },
+      },
+    ];
+    for (const [index, transition] of transitions.entries())
+      await store.append({
+        requestId: `interrupted-prepare-${index}`,
+        payloadDigest: digestValue(transition),
+        transition,
+      });
+    await store.close();
+    let reconciliations = 0;
+    fixture.workspace.recover = async (request) => {
+      reconciliations += 1;
+      assert.equal(request.ownerEpoch, originalEpoch);
+      const evidence = await request.artifacts.put(
+        Buffer.from("Retained helper cleanup and partial workspace"),
+      );
+      const identity = assignmentKey(request.ref);
+      fixture.workspace.leases.add(identity);
+      return {
+        prepared: {
+          cwd: fixture.directory,
+          identity,
+          lease: { id: identity, workspace: fixture.directory },
+          artifacts: [evidence],
+        },
+        cleanup: {
+          status: "stopped",
+          ownerEpoch: originalEpoch,
+          identities: ["preparation-helper"],
+          evidence: [evidence],
+        },
+        artifacts: [evidence],
+      };
+    };
+    await fixture.reopen();
+    assert.equal((await fixture.runtime.recover({}, caller))[0].status, "finalizing");
+    const waited = await fixture.runtime.wait({}, caller);
+    assert.equal(waited.status, "settled");
+    assert.equal(reconciliations, 1);
+    assert.equal(fixture.backend.launches.length, 0);
+    assert.equal(fixture.workspace.captured.length, 1);
+    const result = waited.results[0];
+    assert.equal(result.execution.phase, "ended");
+    if (result.execution.phase === "ended") {
+      assert.equal(result.execution.reason, "failed");
+      assert.equal(result.execution.cleanup, "confirmed");
+    }
+    assert(result.artifacts.length > 0);
+    await fixture.runtime.close();
+    assert.equal(fixture.workspace.leases.size, 0);
+    const state = await fixture.status();
+    assert.equal(state.attempts[attemptId].cleanup?.ownerEpoch, originalEpoch);
   },
 );
 
@@ -1172,6 +1373,37 @@ test(
     release.resolve();
     await fixture.backend.complete(ref("base"));
     await fixture.runtime.wait({}, caller);
+  },
+);
+
+test(
+  "workspace checkpoint diagnostics keep the completed result and usable snapshot visible",
+  { timeout: 10_000 },
+  async (t) => {
+    const fixture = await world(t);
+    fixture.workspace.captureErrors = ["Workspace checkpoint failed: ref publication interrupted"];
+    fixture.workspace.prepareHook = async (request) => {
+      fixture.workspace.captureSnapshot = await request.artifacts.put(
+        Buffer.from("Retained completed snapshot"),
+      );
+    };
+    accepted(
+      await fixture.runtime.execute(
+        { requestId: "create", command: { kind: "create", workers: [worker("base")] } },
+        caller,
+      ),
+    );
+    await fixture.backend.waitStarted(ref("base"));
+    await fixture.backend.complete(ref("base"), "Completed useful work");
+    const result = (await fixture.runtime.wait({}, caller)).results[0];
+    assert.deepEqual(result.execution, {
+      phase: "ended",
+      reason: "completed",
+      cleanup: "confirmed",
+    });
+    assert.deepEqual(result.snapshot, fixture.workspace.captureSnapshot);
+    assert.deepEqual(result.finalizationErrors, fixture.workspace.captureErrors);
+    assert.equal(result.summary, "Completed useful work");
   },
 );
 

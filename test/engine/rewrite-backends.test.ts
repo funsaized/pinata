@@ -8,6 +8,50 @@ import { supervisedSessionProcesses } from "../../rewrite/engine/agent/processes
 import { verifyArtifact } from "../../rewrite/engine/storage/index.ts";
 
 test(
+  "typed optional reports validate their data without executing it or changing completion policy",
+  { timeout: 20_000 },
+  async (t) => {
+    const world = await piFixture(
+      t,
+      (_context, _options, state) =>
+        fauxAssistantMessage([
+          fauxToolCall(
+            "submit_result",
+            state.callCount === 1
+              ? { summary: "Malformed report", data: { unexpected: true } }
+              : {
+                  summary: "Typed result",
+                  data: { expectedRevision: 0, text: "This is report data only" },
+                },
+          ),
+        ]),
+      { outputType: "pinata.memory-edit.v1" },
+    );
+    const accepted = await world.runtime.execute(
+      {
+        requestId: "typed",
+        command: {
+          kind: "create",
+          workers: [{ id: "worker", agent: "fixture", task: "Return typed data." }],
+        },
+      },
+      world.caller,
+    );
+    assert.equal(accepted.status, "accepted");
+    const ended = await world.runtime.wait({}, world.caller, AbortSignal.timeout(15_000));
+    const result = ended.results[0];
+    assert.equal(result.execution.phase === "ended" && result.execution.reason, "completed");
+    assert.equal(result.summary, "Typed result");
+    assert(result.report);
+    const report = JSON.parse(
+      Buffer.from(await verifyArtifact(world.storeDirectory, result.report)).toString("utf8"),
+    );
+    assert.deepEqual(report.data, { expectedRevision: 0, text: "This is report data only" });
+    assert(result.reportingError);
+  },
+);
+
+test(
   "replacement Pi backend retains exact results, consumed inputs and follow-up conversation",
   { timeout: 20_000 },
   async (t) => {

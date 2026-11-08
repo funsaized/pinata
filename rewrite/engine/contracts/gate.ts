@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { assignmentRefSchema, identitySchema, textSchema } from "./common.ts";
-import { ownerSchema } from "./storage.ts";
+import { ownerSchema } from "./owner.ts";
 
 export const checkoutIdentitySchema = z.strictObject({
   root: textSchema,

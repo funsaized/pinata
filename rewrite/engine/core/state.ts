@@ -7,6 +7,8 @@ import {
   type CoreState,
   type Transition,
 } from "../contracts/index.ts";
+import { importHistory } from "./history.ts";
+import { reduceApplication } from "./application.ts";
 import { validateAcceptance } from "./invariants.ts";
 import { reduceLifecycle } from "./lifecycle.ts";
 import { validateExecutionTransition, validateSettlement } from "./execution.ts";
@@ -25,6 +27,7 @@ export function initialState(run: string): CoreState {
     inbox: {},
     receipts: {},
     effects: {},
+    applications: {},
     attempts: {},
     sessions: {},
     contextUsage: {},
@@ -60,6 +63,11 @@ export function reduce(state: CoreState, value: Transition, revision: number): C
   const transition = structuredClone(value);
   next.revision = revision;
   switch (transition.kind) {
+    case "application_accepted":
+    case "application_observed":
+      return reduceApplication(state, transition, revision);
+    case "history_imported":
+      return importHistory(state, transition, revision);
     case "accepted": {
       validateAcceptance(state, transition, revision);
       next.workers = { ...state.workers };

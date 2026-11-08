@@ -12,6 +12,9 @@ type LifecycleTransition = Exclude<
   {
     kind:
       | "accepted"
+      | "history_imported"
+      | "application_accepted"
+      | "application_observed"
       | "effect_intent"
       | "effect_observed"
       | "assignment_state"
@@ -137,6 +140,39 @@ export function reduceLifecycle(
       next.attempts = {
         ...state.attempts,
         [transition.attemptId]: { ...entry, prepared: transition.prepared },
+      };
+      return next;
+    }
+    case "workspace_recovered": {
+      const entry = attemptState(state, transition.attemptId);
+      if (
+        entry.identity ||
+        entry.capture ||
+        Object.hasOwn(state.effects, `${transition.attemptId}/launch`)
+      )
+        throw new DomainError("conflict", "Preparation recovery cannot alter a launched workspace");
+      if (
+        entry.prepared &&
+        (entry.prepared.cwd !== transition.prepared.cwd ||
+          entry.prepared.identity !== transition.prepared.identity)
+      )
+        throw new DomainError(
+          "conflict",
+          "Preparation recovery cannot relocate the retained workspace",
+        );
+      next.attempts = {
+        ...state.attempts,
+        [transition.attemptId]: {
+          ...entry,
+          prepared: {
+            ...transition.prepared,
+            artifacts: [
+              ...(entry.prepared?.artifacts ?? []),
+              ...transition.prepared.artifacts,
+              ...transition.evidence,
+            ],
+          },
+        },
       };
       return next;
     }

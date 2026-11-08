@@ -32,7 +32,10 @@ export const journalRecordSchema = z
   .superRefine((record, context) => {
     const transition = record.transition;
     if (
-      (transition.kind === "accepted" || transition.kind === "control_accepted") &&
+      (transition.kind === "accepted" ||
+        transition.kind === "control_accepted" ||
+        transition.kind === "history_imported" ||
+        transition.kind === "application_accepted") &&
       (transition.requestId !== record.requestId ||
         transition.receipt.requestId !== record.requestId ||
         transition.payloadDigest !== record.payloadDigest ||
@@ -74,15 +77,7 @@ export const journalFrameSchema = z.strictObject({
   commit: z.literal("pinata.commit.v1"),
 });
 export type JournalFrame = z.infer<typeof journalFrameSchema>;
-export const ownerSchema = z.strictObject({
-  schemaVersion: z.literal(1),
-  host: identitySchema,
-  pid: revisionSchema.positive(),
-  startIdentity: identitySchema,
-  token: identitySchema,
-  epoch: identitySchema,
-});
-export type Owner = z.infer<typeof ownerSchema>;
+export { ownerSchema, type Owner } from "./owner.ts";
 export const checkpointSchema = z.strictObject({
   schemaVersion: z.literal(1),
   revision: revisionSchema,

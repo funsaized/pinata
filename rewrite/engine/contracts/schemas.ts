@@ -1,4 +1,12 @@
 import { z } from "zod";
+import { migrationManifestSchema } from "./migration.ts";
+import { legacyQuiescenceSchema, legacyQuiescenceObservationSchema } from "./history.ts";
+import {
+  memorySnapshotSchema,
+  memoryRevisionSchema,
+  memoryEditSchema,
+  memoryClearSchema,
+} from "./memory.ts";
 import {
   applicationJournalSchema,
   applicationCursorSchema,
@@ -8,12 +16,14 @@ import {
   workspaceSnapshotSchema,
   workspaceManifestSchema,
   workspacePlanSchema,
+  workspaceCheckpointSchema,
 } from "./workspace.ts";
 import { commandEnvelopeSchema, jobSchema, workerRequestSchema } from "./commands.ts";
-import { configSchema } from "./config.ts";
+import { configSchema, configLayerSchema } from "./config.ts";
 import { definitionSchema } from "./definition.ts";
 import {
   commandReceiptSchema,
+  historyImportSchema,
   coreStateSchema,
   inboxMessageSchema,
   resultSchema,
@@ -38,18 +48,37 @@ import {
   sessionCheckpointSchema,
 } from "./backend.ts";
 import { checkoutIdentitySchema, exclusiveLeaseSchema, writerLeaseSchema } from "./gate.ts";
+import { surfaceCallSchema, surfaceReplySchema, surfaceCapabilitiesSchema } from "./surface.ts";
+import { loadoutSchema } from "./loadout.ts";
+import { conversationSeedSchema, instructionSnapshotSchema } from "./context.ts";
 
 export const schemaRegistry = {
+  "pinata.workspace-checkpoint.v1": workspaceCheckpointSchema,
+  "pinata.migration-manifest.v1": migrationManifestSchema,
+  "pinata.legacy-quiescence.v1": legacyQuiescenceSchema,
+  "pinata.legacy-quiescence-observation.v1": legacyQuiescenceObservationSchema,
+  "pinata.loadout.v1": loadoutSchema,
+  "pinata.conversation-seed.v1": conversationSeedSchema,
+  "pinata.instruction-snapshot.v1": instructionSnapshotSchema,
+  "pinata.surface-call.v1": surfaceCallSchema,
+  "pinata.surface-reply.v1": surfaceReplySchema,
+  "pinata.surface-capabilities.v1": surfaceCapabilitiesSchema,
   "pinata.application-journal.v4": applicationJournalSchema,
   "pinata.application-cursor.v1": applicationCursorSchema,
   "pinata.application-receipt.v1": applicationReceiptSchema,
   "pinata.workspace-snapshot.v1": workspaceSnapshotSchema,
   "pinata.workspace-manifest.v1": workspaceManifestSchema,
   "pinata.workspace-plan.v1": workspacePlanSchema,
+  "pinata.memory-snapshot.v1": memorySnapshotSchema,
+  "pinata.memory-revision.v1": memoryRevisionSchema,
+  "pinata.memory-edit.v1": memoryEditSchema,
+  "pinata.memory-clear.v1": memoryClearSchema,
+  "pinata.history-import.v1": historyImportSchema,
   "pinata.command.v1": commandEnvelopeSchema,
   "pinata.receipt.v1": commandReceiptSchema,
   "pinata.job.v4": jobSchema,
   "pinata.config.v4": configSchema,
+  "pinata.config-layer.v4": configLayerSchema,
   "pinata.definition.v3": definitionSchema,
   "pinata.worker.v1": workerRequestSchema,
   "pinata.result.v1": reportedResultSchema,

@@ -107,7 +107,7 @@ export async function openConversation(launch: BackendLaunch): Promise<SessionMa
 }
 
 export async function checkpointConversation(
-  manager: SessionManager,
+  manager: Pick<SessionManager, "getSessionFile" | "getLeafId" | "getSessionId">,
   worker: string,
   artifacts: ArtifactPort,
 ): Promise<SessionCheckpoint> {

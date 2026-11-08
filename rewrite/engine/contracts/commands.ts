@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { agentColorSchema } from "./definition.ts";
 import {
   accessSchema,
   artifactRefSchema,
@@ -14,7 +15,8 @@ import {
   textSchema,
   workspaceSchema,
 } from "./common.ts";
-import { configSchema } from "./config.ts";
+import { configLayerSchema } from "./config.ts";
+import { applicationCommandSchema } from "./application.ts";
 
 export const workerRequestSchema = z.strictObject({
   id: idSchema,
@@ -37,6 +39,8 @@ export const frozenWorkerSchema = z.strictObject({
   id: idSchema,
   agent: idSchema,
   definition: artifactRefSchema,
+  color: agentColorSchema.optional(),
+  loadout: artifactRefSchema.optional(),
   model: modelSchema.optional(),
   fallbacks: z.array(modelSchema),
   tools: z.array(textSchema),
@@ -84,7 +88,7 @@ export const runtimeCommandSchema = z.discriminatedUnion("kind", [
   z.strictObject({
     kind: z.literal("create"),
     workers: z.array(workerRequestSchema).min(1),
-    config: configSchema.optional(),
+    config: configLayerSchema.optional(),
   }),
   z.strictObject({ kind: z.literal("add"), workers: z.array(workerRequestSchema).min(1) }),
   z.strictObject({
@@ -116,21 +120,11 @@ export const runtimeCommandSchema = z.discriminatedUnion("kind", [
     text: textSchema,
   }),
   z.strictObject({
-    kind: z.literal("reconcile"),
-    operation: identitySchema,
-    owner: identitySchema,
-  }),
-  z.strictObject({
     kind: z.literal("capacity"),
     maxConcurrent: revisionSchema.positive().nullable(),
   }),
   z.strictObject({ kind: z.literal("schedule"), schedule: scheduleActionSchema }),
-  z.strictObject({ kind: z.literal("apply"), ref: assignmentRefSchema, destination: textSchema }),
-  z.strictObject({
-    kind: z.literal("rollback"),
-    operation: identitySchema,
-    destination: textSchema,
-  }),
+  ...applicationCommandSchema.options,
 ]);
 export type RuntimeCommand = z.infer<typeof runtimeCommandSchema>;
 export const commandEnvelopeSchema = z.strictObject({
@@ -142,6 +136,6 @@ export type CommandEnvelope = z.infer<typeof commandEnvelopeSchema>;
 export const jobSchema = z.strictObject({
   schemaVersion: z.literal(4),
   workers: z.array(workerRequestSchema).min(1),
-  config: configSchema.optional(),
+  config: configLayerSchema.optional(),
 });
 export type Job = z.infer<typeof jobSchema>;

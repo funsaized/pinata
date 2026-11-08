@@ -1,8 +1,10 @@
 import { z } from "zod";
 import {
   accessSchema,
+  digestSchema,
   idSchema,
   memorySchema,
+  modelSchema,
   revisionSchema,
   textSchema,
   thinkingSchema,
@@ -45,6 +47,7 @@ export const definitionSchema = z.strictObject({
       access: accessSchema.default("read"),
       workspace: workspaceSchema.default("shared"),
       skills: z.array(textSchema).default([]),
+      fallbacks: z.array(modelSchema).max(5).default([]),
       color: agentColorSchema.optional(),
       inheritContext: z.enum(["none", "parent"]).default("none"),
       memory: memorySchema.default({ scope: "none", access: "read" }),
@@ -55,6 +58,7 @@ export const definitionSchema = z.strictObject({
       access: "read",
       workspace: "shared",
       skills: [],
+      fallbacks: [],
       inheritContext: "none",
       memory: { scope: "none", access: "read" },
       delegation: { maxDepth: 0 },
@@ -62,3 +66,10 @@ export const definitionSchema = z.strictObject({
     }),
 });
 export type AgentDefinition = z.infer<typeof definitionSchema>;
+
+export const definitionSummarySchema = z.strictObject({
+  definition: definitionSchema,
+  path: textSchema,
+  digest: digestSchema,
+});
+export type DefinitionSummary = z.infer<typeof definitionSummarySchema>;

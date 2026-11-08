@@ -335,6 +335,8 @@ export class HerdrBackend implements BackendPort {
       const command = herdrCommandLine(
         [
           this.options.nodeCommand ?? process.execPath,
+          "--import",
+          fileURLToPath(new URL("../typescript.mjs", import.meta.url)),
           fileURLToPath(new URL("./herdr-monitor.ts", import.meta.url)),
           directory,
         ],

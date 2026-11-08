@@ -56,15 +56,59 @@ export const workspacePlanSchema = z.strictObject({
   repository: repositoryObservationSchema.optional(),
 });
 export type WorkspacePlan = z.infer<typeof workspacePlanSchema>;
-export const workspaceSnapshotSchema = z.strictObject({
+export const retainedHeadSchema = z.strictObject({ commit: gitObjectSchema, ref: textSchema });
+export const workspaceCheckpointSchema = z.strictObject({
   schemaVersion: z.literal(1),
-  kind: z.literal("workspace-snapshot"),
-  ref: assignmentRefSchema,
-  mode: z.enum(["shared", "worktree"]),
-  root: textSchema,
-  base: artifactRefSchema,
-  manifest: artifactRefSchema,
-  baseTree: gitObjectSchema.optional(),
-  tree: gitObjectSchema.optional(),
+  kind: z.literal("completion"),
+  status: z.enum(["created", "unchanged"]),
+  assignment: assignmentRefSchema,
+  tree: gitObjectSchema,
+  commit: gitObjectSchema,
+  ref: textSchema,
+  previous: z.strictObject({ tree: gitObjectSchema, commit: gitObjectSchema, ref: textSchema }),
+  author: z.strictObject({ name: textSchema, email: textSchema }),
+  recordedAt: z.iso.datetime(),
 });
+export type WorkspaceCheckpoint = z.infer<typeof workspaceCheckpointSchema>;
+export const workspaceSnapshotSchema = z
+  .strictObject({
+    schemaVersion: z.literal(1),
+    kind: z.literal("workspace-snapshot"),
+    ref: assignmentRefSchema,
+    mode: z.enum(["shared", "worktree"]),
+    root: textSchema,
+    base: artifactRefSchema,
+    manifest: artifactRefSchema,
+    baseTree: gitObjectSchema.optional(),
+    tree: gitObjectSchema.optional(),
+    head: retainedHeadSchema.optional(),
+    checkpoint: workspaceCheckpointSchema.optional(),
+  })
+  .superRefine((snapshot, context) => {
+    const checkpoint = snapshot.checkpoint;
+    if (!checkpoint) return;
+    if (
+      snapshot.mode !== "worktree" ||
+      checkpoint.tree !== snapshot.tree ||
+      checkpoint.assignment.run !== snapshot.ref.run ||
+      checkpoint.assignment.worker !== snapshot.ref.worker ||
+      checkpoint.assignment.assignment !== snapshot.ref.assignment
+    )
+      context.addIssue({
+        code: "custom",
+        path: ["checkpoint"],
+        message: "Checkpoint must describe this isolated assignment and captured tree",
+      });
+    if (
+      checkpoint.status === "unchanged" &&
+      (checkpoint.commit !== checkpoint.previous.commit ||
+        checkpoint.tree !== checkpoint.previous.tree ||
+        checkpoint.ref !== checkpoint.previous.ref)
+    )
+      context.addIssue({
+        code: "custom",
+        path: ["checkpoint"],
+        message: "Unchanged checkpoint must retain its previous commit, tree and ref",
+      });
+  });
 export type WorkspaceSnapshot = z.infer<typeof workspaceSnapshotSchema>;

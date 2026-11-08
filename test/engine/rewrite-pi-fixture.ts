@@ -31,6 +31,7 @@ export async function piFixture(
     codemode?: boolean;
     extensions?: string[];
     instructions?: string;
+    outputType?: string;
     createProcesses?: InProcessOptions["createProcesses"];
   } = {},
 ) {
@@ -118,6 +119,7 @@ export async function piFixture(
             name: request.agent,
             handoffDescription: "Deterministic test agent",
             instructions: options.instructions ?? "Perform the requested fixture action.",
+            outputType: options.outputType,
             tools,
             pinata: { access: grants.access },
           });

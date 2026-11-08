@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { applicationStateSchema } from "./application.ts";
+import { workspaceEntrySchema } from "./workspace.ts";
 import {
   artifactRefSchema,
   assignmentRefSchema,
@@ -13,6 +15,7 @@ import {
   transitionSchema,
 } from "./lifecycle.ts";
 import { idSchema } from "./common.ts";
+import { definitionSummarySchema } from "./definition.ts";
 
 export const waitRequestSchema = z
   .strictObject({
@@ -59,6 +62,7 @@ export const runtimeQuerySchema = z.discriminatedUnion("kind", [
     cursor: textSchema.optional(),
   }),
   z.strictObject({ kind: z.literal("changes"), ref: assignmentRefSchema }),
+  z.strictObject({ kind: z.literal("application"), operationId: identitySchema }),
 ]);
 export type RuntimeQuery = z.infer<typeof runtimeQuerySchema>;
 export const subscriptionSchema = z.strictObject({ since: revisionSchema.optional() });
@@ -109,11 +113,43 @@ export const assignmentQueryResultSchema = z.strictObject({
   result: resultSchema.nullable(),
   artifact: artifactRefSchema.optional(),
 });
+export const conversationQueryResultSchema = z.strictObject({
+  kind: z.literal("conversation"),
+  ref: assignmentRefSchema,
+  source: z.enum(["assignment", "checkpoint", "unavailable"]),
+  entries: z.array(z.json()),
+  artifact: artifactRefSchema.optional(),
+  cursor: textSchema.optional(),
+  complete: z.boolean(),
+});
+export type ConversationQueryResult = z.infer<typeof conversationQueryResultSchema>;
+export const changesQueryResultSchema = z.strictObject({
+  kind: z.literal("changes"),
+  ref: assignmentRefSchema,
+  source: z.enum(["snapshot", "unavailable"]),
+  snapshot: artifactRefSchema.optional(),
+  mode: z.enum(["shared", "worktree"]).optional(),
+  changes: z.array(
+    z.strictObject({
+      path: textSchema,
+      before: workspaceEntrySchema.nullable(),
+      after: workspaceEntrySchema.nullable(),
+    }),
+  ),
+});
+export type ChangesQueryResult = z.infer<typeof changesQueryResultSchema>;
 export const queryResultSchema = z.discriminatedUnion("kind", [
+  changesQueryResultSchema,
+  z.strictObject({ kind: z.literal("application"), operation: applicationStateSchema.nullable() }),
   z.strictObject({ kind: z.literal("wait"), wait: waitResultSchema }),
   z.strictObject({ kind: z.literal("status"), state: coreStateSchema }),
   receiptQueryResultSchema,
   assignmentQueryResultSchema,
+  conversationQueryResultSchema,
+  z.strictObject({
+    kind: z.literal("definitions"),
+    definitions: z.array(definitionSummarySchema),
+  }),
   z.strictObject({
     kind: z.literal("events"),
     events: z.array(runtimeEventSchema),

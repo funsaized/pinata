@@ -377,6 +377,7 @@ export class ProcessBackend implements BackendPort {
   constructor(options: ProcessBackendOptions) {
     this.options = processOptionsSchema.parse({
       agentDir: resolve(options.agentDir),
+      ...(options.memoryProject ? { memoryProject: resolve(options.memoryProject) } : {}),
       ...(options.codemode === undefined ? {} : { codemode: options.codemode }),
       ...(options.extensions
         ? { extensions: options.extensions.map((path) => resolve(path)) }
@@ -390,7 +391,10 @@ export class ProcessBackend implements BackendPort {
       ...capability,
       steer: true,
       continuation: true,
-      conversationSeed: false,
+      conversationSeed: true,
+      skills: true,
+      memory: true,
+      fallbacks: true,
       surviving: true,
     };
   }
@@ -431,7 +435,12 @@ export class ProcessBackend implements BackendPort {
       supervisor = await launchSupervised({
         directory: join(directory, "guardian"),
         command: this.options.nodeCommand ?? process.execPath,
-        args: [fileURLToPath(new URL("./process-worker.ts", import.meta.url)), directory],
+        args: [
+          "--import",
+          fileURLToPath(new URL("../typescript.mjs", import.meta.url)),
+          fileURLToPath(new URL("./process-worker.ts", import.meta.url)),
+          directory,
+        ],
         cwd: launch.cwd,
         ownerEpoch: launch.ownerEpoch,
         lifetime: launch.worker.lifetime,

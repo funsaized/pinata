@@ -27,6 +27,7 @@ import { supervisorIdentitySchema } from "./supervision/contracts.ts";
 
 export const processOptionsSchema = z.strictObject({
   agentDir: textSchema,
+  memoryProject: textSchema.optional(),
   codemode: z.boolean().optional(),
   extensions: z.array(textSchema).optional(),
   bootstrapModule: textSchema.optional(),

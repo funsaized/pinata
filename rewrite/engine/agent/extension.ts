@@ -1,6 +1,8 @@
 import type { AgentToolResult, ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import {
   reportedResultSchema,
+  schemaRegistry,
+  DomainError,
   type FrozenWorker,
   type ReportedResult,
 } from "../contracts/index.ts";
@@ -13,23 +15,34 @@ export function workerExtension(options: {
   worker: FrozenWorker;
   root: string;
   codemode: boolean;
+  runtimeTools?: readonly string[];
+  outputType?: string;
   onReport(report: ReportedResult): Promise<void>;
   onReportingError(value: unknown, message: string): Promise<void>;
   beforeRequest(): Promise<void>;
 }): ExtensionFactory {
+  const outputSchema = options.outputType
+    ? Object.entries(schemaRegistry).find(([name]) => name === options.outputType)?.[1]
+    : undefined;
+  if (options.outputType && !outputSchema)
+    throw new DomainError("unsupported", `Unknown output schema ${options.outputType}`);
+  const reportSchema =
+    outputSchema && options.outputType !== "pinata.result.v1"
+      ? reportedResultSchema.extend({ data: outputSchema })
+      : reportedResultSchema;
   return (pi) => {
     pi.registerTool({
       name: reportTool,
       label: "Report result",
       description:
         "Optionally report your result and observed evidence. Checks and assessments are attributed claims; the coordinator decides acceptance.",
-      parameters: piParameters(reportedResultSchema),
+      parameters: piParameters(reportSchema),
       executionMode: "sequential",
       async execute(
         _id,
         value,
       ): Promise<AgentToolResult<{ report?: ReportedResult; reportingError?: string }>> {
-        const parsed = reportedResultSchema.safeParse(value);
+        const parsed = reportSchema.safeParse(value);
         if (!parsed.success) {
           const message = parsed.error.issues
             .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
@@ -41,10 +54,11 @@ export function workerExtension(options: {
             isError: true,
           };
         }
-        await options.onReport(parsed.data);
+        const report = reportedResultSchema.parse(parsed.data);
+        await options.onReport(report);
         return {
           content: [{ type: "text", text: "Your report was recorded." }],
-          details: { report: parsed.data },
+          details: { report },
           terminate: true,
         };
       },
@@ -56,7 +70,11 @@ export function workerExtension(options: {
         cwd: context.cwd,
         name: event.toolName,
         input: event.input,
-        runtimeTools: [reportTool, ...(options.codemode ? ["codemode"] : [])],
+        runtimeTools: [
+          reportTool,
+          ...(options.codemode ? ["codemode"] : []),
+          ...(options.runtimeTools ?? []),
+        ],
       });
       return reason ? { block: true, reason } : undefined;
     });

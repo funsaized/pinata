@@ -13,11 +13,13 @@ import {
   type WorkerRequest,
 } from "../contracts/index.ts";
 import type { CoreState } from "./state.ts";
+import type { Config } from "../contracts/config.ts";
 import { validateAssignmentGraph } from "./graph.ts";
 
 export type AcceptanceOptions = {
   workers?: FrozenWorker[];
   config?: ArtifactRef;
+  resolvedConfig?: Config;
   nextRevision?: number;
 };
 
@@ -62,7 +64,7 @@ function resolveReferences(
   return [...new Map(resolved.map((ref) => [assignmentKey(ref), ref])).values()];
 }
 
-function checkResolvedWorker(
+export function checkResolvedWorker(
   request: WorkerRequest,
   worker: FrozenWorker,
   caller: CallerAuthority,
@@ -351,7 +353,10 @@ export function prepareCommand(
       }),
     },
     ...(command.kind === "create"
-      ? { maxConcurrent: command.config?.execution.maxConcurrent ?? null }
+      ? {
+          maxConcurrent:
+            (options.resolvedConfig ?? command.config)?.execution?.maxConcurrent ?? null,
+        }
       : {}),
     workers,
     assignments,

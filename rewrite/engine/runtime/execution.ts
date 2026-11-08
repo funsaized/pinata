@@ -103,6 +103,18 @@ export class ExecutionCoordinator {
     this.options = options;
   }
 
+  async checkpoint(ref: AssignmentRef): Promise<SessionCheckpoint | undefined> {
+    const active = this.active.get(assignmentKey(ref));
+    if (!active?.handle) return undefined;
+    await this.host.assertOwner();
+    const checkpoint = sessionCheckpointSchema.parse(await active.handle.checkpoint());
+    if (checkpoint.worker !== ref.worker)
+      throw new DomainError("context_unavailable", "Live checkpoint belongs to another worker");
+    await this.host.artifacts.read(checkpoint.artifact);
+    await this.host.assertOwner();
+    return checkpoint;
+  }
+
   validateWorkers(workers: FrozenWorker[]): void {
     for (const worker of workers) {
       const backend = this.options.backends[worker.backend];
@@ -342,7 +354,10 @@ export class ExecutionCoordinator {
               detail: "No interrupted execution requires recovery",
             },
           };
+        const preparation =
+          !entry.identity && !Object.hasOwn(state.effects, `${entry.attempt.id}/launch`);
         if (
+          !(preparation && this.options.workspace.recover) &&
           entry.cleanup?.status !== "stopped" &&
           !this.options.backends[entry.attempt.backend]?.reattach
         )
@@ -369,12 +384,12 @@ export class ExecutionCoordinator {
           stopped,
           resolveStopped,
           sending: new Set(),
-          launchInvoked: true,
+          launchInvoked: !preparation,
         };
         if (Object.hasOwn(state.cancelled, key) || assignment.execution.phase === "ended")
           active.controller.abort(new Error("Recovering stopped or cancelled assignment"));
         this.active.set(key, active);
-        return { active, entry: immutable(entry) };
+        return { active, entry: immutable(entry), preparation };
       });
     });
     const receipts: RecoveryReceipt[] = [];
@@ -383,10 +398,64 @@ export class ExecutionCoordinator {
         receipts.push(selection.receipt);
         continue;
       }
-      const { active, entry } = selection;
+      const { active, entry, preparation } = selection;
       const ref = active.assignment.ref;
       try {
         await this.host.assertOwner();
+        if (preparation && this.options.workspace.recover) {
+          const recovered = await this.options.workspace.recover(
+            {
+              ref,
+              worker: active.worker,
+              ownerEpoch: active.ownerEpoch,
+              artifacts: this.host.artifacts,
+              prepared: entry.prepared,
+            },
+            new AbortController().signal,
+          );
+          const cleanup = cleanupReceiptSchema.parse(recovered.cleanup);
+          if (cleanup.ownerEpoch !== active.ownerEpoch)
+            throw new DomainError(
+              "owner_unconfirmed",
+              "Recovered preparation cleanup belongs to another attempt owner",
+            );
+          if (cleanup.status !== "stopped")
+            throw new DomainError("owner_unconfirmed", cleanup.reasons.join("; "));
+          if (recovered.prepared) {
+            active.prepared = preparedWorkspaceSchema.parse(recovered.prepared);
+            await this.record({
+              kind: "workspace_recovered",
+              attemptId: active.attemptId,
+              prepared: active.prepared,
+              evidence: recovered.artifacts,
+            });
+          }
+          await this.recordEffectObservation(
+            `${active.attemptId}/prepare`,
+            "failed",
+            "Interrupted preparation was reconciled without launching a worker",
+          );
+          const outcome = entry.outcome ?? {
+            ...this.emptyOutcome(
+              await this.stoppedReason(ref),
+              "Workspace preparation was interrupted; retained files and helper evidence remain available",
+              active.attemptId,
+              true,
+            ),
+            artifacts: recovered.artifacts,
+          };
+          const execution = this.finalize(active, {
+            outcome,
+            cleanup,
+            capture: entry.capture,
+          }).finally(() => {
+            this.active.delete(assignmentKey(ref));
+            this.wake();
+          });
+          this.track(execution);
+          receipts.push({ ref, attemptId: active.attemptId, status: "finalizing" });
+          continue;
+        }
         if (entry.cleanup?.status !== "stopped") {
           const backend = this.options.backends[entry.attempt.backend];
           if (!backend?.reattach) throw new Error("Backend reattachment is unavailable");
@@ -467,7 +536,7 @@ export class ExecutionCoordinator {
         outcome =
           completion.receipt.outcome ??
           this.emptyOutcome(
-            "cancelled",
+            await this.stoppedReason(active.assignment.ref),
             "Stopped before a final backend outcome was retained",
             active.attemptId,
             false,
@@ -487,7 +556,6 @@ export class ExecutionCoordinator {
     let outcome: BackendOutcome | undefined;
     let cleanup: CleanupReceipt | undefined;
     let checkpoint: SessionCheckpoint | undefined;
-    let error: string | undefined;
     try {
       const inputs = await this.host.transaction(async (transaction) => {
         const state = transaction.state();
@@ -527,8 +595,8 @@ export class ExecutionCoordinator {
       if (active.controller.signal.aborted) {
         cleanup = this.noActivity();
         outcome = this.emptyOutcome(
-          "cancelled",
-          "Cancelled before backend launch",
+          await this.stoppedReason(ref),
+          "Stopped before backend launch",
           active.attemptId,
         );
       } else {
@@ -644,7 +712,7 @@ export class ExecutionCoordinator {
           outcome =
             completion.receipt.outcome ??
             this.emptyOutcome(
-              "cancelled",
+              await this.stoppedReason(ref),
               "Stopped before a final backend outcome was retained",
               active.attemptId,
               false,
@@ -653,7 +721,8 @@ export class ExecutionCoordinator {
         if (outcome.session) checkpoint = outcome.session;
       }
     } catch (cause) {
-      error = errorMessage(cause);
+      const error = errorMessage(cause);
+      const reason = await this.stoppedReason(ref);
       if (cause instanceof PreparationFailure || cause instanceof BackendStartFailure) {
         cleanup = cleanupReceiptSchema.parse(cause.cleanup);
         if (cause instanceof PreparationFailure) {
@@ -671,7 +740,7 @@ export class ExecutionCoordinator {
         }
         outcome = {
           ...this.emptyOutcome(
-            active.controller.signal.aborted ? "cancelled" : "failed",
+            reason,
             error,
             active.attemptId,
             cleanup.status === "stopped" && !active.launchInvoked,
@@ -680,12 +749,7 @@ export class ExecutionCoordinator {
         };
       } else {
         const knownStopped = Boolean(active.prepared && !active.launchInvoked);
-        outcome = this.emptyOutcome(
-          active.controller.signal.aborted ? "cancelled" : "failed",
-          error,
-          active.attemptId,
-          knownStopped,
-        );
+        outcome = this.emptyOutcome(reason, error, active.attemptId, knownStopped);
         if (!active.handle)
           cleanup = knownStopped
             ? this.noActivity()
@@ -716,7 +780,13 @@ export class ExecutionCoordinator {
       });
     }
     if (!outcome) throw new Error("Execution finished without an outcome observation");
-    await this.finalize(active, { outcome, cleanup, checkpoint, error });
+    await this.finalize(active, { outcome, cleanup, checkpoint });
+  }
+
+  private stoppedReason(ref: AssignmentRef): Promise<"cancelled" | "failed"> {
+    return this.host.transaction(async (transaction) =>
+      Object.hasOwn(transaction.state().cancelled, assignmentKey(ref)) ? "cancelled" : "failed",
+    );
   }
 
   private async finalize(
@@ -726,7 +796,6 @@ export class ExecutionCoordinator {
       cleanup?: CleanupReceipt;
       checkpoint?: SessionCheckpoint;
       capture?: WorkspaceCapture;
-      error?: string;
     },
   ): Promise<void> {
     const { ref } = active.assignment;
@@ -796,7 +865,13 @@ export class ExecutionCoordinator {
         // fresh signal because the model's cancellation has already been confirmed.
         capture = workspaceCaptureSchema.parse(
           await this.options.workspace.capture(
-            { prepared: active.prepared, ref, cleanup, reason: outcome.reason },
+            {
+              prepared: active.prepared,
+              ref,
+              cleanup,
+              reason: outcome.reason,
+              artifacts: this.host.artifacts,
+            },
             new AbortController().signal,
           ),
         );
@@ -808,17 +883,21 @@ export class ExecutionCoordinator {
         await this.recordEffectObservation(`${active.attemptId}/capture`, "failed", message);
       }
     }
+    finalizationErrors.push(...(capture?.errors ?? []));
     await this.finish(active, {
       outcome,
       cleanup,
       checkpoint,
       capture,
-      error: completion.error,
       finalizationErrors,
     });
     if (cleanup.status === "stopped" && active.prepared) {
       await this.host.assertOwner();
-      await this.options.workspace.release({ prepared: active.prepared, cleanup });
+      await this.options.workspace.release({
+        prepared: active.prepared,
+        cleanup,
+        artifacts: this.host.artifacts,
+      });
     }
   }
 
@@ -860,7 +939,6 @@ export class ExecutionCoordinator {
       cleanup: CleanupReceipt;
       checkpoint?: SessionCheckpoint;
       capture?: WorkspaceCapture;
-      error?: string;
       finalizationErrors: string[];
     },
   ): Promise<void> {
@@ -870,18 +948,16 @@ export class ExecutionCoordinator {
       // A recovery may prove cleanup after an interrupted result was already delivered.
       // Preserve that immutable result and its stable completion notification.
       if (Object.hasOwn(state.results, assignmentKey(ref))) return;
+      const failedFinalization = Object.values(state.effects)
+        .filter(
+          (entry) =>
+            assignmentKey(entry.effect.ref) === assignmentKey(ref) &&
+            (entry.effect.kind === "checkpoint" || entry.effect.kind === "capture") &&
+            entry.status === "failed",
+        )
+        .map((entry) => entry.detail ?? `${entry.effect.kind} failed`);
       const finalizationErrors = [
-        ...new Set([
-          ...completion.finalizationErrors,
-          ...Object.values(state.effects)
-            .filter(
-              (entry) =>
-                assignmentKey(entry.effect.ref) === assignmentKey(ref) &&
-                (entry.effect.kind === "checkpoint" || entry.effect.kind === "capture") &&
-                entry.status === "failed",
-            )
-            .map((entry) => entry.detail ?? `${entry.effect.kind} failed`),
-        ]),
+        ...new Set([...completion.finalizationErrors, ...failedFinalization]),
       ];
       const cancelled = Object.hasOwn(state.cancelled, assignmentKey(ref));
       const reason =
@@ -889,7 +965,7 @@ export class ExecutionCoordinator {
           ? "interrupted"
           : cancelled
             ? "cancelled"
-            : completion.error || finalizationErrors.length
+            : failedFinalization.length
               ? "failed"
               : completion.outcome.reason;
       const result: AssignmentResult = {

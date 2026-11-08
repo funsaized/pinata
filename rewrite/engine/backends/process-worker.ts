@@ -86,6 +86,7 @@ async function runWorker(directory: string): Promise<void> {
     const backend = new InProcessBackend({
       modelRuntime: async () => modelRuntime,
       agentDir: manifest.options.agentDir,
+      memoryProject: manifest.options.memoryProject,
       codemode: manifest.options.codemode,
       extensions: manifest.options.extensions,
       createProcesses: (request) =>

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { BackendObservation } from "../contracts/backend.ts";
+import type { ArtifactPort, BackendObservation } from "../contracts/backend.ts";
 import {
   assignmentKey,
   DomainError,
@@ -15,8 +15,10 @@ import {
   type WorkerRequest,
 } from "../contracts/commands.ts";
 import { canonicalJson, digestValue } from "../contracts/digest.ts";
+import { configSchema, type Config, type ConfigLayer } from "../contracts/config.ts";
 import {
   transitionSchema,
+  historyImportSchema,
   transitionArtifacts,
   type CommandReceipt,
   type Effect,
@@ -37,12 +39,18 @@ import {
 } from "../contracts/runtime.ts";
 import { exportSchemas } from "../contracts/schemas.ts";
 import type { JournalFrame, Manifest } from "../contracts/storage.ts";
-import { prepareCommand } from "../core/accept.ts";
+import { legacyQuiescenceSchema, legacyQuiescenceObservationSchema } from "../contracts/history.ts";
+import type { DefinitionSummary } from "../contracts/definition.ts";
+import { digestBytes } from "../storage/io.ts";
+import { checkResolvedWorker, prepareCommand } from "../core/accept.ts";
 import { prepareControl } from "../core/control.ts";
 import { initialState, reduce } from "../core/state.ts";
 import { DurableStore } from "../storage/index.ts";
 import { StorageError, type FaultHook } from "../storage/io.ts";
+import { RuntimeApplications, type RuntimeApplicationPort } from "./application.ts";
+import { readChanges } from "./changes.ts";
 import { immutable } from "./immutable.ts";
+import { ConversationQueries, savedConversation } from "./queries.ts";
 import {
   ExecutionCoordinator,
   type ExecutionOptions,
@@ -55,12 +63,14 @@ import {
 } from "./delivery.ts";
 
 export type { ExecutionOptions } from "./execution.ts";
+export type { RuntimeApplicationPort } from "./application.ts";
 export type { CompletionNotice, NotificationDelivery, NotificationPort } from "./delivery.ts";
 
 export type WorkerResolver = (
   requests: readonly WorkerRequest[],
   caller: CallerAuthority,
   artifacts: { putArtifact(bytes: Uint8Array): Promise<ArtifactRef> },
+  context?: { config?: Config },
 ) => Promise<FrozenWorker[]>;
 
 export type EffectObservation = {
@@ -84,8 +94,11 @@ export type RuntimeOptions = {
   manifest?: Manifest;
   fault?: FaultHook;
   resolveWorkers?: WorkerResolver;
+  resolveConfig?: (config?: ConfigLayer) => Config | Promise<Config>;
+  discoverDefinitions?: () => Promise<DefinitionSummary[]>;
   effectPort?: InertEffectPort;
   execution?: ExecutionOptions;
+  application?: RuntimeApplicationPort;
   notifications?: NotificationPort;
   onDiagnostic?: (diagnostic: RuntimeDiagnostic) => void;
 };
@@ -99,7 +112,9 @@ export class Runtime {
   private readonly subscribers = new Set<Subscriber>();
   private readonly failures: RuntimeDiagnostic[] = [];
   private readonly execution?: ExecutionCoordinator;
+  private readonly applications?: RuntimeApplications;
   private readonly delivery?: CompletionDelivery;
+  private readonly conversations: ConversationQueries;
   private shutdown?: Promise<ShutdownReceipt>;
   private readonly waitCancellations = new Set<() => void>();
   private readonly committedRequests = new Map<
@@ -137,6 +152,17 @@ export class Runtime {
       put: (bytes: Uint8Array) => store.putArtifact(bytes),
       read: (artifact: ArtifactRef) => store.readArtifact(artifact),
     };
+    this.conversations = new ConversationQueries(artifacts);
+    if (options.application)
+      this.applications = new RuntimeApplications(
+        {
+          ownerEpoch: store.owner.epoch,
+          artifacts,
+          transaction,
+          assertOwner: () => store.assertOwner(),
+        },
+        options.application,
+      );
     if (options.notifications)
       this.delivery = new CompletionDelivery(
         { transaction, artifacts, assertOwner: () => store.assertOwner() },
@@ -203,6 +229,20 @@ export class Runtime {
         request.requestId,
         new DomainError("conflict", "Runtime is closing; reopen it before issuing commands"),
       );
+    if (
+      request.command.kind === "apply" ||
+      request.command.kind === "rollback" ||
+      request.command.kind === "reconcile"
+    ) {
+      try {
+        this.authorize(caller, true);
+        if (!this.applications)
+          throw new DomainError("unsupported", "No application port is configured");
+        return await this.applications.execute({ ...request, command: request.command }, caller);
+      } catch (error) {
+        return this.rejection(request.requestId, error);
+      }
+    }
     return this.serialize(async () => {
       try {
         this.authorize(caller, true);
@@ -234,6 +274,164 @@ export class Runtime {
     });
   }
 
+  // Only trusted migration adapters call this method; it is not model command JSON.
+  // Imported observations never dispatch inbox inputs, attempts or completion notices.
+  async importHistory(
+    input: unknown,
+    caller: CallerAuthority,
+    sourceArtifacts?: Pick<ArtifactPort, "read">,
+  ): Promise<CommandReceipt> {
+    const parsed = historyImportSchema.safeParse(input);
+    if (!parsed.success)
+      return this.rejection(
+        requestIdentity(input),
+        new DomainError(
+          "invalid_input",
+          parsed.error.issues[0]?.message ?? "Invalid historical import",
+        ),
+      );
+    const request = parsed.data;
+    if (this.closing)
+      return this.rejection(request.requestId, new DomainError("conflict", "Runtime is closing"));
+    return this.serialize(async () => {
+      try {
+        this.authorize(caller, true);
+        await this.store.assertOwner();
+        const payloadDigest = digestValue(request);
+        const previous = Object.hasOwn(this.state.receipts, request.requestId)
+          ? this.state.receipts[request.requestId]
+          : undefined;
+        if (previous) {
+          if (previous.payloadDigest !== payloadDigest)
+            throw new DomainError(
+              "conflict",
+              "Historical request identity has a different accepted payload",
+            );
+          return immutable(previous.receipt);
+        }
+        if (this.state.revision !== 0)
+          throw new DomainError("conflict", "Historical import requires an empty new run");
+        for (const { worker } of request.workers)
+          checkResolvedWorker(
+            {
+              id: worker.id,
+              agent: worker.agent,
+              task: "Imported history",
+              after: [],
+              inputs: [],
+              context: [],
+            },
+            worker,
+            caller,
+          );
+        const assignments = request.assignments.map((entry) => entry.assignment.ref);
+        const receipt = {
+          status: "accepted" as const,
+          requestId: request.requestId,
+          revision: this.state.revision + 1,
+          assignments,
+          resolved: assignments.map((ref) => {
+            const worker = request.workers.find((entry) => entry.worker.id === ref.worker)?.worker;
+            if (!worker)
+              throw new DomainError("invalid_input", "Historical assignment lacks a worker");
+            return {
+              ref,
+              workspace: worker.workspace,
+              backend: worker.backend,
+              lifetime: worker.lifetime,
+              grants: worker.grants,
+            };
+          }),
+        };
+        const transition: Extract<Transition, { kind: "history_imported" }> = {
+          kind: "history_imported",
+          ...request,
+          payloadDigest,
+          receipt,
+        };
+        for (const artifact of transitionArtifacts(transition)) {
+          const bytes = sourceArtifacts
+            ? await sourceArtifacts.read(artifact)
+            : await this.store.readArtifact(artifact);
+          if (bytes.length !== artifact.size || digestBytes(bytes) !== artifact.digest)
+            throw new DomainError(
+              "conflict",
+              "Historical artifact changed after migration planning",
+            );
+          if (sourceArtifacts) await this.store.putArtifact(bytes);
+        }
+        const proof = legacyQuiescenceSchema.parse(
+          JSON.parse(
+            Buffer.from(await this.store.readArtifact(request.quiescence)).toString("utf8"),
+          ),
+        );
+        if (proof.activity === "stopped") {
+          if (
+            !proof.observation ||
+            !request.evidence.some(
+              (artifact) =>
+                artifact.digest === proof.observation?.digest &&
+                artifact.size === proof.observation.size,
+            )
+          )
+            throw new DomainError(
+              "owner_unconfirmed",
+              "Historical stopped activity requires retained current quiescence observations",
+            );
+          const observed = legacyQuiescenceObservationSchema.parse(
+            JSON.parse(
+              Buffer.from(await this.store.readArtifact(proof.observation)).toString("utf8"),
+            ),
+          );
+          if (
+            !observed.owner ||
+            observed.owner.state === "active" ||
+            observed.gates.some((gate) => gate.markers.length || gate.writers.length)
+          )
+            throw new DomainError(
+              "owner_unconfirmed",
+              "Historical current ownership or checkout activity is unconfirmed",
+            );
+        }
+        const origin = this.store.manifest.origin;
+        if (
+          !origin ||
+          origin.run !== proof.sourceRun ||
+          origin.manifestDigest !== proof.sourceManifest.digest ||
+          proof.destinationRun !== this.state.run
+        )
+          throw new DomainError(
+            "conflict",
+            "Historical import does not match the new run's origin and quiescence evidence",
+          );
+        for (const entry of request.assignments) {
+          if (
+            !entry.assignment.historical ||
+            entry.assignment.historical.run !== origin.run ||
+            entry.assignment.historical.store !== origin.store ||
+            entry.assignment.historical.manifest.digest !== origin.manifestDigest
+          )
+            throw new DomainError(
+              "conflict",
+              "Historical assignment provenance disagrees with the import origin",
+            );
+          const retained = JSON.parse(
+            Buffer.from(await this.store.readArtifact(entry.resultArtifact)).toString("utf8"),
+          );
+          if (canonicalJson(retained) !== canonicalJson(entry.result))
+            throw new DomainError(
+              "conflict",
+              "Historical result artifact disagrees with its imported view",
+            );
+        }
+        await this.commit({ requestId: request.requestId, payloadDigest, transition });
+        return immutable(receipt);
+      } catch (error) {
+        return this.rejection(request.requestId, error);
+      }
+    });
+  }
+
   private async prepare(request: CommandEnvelope, caller: CallerAuthority) {
     const command = request.command;
     if (command.kind === "cancel" || command.kind === "background")
@@ -247,15 +445,35 @@ export class Runtime {
         "No worker definition resolver is configured",
         "command.workers",
       );
-    const workers = await resolveWorkers(immutable(command.workers), immutable(caller), {
-      putArtifact: (bytes) => this.store.putArtifact(bytes),
-    });
+    const acceptedConfig = this.state.config
+      ? configSchema.parse(
+          JSON.parse(
+            Buffer.from(await this.store.readArtifact(this.state.config)).toString("utf8"),
+          ),
+        )
+      : undefined;
+    const resolvedConfig =
+      command.kind === "create"
+        ? this.options.resolveConfig
+          ? configSchema.parse(await this.options.resolveConfig(command.config))
+          : command.config
+            ? configSchema.parse(command.config)
+            : undefined
+        : acceptedConfig;
+    const workers = await resolveWorkers(
+      immutable(command.workers),
+      immutable(caller),
+      {
+        putArtifact: (bytes) => this.store.putArtifact(bytes),
+      },
+      immutable({ config: resolvedConfig }),
+    );
     this.execution?.validateWorkers(workers);
     const config =
-      command.kind === "create" && command.config
-        ? await this.store.putArtifact(Buffer.from(canonicalJson(command.config)))
+      command.kind === "create" && resolvedConfig
+        ? await this.store.putArtifact(Buffer.from(canonicalJson(resolvedConfig)))
         : undefined;
-    return prepareCommand(this.state, request, caller, { workers, config });
+    return prepareCommand(this.state, request, caller, { workers, config, resolvedConfig });
   }
 
   private authorize(caller: CallerAuthority, mutation: boolean): void {
@@ -327,11 +545,46 @@ export class Runtime {
     const request = runtimeQuerySchema.parse(input);
     if (request.kind === "wait")
       return { kind: "wait", wait: await this.wait(request.wait, caller) };
+    if (request.kind === "changes") {
+      const snapshot = await this.serialize(async () => {
+        this.authorize(caller, false);
+        if (
+          request.ref.run !== this.state.run ||
+          !Object.hasOwn(this.state.assignments, assignmentKey(request.ref))
+        )
+          throw new DomainError("invalid_input", "Unknown changes assignment", "ref");
+        return this.state.results[assignmentKey(request.ref)]?.result.snapshot;
+      });
+      return immutable(
+        await readChanges(request.ref, snapshot, { read: (ref) => this.store.readArtifact(ref) }),
+      );
+    }
+    if (request.kind === "conversation") {
+      const saved = await this.serialize(async () => {
+        this.authorize(caller, false);
+        return savedConversation(this.state, request.ref);
+      });
+      if (request.cursor || saved) return immutable(await this.conversations.query(request, saved));
+      // Backend checkpointing may flush observations through the runtime queue.
+      // Keep that wait outside serialization so queries cannot deadlock control.
+      const checkpoint = await this.execution?.checkpoint(request.ref);
+      const snapshot = checkpoint
+        ? { source: "checkpoint" as const, artifact: checkpoint.artifact }
+        : await this.serialize(async () => savedConversation(this.state, request.ref));
+      return immutable(await this.conversations.query(request, snapshot));
+    }
     return this.serialize(async () => {
       this.authorize(caller, false);
       switch (request.kind) {
         case "status":
           return immutable({ kind: "status", state: this.state });
+        case "application":
+          return immutable({
+            kind: "application",
+            operation: Object.hasOwn(this.state.applications, request.operationId)
+              ? this.state.applications[request.operationId]
+              : null,
+          });
         case "receipt": {
           const stored = Object.hasOwn(this.state.receipts, request.requestId)
             ? this.state.receipts[request.requestId]
@@ -365,11 +618,15 @@ export class Runtime {
             }),
           );
         }
-        default:
-          throw new DomainError(
-            "unsupported",
-            `${request.kind} queries are not provided by the acceptance runtime`,
+        case "definitions":
+          return immutable(
+            queryResultSchema.parse({
+              kind: "definitions",
+              definitions: (await this.options.discoverDefinitions?.()) ?? [],
+            }),
           );
+        default:
+          throw new DomainError("unsupported", "Unsupported runtime query");
       }
     });
   }
@@ -643,12 +900,13 @@ export class Runtime {
     this.closing = true;
     this.shutdown = (async () => {
       const confirmed = (await this.execution?.close(request.reason)) ?? true;
+      const applicationConfirmed = (await this.applications?.close()) ?? true;
       await this.delivery?.close();
       return this.serialize(async () => {
         for (const cancel of this.waitCancellations) cancel();
         for (const subscriber of this.subscribers) subscriber.active = false;
         this.subscribers.clear();
-        if (!confirmed)
+        if (!confirmed || !applicationConfirmed)
           return {
             status: "owner_unconfirmed",
             revision: this.state.revision,

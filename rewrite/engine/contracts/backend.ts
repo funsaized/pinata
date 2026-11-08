@@ -41,6 +41,9 @@ export const backendCapabilitiesSchema = z.strictObject({
   steer: z.boolean(),
   continuation: z.boolean(),
   conversationSeed: z.boolean(),
+  skills: z.boolean().optional(),
+  memory: z.boolean().optional(),
+  fallbacks: z.boolean().optional(),
   surviving: z.boolean(),
   cleanup: z.enum(["confirmed", "unverified"]),
 });
@@ -148,6 +151,7 @@ export type PreparedWorkspace = z.infer<typeof preparedWorkspaceSchema>;
 export const workspaceCaptureSchema = z.strictObject({
   artifacts: z.array(artifactRefSchema),
   snapshot: artifactRefSchema.optional(),
+  errors: z.array(textSchema).optional(),
 });
 export type WorkspaceCapture = z.infer<typeof workspaceCaptureSchema>;
 export type ArtifactPort = {
@@ -211,16 +215,25 @@ export type WorkspaceRequest = {
 };
 export type WorkspacePort = {
   prepare(request: WorkspaceRequest, signal: AbortSignal): Promise<PreparedWorkspace>;
+  recover?(
+    request: Omit<WorkspaceRequest, "inputs"> & { prepared?: PreparedWorkspace },
+    signal: AbortSignal,
+  ): Promise<{ prepared?: PreparedWorkspace; cleanup: CleanupReceipt; artifacts: ArtifactRef[] }>;
   capture(
     request: {
       prepared: PreparedWorkspace;
       ref: AssignmentRef;
       cleanup: CleanupReceipt;
+      artifacts: ArtifactPort;
       reason?: BackendOutcome["reason"];
     },
     signal: AbortSignal,
   ): Promise<WorkspaceCapture>;
-  release(request: { prepared: PreparedWorkspace; cleanup: CleanupReceipt }): Promise<void>;
+  release(request: {
+    prepared: PreparedWorkspace;
+    cleanup: CleanupReceipt;
+    artifacts: ArtifactPort;
+  }): Promise<void>;
 };
 export class PreparationFailure extends Error {
   readonly cleanup: CleanupReceipt;

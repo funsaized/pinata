@@ -94,11 +94,54 @@ unverified. Actual PID reuse, universal escaped-process containment and machine
 power-loss behavior are not claimed. The shipping package still selects the frozen
 runtime; replacement code is limited to disposable tests until M8.
 
+## M3–M5 — workspaces, common surfaces and frozen loadouts
+
+Implemented the new shared/non-Git and isolated workspace layer, private capture
+indexes, checkout writer gate, authoritative application/rollback journals and
+completion checkpoint refs. Preparation/setup and capture preserve partial work,
+manual commits, branch HEAD, the user index and unrelated edits. Setup has durable
+intent/outcome records, filtered environment names and shell-capability checks;
+uncertain setup effects are not replayed.
+
+The replacement Pi, headless and authenticated IPC surfaces use the same Runtime
+commands and exact references. Historical codecs, explicit conversion/import and
+quiescence checks preserve original evidence and grants. Definitions, selected
+skills/providers, filtered parent context and opt-in scoped memory are frozen into
+validated loadouts. Fallback selection and optional typed reports preserve actual
+model/provenance without replaying failed effects or imposing output gates.
+
+A static source snapshot was validated in `/tmp/pinata-m3-validation` while later
+milestones continued independently. Source-v4 contains 593 source files; archive
+SHA-256 is `f5fb7e39a3a97afa4f8dc5be05f430d0ccf2e6c6648e45a26ba83fa73ef3af5d`.
+Source inventories and all attempts are retained under
+`bench/results/rewrite-2026-11-08/m3-m5/`.
+
+- Final Linux Node 26 check passed; full suite passed 634 tests with two skips.
+- Linux Node 22.19 final concurrency/settlement gate passed 43/43; the setup and
+  loadout compatibility subset passed 21/21. Earlier complete replacement coverage
+  passed 213/213 before the final focused fixes.
+- macOS Node 22.23.1 and 26.9 each passed all 57 final setup, provisioning, execution,
+  definition, loadout and backend regressions. Earlier complete M3–M5 runs passed
+  89/89 on Node 22 and 88/88 on Node 26; the newer source adds the focused fixes.
+- Pi/package smokes passed on the preceding source-v3 snapshot; shipping entry
+  points still select the frozen baseline. The final replacement artifact is an M8 gate.
+- Failed attempts remain available. A real fast-child stdout race was reproduced
+  with delayed file opens and fixed by attaching readers to preopened sinks. A real
+  concurrent writer-release mutex race was reproduced and fixed; an unrelated live
+  mutex is never reconciled by routine cleanup. Runtime failure no longer invents
+  cancellation or changes a persisted settlement reason. The final full-suite retry
+  followed one unchanged legacy 150 ms oracle-output timing failure; the focused
+  retry and full retry passed.
+
+These are scripted functional and crash-boundary results, not live coding quality
+or machine-power-loss evidence. The final preservation audit and remaining surface
+refinements continue in M8 before the single package cutover; no replacement run has
+been used for user work outside disposable verification workspaces.
+
 ## Remaining milestones
 
-M3 workspace/application implementation and later independent surface/loadout
-modules are in progress; their complete integration gates have not yet passed.
-M3–M8 requirements remain in force, including application recovery, migration,
-definitions/context/memory, nesting/schedules, UI navigation and owner walkthrough,
-replacement harness and the single package cutover. No paid model calls, push or
-publication are authorized by these local implementation gates.
+M6 capacity/nesting/schedules, M7 UI, and M8 harness/documentation/cutover are in
+progress behind development entry points. The owner requested and accepted the
+compact text-tree fleet layout during the M7 walkthrough. Final integration,
+macOS terminal capture, package/import checks and performance gates remain. No paid
+model calls, push or publication are authorized by these local implementation gates.

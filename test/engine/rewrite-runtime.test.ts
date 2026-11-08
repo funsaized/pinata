@@ -546,3 +546,61 @@ test("full assignment result references retain both predecessor payloads through
     ["result-1", "result-2"],
   );
 });
+
+test("runtime freezes resolved config layers without turning omitted fields into run overrides", async (t) => {
+  const resolved: Array<unknown> = [];
+  const capture: WorkerResolver = async (requests, authority, artifacts, context) => {
+    resolved.push(context?.config);
+    return resolveWorkers(
+      requests.map((request) => ({
+        ...request,
+        workspace: request.workspace ?? context?.config?.workspace,
+      })),
+      authority,
+      artifacts,
+      context,
+    );
+  };
+  const { configSchema } = await import("../../rewrite/engine/contracts/config.ts");
+  const f = await fixture(t, {
+    resolveWorkers: capture,
+    resolveConfig: (layer) => {
+      assert.equal(Object.hasOwn(layer ?? {}, "workspace"), false);
+      return configSchema.parse({
+        workspace: "worktree",
+        execution: { maxConcurrent: 2 },
+        ...layer,
+      });
+    },
+  });
+  const config = { models: { fixture: { provider: "fixture", id: "model", thinking: "off" } } };
+  const request = {
+    requestId: "layered",
+    command: { kind: "create", workers: [worker("base")], config },
+  };
+  const receipt = await f.runtime.execute(request, caller);
+  accepted(receipt);
+  assert.equal(receipt.resolved[0].workspace, "worktree");
+  const explicitDefault = await f.runtime.execute(
+    { ...request, command: { ...request.command, config: { ...config, workspace: "shared" } } },
+    caller,
+  );
+  assert.equal(explicitDefault.status, "rejected");
+  await f.reopen({
+    resolveWorkers: capture,
+    resolveConfig: () => {
+      throw new Error("Accepted configuration must be reused");
+    },
+  });
+  accepted(
+    await f.runtime.execute(
+      { requestId: "later", command: { kind: "add", workers: [worker("later")] } },
+      caller,
+    ),
+  );
+  assert.deepEqual(resolved[1], resolved[0]);
+  const state = await f.runtime.query({ kind: "status" }, caller);
+  if (state.kind !== "status") throw new Error("Expected status");
+  assert.equal(state.state.maxConcurrent, 2);
+  assert.equal(state.state.workers.later.workspace, "worktree");
+});

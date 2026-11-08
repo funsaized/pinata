@@ -610,7 +610,12 @@ export async function launchSupervised(options: LaunchOptions): Promise<Supervis
   const nodeCommand = options.nodeCommand ?? (process.versions.bun ? "node" : process.execPath);
   const child = spawn(
     nodeCommand,
-    [fileURLToPath(new URL("./guardian.ts", import.meta.url)), directory],
+    [
+      "--import",
+      fileURLToPath(new URL("../../typescript.mjs", import.meta.url)),
+      fileURLToPath(new URL("./guardian.ts", import.meta.url)),
+      directory,
+    ],
     { detached: true, stdio: ["ignore", "ignore", "pipe", "ipc"], windowsHide: true },
   );
   let guardianErrors = "";

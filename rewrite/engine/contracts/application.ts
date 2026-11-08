@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   artifactRefSchema,
+  commandErrorSchema,
   assignmentRefSchema,
   identitySchema,
   revisionSchema,
@@ -34,6 +35,7 @@ export type ApplicationCursors = z.infer<typeof applicationCursorsSchema>;
 export const applicationOperationSchema = z.strictObject({
   id: identitySchema,
   direction: z.enum(["apply", "rollback"]),
+  mode: z.enum(["delivery", "input"]).default("delivery"),
   phase: z.enum(["pending", "applied", "rolled_back"]),
   rollbackOf: identitySchema.optional(),
   destination: textSchema,
@@ -63,3 +65,40 @@ export const applicationReceiptSchema = z.strictObject({
   freshness: z.enum(["matching", "changed", "unknown"]),
 });
 export type ApplicationReceipt = z.infer<typeof applicationReceiptSchema>;
+
+export const applicationCommandSchema = z.discriminatedUnion("kind", [
+  z.strictObject({ kind: z.literal("apply"), ref: assignmentRefSchema, destination: textSchema }),
+  z.strictObject({
+    kind: z.literal("rollback"),
+    operation: identitySchema,
+    destination: textSchema,
+  }),
+  z.strictObject({
+    kind: z.literal("reconcile"),
+    operation: identitySchema,
+    owner: identitySchema,
+  }),
+]);
+export type ApplicationCommand = z.infer<typeof applicationCommandSchema>;
+export const applicationIntentSchema = z.strictObject({
+  id: identitySchema,
+  requestId: identitySchema,
+  command: applicationCommandSchema,
+  ownerEpoch: identitySchema,
+  destination: textSchema,
+  ref: assignmentRefSchema,
+  snapshot: artifactRefSchema,
+  targetOperation: identitySchema.optional(),
+});
+export type ApplicationIntent = z.infer<typeof applicationIntentSchema>;
+export const applicationStateSchema = z.strictObject({
+  intent: applicationIntentSchema,
+  status: z.enum(["pending", "completed", "failed", "uncertain"]),
+  receipt: applicationReceiptSchema.nullable().optional(),
+  error: commandErrorSchema.optional(),
+  evidence: artifactRefSchema.optional(),
+});
+export type ApplicationState = z.infer<typeof applicationStateSchema>;
+export type ApplicationObservation = Omit<ApplicationState, "intent" | "status"> & {
+  status: Exclude<ApplicationState["status"], "pending">;
+};

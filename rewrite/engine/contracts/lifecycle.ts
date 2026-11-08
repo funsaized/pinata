@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { historicalProvenanceSchema } from "./history.ts";
+import { applicationIntentSchema, applicationStateSchema } from "./application.ts";
 import {
   artifactRefSchema,
   assignmentRefSchema,
@@ -46,6 +48,7 @@ export const assignmentSchema = z.strictObject({
   inputs: z.array(assignmentRefSchema),
   context: z.array(z.string()),
   execution: executionSchema,
+  historical: historicalProvenanceSchema.optional(),
 });
 export type Assignment = z.infer<typeof assignmentSchema>;
 export const inboxMessageSchema = z.strictObject({
@@ -88,6 +91,7 @@ export const acceptedReceiptSchema = z.strictObject({
   status: z.literal("accepted"),
   requestId: identitySchema,
   revision: revisionSchema.positive(),
+  operationId: identitySchema.optional(),
   assignments: z.array(assignmentRefSchema),
   resolved: z.array(resolvedAssignmentSchema),
 });
@@ -134,6 +138,7 @@ export const resultSchema = z.strictObject({
   session: artifactRefSchema.optional(),
   snapshot: artifactRefSchema.optional(),
   usage: usageCoverageSchema,
+  historical: historicalProvenanceSchema.optional(),
 });
 export type AssignmentResult = z.infer<typeof resultSchema>;
 export const controlActionSchema = z.discriminatedUnion("kind", [
@@ -162,9 +167,55 @@ export const outboxObservationStateSchema = z.enum([
   "consumed",
   "uncertain",
 ]);
+export const historyImportSchema = z.strictObject({
+  requestId: identitySchema,
+  source: artifactRefSchema,
+  quiescence: artifactRefSchema,
+  evidence: z.array(artifactRefSchema).default([]),
+  workers: z
+    .array(
+      z.strictObject({
+        worker: frozenWorkerSchema,
+        sourceGrants: grantsSchema,
+        provenance: historicalProvenanceSchema,
+      }),
+    )
+    .min(1),
+  assignments: z
+    .array(
+      z.strictObject({
+        assignment: assignmentSchema,
+        result: resultSchema,
+        resultArtifact: artifactRefSchema,
+      }),
+    )
+    .min(1),
+  sessions: z.array(sessionCheckpointSchema).default([]),
+});
+export type HistoryImport = z.infer<typeof historyImportSchema>;
+export const historyImportedTransitionSchema = historyImportSchema.extend({
+  kind: z.literal("history_imported"),
+  payloadDigest: digestSchema,
+  receipt: acceptedReceiptSchema,
+});
 export const transitionSchema = z.discriminatedUnion("kind", [
   acceptedTransitionSchema,
+  historyImportedTransitionSchema,
   controlTransitionSchema,
+  z.strictObject({
+    kind: z.literal("application_accepted"),
+    requestId: identitySchema,
+    payloadDigest: digestSchema,
+    receipt: acceptedReceiptSchema,
+    intent: applicationIntentSchema,
+  }),
+  z.strictObject({
+    kind: z.literal("application_observed"),
+    operationId: identitySchema,
+    observation: applicationStateSchema
+      .omit({ intent: true })
+      .extend({ status: z.enum(["completed", "failed", "uncertain"]) }),
+  }),
   z.strictObject({ kind: z.literal("effect_intent"), effect: effectSchema }),
   z.strictObject({
     kind: z.literal("effect_observed"),
@@ -216,6 +267,12 @@ export const transitionSchema = z.discriminatedUnion("kind", [
     kind: z.literal("workspace_captured"),
     attemptId: identitySchema,
     capture: workspaceCaptureSchema,
+  }),
+  z.strictObject({
+    kind: z.literal("workspace_recovered"),
+    attemptId: identitySchema,
+    prepared: preparedWorkspaceSchema,
+    evidence: z.array(artifactRefSchema).min(1),
   }),
   z.strictObject({
     kind: z.literal("backend_enrolled"),
@@ -298,6 +355,7 @@ export const coreStateSchema = z.strictObject({
     z.strictObject({ payloadDigest: digestSchema, receipt: acceptedReceiptSchema }),
   ),
   effects: z.record(z.string(), effectStateSchema),
+  applications: z.record(z.string(), applicationStateSchema).default({}),
   attempts: z.record(z.string(), attemptStateSchema),
   sessions: z.record(z.string(), sessionCheckpointSchema),
   contextUsage: z.record(z.string(), contextUsageSchema),
@@ -323,16 +381,63 @@ export const coreStateSchema = z.strictObject({
     }),
   ),
   maxConcurrent: revisionSchema.positive().nullable(),
+  history: z
+    .strictObject({
+      source: artifactRefSchema,
+      quiescence: artifactRefSchema,
+      requestId: identitySchema,
+    })
+    .optional(),
 });
 export type CoreState = z.infer<typeof coreStateSchema>;
 
 export function transitionArtifacts(transition: Transition): z.infer<typeof artifactRefSchema>[] {
   const artifacts: Array<z.infer<typeof artifactRefSchema> | undefined> = [];
   switch (transition.kind) {
+    case "application_accepted":
+      artifacts.push(transition.intent.snapshot);
+      break;
+    case "application_observed":
+      artifacts.push(transition.observation.evidence, transition.observation.receipt?.snapshot);
+      break;
     case "accepted":
       artifacts.push(transition.config);
       for (const worker of transition.workers)
-        artifacts.push(worker.definition, worker.config, worker.context, worker.workspacePlan);
+        artifacts.push(
+          worker.definition,
+          worker.loadout,
+          worker.config,
+          worker.context,
+          worker.workspacePlan,
+        );
+      break;
+    case "history_imported":
+      artifacts.push(transition.source, transition.quiescence, ...transition.evidence);
+      for (const { worker, provenance } of transition.workers)
+        artifacts.push(
+          worker.definition,
+          worker.loadout,
+          worker.config,
+          worker.context,
+          worker.workspacePlan,
+          provenance.manifest,
+          provenance.source,
+        );
+      for (const { assignment, result, resultArtifact } of transition.assignments)
+        artifacts.push(
+          resultArtifact,
+          result.report,
+          result.transcript,
+          result.session,
+          result.snapshot,
+          ...result.artifacts,
+          assignment.historical?.manifest,
+          assignment.historical?.source,
+          result.historical?.manifest,
+          result.historical?.source,
+        );
+      for (const session of transition.sessions)
+        artifacts.push(session.artifact, session.transcript);
       break;
     case "effect_intent":
       artifacts.push(transition.effect.input);
@@ -359,6 +464,9 @@ export function transitionArtifacts(transition: Transition): z.infer<typeof arti
       break;
     case "workspace_prepared":
       artifacts.push(...transition.prepared.artifacts);
+      break;
+    case "workspace_recovered":
+      artifacts.push(...transition.prepared.artifacts, ...transition.evidence);
       break;
     case "workspace_captured":
       artifacts.push(...transition.capture.artifacts, transition.capture.snapshot);

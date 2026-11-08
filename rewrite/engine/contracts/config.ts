@@ -65,3 +65,25 @@ export const configSchema = z.strictObject({
     .default({ palette: "inherit", motion: "full", keys: {} }),
 });
 export type Config = z.infer<typeof configSchema>;
+
+// Input layers preserve omission so personal/project settings survive unrelated
+// run overrides. Defaults belong to the fully resolved, persisted configuration.
+const fields = configSchema.shape;
+export const configLayerSchema = z.strictObject({
+  schemaVersion: fields.schemaVersion.removeDefault().optional(),
+  workspace: fields.workspace.removeDefault().optional(),
+  models: fields.models.removeDefault().optional(),
+  fallbacks: fields.fallbacks.removeDefault().optional(),
+  toolProviders: fields.toolProviders.removeDefault().optional(),
+  passEnv: fields.passEnv.removeDefault().optional(),
+  webExtension: fields.webExtension,
+  setup: fields.setup,
+  worktreeRoot: fields.worktreeRoot,
+  codemode: fields.codemode.removeDefault().optional(),
+  includeUncommitted: fields.includeUncommitted.removeDefault().optional(),
+  mode: fields.mode.removeDefault().optional(),
+  backend: fields.backend.removeDefault().optional(),
+  execution: fields.execution.removeDefault().optional(),
+  ui: fields.ui.removeDefault().optional(),
+});
+export type ConfigLayer = z.infer<typeof configLayerSchema>;
