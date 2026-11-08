@@ -35,7 +35,7 @@ export interface DetailSource {
     streaming?: { text: string; thinking: string };
   } | null>;
   subscribe?(agent: string, onEvent: (event: AgentEvent) => void): () => void;
-  steer?(agent: string, text: string, as: "steer" | "followUp"): Promise<void>;
+  steer?(agent: string, text: string, as: "steer" | "followUp"): Promise<unknown>;
   // herdr-pi agents: bring the agent's own Herdr pane to the front.
   openPane?(agent: string): Promise<void>;
 }
@@ -174,7 +174,7 @@ export class AgentDetail implements Component {
           tool.updateResult(message as never);
           this.pendingTools.delete(message.toolCallId ?? "");
         }
-      } else if (message.role === "user") {
+      } else if (message.role === "user" || message.role === "custom") {
         const text = userText(message);
         if (!text) continue;
         if (this.chat.children.length) this.chat.addChild(new Spacer(1));
@@ -333,13 +333,14 @@ export class AgentDetail implements Component {
   }
 
   get canSteer(): boolean {
-    return (
-      !!this.options.source.steer && this.options.source.view(this.agent)?.status === "running"
-    );
+    return !!this.options.source.steer && !!this.options.source.view(this.agent);
   }
 
   get steeringHint(): string {
-    if (this.canSteer) return "Enter steer";
+    if (this.canSteer)
+      return ["running", "queued"].includes(this.options.source.view(this.agent)?.status ?? "")
+        ? "Enter steer"
+        : "Enter follow-up";
     if (!this.options.source.steer) return "Read-only";
     return "Agent not running";
   }
@@ -350,12 +351,16 @@ export class AgentDetail implements Component {
       return;
     }
     if (!this.canSteer) {
-      this.notice = "Only a running agent can be steered.";
+      this.notice = "Worker is unavailable.";
       return;
     }
     const input = new Input({ prompt: "steer › " });
     input.focused = true;
-    this.inputAs = "steer";
+    this.inputAs = ["running", "queued"].includes(
+      this.options.source.view(this.agent)?.status ?? "",
+    )
+      ? "steer"
+      : "followUp";
     input.onEscape = () => {
       this.input = null;
       this.options.tui.requestRender();
@@ -451,7 +456,14 @@ export class AgentDetail implements Component {
             : truncateToWidth(
                 [
                   this.canSteer
-                    ? keyHint("tui.input.submit", "steer")
+                    ? keyHint(
+                        "tui.input.submit",
+                        ["running", "queued"].includes(
+                          this.options.source.view(this.agent)?.status ?? "",
+                        )
+                          ? "steer"
+                          : "follow-up",
+                      )
                     : theme.fg("muted", this.steeringHint),
                   keyHint("tui.select.cancel", "close"),
                   keyHint("tui.select.up", "scroll"),

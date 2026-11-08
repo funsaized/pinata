@@ -1,6 +1,6 @@
 import { discoverAgents } from "./definitions.ts";
 // The model-facing tools. Delegation creates and starts a run in one call (pinata_run).
-// Repair, integration and rollback are added by the builder pipeline (M3).
+// Optional application and rollback share the checkout exclusion and journal.
 import { open } from "node:fs/promises";
 import { join } from "node:path";
 import { Type, type TSchema } from "typebox";
@@ -9,12 +9,11 @@ import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { BACKENDS, COST_MAX, LIMIT_MAX, THINKING_LEVELS } from "../core/types.ts";
+import { BACKENDS, THINKING_LEVELS } from "../core/types.ts";
 import { statusText, progressLine } from "../ui/text.ts";
 import {
   compactRun,
   compactTask,
-  reviewRecovery,
   repositoryRoot,
   type PinataHost,
   type RunParams,
@@ -22,11 +21,7 @@ import {
 import { deliverWhenDone } from "./delivery.ts";
 import { integrate, rollback } from "../verify/integrate.ts";
 import { handoff } from "../verify/evidence.ts";
-import {
-  verifyDestination,
-  verificationStatus,
-  type VerificationOptions,
-} from "../verify/destination.ts";
+import { verificationStatus } from "../verify/destination.ts";
 import { integrationStatus } from "./ui.ts";
 import { ValidationError } from "../core/validate.ts";
 import type { Settled } from "../core/engine.ts";
@@ -48,11 +43,6 @@ const taskId = (description?: string) =>
 
 export function schemas() {
   const model = object({ provider: string(), id: string(), thinking: choices(THINKING_LEVELS) });
-  const check = object({
-    id: taskId(),
-    argv: Type.Array(string(), { minItems: 1 }),
-    timeoutMs: optional(Type.Integer({ minimum: 1, maximum: 1_200_000 })),
-  });
   const task = object({
     id: taskId(),
     agent: optional(taskId("Agent name from pinata_agents. Presets: scout, builder, reviewer.")),
@@ -62,25 +52,20 @@ export function schemas() {
     instructions: optional(strings()),
     context: optional(strings("Quoted evidence for the agent; not instructions.")),
     after: optional(
-      Type.Array(taskId(), {
-        description: "Dependencies. Their results are inlined into this task's first message.",
-      }),
-    ),
-    ownership: optional(
-      strings(
-        "Builders only (required for them): repo-relative files or directory prefixes the builder may change.",
+      Type.Array(
+        Type.Union([
+          taskId(),
+          object({ worker: taskId(), assignment: Type.Integer({ minimum: 1 }) }),
+        ]),
+        {
+          description: "Dependencies. Their results are inlined into this task's first message.",
+        },
       ),
     ),
-    checks: optional(
-      Type.Array(check, { description: "Builders only: commands that verify the change." }),
+    workspace: optional(choices(["shared", "worktree"])),
+    inputs: optional(
+      Type.Array(object({ worker: taskId(), assignment: Type.Integer({ minimum: 1 }) })),
     ),
-    evidenceChecks: optional(
-      Type.Array(check, {
-        description:
-          "Any role: targeted, non-mutating commands for consequential factual claims, run after the agent finishes.",
-      }),
-    ),
-    noChecksReason: optional(string("Builders only: why a builder has no checks.")),
     reviewOf: optional(
       taskId("Reviewers only: the builder task under review, also listed in after."),
     ),
@@ -101,29 +86,13 @@ export function schemas() {
     model: optional(model),
     backend: optional(choices(BACKENDS, "Where the agent runs. Default in-process.")),
   });
-  const limits = object({
-    ...Object.fromEntries(
-      Object.entries(LIMIT_MAX).map(([key, max]) => [
-        key,
-        optional(Type.Integer({ minimum: 1, maximum: max })),
-      ]),
-    ),
-    costUsd: optional(
-      Type.Number({
-        exclusiveMinimum: 0,
-        maximum: COST_MAX,
-        description: "Stop the run once agents have spent this many US dollars.",
-      }),
-    ),
-  });
   const config = object({
-    reviewPolicy: optional(choices(["optional", "required"])),
+    workspace: optional(choices(["shared", "worktree"])),
     models: optional(Type.Record(string(), model)),
     fallbacks: optional(Type.Record(string(), Type.Array(model, { maxItems: 5 }))),
     toolProviders: optional(
       Type.Record(string(), object({ extension: string(), tools: strings() })),
     ),
-    limits: optional(limits),
     passEnv: optional(strings()),
     webExtension: optional(string()),
     setup: optional(Type.Union([Type.Literal(false), string()])),
@@ -139,7 +108,8 @@ export function schemas() {
   return {
     run: object({
       tasks: Type.Array(task, { minItems: 1 }),
-      deadlineAt: optional(Type.Number({ minimum: 1 })),
+      run: optional(run),
+      workspace: optional(choices(["shared", "worktree"])),
       background: optional(
         Type.Boolean({
           description: "Return at once; the result arrives later as a follow-up message.",
@@ -152,25 +122,20 @@ export function schemas() {
         }),
       ),
       cwd: optional(string()),
-      approval: optional(
-        string(
-          "Required when any builder is present: the user's authorization for these local writes.",
-        ),
-      ),
+      approval: optional(string("Record the user authorization for local writes when useful.")),
       instructions: optional(
         strings(
           "Instructions for every task; combined caller and trusted host instructions are limited to 128 KiB and never truncated.",
         ),
       ),
       config: optional(config),
-      integratedChecks: optional(Type.Array(check)),
-      noIntegratedChecksReason: optional(string()),
     }),
     status: object({
       run: optional(run),
       offset: optional(Type.Integer({ minimum: 0 })),
       limit: optional(Type.Integer({ minimum: 1, maximum: 64 })),
       task: optional(taskId()),
+      assignment: optional(Type.Integer({ minimum: 1 })),
       detail: optional(choices(["summary", "result", "transcript"])),
     }),
     steer: object({
@@ -178,43 +143,46 @@ export function schemas() {
       task: taskId(),
       message: string(),
       as: optional(choices(["steer", "followUp"])),
+      messageId: optional(string("Stable retry ID. Reusing it returns the same durable request.")),
     }),
     cancel: object({ run, task: optional(taskId()) }),
-    repair: object({
+    wait: object({ run, tasks: optional(Type.Array(taskId())), next: optional(Type.Boolean()) }),
+    integrate: object({
       run,
-      task: taskId(),
-      feedback: string("What to fix, from the review or failure."),
-      background: optional(Type.Boolean()),
+      recover: optional(
+        Type.Boolean({
+          description:
+            "Explicitly reconcile an interrupted application whose recorded local process is dead.",
+        }),
+      ),
+      selected: optional(
+        Type.Array(object({ worker: taskId(), assignment: Type.Integer({ minimum: 1 }) })),
+      ),
     }),
-    integrate: object({ run }),
-    changes: object({ run }),
-    verify: object({
+    changes: object({
       run,
-      checks: optional(Type.Array(check)),
-      noChecksReason: optional(string()),
+      selected: optional(
+        Type.Array(object({ worker: taskId(), assignment: Type.Integer({ minimum: 1 }) })),
+      ),
     }),
-    rollback: object({ run, confirm: Type.Literal(true) }),
+    rollback: object({ run, confirm: Type.Literal(true), recover: optional(Type.Boolean()) }),
   };
 }
 
 export const DESCRIPTIONS = {
-  run: "Delegate bounded tasks to pinata agents and run them now. Choose scout, builder, reviewer, or an installed custom definition; pinata_agents lists them. Writers change owned files in isolated worktrees. Foreground by default: waits, streams progress and returns compact results. background:true returns the run id and delivers the results later as a follow-up message. End your turn promptly when no actionable work remains so delivery can resume you; do not poll or keep reasoning to wait. Independent review is optional by default; config.reviewPolicy:required requires bound reviewers. Assigned reviews always bind. approval is required when any builder is present. after must include dependencies needed by configured checks as well as implementation.",
+  run: "Start workers now, or add workers to an existing run with run. Shared checkout by default; workspace:worktree selects isolation. Assign file responsibilities in task text. after controls execution order, including failed predecessors. Background work delivers assignment completions automatically; yield when waiting.",
   status:
-    'Read pinata status: the latest run, a run, or one task. detail:"result" returns a task\'s full result; detail:"transcript" returns a bounded transcript excerpt and the file path. Read-only; do not poll running runs.',
+    "Inspect worker execution, assignments, workspaces, results and observed usage. Full results/transcripts remain on disk; status is paginated.",
   steer:
-    "Send a message to a running agent: steer (after its current turn) or followUp (after it finishes its current work). Recorded and shown to reviewers.",
+    "Durably record a message. steer addresses active or initial queued work. followUp queues the next assignment or continues an idle, failed or cancelled worker in its saved context and workspace. Return includes a stable message ID and delivery state; queue acceptance is not consumption.",
   cancel:
-    "Cancel a run or one of its agents. Cancelled agents settle as cancelled; nothing else is undone.",
-  repair:
-    "Re-run a builder in its original run and worktree with feedback (from a rejected review or a failure), within limits.repairs. Pass the builder ID, not its reviewer ID. Its checks and reviewers run again and blocked dependents can continue. Keep this run ID for pinata_changes and pinata_integrate after success; a standalone review cannot replace this run's approval. Waits for the result by default; background:true returns promptly and delivers actionable notices and final results. Completed downstream work requires a new run.",
+    "Cancel selected workers or the run, stop owned activity, and preserve all workspace edits and saved evidence.",
   integrate:
-    "Apply eligible checked builder artifacts exactly and run destination checks. The orchestrator calls this; never automatic. HEAD may advance if affected files still match. Conflicts require pinata_changes and orchestrator reconciliation. Never stages or commits. Builder reviews remain scoped to their original bases.",
+    "Apply selected saved isolated snapshots to a quiescent checkout with conflict checks and a recovery journal. Follow-ups apply only the delta since the prior applied snapshot. Never stages or commits; application asserts no test or review result.",
   changes:
-    "Return verified builder artifacts, recorded bases, checks, reviews and immutable patches for orchestrator-owned integration. Does not change the destination checkout. Evidence is about the original artifacts, not the current destination.",
-  verify:
-    "Run checks on the current destination without applying builder changes. Uses the run's integratedChecks unless checks is supplied. Records the exact tree and whether it contains the recorded outputs. Does not grant independent review or claim reconciliation is correct. No checks means not_run, not verified.",
+    "Inspect shared checkout state and saved isolated patches independently of run success or optional reports. Shared state may include user and other workers' changes.",
   rollback:
-    "Restore the checkout from the run's integration journal, where files still match what integration wrote. Needs confirm:true.",
+    "Restore the latest application journal where destination files still match; confirm:true is required.",
 };
 
 type ToolResult = AgentToolResult<Record<string, unknown>>;
@@ -270,7 +238,14 @@ function renderTranscript(lines: string[], max = 6000): string {
 
 export async function statusTool(
   host: PinataHost,
-  params: { run?: string; task?: string; detail?: string; offset?: number; limit?: number },
+  params: {
+    run?: string;
+    task?: string;
+    assignment?: number;
+    detail?: string;
+    offset?: number;
+    limit?: number;
+  },
   ctx: ExtensionContext,
 ) {
   let target: Awaited<ReturnType<PinataHost["find"]>>;
@@ -308,16 +283,16 @@ export async function statusTool(
     };
   }
   if (!view.agents[params.task]) throw new Error(`Unknown task ${params.task} in run ${view.run}`);
-  const saved = (await host.readResult(dir, params.task)) as Record<string, any> | null;
+  const saved = (await host.readResult(dir, params.task, params.assignment)) as Record<
+    string,
+    any
+  > | null;
   if (params.detail === "result")
     return {
       run: view.run,
       task: params.task,
       definition: view.agents[params.task].definition,
       ...(saved ?? { status: view.agents[params.task].status }),
-      ...(reviewRecovery(params.task, view) && {
-        recovery: reviewRecovery(params.task, view),
-      }),
     };
   if (params.detail === "transcript") {
     const file = join(dir, "transcripts", `${params.task}.jsonl`);
@@ -396,7 +371,7 @@ export function registerTools(pi: ExtensionAPI, host: PinataHost): void {
       try {
         if (params.survive && !params.background)
           throw new ValidationError("survive:true needs background:true");
-        const { handle, notices } = await host.start(params, ctx);
+        const { handle, notices } = await host.start(params, ctx, signal);
         if (params.background) {
           host.background.add(handle.id);
           deliverWhenDone(pi, host, handle, notices);
@@ -404,8 +379,6 @@ export function registerTools(pi: ExtensionAPI, host: PinataHost): void {
             run: handle.id,
             dir: handle.dir,
             status: handle.view().status,
-            reviewPolicy: handle.view().reviewPolicy,
-            deadlineAt: handle.view().deadlineAt,
             background: true,
             notices,
           });
@@ -453,51 +426,88 @@ export function registerTools(pi: ExtensionAPI, host: PinataHost): void {
         task: string;
         message: string;
         as?: "steer" | "followUp";
+        messageId?: string;
       };
       try {
-        const { id } = await host.find(params.run, ctx.cwd);
-        await host
+        const found = await host.find(params.run, ctx.cwd);
+        const handle = found.handle ?? (await host.resumeDir(found.dir, ctx, true));
+        const receipt = await host
           .engine(ctx)
-          .steer(id, params.task, params.message, params.as ?? "steer", "parent");
-        return ok({ run: id, task: params.task, steered: params.as ?? "steer" });
+          .steer(
+            found.id,
+            params.task,
+            params.message,
+            params.as ?? "steer",
+            "parent",
+            params.messageId,
+          );
+        await host.markBackground(handle);
+        deliverWhenDone(pi, host, handle);
+        return ok({ run: found.id, ...receipt });
       } catch (error) {
         return fail(error);
       }
     },
   });
   pi.registerTool({
-    name: "pinata_repair",
-    ...toolRenderers("repair"),
-    label: "Pinata repair",
-    description: DESCRIPTIONS.repair,
-    parameters: s.repair,
-    outputSchema: Type.Object({ result: Type.Unknown() }),
-    annotations: { readOnlyHint: false },
-    async execute(_id, input, signal, onUpdate, ctx) {
-      const params = input as { run: string; task: string; feedback: string; background?: boolean };
+    name: "pinata_wait",
+    ...toolRenderers("wait"),
+    label: "Pinata wait",
+    description:
+      "Wait for selected workers or the next assignment completion. Cancellation stops waiting; it is not a worker deadline.",
+    parameters: s.wait,
+    async execute(_id, input, signal, _onUpdate, ctx) {
       try {
+        const params = input as { run: string; tasks?: string[]; next?: boolean };
         const found = await host.find(params.run, ctx.cwd);
-        const { id } = found;
         const handle = found.handle ?? (await host.resumeDir(found.dir, ctx, true));
-        host.engine(ctx).repair(id, params.task, params.feedback);
-        if (params.background) {
-          await host.markBackground(handle);
-          deliverWhenDone(pi, host, handle);
-          return ok({
-            run: id,
-            task: params.task,
-            attempt: handle.view().seq,
-            status: handle.view().agents[params.task].status,
-            background: true,
-          });
-        }
-        const view = await host.foreground(handle, signal, (text, v) =>
-          onUpdate?.({
-            content: [{ type: "text", text }],
-            details: { run: v.run, status: v.status },
+        const selected = params.tasks ?? handle.view().order;
+        const targets = new Map(
+          selected.map((worker) => {
+            const agent = handle.view().agents[worker];
+            if (!agent) throw new Error(`Unknown worker ${worker}`);
+            return [
+              worker,
+              Math.max(...Object.keys(agent.assignments ?? {}).map(Number), agent.assignment ?? 1),
+            ] as const;
           }),
         );
-        return ok(compactRun(view, handle.dir, handle.results()));
+        const ready = () =>
+          selected.every((worker) => {
+            const agent = handle.view().agents[worker];
+            return !["queued", "running"].includes(
+              agent.assignments?.[targets.get(worker)!]?.status ?? agent.status,
+            );
+          });
+        if (!ready())
+          await new Promise<void>((resolve, reject) => {
+            const stop = host.subscribe(handle.id, (event) => {
+              if (
+                event.t === "agent_settled" &&
+                selected.includes(event.agent ?? "") &&
+                targets.get(event.agent!) === event.assignment &&
+                (params.next || ready())
+              ) {
+                cleanup();
+                resolve();
+              }
+            });
+            const abort = () => {
+              cleanup();
+              reject(new Error("Wait cancelled; workers continue"));
+            };
+            const cleanup = () => {
+              stop();
+              signal?.removeEventListener("abort", abort);
+            };
+            if (signal?.aborted) abort();
+            else signal?.addEventListener("abort", abort, { once: true });
+            if (ready()) {
+              cleanup();
+              resolve();
+            }
+          });
+        return ok(compactRun(handle.view(), handle.dir, handle.results()));
       } catch (error) {
         return fail(error);
       }
@@ -514,34 +524,13 @@ export function registerTools(pi: ExtensionAPI, host: PinataHost): void {
     async execute(_id, input, _signal, _onUpdate, ctx) {
       try {
         const { dir, view } = await host.find((input as { run: string }).run, ctx.cwd);
-        if (view.status !== "succeeded")
-          throw new Error("Wait for every task and review to succeed before handoff");
-        return ok(await handoff(dir));
-      } catch (error) {
-        return fail(error);
-      }
-    },
-  });
-  pi.registerTool({
-    name: "pinata_verify",
-    ...toolRenderers("verify"),
-    label: "Pinata verify destination",
-    description: DESCRIPTIONS.verify,
-    parameters: s.verify,
-    outputSchema: Type.Object({ result: Type.Unknown() }),
-    annotations: { readOnlyHint: false },
-    async execute(_id, input, signal, _onUpdate, ctx) {
-      try {
-        const params = input as unknown as { run: string } & VerificationOptions;
-        const { id, dir, view } = await host.find(params.run, ctx.cwd);
-        if (view.status !== "succeeded")
-          throw new Error("Wait for every task and review to succeed before verification");
-        const result = await verifyDestination(dir, params, signal);
-        host.ui?.integrated(
-          id,
-          result.status === "verified" ? "destination_checked" : result.status,
+        void view;
+        return ok(
+          await handoff(
+            dir,
+            (input as { selected?: import("../core/types.ts").AssignmentRef[] }).selected,
+          ),
         );
-        return ok({ run: id, ...result });
       } catch (error) {
         return fail(error);
       }
@@ -559,9 +548,13 @@ export function registerTools(pi: ExtensionAPI, host: PinataHost): void {
       const params = input as { run: string };
       try {
         const { id, dir, view } = await host.find(params.run, ctx.cwd);
-        if (view.status !== "succeeded")
-          throw new Error("Wait for every task and review to succeed before integration");
-        const result = await integrate(dir, signal);
+        void view;
+        const result = await integrate(
+          dir,
+          signal,
+          (input as { selected?: import("../core/types.ts").AssignmentRef[] }).selected,
+          { recover: (input as { recover?: boolean }).recover },
+        );
         host.ui?.integrated(id, result.status);
         return ok({ run: id, ...result });
       } catch (error) {
@@ -582,7 +575,10 @@ export function registerTools(pi: ExtensionAPI, host: PinataHost): void {
       try {
         if (params.confirm !== true) throw new Error("Rollback needs confirm:true");
         const { id, dir } = await host.find(params.run, ctx.cwd);
-        const result = await rollback(dir);
+        const result = await rollback(dir, {
+          recover: (input as { recover?: boolean }).recover,
+          signal: _signal,
+        });
         host.ui?.integrated(id, result.status);
         return ok({ run: id, ...result });
       } catch (error) {

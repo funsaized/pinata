@@ -277,7 +277,16 @@ export class PinataUI {
         }),
       async openPane(agent) {
         const pane = JSON.parse(
-          await readFile(join(dir, "agents", agent, "pane.json"), "utf8"),
+          await readFile(
+            join(
+              dir,
+              "agents",
+              agent,
+              String(current().agents[agent]?.assignment ?? 1),
+              "pane.json",
+            ),
+            "utf8",
+          ),
         ) as PaneResource;
         await focusWorkspace(pane);
       },

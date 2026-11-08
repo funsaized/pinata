@@ -1,10 +1,6 @@
 {
   "cwd": "/absolute/path/to/repository",
-  "config": {
-    "limits": {
-      "costUsd": 2
-    }
-  },
+  "config": {},
   "tasks": [
     {
       "id": "review-correctness",
@@ -14,7 +10,8 @@
         "Approve only if no critical, high, or medium defect remains."
       ],
       "reviewBase": "main",
-      "agent": "reviewer"
+      "agent": "reviewer",
+      "instructions": []
     },
     {
       "id": "review-tests",
@@ -24,7 +21,10 @@
         "Approve only if the changed behavior is covered."
       ],
       "reviewBase": "main",
-      "agent": "reviewer"
+      "agent": "reviewer",
+      "instructions": []
     }
-  ]
+  ],
+  "schemaVersion": 3,
+  "workspace": "shared"
 }

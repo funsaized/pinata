@@ -109,7 +109,16 @@ export async function gcPanes(runsRoot: string, options: HerdrOptions = {}): Pro
       continue;
     }
     // Close only a pane that is still the one pinata recorded for that agent.
-    const recorded = name === "view" ? null : join(dir, "agents", name, "pane.json");
+    const recorded =
+      name === "view"
+        ? null
+        : join(
+            dir,
+            "agents",
+            name,
+            ...(agent?.assignment ? [String(agent.assignment)] : []),
+            "pane.json",
+          );
     const pane: PaneResource | null = recorded
       ? await readFile(recorded, "utf8")
           .then((raw) => JSON.parse(raw) as PaneResource)

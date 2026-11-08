@@ -4,7 +4,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { startLoopback, type LoopbackReply } from "../../bench/providers/loopback.ts";
-import { executeNative, nativeInvocation, pinataIntegrated } from "../../arena/adapters/native.ts";
+import { executeNative, nativeInvocation, pinataDelegated } from "../../arena/adapters/native.ts";
 import { runProcess } from "../../arena/process.ts";
 import type { AdapterRequest } from "../../arena/types.ts";
 import { gitRepo } from "./faux.ts";
@@ -27,7 +27,7 @@ const submit = (extra: Record<string, unknown> = {}): LoopbackReply =>
     summary: "done",
     brief: "fixture evidence",
     changedFiles: [],
-    checks: [],
+
     findings: [],
     blockers: [],
     ...extra,
@@ -68,7 +68,7 @@ function request(repo: string, evidenceDir: string): AdapterRequest {
   };
 }
 
-test("installed Pi RPC coordinator receives two early notices, repairs without blocking, then integrates before exit", async (t) => {
+test("installed RPC coordinator receives assignment completions and continues a worker while another runs", async (t) => {
   const dir = await tempDir(t, "pinata-coordinator-");
   const repo = join(dir, "repo");
   await gitRepo(repo).init();
@@ -80,124 +80,60 @@ test("installed Pi RPC coordinator receives two early notices, repairs without b
     else process.env.PI_CODING_AGENT_DIR = previous;
   });
   let releaseSlow!: () => void;
-  const slowGate = new Promise<void>((resolve) => {
+  const slow = new Promise<void>((resolve) => {
     releaseSlow = resolve;
   });
   t.after(releaseSlow);
-  let slowFinished = false;
   let started = false;
-  let repairs = 0;
-  let reviews = 0;
-  let integrated = false;
-  const briefs: Array<{ task: string; text: string }> = [];
+  let continued = false;
+  let slowFinished = false;
+  let buildCalls = 0;
   const loopback = await startLoopback({
     tokenDelayMs: 0,
     responder: async ({ body }) => {
       const text = contents(body);
       const task = /# Task ([a-z-]+) \(/.exec(text)?.[1];
       if (task) {
-        assert(text.includes(publicAssignment), `${task} receives exact assignment`);
-        const round = body.messages.filter(
-          (message: { role: string }) => message.role === "assistant",
-        ).length;
-        if (round === 0) briefs.push({ task, text });
+        assert(text.includes(publicAssignment));
         if (task === "slow") {
-          await slowGate;
+          await slow;
           slowFinished = true;
           return submit();
         }
-        if (task === "build") {
-          assert(text.includes("Ownership (repository-relative): README.md"));
-          if (round === 0)
-            return call("write", {
-              path: "README.md",
-              content: text.includes("Repair feedback") ? "fixed" : "broken",
-            });
-          return submit({ changedFiles: ["README.md"] });
-        }
-        reviews++;
-        const approve = reviews >= 3;
-        if (approve) releaseSlow();
-        return submit({
-          review: { verdict: approve ? "approve" : "changes_requested" },
-          findings: approve
-            ? []
-            : [{ severity: "high", message: "Fix the title contract", evidence: "README.md:1" }],
-        });
+        const callNumber = buildCalls++;
+        if (callNumber === 0 || callNumber === 2)
+          return call("write", {
+            path: "README.md",
+            content: callNumber === 0 ? "first" : "fixed",
+          });
+        if (callNumber === 3) releaseSlow();
+        return submit();
       }
       if (!started) {
         started = true;
         return call("pinata_run", {
           background: true,
-          survive: false,
-          approval: "Fixture local edits and integration authorized",
-          instructions: [],
-          config: {
-            models: { default: model },
-            setup: false,
-            codemode: false,
-            worktreeRoot: join(dir, "worktrees"),
-            limits: { concurrency: 3, repairs: 2 },
-          },
+          config: { models: { default: model }, setup: false, codemode: false },
           tasks: [
-            {
-              id: "build",
-              role: "builder",
-              task: "enforce lengths",
-              ownership: ["README.md"],
-              checks: [
-                {
-                  id: "content",
-                  argv: [
-                    process.execPath,
-                    "-e",
-                    "require('assert/strict').ok(require('fs').readFileSync('README.md','utf8'))",
-                  ],
-                },
-              ],
-            },
-            {
-              id: "review",
-              role: "reviewer",
-              task: "Check the contract",
-              after: ["build"],
-              reviewOf: "build",
-            },
-            { id: "slow", role: "scout", task: "Independent branch" },
-          ],
-          integratedChecks: [
-            {
-              id: "final",
-              argv: [
-                process.execPath,
-                "-e",
-                "require('assert/strict').equal(require('fs').readFileSync('README.md','utf8'),'fixed')",
-              ],
-            },
+            { id: "build", agent: "builder", task: "Implement the title contract in README.md" },
+            { id: "slow", agent: "scout", task: "Independent inspection" },
           ],
         });
       }
-      const run = /"run"\s*:\s*"([a-f0-9-]{36})"/.exec(text)?.[1];
-      const notices = new Set(
-        [...text.matchAll(/"noticeId"\s*:\s*"([^"]+)"/g)].map((match) => match[1]),
-      );
-      if (notices.size > repairs && repairs < 2) {
-        assert.equal(slowFinished, false, "intervention precedes unrelated branch completion");
-        repairs++;
+      if (text.includes("assignment completed: build/1") && !continued) {
+        assert.equal(slowFinished, false);
+        continued = true;
+        const run = /"run"\s*:\s*"([a-f0-9-]{36})"/.exec(text)?.[1];
         assert(run);
-        return call("pinata_repair", {
+        return call("pinata_steer", {
           run,
           task: "build",
-          feedback: "Fix the exact title limit",
-          background: true,
+          message: "Fix title",
+          as: "followUp",
+          messageId: "second-assignment",
         });
       }
-      if (text.includes("settled: succeeded") && !integrated) {
-        integrated = true;
-        assert(run);
-        return call("pinata_integrate", { run });
-      }
-      return { text: integrated ? "Complete." : "Waiting for the background result." };
+      return { text: "Waiting for assignment completions." };
     },
   });
   t.after(() => loopback.close());
@@ -205,32 +141,19 @@ test("installed Pi RPC coordinator receives two early notices, repairs without b
   const req = request(repo, join(dir, "evidence"));
   const result = await executeNative("pinata", req, cli);
   const stdout = await readFile(join(req.evidenceDir, "native.stdout.jsonl"), "utf8");
-  const stderr = await readFile(join(req.evidenceDir, "native.stderr.log"), "utf8");
-  assert.equal(
-    result.status,
-    "completed",
-    JSON.stringify(result.events) + "\n" + stdout.slice(-16000) + "\n" + stderr,
-  );
-  assert.equal(repairs, 2);
-  assert.equal(reviews, 3);
-  assert.equal(pinataIntegrated(stdout), true);
+  assert.equal(result.status, "completed", JSON.stringify(result.events) + stdout.slice(-8000));
+  assert(continued);
+  assert.equal(buildCalls, 4);
+  assert(pinataDelegated(stdout));
   assert.equal(await readFile(join(repo, "README.md"), "utf8"), "fixed");
-  assert.equal(briefs.filter((brief) => brief.task === "build").length, 3);
-  assert.equal(briefs.filter((brief) => brief.task === "review").length, 3);
-  const events = stdout
-    .trim()
+  const notifications = stdout
     .split("\n")
-    .map((line) => JSON.parse(line));
-  const repairsReturned = events.filter(
-    (event) => event.type === "tool_execution_end" && event.toolName === "pinata_repair",
-  );
-  assert.equal(repairsReturned.length, 2);
-  assert(repairsReturned.every((event) => event.result.details.result.background === true));
-  const notices = events.filter(
-    (event) => event.type === "message_end" && event.message?.customType === "pinata-actionable",
-  );
-  assert.equal(notices.length, 2);
-  assert.notEqual(notices[0].message.details[0].noticeId, notices[1].message.details[0].noticeId);
+    .filter(
+      (line) =>
+        line.includes('"type":"message_end"') && line.includes('"customType":"pinata-assignment"'),
+    )
+    .map((line) => JSON.parse(line).message.details.notificationId);
+  assert.equal(new Set(notifications).size, 3);
 });
 
 test("installed Pi print mode exits before delayed background completion", async (t) => {
@@ -282,7 +205,7 @@ test("installed Pi print mode exits before delayed background completion", async
   assert.equal(result.timedOut, false);
   assert.equal(parentTurns, 2);
   assert(
-    !result.stdout.includes('"customType":"pinata-result"'),
+    !result.stdout.includes('"customType":"pinata-assignment"'),
     "no future follow-up turn survives print completion",
   );
 });
@@ -328,18 +251,14 @@ for (const { backend, survive } of [
             codemode: false,
             worktreeRoot: worktrees,
             // Deliberately longer than the arena: outer cleanup must enforce the trial limit.
-            limits: { jobMs: 60_000, taskMs: 60_000 },
           },
           tasks: [
             {
               id: "build",
               role: "builder",
               task: "Run the fixture shell",
-              ownership: ["worker.pid"],
-              noChecksReason: "timeout fixture",
             },
           ],
-          noIntegratedChecksReason: "timeout fixture",
         });
       },
     });
@@ -351,10 +270,7 @@ for (const { backend, survive } of [
     const result = await executeNative("pinata", req, cli);
     assert.equal(result.status, "failed");
     assert.match(JSON.stringify(result.events), /timedOut=true/);
-    const files = await readdir(worktrees, { recursive: true });
-    const marker = files.find((file) => file.endsWith("worker.pid"));
-    assert(marker, "the worker shell ran before timeout");
-    const pid = Number(await readFile(join(worktrees, marker), "utf8"));
+    const pid = Number(await readFile(join(repo, "worker.pid"), "utf8"));
     t.after(() => killTree(pid));
     assert.equal(await processStart(pid), null, "the shell process did not escape the trial");
     // Windows taskkill forcibly stops the process tree; it cannot flush a final event.

@@ -15,7 +15,7 @@ devDependency's CLI against a local loopback provider.
 The default suite also exercises quality-report exit codes, benchmark completion and
 measurement gates, and the Relay example. Relay tests cover starter setup in a path
 with spaces, refusal to overwrite existing work, and the complete
-job through review and destination integration with scripted provider responses.
+job through shared delivery and ordinary coordinator checks with scripted responses.
 The package smoke also creates a starter from the installed tarball. User-facing
 examples use real models.
 
@@ -24,12 +24,12 @@ scripted job. It is excluded from the npm package.
 
 ## What the harness covers
 
-| Layer                                 | Location                                                                                     | What it exercises                                                                                                          |
-| ------------------------------------- | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| Engine contracts                      | `test/engine/helpers.ts`, engine, scheduler, limiter, budget, result, and log tests          | Deterministic state transitions, dependencies, cancellation, bounds, and persistence with a fake backend.                  |
-| Real sessions with scripted responses | `test/engine/faux.ts`, `worlds.ts`, backend, builder, check, integration, and survival tests | Pi sessions and tools, process and detached backends, isolated worktrees, review, repair, integration, and crash recovery. |
-| User-facing surfaces                  | Adapter, headless, viewer, UI, docs, and example tests                                       | Commands, rendering, streaming, job/config validation, and relative links.                                                 |
-| Distribution                          | Release tests, `pi-smoke.ts`, `package-smoke.ts`                                             | Package contents and metadata, extension discovery, prompts, tool calls, and integration through the installed artifact.   |
+| Layer                                 | Location                                                                                            | What it exercises                                                                                                                         |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Engine contracts                      | `test/engine/helpers.ts`, engine, assignment, scheduler, result, resource-observation and log tests | Deterministic state transitions, dependencies, cancellation, message durability and persistence with a fake backend.                      |
+| Real sessions with scripted responses | `test/engine/faux.ts`, `worlds.ts`, backend, builder, check, integration, and survival tests        | Pi sessions and tools, process and detached backends, shared and isolated workspaces, continuation, patch application and crash recovery. |
+| User-facing surfaces                  | Adapter, headless, viewer, UI, docs, and example tests                                              | Commands, rendering, streaming, job/config validation, and relative links.                                                                |
+| Distribution                          | Release tests, `pi-smoke.ts`, `package-smoke.ts`                                                    | Package contents and metadata, extension discovery, prompts, tool calls, and integration through the installed artifact.                  |
 
 Shared backend behavior belongs in `backends.test.ts`, which runs the same contracts
 against in-process, process, and detached transports. `in-process.test.ts` covers
@@ -161,7 +161,7 @@ The offline regression tests cover these thresholds and the report/exit-code con
 
 The [why use Pinata guide](../explanation/why-pinata.md) helps users choose a first
 workflow. [Relay](../tutorials/relay.md) walks through a complete job with their
-models, reviews, and destination checks. The measurements listed above remain
+models, ordinary reviews and coordinator checks. The measurements listed above remain
 follow-up work.
 
 ## Definition and scale regression checks
@@ -176,7 +176,6 @@ Additional scale benchmarks are opt-in (faux provider, no paid calls):
 npm run bench -- --scenario scale-queue-1000 --scenario scale-fanin-256 --scenario scale-batches-8
 ```
 
-They measure queueing, dependency fan-in, and repeated batches with at most 64 active
-agents. `settledHeapDeltaMB` measures heap retained after GC while compact run history
+They measure queueing, dependency fan-in, and repeated batches with the requested worker count; Pinata does not enforce production concurrency quotas. `settledHeapDeltaMB` measures heap retained after GC while compact run history
 is still available. Measure live session memory separately. Compare repeat runs on a quiet
 host. Provider latency is separate from engine overhead.

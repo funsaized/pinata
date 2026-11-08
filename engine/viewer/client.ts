@@ -17,7 +17,7 @@ export interface ViewerClient {
   messages(
     agent: string,
   ): Promise<{ messages: unknown[]; streaming?: { text: string; thinking: string } }>;
-  steer(agent: string, text: string, as: "steer" | "followUp"): void;
+  steer(agent: string, text: string, as: "steer" | "followUp"): Promise<unknown> | void;
   close(): void;
 }
 
@@ -67,12 +67,23 @@ export function clientDetail(client: ViewerClient, dir: string, cwd: string): De
     ...(client.source === "socket" && {
       steer: async (agent: string, text: string, as: "steer" | "followUp") => {
         if (client.closed) throw new Error("The viewer is disconnected");
-        client.steer(agent, text, as);
+        return await client.steer(agent, text, as);
       },
     }),
     openPane: async (agent) =>
       focusWorkspace(
-        JSON.parse(await readFile(join(dir, "agents", agent, "pane.json"), "utf8")) as PaneResource,
+        JSON.parse(
+          await readFile(
+            join(
+              dir,
+              "agents",
+              agent,
+              String(client.view?.agents[agent]?.assignment ?? 1),
+              "pane.json",
+            ),
+            "utf8",
+          ),
+        ) as PaneResource,
       ),
   };
 }

@@ -1,4 +1,4 @@
-// AgentEvent schema v1: runtime validation for events that arrive from outside this process
+// AgentEvent schemas v1/v2: runtime validation for events that arrive from outside this process
 // (the local socket, log replay), and the lean-mode retention rule.
 import {
   AGENT_STATUSES,
@@ -9,7 +9,7 @@ import {
   type Usage,
 } from "./types.ts";
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 // Events a lean-mode log keeps. The final view can be rebuilt from these alone.
 const LEAN: ReadonlySet<EventType> = new Set<EventType>([
@@ -24,6 +24,9 @@ const LEAN: ReadonlySet<EventType> = new Set<EventType>([
   "usage",
   "run_settled",
   "run_resumed",
+  "input_recorded",
+  "input_dispatched",
+  "input_consumed",
 ]);
 
 export function retained(event: AgentEvent, mode: Mode): boolean {
@@ -84,7 +87,7 @@ const BODY: Record<EventType, (e: any) => boolean> = {
     isCount(e.ms),
   steer: (e) =>
     (e.by === "user" || e.by === "parent") &&
-    isString(e.text, 64_000) &&
+    isString(e.text, Infinity) &&
     (e.as === "steer" || e.as === "followUp"),
   retry: (e) => isCount(e.attempt) && isString(e.reason, 64_000),
   check_start: (e) => isString(e.check, 64),
@@ -96,7 +99,7 @@ const BODY: Record<EventType, (e: any) => boolean> = {
     (e.toolCalls === undefined || isCount(e.toolCalls)),
   agent_settled: (e) =>
     AGENT_STATUSES.includes(e.status) &&
-    isString(e.summary, 64_000) &&
+    isString(e.summary, Infinity) &&
     (e.reason === undefined || isString(e.reason, 64_000)) &&
     isUsage(e.usage) &&
     isCount(e.turns) &&
@@ -104,6 +107,17 @@ const BODY: Record<EventType, (e: any) => boolean> = {
   run_resumed: (e) =>
     isString(e.reason, 64_000) &&
     (e.deadlineAt === undefined || (Number.isSafeInteger(e.deadlineAt) && e.deadlineAt > 0)),
+  input_recorded: (e) =>
+    isString(e.message) &&
+    isString(e.payload, Infinity) &&
+    ["steer", "followUp"].includes(e.kind) &&
+    typeof e.target?.worker === "string" &&
+    Number.isSafeInteger(e.target?.assignment) &&
+    e.target.assignment > 0 &&
+    AGENT_ID.test(e.target.worker),
+  input_dispatched: (e) =>
+    isString(e.message) && ["queued", "handled", "uncertain"].includes(e.disposition),
+  input_consumed: (e) => isString(e.message) && isString(e.checkpoint),
   telemetry: (e) =>
     typeof e.sample === "object" &&
     e.sample !== null &&
@@ -118,17 +132,23 @@ const BODY: Record<EventType, (e: any) => boolean> = {
 
 const AGENT_ID = /^[a-z][a-z0-9-]{0,31}$/;
 
-// Returns the event when it is a well-formed schema v1 event, otherwise throws.
+// Historical events stay readable; current events retain assignment identity.
 export function validateEvent(value: unknown): AgentEvent {
   const e = value as Record<string, unknown>;
   if (typeof e !== "object" || e === null || Array.isArray(e))
     throw new Error("Event must be an object");
-  if (e.v !== SCHEMA_VERSION) throw new Error(`Unsupported event schema version: ${String(e.v)}`);
+  if (e.v !== 1 && e.v !== SCHEMA_VERSION)
+    throw new Error(`Unsupported event schema version: ${String(e.v)}`);
   if (!isCount(e.seq) || !Number.isInteger(e.seq))
     throw new Error("Event seq must be a nonnegative integer");
   if (!isString(e.run, 64) || !e.run) throw new Error("Event run is required");
   if (e.agent !== undefined && !(typeof e.agent === "string" && AGENT_ID.test(e.agent)))
     throw new Error("Invalid event agent");
+  if (
+    e.assignment !== undefined &&
+    (!Number.isSafeInteger(e.assignment) || typeof e.assignment !== "number" || e.assignment < 1)
+  )
+    throw new Error("Invalid event assignment");
   if (!isCount(e.at)) throw new Error("Event at must be a timestamp");
   if (e.source !== undefined) {
     const s = e.source as { id?: unknown; record?: unknown } | null;

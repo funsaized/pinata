@@ -1,55 +1,40 @@
-import { validateDeadline } from "../core/deadline.ts";
-import { type ReviewPolicy, savedReviewPolicy } from "../core/policy.ts";
 import { join } from "node:path";
-import type { Check, TaskSpec } from "../core/types.ts";
+import type { TaskSpec } from "../core/types.ts";
 import { atomicJson, privateDir, readJson } from "../core/store.ts";
-
-export type IntegrationMode = "on-success" | "manual";
-
-// What the host records when a run starts, for integration after a reload.
+export type IntegrationMode = "manual" | "apply";
 export interface RunRecord {
-  schemaVersion?: 2;
-  reviewPolicy?: ReviewPolicy;
-  deadlineAt?: number;
+  schemaVersion?: 2 | 3;
   definitions?: import("../core/definitions.ts").Definitions;
   id: string;
   root: string;
-  head: string; // the user's HEAD when the run started
+  store?: string;
+  head: string;
   branch?: string;
   integration?: IntegrationMode;
   tasks: TaskSpec[];
   allowWrites: boolean;
-  integratedChecks: Check[];
-  noIntegratedChecksReason: string | null;
   passEnv: string[];
-  taskMs: number;
-  // What a later Pi needs to resume the run (E6.3), and the Pi that owns it.
   resume?: {
     mode: "lean" | "observe";
-    limits: Record<string, unknown>;
     data: Record<string, unknown>;
     survive: boolean;
     background: boolean;
-    owner: { pid: number; started: string } | null;
+    owner: { pid: number; started: string; host?: string } | null;
   };
 }
-
 export async function writeRunRecord(dir: string, record: RunRecord): Promise<void> {
   await privateDir(dir);
   await atomicJson(join(dir, "run.json"), record);
 }
-
 export async function readRunRecord(dir: string): Promise<RunRecord> {
   const record = await readJson<RunRecord>(join(dir, "run.json"));
-  if (record.schemaVersion !== undefined && record.schemaVersion !== 2)
+  if (record.schemaVersion !== undefined && ![2, 3].includes(record.schemaVersion))
     throw new Error(`Unsupported run record schema: ${record.schemaVersion}`);
-  savedReviewPolicy(record);
-  validateDeadline(record.deadlineAt);
-  if (
-    record.integration !== undefined &&
-    record.integration !== "manual" &&
-    record.integration !== "on-success"
-  )
-    throw new Error('integration must be "on-success" or "manual"');
   return record;
+}
+export function requireCurrentRecord(record: RunRecord): void {
+  if (record.schemaVersion !== 3)
+    throw new Error(
+      "Legacy run is read-only. Stop or preserve its old workers, inspect saved patches, and migrate its job to start a new run.",
+    );
 }

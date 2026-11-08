@@ -1,15 +1,10 @@
-import { reviewPolicy, type ReviewPolicy } from "./policy.ts";
-import { agentName, writes, reviews, validateSnapshots, type Definitions } from "./definitions.ts";
+import { agentName, writes, validateSnapshots, type Definitions } from "./definitions.ts";
 // Task and graph validation. Errors name the task and field.
 import {
   BACKENDS,
-  COST_MAX,
-  LIMIT_MAX,
-  LIMITS,
   ROLES,
   THINKING_LEVELS,
   type Check,
-  type Limits,
   type ModelRef,
   type Task,
   type TaskSpec,
@@ -124,106 +119,77 @@ const TASK_FIELDS = [
   "acceptance",
   "instructions",
   "context",
-  "ownership",
   "after",
+  "inputs",
+  "workspace",
   "reviewOf",
   "reviewBase",
   "reviewPr",
-  "checks",
-  "evidenceChecks",
-  "noChecksReason",
   "model",
   "backend",
-] as const;
-
+];
+export const REMOVED_TASK_FIELDS = ["ownership", "checks", "evidenceChecks", "noChecksReason"];
+export function migrationError(value: unknown, fields: readonly string[], label: string): void {
+  if (!value || typeof value !== "object") return;
+  const found = fields.filter((field) => Object.hasOwn(value, field));
+  need(
+    !found.length,
+    `${label}: retired fields ${found.join(", ")}; run pinata migrate on this input (see docs/reference/migration.md)`,
+  );
+}
+export function workspaceMode(value: unknown = "shared"): import("./types.ts").WorkspaceMode {
+  need(value === "shared" || value === "worktree", "workspace must be shared or worktree");
+  return value;
+}
+export function assignmentRef(value: unknown): import("./types.ts").AssignmentRef {
+  checkedKeys(value, ["worker", "assignment"], "assignment reference");
+  id(value.worker, "dependency worker");
+  need(
+    Number.isSafeInteger(value.assignment) && Number(value.assignment) > 0,
+    "Invalid assignment ID",
+  );
+  return value as unknown as import("./types.ts").AssignmentRef;
+}
 export function validateTask(input: unknown, definitions: Definitions = {}): Task {
+  migrationError(input, REMOVED_TASK_FIELDS, "task");
   checkedKeys(input, TASK_FIELDS, "task");
   const spec = input as unknown as TaskSpec;
-  need(
-    !(spec.agent && spec.role && spec.agent !== spec.role),
-    "Use agent or role, not conflicting selectors",
-  );
+  id(spec.id, "worker ID");
   const name = agentName(spec);
   const definition = spec.definition ? definitions[spec.definition] : undefined;
   need(
     !spec.definition || definition?.name === name,
     `Missing or mismatched agent definition: ${name}`,
   );
-  const task = { ...spec, role: name, definition, acceptance: spec.acceptance ?? [] };
-  id(task.id, "task ID");
-  const where = `Task ${task.id}`;
-  need(
-    definition || (ROLES as readonly unknown[]).includes(task.role),
-    `${where}: Unknown persona (role) ${JSON.stringify(task.role)}`,
-  );
-  text(task.task, `${where}: task`);
-  strings(task.acceptance, `${where}: acceptance`);
-  need(
-    spec.agent !== undefined || task.acceptance.length > 0,
-    `${where}: acceptance criteria required`,
-  );
-  if (task.model !== undefined) validateModel(task.model);
-  if (task.backend !== undefined)
-    need(
-      (BACKENDS as readonly unknown[]).includes(task.backend),
-      `${where}: backend must be one of ${BACKENDS.join(", ")}`,
-    );
-  strings(task.instructions ?? [], `${where}: instructions`);
-  strings(task.context ?? [], `${where}: context`);
-  strings(task.after ?? [], `${where}: after`).forEach((d) => id(d, `${where}: dependency ID`));
-  strings(task.ownership ?? [], `${where}: ownership`).forEach(relative);
-  validateChecks(task.checks ?? [], `${where}: checks`);
-  validateChecks(task.evidenceChecks ?? [], `${where}: evidenceChecks`);
-  validateChecks([...(task.checks ?? []), ...(task.evidenceChecks ?? [])], `${where}: checks`);
-  if (writes(task)) {
-    need((task.ownership?.length ?? 0) > 0, `${where}: builder ownership required`);
-    if (!task.checks?.length) text(task.noChecksReason, `${where}: noChecksReason`);
-  } else
-    for (const field of ["ownership", "checks"] as const)
-      need(
-        !task[field]?.length,
-        `${where}: ${field} is for builders only; remove it from this ${task.role} task`,
-      );
-  const targets = (["reviewOf", "reviewBase", "reviewPr"] as const).filter(
-    (key) => task[key] !== undefined,
-  );
-  if (reviews(task))
-    need(
-      targets.length === 1,
-      `${where}: a reviewer needs exactly one of reviewOf, reviewBase, or reviewPr`,
-    );
-  else need(targets.length === 0, `${where}: only reviewers use ${targets[0]}`);
-  if (task.reviewOf !== undefined) id(task.reviewOf, `${where}: reviewOf`);
-  if (task.reviewBase !== undefined)
-    need(
-      typeof task.reviewBase === "string" &&
-        /^[^\s-][^\s]{0,199}$/.test(task.reviewBase) &&
-        !task.reviewBase.includes("\0"),
-      `${where}: reviewBase must be a Git revision such as HEAD or main`,
-    );
-  if (task.reviewPr !== undefined)
-    need(
-      Number.isSafeInteger(task.reviewPr) && task.reviewPr > 0,
-      `${where}: reviewPr must be a pull request number`,
-    );
+  need(definition || (ROLES as readonly string[]).includes(name), `Unknown agent ${name}`);
+  text(spec.task, "assignment", Infinity);
+  if (spec.model) validateModel(spec.model);
+  if (spec.backend) need((BACKENDS as readonly string[]).includes(spec.backend), "Invalid backend");
+  if (spec.workspace !== undefined) workspaceMode(spec.workspace);
+  need(spec.after === undefined || Array.isArray(spec.after), "after must be an array");
+  for (const dep of spec.after ?? [])
+    if (typeof dep === "string") id(dep, "dependency worker");
+    else assignmentRef(dep);
+  need(spec.inputs === undefined || Array.isArray(spec.inputs), "inputs must be an array");
+  for (const ref of spec.inputs ?? []) assignmentRef(ref);
+  if (spec.reviewOf) id(spec.reviewOf);
   return {
-    ...task,
-    after: task.after ?? [],
-    ownership: task.ownership ?? [],
-    instructions: task.instructions ?? [],
-    context: task.context ?? [],
-    checks: task.checks ?? [],
-    evidenceChecks: task.evidenceChecks ?? [],
+    ...spec,
+    role: name,
+    definition,
+    after: spec.after ?? [],
+    acceptance: strings(spec.acceptance ?? [], "acceptance"),
+    instructions: strings(spec.instructions ?? [], "instructions"),
+    context: strings(spec.context ?? [], "context"),
   };
 }
-
-// All tasks a task depends on, directly or transitively.
 export function ancestors(
   byId: ReadonlyMap<string, Task>,
   task: Task,
   seen = new Set<string>(),
 ): Set<string> {
-  for (const name of task.after) {
+  for (const ref of task.after) {
+    const name = typeof ref === "string" ? ref : ref.worker;
     if (seen.has(name)) continue;
     seen.add(name);
     const dep = byId.get(name);
@@ -231,116 +197,44 @@ export function ancestors(
   }
   return seen;
 }
-
 export interface GraphRules {
-  reviewPolicy?: ReviewPolicy;
-  // Builders need an approval recorded by the caller.
   allowWrites?: boolean;
   definitions?: Definitions;
-  // Tasks already in the run when adding more.
   existing?: readonly Task[];
 }
-
-// Validates a whole graph before any agent starts. Returns tasks in input order.
 export function validateGraph(inputs: unknown, rules: GraphRules = {}): Task[] {
   need(Array.isArray(inputs) && inputs.length > 0, "tasks must be a nonempty array");
-  const definitions = validateSnapshots(rules.definitions);
-  const tasks = (inputs as unknown[]).map((input) => validateTask(input, definitions));
-  const all = [...(rules.existing ?? []), ...tasks];
-  const byId = new Map<string, Task>();
-  for (const task of all) {
-    need(!byId.has(task.id), `Task ${task.id}: duplicate task ID`);
-    byId.set(task.id, task);
-  }
-  for (const task of all)
-    for (const dep of task.after) {
-      need(dep !== task.id, `Task ${task.id}: after lists itself`);
-      need(byId.has(dep), `Task ${task.id}: after references unknown task ${dep}`);
-    }
-  const visiting = new Set<string>();
-  const done = new Set<string>();
-  const visit = (task: Task, path: string[]) => {
-    need(
-      !visiting.has(task.id),
-      `Task ${task.id}: cyclic dependencies (${[...path, task.id].join(" -> ")})`,
-    );
-    if (done.has(task.id)) return;
-    visiting.add(task.id);
-    for (const dep of task.after) visit(byId.get(dep)!, [...path, task.id]);
-    visiting.delete(task.id);
-    done.add(task.id);
-  };
-  for (const task of all) visit(task, []);
+  const tasks = inputs.map((input) => validateTask(input, validateSnapshots(rules.definitions)));
+  const existing = rules.existing ?? [];
+  const names = new Set(existing.map((task) => task.id));
   for (const task of tasks) {
-    if (writes(task))
-      need(
-        rules.allowWrites,
-        `Task ${task.id}: builders need an approval that authorizes local writes`,
-      );
-    if (task.reviewOf !== undefined) {
-      const target = byId.get(task.reviewOf);
-      need(target, `Task ${task.id}: reviewOf references unknown task ${task.reviewOf}`);
-      need(writes(target), `Task ${task.id}: reviewOf must name a builder task`);
-      need(
-        task.after.includes(target.id),
-        `Task ${task.id}: list the reviewOf target ${target.id} in after`,
-      );
-    } else if (reviews(task))
-      need(
-        ![...ancestors(byId, task)].some((name) => writes(byId.get(name)!)),
-        `Task ${task.id}: to review a builder's change, use reviewOf instead of reviewBase or reviewPr`,
-      );
-  }
-  const ancestry = new Map<string, Set<string>>();
-  const parents = (task: Task) => {
-    let found = ancestry.get(task.id);
-    if (!found) ancestry.set(task.id, (found = ancestors(byId, task)));
-    return found;
-  };
-  const writers = all.filter(writes);
-  if (reviewPolicy(rules.reviewPolicy) === "required") {
-    const uncovered = writers.filter(
-      (task) => !all.some((review) => reviews(review) && review.reviewOf === task.id),
-    );
+    need(!names.has(task.id), `Duplicate worker ${task.id}`);
+    names.add(task.id);
     need(
-      !uncovered.length,
-      `Independent review required for: ${uncovered.map((task) => task.id).join(", ")}`,
+      !writes(task) || rules.allowWrites,
+      `Worker ${task.id} needs authorization for local writes`,
     );
   }
-  const added = new Set(tasks);
-  for (const [index, task] of writers.entries())
-    for (const other of writers.slice(index + 1)) {
-      if (task === other || !writes(task) || !writes(other)) continue;
-      if (!added.has(task) && !added.has(other)) continue;
-      const overlaps = task.ownership.some(
-        (p) => owns(other.ownership, p) || other.ownership.some((q) => owns([p], q)),
-      );
-      need(
-        !overlaps || parents(task).has(other.id) || parents(other).has(task.id),
-        `Task ${task.id}: ownership overlaps independent builder ${other.id}`,
-      );
+  for (const task of tasks)
+    for (const ref of [...task.after, ...(task.inputs ?? [])]) {
+      const name = typeof ref === "string" ? ref : ref.worker;
+      need(names.has(name), `Worker ${task.id}: unknown dependency ${name}`);
     }
+  const added = new Map(tasks.map((task) => [task.id, task]));
+  const visiting = new Set<string>();
+  const visited = new Set<string>();
+  const visit = (name: string): void => {
+    need(!visiting.has(name), `Cyclic assignment dependency at ${name}`);
+    if (visited.has(name)) return;
+    visiting.add(name);
+    for (const ref of added.get(name)?.after ?? []) {
+      const worker = typeof ref === "string" ? ref : ref.worker;
+      if (added.has(worker)) visit(worker);
+    }
+    visiting.delete(name);
+    visited.add(name);
+  };
+  for (const task of tasks) visit(task.id);
+  // Assignment graph validates cycles once references have been frozen.
   return tasks;
-}
-
-export function validateLimits(input: unknown = {}): Limits {
-  const value = input ?? {};
-  checkedKeys(value, [...Object.keys(LIMITS), "costUsd"], "limits");
-  const { costUsd, ...counts } = { ...LIMITS, ...value } as Limits;
-  for (const [key, v] of Object.entries(counts))
-    need(
-      Number.isSafeInteger(v) &&
-        (v as number) > 0 &&
-        (v as number) <= LIMIT_MAX[key as keyof typeof LIMIT_MAX],
-      `Invalid limit ${key}`,
-    );
-  need(
-    costUsd === undefined ||
-      (typeof costUsd === "number" &&
-        Number.isFinite(costUsd) &&
-        costUsd > 0 &&
-        costUsd <= COST_MAX),
-    `Invalid limit costUsd; use a dollar amount up to ${COST_MAX}`,
-  );
-  return costUsd === undefined ? counts : { ...counts, costUsd };
 }

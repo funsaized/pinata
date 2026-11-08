@@ -4,9 +4,9 @@
 import { open, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { validateEvent } from "../core/events.ts";
-import { readEvents, readJsonl } from "../core/store.ts";
+import { replay, readJsonl } from "../core/store.ts";
 import type { AgentEvent, AgentEventInput } from "../core/types.ts";
-import { reduce, replayView, type RunView } from "../core/view.ts";
+import { reduce, type RunView } from "../core/view.ts";
 import type { Update } from "../ipc/client.ts";
 import { argsPreview, toUsage, truncate } from "./session.ts";
 
@@ -15,8 +15,13 @@ export const POLL_MS = 250;
 const sleep = (ms: number, signal?: AbortSignal) =>
   new Promise<void>((resolve) => {
     if (signal?.aborted) return resolve();
-    const timer = setTimeout(resolve, ms);
-    signal?.addEventListener("abort", () => (clearTimeout(timer), resolve()), { once: true });
+    const finish = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", finish);
+      resolve();
+    };
+    const timer = setTimeout(finish, ms);
+    signal?.addEventListener("abort", finish, { once: true });
   });
 
 // Reads complete new lines of a growing file from `offset`. A partial last line waits.
@@ -183,9 +188,8 @@ export class LogClient {
 
   static async open(dir: string, options: { follow?: boolean } = {}): Promise<LogClient> {
     const client = new LogClient(dir);
-    const events = await readEvents(dir);
-    if (!events.length) throw new Error(`${dir} has no run log (events.jsonl)`);
-    client.view = replayView(events, events[0].run);
+    client.view = await replay(dir);
+    if (!client.view.run) throw new Error(`${dir} has no run log (events.jsonl)`);
     if (options.follow && client.view.status === "running") {
       let seen = client.view.seq;
       void followEvents(

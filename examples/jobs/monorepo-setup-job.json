@@ -2,7 +2,6 @@
   "cwd": "/absolute/path/to/monorepo",
   "approval": "Replace with your approval to change packages/api, run its tests, and integrate locally",
   "config": {
-    "reviewPolicy": "required",
     "models": {
       "default": {
         "provider": "openai",
@@ -17,15 +16,11 @@
       "id": "api",
       "task": "Replace with the approved change to packages/api.",
       "acceptance": ["Replace with a concrete acceptance criterion"],
-      "ownership": ["packages/api/src", "packages/api/test"],
-      "checks": [
-        {
-          "id": "api-tests",
-          "argv": ["pnpm", "--filter", "./packages/api", "test"],
-          "timeoutMs": 300000
-        }
-      ],
-      "agent": "builder"
+      "agent": "builder",
+      "instructions": [
+        "Requested check (coordinator decides when to run it): {\"id\":\"api-tests\",\"argv\":[\"pnpm\",\"--filter\",\"./packages/api\",\"test\"],\"timeoutMs\":300000}",
+        "Assigned file responsibility: packages/api/src, packages/api/test. Preserve unrelated work."
+      ]
     },
     {
       "id": "review",
@@ -33,14 +28,13 @@
       "reviewOf": "api",
       "task": "Independently review the packages/api change and its test evidence.",
       "acceptance": ["Approve only if acceptance criteria are met with evidence"],
-      "agent": "reviewer"
+      "agent": "reviewer",
+      "instructions": []
     }
   ],
-  "integratedChecks": [
-    {
-      "id": "api-tests",
-      "argv": ["pnpm", "--filter", "./packages/api", "test"],
-      "timeoutMs": 300000
-    }
-  ]
+  "schemaVersion": 3,
+  "instructions": [
+    "Coordinator destination check intent (not engine-enforced): [{\"id\":\"api-tests\",\"argv\":[\"pnpm\",\"--filter\",\"./packages/api\",\"test\"],\"timeoutMs\":300000}]"
+  ],
+  "workspace": "shared"
 }

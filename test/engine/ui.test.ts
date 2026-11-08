@@ -278,9 +278,11 @@ test("viewer hints follow steering availability, including settled, queued and r
   hints("Enter steer", true);
   run = sceneRun(3);
   h.scene.update(run);
-  hints("Agent not running", false);
+  hints("Enter follow-up", false);
   h.scene.handleInput("\r");
-  assert.equal(h.scene.detail!.input, null);
+  assert(h.scene.detail!.input);
+  assert.equal(h.scene.detail!.inputAs, "followUp");
+  h.scene.handleInput("\x1b");
   assert.equal(sent.length, 0);
 
   // A repair reuses the detail source: availability must not be cached at construction.
@@ -289,7 +291,7 @@ test("viewer hints follow steering availability, including settled, queued and r
   hints("Enter steer", true);
   h.scene.selectAgent("review");
   await h.scene.ready;
-  hints("Agent not running", false);
+  hints("Enter steer", true);
 
   h.scene.selectAgent("map");
   await h.scene.ready;
@@ -715,7 +717,7 @@ test("the workspace selects conversations, scrolls, steers, and preserves draft 
   assert.equal(h.scene.focus, "detail");
   assert.equal(h.scene.agent, "review");
   h.scene.handleInput("\r");
-  assert.match(h.scene.detail!.notice!, /Only a running agent/);
+  assert(h.scene.detail!.input, "queued workers accept guidance");
   h.scene.close();
   assert.equal(subscriptions.size, 0);
   assert.equal(h.timers.size, 0);

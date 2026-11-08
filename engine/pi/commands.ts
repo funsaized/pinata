@@ -30,7 +30,6 @@ export const USAGE = [
   "/pinata mode lean|observe   footprint mode for this session",
   `/pinata view ${VIEW_ARGS}   inspect runs and conversations`,
   `/pinata view ${VIEW_ARGS} --external   view from another terminal or Herdr pane`,
-  "/pinata rerun <run>          start again the tasks lost when Pi exited",
   "/pinata gc [--confirm]         preview run cleanup and close finished panes; --confirm applies cleanup",
   "Shift+↑/↓           enter or cycle agent conversations (when available); Esc returns",
 ].join("\n");
@@ -249,14 +248,7 @@ export async function pinataCommand(
         : "")
     );
   }
-  if (sub === "rerun") {
-    arity(rest, 1, 1, "rerun <run>");
-    const found = await host.find(rest[0], ctx.cwd);
-    if (!found.handle)
-      return `Run ${short(found.id)} is not loaded in this Pi; restart Pi to resume it.`;
-    const reopened = host.rerun(found.id);
-    return `pinata ${short(found.id)}: started again ${reopened.join(", ")}`;
-  }
+
   if (sub === "gc") {
     arity(rest, 0, 1, "gc [--confirm]");
     if (rest[0] && !["confirm", "--confirm"].includes(rest[0]))
@@ -324,7 +316,7 @@ export function registerCommands(pi: ExtensionAPI, host: PinataHost): void {
 }
 
 export async function commandCompletions(host: PinataHost, cwd: string, prefix: string) {
-  const commands = ["status", "runs", "view", "rerun", "gc", "mode lean", "mode observe", "help"];
+  const commands = ["status", "runs", "view", "gc", "mode lean", "mode observe", "help"];
   if (!prefix.includes(" "))
     return commands
       .filter((value) => value.startsWith(prefix))
@@ -346,7 +338,7 @@ export async function commandCompletions(host: PinataHost, cwd: string, prefix: 
     return args.length
       ? []
       : ["--confirm"].filter((v) => v.startsWith(tail)).map((v) => ({ value: base + v, label: v }));
-  if (sub !== "view" && sub !== "rerun") return [];
+  if (sub !== "view") return [];
   try {
     const wantsTask = args.at(-1) === "--task";
     const target = parseViewArgs(wantsTask ? args.slice(0, -1) : args, true);

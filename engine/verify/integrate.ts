@@ -1,17 +1,16 @@
-import { assertTime, withDeadline } from "../core/deadline.ts";
-// Optional exact application. The orchestrator owns reconciliation and delivery.
+// Journaled optional patch application, independent of tests and reviews.
 import { randomUUID } from "node:crypto";
-import { chmod, lstat, mkdir, rename, unlink, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, rename, unlink } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { atomicJson, privateDir, readJson } from "../core/store.ts";
-import { BlobReader, digest } from "../workspace/changes.ts";
+import { BlobReader, digest, diffTrees } from "../workspace/changes.ts";
 import { git } from "../workspace/git.ts";
 import { assertNoLinks } from "../workspace/paths.ts";
 import { headBranch, headCommit } from "../workspace/snapshot.ts";
-import type { CheckEvidence } from "./checks.ts";
-import { loadChanges, need, safeChange, type VerifiedChanges } from "./evidence.ts";
+import type { AssignmentRef } from "../core/types.ts";
+import { loadChanges, need, safeChange } from "./evidence.ts";
 import {
-  checkDestination,
   destination,
   withDestination,
   type Destination,
@@ -20,35 +19,36 @@ import {
 import { readRunRecord } from "./record.ts";
 export { IntegrationError } from "./evidence.ts";
 export { readRunRecord, writeRunRecord, type RunRecord } from "./record.ts";
-
 export type FileState = { mode: string; blob: string } | null;
 export interface JournalEntry {
   path: string;
   before: FileState;
   after: FileState;
 }
+export type AppliedSnapshots = Record<string, { assignment: number; tree: string }>;
 export interface Journal {
-  schemaVersion: 1 | 2;
+  schemaVersion: 1 | 2 | 3;
   evidenceDigest: string;
   entries: JournalEntry[];
   status:
     | "applying"
+    | "applied"
+    | "rolled_back"
+    | "rolling_back"
     | "verifying"
     | "verified"
     | "applied_unverified"
-    | "verification_failed"
-    | "rolled_back";
+    | "verification_failed";
   destination?: Destination;
-  checks?: CheckEvidence[];
-  noChecksReason?: string | null;
+  snapshots?: AppliedSnapshots;
+  previousSnapshots?: AppliedSnapshots;
+  checks?: import("./checks.ts").CheckEvidence[];
   verification?: DestinationVerification;
 }
-
 async function writeJson(file: string, value: unknown): Promise<void> {
   await privateDir(dirname(file));
   await atomicJson(file, value);
 }
-
 const POSIX = process.platform !== "win32";
 
 // The checkout's current state of each path, as git would record it.
@@ -154,209 +154,225 @@ export interface IntegrationResult {
   journal: string;
   files: string[];
   checks: Array<{ id: string; passed: boolean; reason: string | null }>;
-  verification: DestinationVerification;
 }
-
-function entriesFor(evidence: VerifiedChanges): JournalEntry[] {
-  const merged = new Map<string, JournalEntry>();
-  for (const builder of evidence.builders)
-    for (const c of builder.changes.changes) {
-      const before = c.status === "A" ? null : { mode: c.oldMode, blob: c.oldBlob };
-      const after = c.status === "D" ? null : { mode: c.newMode, blob: c.newBlob };
-      const previous = merged.get(c.path);
-      if (previous)
-        need(
-          same(previous.after, before),
-          `Conflicting integration changes at ${JSON.stringify(c.path)}`,
-        );
-      merged.set(c.path, { path: c.path, before: previous ? previous.before : before, after });
-    }
-  return [...merged.values()];
-}
-
 async function journalHead(root: string, journal: Journal, signal?: AbortSignal): Promise<void> {
   need(
-    journal.schemaVersion === 2 && journal.destination,
-    "Journal has no recorded destination state; reconcile manually using pinata_changes",
+    journal.destination,
+    "Journal lacks destination identity; reconcile manually using pinata_changes",
   );
   need(
     (await headCommit(root, signal)) === journal.destination.head,
-    "Destination HEAD moved after application; reconcile this journal manually using pinata_changes",
+    "Destination HEAD moved after application",
   );
   need(
     (await headBranch(root, signal)) === journal.destination.branch,
-    "Destination branch changed after application; return to the original branch",
+    "Destination branch changed after application",
   );
   need(
     digest(await git(root, ["ls-files", "--stage", "-z"], { signal })) ===
       journal.destination.indexDigest,
-    "Destination index changed after application; reconcile this journal manually",
+    "Destination index changed after application",
   );
-  for (const e of journal.entries)
-    safeChange(e.path, e.before?.mode ?? "000000", e.after?.mode ?? "000000");
-}
-
-export async function integrate(dir: string, signal?: AbortSignal): Promise<IntegrationResult> {
-  const record = await readRunRecord(dir);
-  return withDeadline(record.deadlineAt, signal, (bounded) => integrateWithin(dir, bounded));
-}
-
-async function integrateWithin(dir: string, signal?: AbortSignal): Promise<IntegrationResult> {
-  const { record } = await loadChanges(dir, signal);
-  return withDestination(record.root, async () => {
-    const { evidence } = await loadChanges(dir, signal);
-    const root = record.root;
-    if (record.branch !== undefined) {
-      need(
-        (await headBranch(root, signal)) === record.branch &&
-          (record.branch !== "HEAD" || (await headCommit(root, signal)) === record.head),
-        "Destination branch changed since the run started; return to the original branch",
-      );
-    }
-    const evidenceDigest = evidence.evidenceDigest;
-    const journalPath = join(dir, "integration", "journal.json");
-    let journal = await readJson<Journal>(journalPath).catch((error: NodeJS.ErrnoException) => {
-      if (error.code === "ENOENT") return null;
-      throw error;
-    });
-    const blobs = new BlobReader(root, signal);
-    try {
-      need(!signal?.aborted, "Integration cancelled before application");
-      if (journal && journal.status !== "rolled_back") {
-        await journalHead(root, journal, signal);
-        if (journal.evidenceDigest !== evidenceDigest) {
-          await revert(root, journal, journalPath, blobs, signal);
-        }
-      }
-      if (!journal || journal.status === "rolled_back") {
-        const entries = entriesFor(evidence);
-        const before = await destination(root, signal);
+  for (const entry of journal.entries) {
+    safeChange(entry.path, entry.before?.mode ?? "000000", entry.after?.mode ?? "000000");
+    for (const state of [entry.before, entry.after])
+      if (state)
         need(
-          record.branch === undefined ||
-            (before.branch === record.branch &&
-              (record.branch !== "HEAD" || before.head === record.head)),
-          "Destination branch changed during integration preflight",
+          ["100644", "100755"].includes(state.mode) && /^[a-f0-9]{40,64}$/.test(state.blob),
+          "Invalid journal file state",
         );
+  }
+}
+export async function integrate(
+  dir: string,
+  signal?: AbortSignal,
+  selected?: AssignmentRef[],
+  options: { recover?: boolean } = {},
+): Promise<IntegrationResult> {
+  const record = await readRunRecord(dir);
+  need(record.allowWrites, "Application is not authorized for this run");
+  return withDestination(
+    record.root,
+    async () => {
+      const root = record.root;
+      const journalPath = join(dir, "integration", "journal.json");
+      const cursorPath = join(dir, "integration", "snapshots.json");
+      let journal = await readJson<Journal>(journalPath).catch((error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") return null;
+        throw error;
+      });
+      const snapshots = await readJson<AppliedSnapshots>(cursorPath).catch(
+        (error: NodeJS.ErrnoException) => {
+          if (error.code === "ENOENT") return {} as AppliedSnapshots;
+          throw error;
+        },
+      );
+      const blobs = new BlobReader(root, signal);
+      try {
+        need(
+          journal?.status !== "rolling_back",
+          "An interrupted rollback must be completed before application",
+        );
+        if (!journal || journal.status !== "applying") {
+          const { evidence } = await loadChanges(dir, signal, selected);
+          need(
+            evidence.builders.length,
+            "No saved isolated snapshots to apply; shared edits are already in the checkout",
+          );
+          const next = { ...snapshots };
+          const entries = new Map<string, JournalEntry>();
+          for (const builder of evidence.builders) {
+            const previous = snapshots[builder.task];
+            if (previous)
+              need(
+                builder.assignment >= previous.assignment,
+                `Worker ${builder.task} has a newer applied assignment; select its current snapshot`,
+              );
+            const changes = await diffTrees(
+              root,
+              previous?.tree ?? builder.changes.base,
+              builder.changes.tree,
+              signal,
+            );
+            for (const change of changes) {
+              safeChange(change.path, change.oldMode, change.newMode);
+              const before =
+                change.status === "A" ? null : { mode: change.oldMode, blob: change.oldBlob };
+              const after =
+                change.status === "D" ? null : { mode: change.newMode, blob: change.newBlob };
+              const existing = entries.get(change.path);
+              if (existing)
+                need(
+                  same(existing.after, before),
+                  `Conflicting selected patches at ${change.path}`,
+                );
+              entries.set(change.path, {
+                path: change.path,
+                before: existing ? existing.before : before,
+                after,
+              });
+            }
+            next[builder.task] = { assignment: builder.assignment, tree: builder.changes.tree };
+          }
+          const before = await destination(root, signal);
+          need(
+            record.branch === undefined || before.branch === record.branch,
+            "Destination branch changed since worker creation",
+          );
+          const states = await fileStates(root, [...entries.keys()], signal);
+          const conflicts = [...entries.values()].filter(
+            (entry) => !same(states.get(entry.path)!, entry.before),
+          );
+          need(
+            !conflicts.length,
+            `Application conflicts with later changes: ${conflicts.map((entry) => entry.path).join(", ")}. Reconcile using pinata_changes.`,
+          );
+          need(
+            digest(before) === digest(await destination(root, signal)),
+            "Destination changed during application preflight",
+          );
+          if (journal) await writeJson(join(dir, "integration", `${randomUUID()}.json`), journal);
+          journal = {
+            schemaVersion: 3,
+            evidenceDigest: evidence.evidenceDigest,
+            entries: [...entries.values()],
+            destination: before,
+            status: "applying",
+            snapshots: next,
+            previousSnapshots: snapshots,
+          };
+          await writeJson(journalPath, journal);
+        }
+        await journalHead(root, journal, signal);
         const states = await fileStates(
           root,
-          entries.map((e) => e.path),
+          journal.entries.map((entry) => entry.path),
           signal,
         );
-        const conflicts = entries.filter((e) => !same(states.get(e.path)!, e.before));
-        need(
-          !conflicts.length,
-          `Integration conflicts with changes made since the run started: ${conflicts.map((e) => JSON.stringify(e.path)).join(", ")}. Use pinata_changes for an orchestrator-owned reconciliation.`,
-        );
-        need(
-          digest(before) === digest(await destination(root, signal)),
-          "Destination changed during integration preflight",
-        );
-        journal = {
-          schemaVersion: 2,
-          evidenceDigest,
-          entries,
-          destination: before,
-          status: "applying",
-        };
+        for (const entry of journal.entries) {
+          need(
+            same(states.get(entry.path)!, entry.before) ||
+              same(states.get(entry.path)!, entry.after),
+            `Interrupted application conflicts with later changes: ${entry.path}`,
+          );
+          if (entry.after)
+            need(await blobs.read(entry.after.blob), `Missing patch blob ${entry.path}`);
+        }
+        await restore(root, journal.entries, "after", blobs, signal);
+        await journalHead(root, journal, signal);
+        if (journal.snapshots) await writeJson(cursorPath, journal.snapshots);
+        journal.status = "applied";
         await writeJson(journalPath, journal);
+        return {
+          status: journal.status,
+          journal: journalPath,
+          files: journal.entries.map((entry) => entry.path),
+          checks: [],
+        };
+      } finally {
+        blobs.close();
       }
-      const states = await fileStates(
-        root,
-        journal.entries.map((e) => e.path),
-        signal,
-      );
-      for (const e of journal.entries)
-        need(
-          same(states.get(e.path)!, e.before) || same(states.get(e.path)!, e.after),
-          `An interrupted integration conflicts with later changes: ${JSON.stringify(e.path)}`,
-        );
-      // Resolve every required object before writing the first file.
-      for (const e of journal.entries)
-        if (e.after) need(await blobs.read(e.after.blob), `Missing integration blob for ${e.path}`);
-      await journalHead(root, journal, signal);
-      need(
-        (await loadChanges(dir, signal)).evidence.evidenceDigest === evidenceDigest,
-        "Builder evidence changed before application",
-      );
-      assertTime(record.deadlineAt);
-      need(!signal?.aborted, "Integration cancelled before application");
-      await restore(root, journal.entries, "after", blobs, signal);
-      journal.status = "verifying";
-      delete journal.verification;
-      delete journal.checks;
-      await writeJson(journalPath, journal);
-      const verification = await checkDestination(dir, record, evidence, {}, signal);
-      journal.verification = verification;
-      journal.checks = verification.checks;
-      journal.noChecksReason = verification.noChecksReason;
-      journal.status =
-        verification.status === "verified" && verification.application === "exact"
-          ? "verified"
-          : verification.status === "not_run"
-            ? "applied_unverified"
-            : "verification_failed";
-      // HEAD/index changes during application cannot silently become a successful integration.
-      try {
-        await journalHead(root, journal);
-      } catch (error) {
-        journal.status = "verification_failed";
-        verification.status = "source_changed";
-        verification.reason = (error as Error).message;
-        await writeJson(verification.receipt, verification);
-        await writeJson(join(dir, "verification", "latest.json"), verification);
-      }
-      await writeJson(journalPath, journal);
-      return {
-        status: journal.status,
-        journal: journalPath,
-        files: journal.entries.map((e) => e.path),
-        checks: verification.checks.map((c) => ({ id: c.id, passed: c.passed, reason: c.reason })),
-        verification,
-      };
-    } finally {
-      blobs.close();
-    }
-  });
-}
-
-async function revert(
-  root: string,
-  journal: Journal,
-  file: string,
-  blobs: BlobReader,
-  signal?: AbortSignal,
-): Promise<void> {
-  await journalHead(root, journal, signal);
-  const states = await fileStates(
-    root,
-    journal.entries.map((e) => e.path),
-    signal,
+    },
+    {
+      operation: join(dir, "integration", "journal.json"),
+      signal,
+      recover: options.recover,
+      retainOnError: async () =>
+        ["applying", "rolling_back"].includes(
+          (await readJson<Journal>(join(dir, "integration", "journal.json")).catch(() => null))
+            ?.status ?? "",
+        ),
+    },
   );
-  for (const e of journal.entries)
-    need(
-      same(states.get(e.path)!, e.after) || same(states.get(e.path)!, e.before),
-      "Rollback conflicts with later changes; nothing overwritten",
-    );
-  for (const e of journal.entries)
-    if (e.before) need(await blobs.read(e.before.blob), `Missing rollback blob for ${e.path}`);
-  await restore(root, journal.entries, "before", blobs, signal);
-  journal.status = "rolled_back";
-  await writeJson(file, journal);
 }
-
-export async function rollback(dir: string): Promise<{ status: "rolled_back"; files: string[] }> {
+export async function rollback(
+  dir: string,
+  options: { recover?: boolean; signal?: AbortSignal } = {},
+): Promise<{ status: "rolled_back"; files: string[] }> {
   const record = await readRunRecord(dir);
   need(record.allowWrites, "Rollback is not authorized for this run");
-  return withDestination(record.root, async () => {
-    const file = join(dir, "integration", "journal.json");
-    const journal = await readJson<Journal>(file);
-    need(journal.status !== "rolled_back", "Already rolled back");
-    const blobs = new BlobReader(record.root);
-    try {
-      await revert(record.root, journal, file, blobs);
-    } finally {
-      blobs.close();
-    }
-    return { status: "rolled_back", files: journal.entries.map((e) => e.path) };
-  });
+  return withDestination(
+    record.root,
+    async () => {
+      const file = join(dir, "integration", "journal.json");
+      const journal = await readJson<Journal>(file);
+      await journalHead(record.root, journal);
+      need(journal.status !== "rolled_back", "Already rolled back");
+      const states = await fileStates(
+        record.root,
+        journal.entries.map((entry) => entry.path),
+      );
+      for (const entry of journal.entries)
+        need(
+          same(states.get(entry.path)!, entry.after) || same(states.get(entry.path)!, entry.before),
+          "Rollback conflicts with later changes",
+        );
+      const blobs = new BlobReader(record.root, options.signal);
+      try {
+        for (const entry of journal.entries)
+          if (entry.before)
+            need(await blobs.read(entry.before.blob), `Missing rollback blob ${entry.path}`);
+        options.signal?.throwIfAborted();
+        journal.status = "rolling_back";
+        await writeJson(file, journal);
+        await restore(record.root, journal.entries, "before", blobs, options.signal);
+      } finally {
+        blobs.close();
+      }
+      journal.status = "rolled_back";
+      await writeJson(file, journal);
+      await writeJson(join(dir, "integration", "snapshots.json"), journal.previousSnapshots ?? {});
+      return { status: "rolled_back", files: journal.entries.map((entry) => entry.path) };
+    },
+    {
+      operation: join(dir, "integration", "journal.json"),
+      recover: options.recover,
+      signal: options.signal,
+      retainOnError: async () =>
+        ["applying", "rolling_back"].includes(
+          (await readJson<Journal>(join(dir, "integration", "journal.json")).catch(() => null))
+            ?.status ?? "",
+        ),
+    },
+  );
 }

@@ -94,7 +94,7 @@ export function rpc(argv: string[], options: { cwd: string; env: NodeJS.ProcessE
 export async function integrationSmoke(pi: ReturnType<typeof rpc>): Promise<void> {
   const from = pi.records.length;
   pi.send({ type: "prompt", message: "smoke-integration: hand off, integrate and verify" });
-  for (const toolName of ["pinata_run", "pinata_changes", "pinata_integrate", "pinata_verify"]) {
+  for (const toolName of ["pinata_run", "pinata_changes", "pinata_integrate"]) {
     const end = await pi.wait(
       (r) => r.type === "tool_execution_end" && r.toolName === toolName,
       120_000,
@@ -104,11 +104,7 @@ export async function integrationSmoke(pi: ReturnType<typeof rpc>): Promise<void
     assert(result, JSON.stringify(end));
     if (toolName === "pinata_run") assert.equal(result.status, "succeeded", JSON.stringify(result));
     else if (toolName === "pinata_changes") assert.equal(result.scope, "builder-artifacts");
-    else assert.equal(result.status, "verified", JSON.stringify(result));
-    if (toolName === "pinata_verify") {
-      assert.equal(result.application, "exact");
-      assert.equal(result.review, "builder-artifacts-only");
-    }
+    else assert.equal(result.status, "applied", JSON.stringify(result));
   }
   await pi.wait((r) => r.type === "agent_settled", 120_000, from);
 }
@@ -233,7 +229,7 @@ async function main() {
       (r) =>
         r.type === "message_end" &&
         r.message?.role === "custom" &&
-        r.message?.customType === "pinata-result",
+        r.message?.customType === "pinata-assignment",
     );
     assert.equal(delivered.length, 1, "delivered exactly once");
     const received = later.filter(
@@ -242,7 +238,9 @@ async function main() {
         JSON.stringify(r.message?.content ?? "").includes("SMOKE-BACKGROUND-RECEIVED"),
     );
     assert.equal(received.length, 1, "one resumed turn");
-    const runs = await readdir(join(repo, ".git", "pinata"));
+    const runs = (await readdir(join(repo, ".git", "pinata"))).filter((name) =>
+      /^[a-f0-9-]{36}$/.test(name),
+    );
     assert.equal(runs.length, 2);
     // `pinata logs` prints a finished run through the pi binary in print mode.
     const logs = spawnSync(

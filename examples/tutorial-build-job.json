@@ -2,10 +2,10 @@
   "cwd": "/absolute/path/to/pinata-playground",
   "approval": "Replace with your approval to fix greet, update its tests, use the selected model, and integrate locally",
   "instructions": [
-    "Work only on the greeting whitespace fix. Do not install dependencies, stage, commit, push, publish, or deploy."
+    "Work only on the greeting whitespace fix. Do not install dependencies, stage, commit, push, publish, or deploy.",
+    "Coordinator destination check intent (not engine-enforced): [{\"id\":\"greeting\",\"argv\":[\"node\",\"--test\",\"greet.test.mjs\"],\"timeoutMs\":30000}]"
   ],
   "config": {
-    "reviewPolicy": "required",
     "models": {
       "default": {
         "provider": "REPLACE_WITH_APPROVED_PROVIDER",
@@ -23,15 +23,11 @@
         "greet('Ada') still returns 'Hello, Ada!'.",
         "The regression is covered in greet.test.mjs and the approved check passes."
       ],
-      "ownership": ["greet.mjs", "greet.test.mjs"],
-      "checks": [
-        {
-          "id": "greeting",
-          "argv": ["node", "--test", "greet.test.mjs"],
-          "timeoutMs": 30000
-        }
-      ],
-      "agent": "builder"
+      "agent": "builder",
+      "instructions": [
+        "Requested check (coordinator decides when to run it): {\"id\":\"greeting\",\"argv\":[\"node\",\"--test\",\"greet.test.mjs\"],\"timeoutMs\":30000}",
+        "Assigned file responsibility: greet.mjs, greet.test.mjs. Preserve unrelated work."
+      ]
     },
     {
       "id": "review",
@@ -42,14 +38,10 @@
       ],
       "after": ["build"],
       "reviewOf": "build",
-      "agent": "reviewer"
+      "agent": "reviewer",
+      "instructions": []
     }
   ],
-  "integratedChecks": [
-    {
-      "id": "greeting",
-      "argv": ["node", "--test", "greet.test.mjs"],
-      "timeoutMs": 30000
-    }
-  ]
+  "schemaVersion": 3,
+  "workspace": "shared"
 }

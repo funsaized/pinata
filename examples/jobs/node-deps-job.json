@@ -1,9 +1,11 @@
 {
   "cwd": "/absolute/path/to/node-project",
   "approval": "Replace with your approval to fix the failing unit test with Luna, run npm test, and integrate locally",
-  "instructions": ["Follow the repository's AGENTS.md. Do not stage, commit, push, or publish."],
+  "instructions": [
+    "Follow the repository's AGENTS.md. Do not stage, commit, push, or publish.",
+    "Coordinator destination check intent (not engine-enforced): [{\"id\":\"unit\",\"argv\":[\"npm\",\"test\"],\"timeoutMs\":120000}]"
+  ],
   "config": {
-    "reviewPolicy": "required",
     "models": {
       "default": {
         "provider": "openai",
@@ -27,22 +29,19 @@
       "id": "scout",
       "task": "Find why test/duration.test.mjs fails. Name the function, its callers, and the smallest fix. Do not edit files.",
       "acceptance": ["Cites the failing function and test by file and line"],
-      "agent": "scout"
+      "agent": "scout",
+      "instructions": []
     },
     {
       "id": "fix",
       "after": ["scout"],
       "task": "Apply the scout's minimal fix to src/duration.mjs.",
       "acceptance": ["npm test passes", "Only src/duration.mjs changes"],
-      "ownership": ["src/duration.mjs"],
-      "checks": [
-        {
-          "id": "unit",
-          "argv": ["npm", "test"],
-          "timeoutMs": 120000
-        }
-      ],
-      "agent": "builder"
+      "agent": "builder",
+      "instructions": [
+        "Requested check (coordinator decides when to run it): {\"id\":\"unit\",\"argv\":[\"npm\",\"test\"],\"timeoutMs\":120000}",
+        "Assigned file responsibility: src/duration.mjs. Preserve unrelated work."
+      ]
     },
     {
       "id": "review",
@@ -50,14 +49,10 @@
       "reviewOf": "fix",
       "task": "Challenge the fix: correctness, edge cases, and whether npm test proves the acceptance criteria.",
       "acceptance": ["Approve only if the fix is correct, minimal, and tested"],
-      "agent": "reviewer"
+      "agent": "reviewer",
+      "instructions": []
     }
   ],
-  "integratedChecks": [
-    {
-      "id": "unit",
-      "argv": ["npm", "test"],
-      "timeoutMs": 120000
-    }
-  ]
+  "schemaVersion": 3,
+  "workspace": "shared"
 }

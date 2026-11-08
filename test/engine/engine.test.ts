@@ -1,134 +1,143 @@
 import assert from "node:assert/strict";
-import { readFile, readdir } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
 import { fakeResult } from "../../engine/backends/fake.ts";
-import type { AgentEvent, RunStatus } from "../../engine/core/types.ts";
-import type { RunView } from "../../engine/core/view.ts";
+import { readEvents, replay } from "../../engine/core/store.ts";
 import { fakeEngine, spec } from "./helpers.ts";
 
-test("the engine facade runs a dependency graph, emits ordered events and persists results", async (t) => {
-  const { engine, backend, run } = await fakeEngine(t, (launch) => ({
-    latencyMs: 2,
-    result:
-      launch.task.role === "reviewer"
-        ? fakeResult({ review: { taskId: "build", fingerprint: "f", verdict: "approve" } })
-        : launch.task.role === "builder"
-          ? fakeResult({ changedFiles: ["a.txt"] })
-          : fakeResult(),
-  }));
-  const seen: AgentEvent[] = [];
-  const started: string[] = [];
-  engine.onRun((r) => {
-    started.push(r.id);
-    engine.subscribe(r.id, (e) => seen.push(e));
-  });
-  const handle = await run(
-    [
-      spec("scout"),
-      spec("plan", "planner", { after: ["scout"] }),
-      spec("build", "builder", {
-        after: ["plan"],
-        ownership: ["a.txt"],
-        noChecksReason: "fixture",
-      }),
-      spec("review", "reviewer", { after: ["build"], reviewOf: "build" }),
-    ],
-    { allowWrites: true },
-  );
-  assert.deepEqual(started, [handle.id]);
-  assert.equal((engine.status(handle.id) as RunView).status, "running");
-  const view = await handle.done;
-  assert.equal(view.status, "succeeded");
-  assert.deepEqual(
-    backend.starts.map((s) => s.task),
-    ["scout", "plan", "build", "review"],
-  );
-  assert.deepEqual(
-    seen.map((e) => e.seq),
-    seen.map((_, i) => i),
-    "seq increases by one per event",
-  );
-  assert.equal(seen[0].t, "run_started");
-  assert.equal(seen.at(-1)!.t, "run_settled");
-  assert.deepEqual(engine.snapshot(handle.id), view);
-  assert.deepEqual(engine.runs(), [handle.id]);
-  const results = await readdir(join(handle.dir, "results"));
-  assert.deepEqual(results.sort(), ["build.json", "plan.json", "review.json", "scout.json"]);
-  const saved = JSON.parse(await readFile(join(handle.dir, "results", "review.json"), "utf8"));
-  assert.equal(saved.result.review.verdict, "approve");
-});
-
-test("a reviewer that requests changes settles as rejected and fails the run", async (t) => {
+test("normal completion and negative worker assessments remain separate", async (t) => {
   const { run } = await fakeEngine(t, {
+    a: { result: null },
     review: {
       result: fakeResult({
-        review: { taskId: "b", fingerprint: "f", verdict: "changes_requested" },
+        status: "blocked",
+        blockers: ["tests failed"],
+        review: { taskId: "a", fingerprint: "f", verdict: "changes_requested" },
       }),
     },
   });
-  const view = await (
-    await run(
-      [
-        spec("b", "builder", { ownership: ["x"], noChecksReason: "fixture" }),
-        spec("review", "reviewer", { reviewOf: "b", after: ["b"] }),
-      ],
-      { allowWrites: true },
-    )
-  ).done;
-  assert.equal(view.agents.review.status, "rejected");
-  assert.equal(view.status satisfies RunStatus | "running", "failed");
+  const handle = await run([spec("a"), spec("review", "reviewer", { after: ["a"] })]);
+  assert.equal((await handle.done).status, "succeeded");
+  assert.equal(handle.results().get("review")?.result?.status, "blocked");
+  assert.equal(handle.view().agents.a.assignment, 1);
+  assert.deepEqual(await replay(handle.dir), handle.view());
 });
 
-test("an agent without a result fails with an actionable error", async (t) => {
-  const { run } = await fakeEngine(t, { a: { result: null } });
-  const view = await (await run([spec("a")])).done;
-  assert.equal(view.agents.a.status, "failed");
-  assert.match(view.agents.a.summary!, /without calling submit_result/);
+test("follow-ups queue FIFO, preserve distinct results, and never replay descendants", async (t) => {
+  const { engine, backend, run } = await fakeEngine(t, (launch) => ({
+    latencyMs: 15,
+    result: fakeResult({ summary: `${launch.task.id}/${launch.assignment}` }),
+  }));
+  const handle = await run([spec("a"), spec("old", "scout", { after: ["a"] })]);
+  const receipt = await engine.steer(handle.id, "a", "second", "followUp", "parent", "retry-id");
+  assert.equal(receipt.target.assignment, 2);
+  assert.deepEqual(
+    await engine.steer(handle.id, "a", "second", "followUp", "parent", "retry-id"),
+    receipt,
+  );
+  await engine.add(handle.id, [spec("new", "scout", { after: ["a"] })]);
+  await handle.done;
+  assert.deepEqual(
+    backend.starts.filter((s) => s.task === "a").map((s) => s.launch.assignment),
+    [1, 2],
+  );
+  assert.equal(backend.starts.filter((s) => s.task === "old").length, 1);
+  const events = await readEvents(handle.dir);
+  assert.deepEqual(
+    events
+      .filter((e) => e.t === "agent_queued" && e.agent === "old")
+      .map((e) => e.t === "agent_queued" && e.dependencies),
+    [[{ worker: "a", assignment: 1 }]],
+  );
+  assert.deepEqual(
+    events
+      .filter((e) => e.t === "agent_queued" && e.agent === "new")
+      .map((e) => e.t === "agent_queued" && e.dependencies),
+    [[{ worker: "a", assignment: 2 }]],
+  );
+  const first = JSON.parse(await readFile(join(handle.dir, "results", "a", "1.json"), "utf8"));
+  assert.equal(first.summary, "a/1");
+  assert.equal(handle.results().get("a")?.summary, "a/2");
+  await assert.rejects(
+    engine.steer(handle.id, "a", "different", "followUp", "parent", "retry-id"),
+    /different request/,
+  );
 });
 
-test("steering reaches a running agent and is recorded; snapshots work mid-run", async (t) => {
+test("additional workers and explicit earlier assignment references survive replay", async (t) => {
+  const { engine, backend, run } = await fakeEngine(t);
+  const handle = await run([spec("a")]);
+  await handle.done;
+  await engine.steer(handle.id, "a", "second", "followUp");
+  await handle.done;
+  await engine.add(handle.id, [spec("b", "scout", { after: [{ worker: "a", assignment: 1 }] })]);
+  await handle.done;
+  assert.equal(backend.starts.length, 3);
+  assert.deepEqual(await replay(handle.dir), handle.view());
+  assert.equal(handle.view().agents.a.assignments?.[1].status, "succeeded");
+});
+
+test("message acknowledgment is durable before backend dispatch and retries deduplicate", async (t) => {
   const { engine, backend, run } = await fakeEngine(t, { a: { hang: true } });
   const handle = await run([spec("a")]);
-  await new Promise((r) => setTimeout(r, 5));
-  await engine.steer(handle.id, "a", "Look at src/ first");
-  await engine.steer(handle.id, "a", "Then stop", "followUp");
-  assert.deepEqual(backend.steers, [
-    { task: "a", text: "Look at src/ first", as: "steer" },
-    { task: "a", text: "Then stop", as: "followUp" },
-  ]);
-  const snap = await engine.snapshot(handle.id, "a");
-  assert.equal(snap?.meta.agent, "a");
-  assert.equal(snap?.status, "running");
-  assert.deepEqual(
-    (engine.snapshot(handle.id) as RunView).agents.a.steers.map((s) => s.text),
-    ["Look at src/ first", "Then stop"],
+  while (!backend.starts.length) await new Promise((resolve) => setTimeout(resolve, 1));
+  const receipt = await engine.steer(handle.id, "a", "inspect", "steer", "parent", "same");
+  const events = await readEvents(handle.dir);
+  assert(
+    events.some((e) => e.t === "input_recorded" && e.message === "same" && e.payload === "inspect"),
   );
-  await assert.rejects(engine.steer(handle.id, "zz", "x"), /Unknown agent/);
-  await engine.shutdown("parent reload");
-  const view = await handle.done;
-  assert.equal(view.agents.a.status, "cancelled");
-  assert.equal(view.agents.a.reason, "parent reload");
-  await assert.rejects(engine.steer(handle.id, "a", "late"), /not running/);
+  await engine.steer(handle.id, "a", "inspect", "steer", "parent", "same");
+  assert.equal(backend.steers.length, 1);
+  assert.equal(receipt.state, "queued");
+  await engine.cancel(handle.id);
+  await handle.done;
+  await engine.steer(handle.id, "a", "continue cancelled work", "followUp");
+  await engine.cancel(handle.id);
+  await handle.done;
 });
 
-test("a reviewer that found defects is rejected even if it called its own status failed", async (t) => {
-  const { run } = await fakeEngine(t, {
-    review: {
-      result: fakeResult({
-        status: "failed",
-        review: { taskId: "b", fingerprint: "f", verdict: "changes_requested" },
-      }),
-    },
-  });
-  const view = await (
-    await run(
-      [
-        spec("b", "builder", { ownership: ["x"], noChecksReason: "fixture" }),
-        spec("review", "reviewer", { reviewOf: "b", after: ["b"] }),
-      ],
-      { allowWrites: true },
-    )
-  ).done;
-  assert.equal(view.agents.review.status, "rejected");
+test("cyclic additions are rejected atomically and process failures do not block ordering", async (t) => {
+  const { engine, backend, run } = await fakeEngine(t, { a: { error: "provider failed" } });
+  const handle = await run([spec("a"), spec("b", "scout", { after: ["a"] })]);
+  await handle.done;
+  assert.equal(handle.view().agents.a.status, "failed");
+  assert.equal(handle.view().agents.b.status, "succeeded");
+  await assert.rejects(
+    engine.add(handle.id, [
+      spec("c", "scout", { after: ["d"] }),
+      spec("d", "scout", { after: ["c"] }),
+    ]),
+    /Cyclic/,
+  );
+  assert.equal(backend.starts.length, 2);
+});
+
+test("steering targets active work even when a follow-up has already been accepted", async (t) => {
+  const { engine, run, backend } = await fakeEngine(t, { a: { hang: true } });
+  const handle = await run([spec("a")]);
+  while (!backend.starts.length) await new Promise((resolve) => setTimeout(resolve, 1));
+  const next = await engine.steer(handle.id, "a", "next", "followUp");
+  const current = await engine.steer(handle.id, "a", "current instructions", "steer");
+  assert.equal(next.target.assignment, 2);
+  assert.equal(current.target.assignment, 1);
+  await engine.cancel(handle.id);
+  await handle.done;
+});
+
+test("never-started steering augments the initial assignment and follow-ups remain separate", async (t) => {
+  const { engine, backend, run } = await fakeEngine(t, { predecessor: { latencyMs: 30 } });
+  const handle = await run([spec("predecessor"), spec("a", "scout", { after: ["predecessor"] })]);
+  const steer = await engine.steer(handle.id, "a", "initial guidance", "steer");
+  const next = await engine.steer(handle.id, "a", "second assignment", "followUp");
+  assert.equal(steer.target.assignment, 1);
+  assert.equal(next.target.assignment, 2);
+  await handle.done;
+  assert.deepEqual(
+    backend.starts.filter((s) => s.task === "a").map((s) => s.launch.assignment),
+    [1, 2],
+  );
+  assert.deepEqual(backend.starts.find((s) => s.task === "a")?.launch.agent.initialInputs, [
+    { id: steer.id, text: "initial guidance" },
+  ]);
 });

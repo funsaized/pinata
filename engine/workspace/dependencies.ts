@@ -237,7 +237,7 @@ export interface ProvisionOptions {
   root: string; // main checkout, exported as PINATA_ROOT
   passEnv: readonly string[];
   logDir: string;
-  timeoutMs: number;
+  timeoutMs?: number;
   signal?: AbortSignal;
 }
 
@@ -295,7 +295,7 @@ export async function provision(options: ProvisionOptions): Promise<ProvisionRes
   };
   const cacheKey = options.cacheRoot ? await dependencyKey(worktree, setup, env) : null;
   const result = cacheKey
-    ? await reuse(options.cacheRoot!, cacheKey, worktree, install)
+    ? await reuse(options.cacheRoot!, cacheKey, worktree, install, options.signal)
     : await install();
   await unchanged();
   await mkdir(options.markerDir, { recursive: true, mode: 0o700 });
@@ -310,6 +310,7 @@ async function reuse(
   key: string,
   worktree: string,
   install: () => Promise<ProvisionResult>,
+  signal?: AbortSignal,
 ): Promise<ProvisionResult> {
   const entry = join(cacheRoot, key);
   const modules = join(worktree, "node_modules");
@@ -336,6 +337,7 @@ async function reuse(
   const lock = join(cacheRoot, `${key}.lock`);
   let handle: Awaited<ReturnType<typeof open>> | undefined;
   for (let waited = 0; !handle; waited += 100) {
+    signal?.throwIfAborted();
     try {
       handle = await open(lock, "wx", 0o600);
     } catch (error) {

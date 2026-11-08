@@ -1,48 +1,24 @@
-import { savedReviewPolicy, type ReviewPolicy } from "../core/policy.ts";
-import { writes, reviews as isReviewer } from "../core/definitions.ts";
-// Evidence describes an immutable builder artifact, never the current destination.
-import { createHash } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
+// Immutable isolated snapshots remain available regardless of execution or assessment outcome.
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Settled } from "../core/engine.ts";
 import { atomicJson, privateDir, readJson, replay } from "../core/store.ts";
-import type { AgentResult, ChangeSet, Task } from "../core/types.ts";
-import { validateGraph } from "../core/validate.ts";
-import { digest, diffTrees, fingerprint } from "../workspace/changes.ts";
+import type { AgentResult, AssignmentRef, ChangeSet } from "../core/types.ts";
+import { digest, diffTrees } from "../workspace/changes.ts";
 import { git, line } from "../workspace/git.ts";
-import { caseInsensitive, owns, relative } from "../workspace/paths.ts";
+import { relative } from "../core/validate.ts";
 import type { CheckEvidence } from "./checks.ts";
 import { readRunRecord, type RunRecord } from "./record.ts";
 import type { BuilderData } from "./stages.ts";
-
 export class IntegrationError extends Error {
   override name = "IntegrationError";
 }
-
 export function need(condition: unknown, message: string): asserts condition {
   if (!condition) throw new IntegrationError(message);
 }
-
-// Log locations can move into a handoff; their contents, commands and outcomes cannot.
-function checkIdentity({ stdout: _stdout, stderr: _stderr, ...identity }: CheckEvidence) {
-  return identity;
+export function builderFingerprint(data: BuilderData, _result?: AgentResult): string {
+  return digest({ base: data.baseCommit, tree: data.changes.tree });
 }
-
-export function builderFingerprint(data: BuilderData, result: AgentResult): string {
-  return fingerprint({
-    base: data.changes.base,
-    tree: data.changes.tree,
-    checksDigest: digest(
-      data.fingerprintVersion === 2
-        ? data.checks.map(checkIdentity)
-        : data.checks.map((c) => [c.id, c.passed, c.stdoutSha256]),
-    ),
-    resultDigest: digest(
-      data.fingerprintVersion === 2 ? { result, verificationId: data.verificationId } : result,
-    ),
-  });
-}
-
 export async function retainArtifact(
   root: string,
   run: string,
@@ -56,9 +32,9 @@ export async function retainArtifact(
       signal,
     });
 }
-
 export interface VerifiedBuilder {
   task: string;
+  assignment: number;
   after: string[];
   baseCommit: string;
   changes: ChangeSet;
@@ -67,34 +43,17 @@ export interface VerifiedBuilder {
   verificationId: string | null;
   checks: CheckEvidence[];
   noChecksReason: string | null;
-  result: AgentResult;
+  result: AgentResult | null;
   reviews: Array<{ task: string; fingerprint: string; result: AgentResult }>;
 }
-
 export interface VerifiedChanges {
   schemaVersion: 1;
   scope: "builder-artifacts";
-  reviewPolicy?: ReviewPolicy;
   run: string;
   startHead: string;
   evidenceDigest: string;
   builders: VerifiedBuilder[];
 }
-
-function ordered(tasks: readonly Task[]): Task[] {
-  const byId = new Map(tasks.map((t) => [t.id, t]));
-  const seen = new Set<string>();
-  const out: Task[] = [];
-  const visit = (t: Task) => {
-    if (seen.has(t.id)) return;
-    seen.add(t.id);
-    for (const id of t.after) visit(byId.get(id)!);
-    out.push(t);
-  };
-  tasks.forEach(visit);
-  return out;
-}
-
 export function safeChange(path: string, oldMode: string, newMode: string): void {
   relative(path);
   need(
@@ -102,7 +61,9 @@ export function safeChange(path: string, oldMode: string, newMode: string): void
       .split("/")
       .some(
         (p) =>
-          p === ".env" || p.startsWith(".env.") || ["auth.json", ".npmrc", ".netrc"].includes(p),
+          p.toLowerCase() === ".env" ||
+          p.toLowerCase().startsWith(".env.") ||
+          ["auth.json", ".npmrc", ".netrc"].includes(p.toLowerCase()),
       ),
     `Refusing to integrate a secret-bearing file: ${JSON.stringify(path)}`,
   );
@@ -119,139 +80,82 @@ export function safeChange(path: string, oldMode: string, newMode: string): void
 export async function loadChanges(
   dir: string,
   signal?: AbortSignal,
+  selected?: AssignmentRef[],
 ): Promise<{ record: RunRecord; evidence: VerifiedChanges }> {
   signal?.throwIfAborted();
   const record = await readRunRecord(dir);
-  need(record.allowWrites, "Integration is not authorized for this run");
-  const tasks = validateGraph(record.tasks, { allowWrites: true, definitions: record.definitions });
   const view = await replay(dir);
-  need(
-    view.status === "succeeded",
-    "Every task must succeed before integration or handoff; the run is unsettled or failed",
-  );
-  const results = new Map<string, Settled>();
-  for (const task of tasks) {
-    signal?.throwIfAborted();
-    const saved = await readJson<Settled>(join(dir, "results", `${task.id}.json`));
-    need(
-      saved.status === "succeeded" && view.agents[task.id]?.status === "succeeded",
-      `Every task must succeed before integration (${task.id} is ${saved.status})`,
-    );
-    results.set(task.id, saved);
-  }
   const builders: VerifiedBuilder[] = [];
-  for (const task of ordered(tasks).filter((t) => writes(t))) {
-    signal?.throwIfAborted();
-    const saved = results.get(task.id)!;
-    const data = saved.data as unknown as BuilderData | undefined;
+  const refs =
+    selected ??
+    view.order.map((worker) => ({ worker, assignment: view.agents[worker].assignment ?? 1 }));
+  for (const ref of refs) {
+    const agent = view.agents[ref.worker];
+    need(agent, `Unknown worker ${ref.worker}`);
+    const saved = await readJson<Settled>(
+      join(dir, "results", ref.worker, `${ref.assignment}.json`),
+    ).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== "ENOENT") throw error;
+      return readJson<Settled>(join(dir, "results", `${ref.worker}.json`)).catch(() => null);
+    });
+    const data = saved?.data as unknown as BuilderData | undefined;
+    if (!data?.changes) {
+      need(!selected, `Assignment ${ref.worker}/${ref.assignment} has no saved isolated snapshot`);
+      continue;
+    }
     need(
-      data?.changes && saved.fingerprint && saved.result,
-      `Builder ${task.id} has no verified changes`,
+      record.schemaVersion !== 3 || saved?.assignment === ref.assignment,
+      "Snapshot assignment does not match the requested assignment",
     );
-    need(
-      builderFingerprint(data, saved.result) === saved.fingerprint,
-      `Builder ${task.id} evidence is stale or corrupt`,
-    );
+    const changes = data.changes;
+    for (const oid of [data.baseCommit, changes.base, changes.tree])
+      need(/^[a-f0-9]{40,64}$/.test(oid), "Invalid patch object ID");
     need(
       line(await git(record.root, ["rev-parse", `${data.baseCommit}^{tree}`], { signal })) ===
-        data.changes.base,
-      `Builder ${task.id} base does not match its evidence`,
+        changes.base,
+      "Patch base does not match its recorded commit",
     );
     need(
-      digest(await diffTrees(record.root, data.changes.base, data.changes.tree, signal)) ===
-        digest(data.changes.changes),
-      `Builder ${task.id} change manifest does not match its trees`,
+      digest(await diffTrees(record.root, changes.base, changes.tree, signal)) ===
+        digest(changes.changes),
+      "Patch manifest does not match its trees",
     );
-    const required = [...task.checks, ...task.evidenceChecks];
-    need(
-      data.checks.length === required.length &&
-        data.checks.every(
-          (c, i) =>
-            c.passed &&
-            c.code === 0 &&
-            !c.reason &&
-            c.id === required[i].id &&
-            digest(c.argv) === digest(required[i].argv),
-        ),
-      `Builder ${task.id} required checks are missing or stale`,
-    );
-    for (const check of data.checks)
-      for (const stream of ["stdout", "stderr"] as const) {
-        const bytes = await readFile(check[stream]);
-        need(
-          createHash("sha256").update(bytes).digest("hex") === check[`${stream}Sha256`],
-          `Check log ${task.id}/${check.id}/${stream} is stale or corrupt`,
-        );
-      }
-    const reviews = tasks.filter((t) => isReviewer(t) && t.reviewOf === task.id);
-    need(
-      savedReviewPolicy(record) === "optional" || reviews.length,
-      `Independent review required for ${task.id}`,
-    );
-    for (const review of reviews) {
-      const r = results.get(review.id)!.result?.review;
-      need(
-        r?.verdict === "approve" && r.taskId === task.id && r.fingerprint === saved.fingerprint,
-        `Review ${review.id} of ${task.id} is rejected or stale`,
-      );
-    }
-    for (const c of data.changes.changes) {
-      safeChange(c.path, c.oldMode, c.newMode);
-      need(
-        owns(task.ownership, c.path, caseInsensitive(record.root)),
-        `Builder ${task.id} changed an unowned path: ${c.path}`,
-      );
-    }
+    for (const change of changes.changes) safeChange(change.path, change.oldMode, change.newMode);
     builders.push({
-      task: task.id,
-      after: task.after,
+      task: ref.worker,
+      assignment: ref.assignment,
+      after: [],
       baseCommit: data.baseCommit,
-      changes: data.changes,
-      fingerprint: saved.fingerprint,
-      fingerprintVersion: data.fingerprintVersion ?? 1,
-      verificationId: data.verificationId ?? null,
-      checks: data.checks,
-      noChecksReason: task.noChecksReason ?? null,
-      result: saved.result,
-      reviews: reviews.map((r) => ({
-        task: r.id,
-        fingerprint: saved.fingerprint!,
-        result: results.get(r.id)!.result!,
-      })),
+      changes,
+      fingerprint: builderFingerprint(data),
+      fingerprintVersion: 3,
+      verificationId: null,
+      checks: data.checks ?? [],
+      noChecksReason: null,
+      result: saved?.result ?? null,
+      reviews: [],
     });
   }
-  need(builders.length, "No builder changes to integrate");
-  const evidence = {
-    schemaVersion: 1 as const,
-    scope: "builder-artifacts" as const,
-    reviewPolicy: savedReviewPolicy(record),
+  const evidence: VerifiedChanges = {
+    schemaVersion: 1,
+    scope: "builder-artifacts",
     run: record.id,
     startHead: record.head,
-    evidenceDigest: digest({
-      run: record.id,
-      head: record.head,
-      ...(record.reviewPolicy !== undefined && { reviewPolicy: savedReviewPolicy(record) }),
-      builders: builders.map((b) => ({ ...b, checks: b.checks.map(checkIdentity) })),
-    }),
+    evidenceDigest: digest(
+      builders.map(({ task, assignment, changes }) => ({ task, assignment, changes })),
+    ),
     builders,
   };
   return { record, evidence };
 }
-
-// Materialize only recorded objects. Later worktree edits cannot enter this handoff.
-export async function handoff(dir: string) {
-  const { record, evidence } = await loadChanges(dir);
+export async function handoff(dir: string, selected?: AssignmentRef[]) {
+  const { record, evidence } = await loadChanges(dir, undefined, selected);
   const folder = join(dir, "handoffs", evidence.evidenceDigest);
   await privateDir(folder);
   const builders = [];
   for (const b of evidence.builders) {
-    const taskFolder = join(folder, b.task);
-    await privateDir(taskFolder);
-    await retainArtifact(record.root, record.id, b.task, b.fingerprint, {
-      changes: b.changes,
-      baseCommit: b.baseCommit,
-    });
-    const patch = join(taskFolder, "changes.patch");
+    await retainArtifact(record.root, record.id, b.task, b.fingerprint, b);
+    const patch = join(folder, `${b.task}-${b.assignment}.patch`);
     await writeFile(
       patch,
       await git(record.root, [
@@ -267,28 +171,19 @@ export async function handoff(dir: string) {
       ]),
       { mode: 0o600 },
     );
-    const checks: CheckEvidence[] = [];
-    for (const check of b.checks) {
-      const copied = { ...check };
-      for (const stream of ["stdout", "stderr"] as const) {
-        const bytes = await readFile(check[stream]);
-        need(
-          createHash("sha256").update(bytes).digest("hex") === check[`${stream}Sha256`],
-          `Check log ${b.task}/${check.id}/${stream} is stale or corrupt`,
-        );
-        copied[stream] = join(taskFolder, `${check.id}.${stream}.log`);
-        await writeFile(copied[stream], bytes, { mode: 0o600 });
-      }
-      checks.push(copied);
-    }
-    builders.push({ ...b, checks, patch });
+    builders.push({ ...b, patch });
   }
-  need(
-    (await loadChanges(dir)).evidence.evidenceDigest === evidence.evidenceDigest,
-    "Evidence changed during handoff; retry after review",
-  );
   const manifest = join(folder, "manifest.json");
   const artifact = { ...evidence, builders };
   await atomicJson(manifest, artifact);
-  return { ...artifact, manifest, destinationVerification: "not-performed" as const };
+  const shared = record.tasks.some((task) => task.workspace !== "worktree")
+    ? {
+        path: record.root,
+        attribution: "Shared workspace state; may include user and other workers' changes",
+        diff: await git(record.root, ["diff", "--no-ext-diff", "--no-textconv", "HEAD"], {
+          allowFailure: true,
+        }).catch(() => "Git diff unavailable in this workspace"),
+      }
+    : undefined;
+  return { ...artifact, manifest, shared, destinationVerification: "not-performed" as const };
 }

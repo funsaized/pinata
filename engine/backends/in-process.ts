@@ -1,8 +1,8 @@
 // The in-process backend: each agent is a Pi SDK AgentSession in the parent's process, sharing
 // one child model runtime. About 1 ms and 1 MB per agent, with Pi's own prompt, tools,
 // retries and compaction.
-import { statSync } from "node:fs";
-import { relative, resolve, isAbsolute } from "node:path";
+import { existsSync, statSync } from "node:fs";
+import { relative, resolve, isAbsolute, dirname } from "node:path";
 import {
   DefaultResourceLoader,
   SessionManager,
@@ -14,7 +14,7 @@ import {
   type ModelRuntime,
 } from "@earendil-works/pi-coding-agent";
 import { agentExtension, SUBMIT } from "../agent/extension.ts";
-import { REMINDER } from "../agent/brief.ts";
+import { inputMessage, consumedInputs, finalText } from "./conversation.ts";
 import { appendJsonl, writeJsonl } from "../core/store.ts";
 import { ZERO_USAGE, addUsage } from "../core/types.ts";
 import type { AgentEventInput, ThinkingLevel, ToolRecord } from "../core/types.ts";
@@ -141,11 +141,25 @@ export class InProcessBackend implements AgentBackend {
     this.options = options;
   }
 
+  async consumed(
+    launch: import("./types.ts").AgentAttachment,
+  ): Promise<Array<{ message: string; checkpoint: string }>> {
+    const entries: Array<{ message: string; checkpoint: string }> = [];
+    if (launch.sessionFile)
+      await consumedInputs(launch.sessionFile, (event) => {
+        if (event.t === "input_consumed") entries.push(event);
+      });
+    return entries;
+  }
   async start(
     launch: AgentLaunch,
     sink: (e: AgentEventInput) => void,
     signal: AbortSignal,
   ): Promise<AgentHandle> {
+    if ((launch.assignment ?? 1) > 1 && (!launch.sessionFile || !existsSync(launch.sessionFile)))
+      throw new Error(
+        "Saved worker conversation is unavailable; restore it or start a replacement worker.",
+      );
     const release = await this.gate.acquire();
     this.options.onSetup?.(launch.task.id);
     try {
@@ -193,7 +207,11 @@ export class InProcessBackend implements AgentBackend {
       noContextFiles: true,
       extensionFactories: [
         agentExtension(
-          { ...launch.agent, codemode: launch.codemode },
+          {
+            ...launch.agent,
+            codemode: launch.codemode,
+            initialInput: { id: launch.messageId ?? `${launch.task.id}:1`, text: launch.brief },
+          },
           { result: (r) => (result = r) },
         ),
         ...(launch.codemode ? [createCodemodeExtension()] : []),
@@ -211,7 +229,15 @@ export class InProcessBackend implements AgentBackend {
       thinkingLevel: launch.model.thinking as ThinkingLevel,
       modelRuntime: runtime,
       resourceLoader: loader,
-      sessionManager: SessionManager.inMemory(launch.cwd),
+      sessionManager: launch.sessionFile
+        ? existsSync(launch.sessionFile)
+          ? SessionManager.open(launch.sessionFile, undefined, launch.cwd)
+          : (() => {
+              const manager = SessionManager.create(launch.cwd, dirname(launch.sessionFile!));
+              manager.setSessionFile(launch.sessionFile!);
+              return manager;
+            })()
+        : SessionManager.inMemory(launch.cwd),
       settingsManager,
       tools: [...launch.tools, SUBMIT, ...(launch.codemode ? ["codemode"] : [])],
     });
@@ -255,30 +281,22 @@ function attach(
       sink(e);
     }
   });
-  if (live)
-    writes = appendJsonl(launch.transcript!, {
-      role: "user",
-      content: launch.brief,
-      timestamp: Date.now(),
-    }).catch(() => {});
+
   const onAbort = () => void session.abort().catch(() => {});
   if (signal.aborted) onAbort();
   else signal.addEventListener("abort", onAbort, { once: true });
 
   const run = async (): Promise<AgentOutcome> => {
     let error: string | undefined;
+    let disposition: "started" | "queued" | "handled" | undefined;
     try {
-      if (!signal.aborted) await session.prompt(launch.brief, { expandPromptTemplates: false });
-      const last = mapper.lastAssistant;
-      // One reminder in the same session keeps the prompt cache warm.
-      if (
-        !submitted() &&
-        !signal.aborted &&
-        last?.stopReason !== "error" &&
-        last?.stopReason !== "aborted" &&
-        mapper.turns < launch.budgets.maxTurns
-      )
-        await session.prompt(REMINDER, { expandPromptTemplates: false });
+      if (!signal.aborted)
+        await session.prompt("Continue the recorded assignment.", {
+          expandPromptTemplates: false,
+          preflightResult: (value) => {
+            disposition = value;
+          },
+        });
     } catch (e) {
       error = (e as Error).message;
     } finally {
@@ -293,14 +311,14 @@ function attach(
         ? "aborted"
         : error
           ? "error"
-          : "no_result";
+          : "completed";
+    if (launch.sessionFile) await consumedInputs(launch.sessionFile, sink);
     return {
       result,
+      text: finalText(last),
+      disposition,
       stopReason,
       ...(stopReason === "error" && { error }),
-      ...(stopReason === "no_result" && {
-        error: "The agent finished without calling submit_result",
-      }),
       usage,
       turns: mapper.turns,
       toolCalls: mapper.toolCalls,
@@ -311,11 +329,19 @@ function attach(
   let disposed = false;
   return {
     done,
-    async steer(text) {
-      await session.steer(text);
+    async steer(text, messageId = "anonymous") {
+      await session.sendCustomMessage(inputMessage(text, messageId), {
+        triggerTurn: true,
+        deliverAs: "steer",
+      });
+      return "queued";
     },
-    async followUp(text) {
-      await session.followUp(text);
+    async followUp(text, messageId = "anonymous") {
+      await session.sendCustomMessage(inputMessage(text, messageId), {
+        triggerTurn: true,
+        deliverAs: "followUp",
+      });
+      return "queued";
     },
     async abort() {
       await session.abort();

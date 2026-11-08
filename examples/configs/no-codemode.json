@@ -6,8 +6,5 @@
       "thinking": "max"
     }
   },
-  "codemode": false,
-  "limits": {
-    "maxTurns": 120
-  }
+  "codemode": false
 }

@@ -4,13 +4,15 @@
       "id": "scout-contract",
       "agent": "scout",
       "task": "Map the module contracts and integration order from REQUIREMENTS.md. Identify interface risks; cite lines. Do not edit files.",
-      "acceptance": ["Concise actionable findings with file:line evidence."]
+      "acceptance": ["Concise actionable findings with file:line evidence."],
+      "instructions": []
     },
     {
       "id": "scout-tests",
       "agent": "scout",
       "task": "Inspect REQUIREMENTS.md and available files. Identify high-value boundary tests for each module, especially dates, percentile rank, markdown, and CLI exit codes; cite lines. Do not edit files.",
-      "acceptance": ["Concise actionable findings with file:line evidence."]
+      "acceptance": ["Concise actionable findings with file:line evidence."],
+      "instructions": []
     },
     {
       "id": "build-parse",
@@ -21,12 +23,9 @@
         "parse component meets every applicable requirement in REQUIREMENTS.md.",
         "Tests cover normal behavior and boundary/error cases; assigned tests pass."
       ],
-      "ownership": ["src/parse.mjs", "test/parse.test.mjs"],
-      "checks": [
-        {
-          "id": "parse-tests",
-          "argv": ["node", "--test", "test/parse.test.mjs"]
-        }
+      "instructions": [
+        "Requested check (coordinator decides when to run it): {\"id\":\"parse-tests\",\"argv\":[\"node\",\"--test\",\"test/parse.test.mjs\"]}",
+        "Assigned file responsibility: src/parse.mjs, test/parse.test.mjs. Preserve unrelated work."
       ]
     },
     {
@@ -37,7 +36,8 @@
       "task": "Independently review the parse builder artifact against REQUIREMENTS.md and the original acceptance criteria. Read source and engine-run test evidence. Check interface compatibility, boundary cases, failures, and test quality. Approve only when requirements hold; report concrete defects with file:line.",
       "acceptance": [
         "Verdict grounded in actual diff and engine checks; no unresolved substantive defects."
-      ]
+      ],
+      "instructions": []
     },
     {
       "id": "build-summarize",
@@ -48,12 +48,9 @@
         "summarize component meets every applicable requirement in REQUIREMENTS.md.",
         "Tests cover normal behavior and boundary/error cases; assigned tests pass."
       ],
-      "ownership": ["src/summarize.mjs", "test/summarize.test.mjs"],
-      "checks": [
-        {
-          "id": "summarize-tests",
-          "argv": ["node", "--test", "test/summarize.test.mjs"]
-        }
+      "instructions": [
+        "Requested check (coordinator decides when to run it): {\"id\":\"summarize-tests\",\"argv\":[\"node\",\"--test\",\"test/summarize.test.mjs\"]}",
+        "Assigned file responsibility: src/summarize.mjs, test/summarize.test.mjs. Preserve unrelated work."
       ]
     },
     {
@@ -64,7 +61,8 @@
       "task": "Independently review the summarize builder artifact against REQUIREMENTS.md and the original acceptance criteria. Read source and engine-run test evidence. Check interface compatibility, boundary cases, failures, and test quality. Approve only when requirements hold; report concrete defects with file:line.",
       "acceptance": [
         "Verdict grounded in actual diff and engine checks; no unresolved substantive defects."
-      ]
+      ],
+      "instructions": []
     },
     {
       "id": "build-render",
@@ -75,12 +73,9 @@
         "render component meets every applicable requirement in REQUIREMENTS.md.",
         "Tests cover normal behavior and boundary/error cases; assigned tests pass."
       ],
-      "ownership": ["src/render.mjs", "test/render.test.mjs"],
-      "checks": [
-        {
-          "id": "render-tests",
-          "argv": ["node", "--test", "test/render.test.mjs"]
-        }
+      "instructions": [
+        "Requested check (coordinator decides when to run it): {\"id\":\"render-tests\",\"argv\":[\"node\",\"--test\",\"test/render.test.mjs\"]}",
+        "Assigned file responsibility: src/render.mjs, test/render.test.mjs. Preserve unrelated work."
       ]
     },
     {
@@ -91,7 +86,8 @@
       "task": "Independently review the render builder artifact against REQUIREMENTS.md and the original acceptance criteria. Read source and engine-run test evidence. Check interface compatibility, boundary cases, failures, and test quality. Approve only when requirements hold; report concrete defects with file:line.",
       "acceptance": [
         "Verdict grounded in actual diff and engine checks; no unresolved substantive defects."
-      ]
+      ],
+      "instructions": []
     },
     {
       "id": "build-cli",
@@ -102,17 +98,10 @@
         "cli component meets every applicable requirement in REQUIREMENTS.md.",
         "Tests cover normal behavior and boundary/error cases; assigned tests pass."
       ],
-      "ownership": ["bin/relay.mjs", "test/cli.test.mjs"],
-      "checks": [
-        {
-          "id": "cli-tests",
-          "argv": ["node", "--test", "test/cli.test.mjs"]
-        },
-        {
-          "id": "expected-report",
-          "argv": ["node", "verify.mjs"],
-          "timeoutMs": 30000
-        }
+      "instructions": [
+        "Requested check (coordinator decides when to run it): {\"id\":\"cli-tests\",\"argv\":[\"node\",\"--test\",\"test/cli.test.mjs\"]}",
+        "Requested check (coordinator decides when to run it): {\"id\":\"expected-report\",\"argv\":[\"node\",\"verify.mjs\"],\"timeoutMs\":30000}",
+        "Assigned file responsibility: bin/relay.mjs, test/cli.test.mjs. Preserve unrelated work."
       ]
     },
     {
@@ -123,24 +112,12 @@
       "task": "Independently review the cli builder artifact against REQUIREMENTS.md and the original acceptance criteria. Read source and engine-run test evidence. Check interface compatibility, boundary cases, failures, and test quality. Approve only when requirements hold; report concrete defects with file:line.",
       "acceptance": [
         "Verdict grounded in actual diff and engine checks; no unresolved substantive defects."
-      ]
+      ],
+      "instructions": []
     }
   ],
   "approval": "Running this job authorizes the bounded Relay implementation and its Node checks in this disposable repository. Inspect and integrate the reviewed changes separately.",
-  "integratedChecks": [
-    {
-      "id": "all-tests",
-      "argv": ["node", "--test"],
-      "timeoutMs": 30000
-    },
-    {
-      "id": "expected-report",
-      "argv": ["node", "verify.mjs"],
-      "timeoutMs": 30000
-    }
-  ],
   "config": {
-    "reviewPolicy": "required",
     "models": {
       "scout": {
         "provider": "REPLACE_WITH_APPROVED_PROVIDER",
@@ -160,15 +137,6 @@
     },
     "setup": false,
     "mode": "observe",
-    "limits": {
-      "concurrency": 3,
-      "costUsd": 2,
-      "taskMs": 300000,
-      "jobMs": 1200000,
-      "maxTurns": 35,
-      "maxToolCalls": 100,
-      "repairs": 2
-    },
     "fallbacks": {
       "scout": [],
       "builder": [],
@@ -178,6 +146,9 @@
   },
   "cwd": ".",
   "instructions": [
-    "Implement REQUIREMENTS.md using only this exercise repository. Do not install packages, access the network, stage, commit, push, or publish. Preserve verify.mjs and expected-report.md."
-  ]
+    "Implement REQUIREMENTS.md using only this exercise repository. Do not install packages, access the network, stage, commit, push, or publish. Preserve verify.mjs and expected-report.md.",
+    "Coordinator destination check intent (not engine-enforced): [{\"id\":\"all-tests\",\"argv\":[\"node\",\"--test\"],\"timeoutMs\":30000},{\"id\":\"expected-report\",\"argv\":[\"node\",\"verify.mjs\"],\"timeoutMs\":30000}]"
+  ],
+  "schemaVersion": 3,
+  "workspace": "shared"
 }

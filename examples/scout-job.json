@@ -18,7 +18,10 @@
         "Explain the current output for a name with surrounding spaces.",
         "Suggest the smallest regression test without claiming to have run it."
       ],
-      "agent": "scout"
+      "agent": "scout",
+      "instructions": []
     }
-  ]
+  ],
+  "schemaVersion": 3,
+  "workspace": "shared"
 }

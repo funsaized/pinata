@@ -88,7 +88,7 @@ export class FakeBackend implements AgentBackend {
       await sleep(script.latencyMs ?? 0, stop);
       for (const event of script.events ?? defaultEvents(script.usage ?? {})) {
         if (stop.aborted) break;
-        if (event.t === "turn_start") turns++;
+        if (event.t === "turn_start") turns = Math.max(turns, event.turn);
         if (event.t === "tool_start") toolCalls++;
         if (event.t === "message_end") usage = addUsage(usage, event.usage);
         sink(event);

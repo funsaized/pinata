@@ -2,137 +2,86 @@
 
 **Pi stays small. Your subagent system should too.**
 
-Piñata is a fast, extensible subagent framework for
-[Pi](https://github.com/earendil-works/pi). Ask Pi to split a change between builders and add reviewers where useful. Pinata coordinates the tasks and brings back
-changes, findings, and checks you can inspect.
-
-piñata ships only three agent definitions: scout, builder, and reviewer. Add your own agents and tools as your workflow grows.
-
-Pi keeps the harness small and lets you make it yours. Pinata follows that lead.
-
-[![piñata: small core, parallel agents](media/pinata-hero-v2.png)](media/pinata-demo.mp4)
-
-## Install
-
-Run in your terminal:
+Pinata is a small, extensible worker runtime for [Pi](https://github.com/earendil-works/pi).
+The coordinator chooses the work, testing, review, follow-ups and integration.
+Pinata supplies execution, communication, workspaces, persistence and visibility.
 
 ```sh
 pi install npm:pi-pinata
 ```
 
-Reload Pi. You need Pi 1.1.0+, Node 22.19+ (for the `pinata` cli), and Git. [Herdr](https://herdr.dev/) is optional. Piñata works on Linux, macOS, and Windows.
-See [platform setup](docs/how-to/platforms.md) for more detail.
+Reload Pi. Use Pi 1.1.0+, Node 22.19+, and Linux, macOS or Windows. Git is needed
+for isolated worktrees and patch operations; ordinary shared work also runs outside Git.
+[Herdr](https://herdr.dev/) is optional.
 
-By default, Pinata's built-in agents use the current Pi
-model. Agent model definitions can be set in
-`~/.pi/agent/pinata.json` (personal), `.pi/pinata.json` (repository), or a job's
-`config`. Tasks and agent definitions can also specify models; see [model
-configuration](docs/reference/config.md#models) for precedence and fallbacks.
+## Delegate ordinary work
 
-## Try it
+Ask Pi to send two scouts, split an implementation between builders, or review a change.
+Workers use the current shared checkout by default. Their edits are immediately visible.
+Assign file responsibilities in the task; the coordinator handles overlapping edits.
 
-Ask Pi in plain language:
-
-```text
-Send two scouts out in parallel, one on the retry logic and one on its tests.
-Bring back the relevant files, assumptions, and tests.
+```json
+{
+  "background": true,
+  "tasks": [
+    {
+      "id": "api",
+      "agent": "builder",
+      "task": "Implement the API in src/api.ts; preserve unrelated edits."
+    },
+    {
+      "id": "ui",
+      "agent": "builder",
+      "task": "Implement the UI in src/ui.ts; coordinate API assumptions with the parent."
+    },
+    {
+      "id": "experiment",
+      "agent": "builder",
+      "workspace": "worktree",
+      "task": "Explore an alternative parser in isolation."
+    }
+  ]
+}
 ```
 
-Or try a focused fix or review:
+Use `pinata_run` with `run` to add workers. Send `pinata_steer` with `as: "followUp"`
+to queue another assignment or continue a finished worker in its original context and
+workspace. Each assignment has its own ID and saved result. Background assignment
+completions resume the coordinator; yield when waiting, or use `pinata_wait`.
 
-```text
-/pinata-fix Correct the seconds-to-milliseconds conversion in src/duration.mjs.
-```
+A finished assignment returns control. It does not certify correctness. Ordinary final
+responses, failed checks, negative review findings and optional structured reports remain
+available. The coordinator runs project checks and decides what to do next. There are no
+production spend, turn, tool-call, repair, concurrency or worker/run time limits.
+Usage and elapsed time are observations. Explicit cancellation stops owned activity and
+preserves edits.
 
-```text
-/pinata-review Focus on the error handling.
-```
+## Optional isolation
 
-Pi can choose agents, write their briefs, and set dependencies. Follow the [first-run
-tutorial](docs/tutorials/first-run.md) for a guided start.
+Set `workspace: "worktree"` on a worker or run for Git patch isolation. Follow-ups reuse
+the same frozen workspace. `pinata_changes` exposes saved snapshots independently of run
+success. `pinata_integrate` applies selected snapshots with conflict checks and a journal,
+without staging or committing. Subsequent applications use the delta since the previously
+applied snapshot. Shared edits need no application step.
 
-## How it works
+Application requires a quiescent destination. Pinata writers and application share a
+cross-process checkout gate. External editors and escaped processes must also be quiet;
+worktrees and tool guards are not an operating-system sandbox.
 
-A run contains tasks, their agents, dependencies, and any file ownership and checks. Piñata
-orchestrates the DAG: independent tasks run in parallel; dependent tasks wait for their inputs. The
-included agents cover three common roles, and can be tailored to your liking:
+## Customize and inspect
 
-- **Scout** maps the relevant code and returns a brief.
-- **Builder** makes an assigned change in a separate Git worktree.
-- **Reviewer** examines a specific change and its evidence.
+Shipped definitions are scout, builder and reviewer. Add ordinary Markdown definitions
+with separate tool/access capabilities and workspace preferences. Models default to the
+current Pi model. Personal, project and run configuration layers can override them.
+`lean` and `observe` select visibility, independently of workspace or quality workflow.
+In-process, process, detached and Herdr workers use one engine and event model.
 
-Pinata jobs have a defined schema, so Pi or another capable coding agent can read the
-[job format](docs/how-to/headless.md#write-a-job-file), inspect your repository, and turn
-a plan for your goal into a job with ownership, dependencies, checks, and independent review.
-Pinata runs the tasks and configured checks and
-records the results; your coordinator agent invoking pinata decides what to do next, including any repairs.
+- [First run](docs/tutorials/first-run.md) · [Tools](docs/reference/tools.md)
+- [Configuration](docs/reference/config.md) · [Agent definitions](docs/how-to/agents.md)
+- [Headless jobs](docs/how-to/headless.md) · [Recovery](docs/how-to/recover.md)
+- [Architecture](docs/explanation/architecture.md) · [Trust](docs/explanation/trust.md)
+- [Version 3 migration](docs/reference/migration.md) · [Testing](docs/maintainers/testing.md)
 
-Independent review is optional by default for new runs. Set
-`config.reviewPolicy: "required"` for strict review of every writer. Assigned reviews
-always remain binding, and legacy saved runs keep their review requirements.
-Passing checks, ownership, exact evidence and conflict protection still apply.
-Background failures can reach the coordinator before unrelated work finishes;
-repairs and integration remain its decisions. A saved deadline bounds the whole run.
-
-[Build and review](docs/tutorials/build-and-review.md) walks through the process.
-
-Worktrees keep patches separate from your checkout, but they are not security sandboxes.
-Shell commands and custom tools have your operating-system permissions and network
-access. Read [trust and safety](docs/explanation/trust.md) before authorizing work.
-
-Save the plan as a job file and you can run it from a terminal or CI (outside of pi) with
-`pinata run job.json`.
-
-Headless writer runs apply successful changes and run destination checks automatically.
-Use `--no-apply` to keep the artifacts separate, then `pinata integrate <run>` to apply
-them later. See [headless runs](docs/how-to/headless.md), or use the
-[goal-to-job prompt](examples/jobs.md#let-a-coordinator-design-the-job) to have a
-coordinator design a plan for your repository. Browse the
-[job patterns for delivery, research, UX, accessibility, and data pipelines](examples/jobs.md#where-jobs-help).
-
-## Make it yours
-
-Agents are reusable Markdown definitions with instructions, tools, workspace, and
-optional model defaults. For example, save this as `.pi/pinata/agents/api-scout.md`:
-
-```markdown
----
-schemaVersion: 1
-name: api-scout
-description: Map an API and its tests.
-workspace: live-readonly
-tools: [read, grep, find, ls]
-output:
-  require: [brief]
----
-
-Find the API's entry points, callers, error handling, and tests. Return a brief
-with file references and unanswered questions.
-```
-
-Ask Pi to use `api-scout` on a specific API. Personal definitions live in
-the global `.pi` dir or on a per-repo basis in `.pi`.
-
-Set repository limits, fallbacks, backends, and custom
-tool providers in `.pi/pinata.json`. See [creating agents](docs/how-to/agents.md) and the [configuration
-reference](docs/reference/config.md).
-
-Pinata uses Pi's sessions, models, tools, and extensions. You can watch and steer agents
-in Pi, inspect saved runs, and choose process or Herdr backends when they suit your
-setup. [Watching agents](docs/tutorials/watching-agents.md) and
-[backends](docs/how-to/backends.md) show how.
-
-## Documentation
-
-- **Learn:** [First run](docs/tutorials/first-run.md), [build and review](docs/tutorials/build-and-review.md),
-  [Relay walkthrough](docs/tutorials/relay.md)
-- **Do:** [Create agents](docs/how-to/agents.md), [run headless](docs/how-to/headless.md),
-  [recover a run](docs/how-to/recover.md)
-- **Look up:** [Tools](docs/reference/tools.md), [commands](docs/reference/commands.md),
-  [configuration](docs/reference/config.md)
-- **Understand:** [Why Pinata?](docs/explanation/why-pinata.md),
-  [architecture](docs/explanation/architecture.md), [trust and safety](docs/explanation/trust.md)
-
-The [documentation index](docs/README.md) has the full list, including maintainer docs.
-
-MIT licensed.
+Version 3 changes the worker contract. Convert older jobs, configs and definitions with
+`pinata migrate <input> --output <new-file>` before executing them. Historical logs and
+saved patches remain readable; old verification claims remain historical.

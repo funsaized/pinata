@@ -179,3 +179,31 @@ test(".worktreeinclude copies ignored local files into a builder worktree", asyn
     assert.deepEqual(await copyIncluded(root, tree.path), [], "symlinks are not copied");
   }
 });
+
+test("continuation reuses a committed worktree while retaining its original capture base", async (t) => {
+  const { dir, root, git } = await repo(t);
+  const base = git("rev-parse", "HEAD").trim();
+  const path = join(dir, "continued");
+  const tree = await Worktree.create(root, path, base);
+  await writeFile(join(path, "a.txt"), "committed worker change\n");
+  const { git: workerGit } = gitRepo(path);
+  workerGit("add", "a.txt");
+  workerGit(
+    "-c",
+    "user.name=Fixture",
+    "-c",
+    "user.email=fixture@example.invalid",
+    "commit",
+    "-qm",
+    "worker checkpoint",
+  );
+  await tree.capture();
+  const resumed = await Worktree.create(root, path, base);
+  assert.equal(resumed.baseCommit, base);
+  assert.deepEqual(
+    (await resumed.capture()).changes.map((change) => change.path),
+    ["a.txt"],
+  );
+  assert.equal(workerGit("show", "HEAD:a.txt"), "committed worker change\n");
+  await resumed.remove();
+});

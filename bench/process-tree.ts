@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
 
 // A timeout/abort also closes local pipe ends: an exited utility can otherwise
@@ -117,6 +118,38 @@ export async function terminateProcessTree(
     // Keep parents alive until their descendants have been signalled so PPID
     // discovery cannot lose them through reparenting during normal cleanup.
     for (const child of [...descendants].reverse()) attemptSignal(child, "SIGKILL");
+  }
+  // Signalling is asynchronous. Confirm termination before returning cleanup ownership.
+  const until = Date.now() + 2000;
+  for (;;) {
+    const running = await Promise.all(
+      [...descendants].map(async (child) => {
+        if (process.platform === "linux") {
+          const status = await readFile(`/proc/${child}/stat`, "utf8").catch(
+            (error: NodeJS.ErrnoException) => {
+              if (error.code === "ENOENT" || error.code === "ESRCH") return "";
+              throw error;
+            },
+          );
+          return status !== "" && !/\)\s+Z/.test(status);
+        }
+        const status = await runCleanupCommand(
+          "ps",
+          ["-o", "stat=", "-p", String(child)],
+          options.signal,
+        ).catch((error: { code?: number }) => {
+          if (error.code === 1) return "";
+          throw error;
+        });
+        return status.trim() !== "" && !status.trim().startsWith("Z");
+      }),
+    );
+    if (!running.some(Boolean)) break;
+    if (Date.now() >= until) {
+      errors.push(new Error("Process cleanup could not confirm every descendant stopped"));
+      break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
   }
   if (errors.length) throw new AggregateError(errors, errors.map(String).join("; "));
 }

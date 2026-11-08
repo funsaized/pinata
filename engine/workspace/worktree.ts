@@ -1,10 +1,9 @@
-// Builder worktrees: `git worktree add --detach <recorded-path> <base>`. A dependent
-// builder starts from a commit that already contains its predecessors' verified changes,
-// composed with git plumbing (temporary index, update-index, write-tree, commit-tree).
+// Isolated workspaces preserve a frozen capture base across assignments. Explicit
+// input snapshots are composed with Git plumbing before initial creation.
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import type { ChangeSet, Workspace } from "../core/types.ts";
 import { capture, writeTree, ZERO, type Change } from "./changes.ts";
 import { git, line, zsplit } from "./git.ts";
@@ -96,7 +95,7 @@ export class Worktree implements Workspace {
     this.captureIndex = join(gitDir, "pinata-capture-index");
   }
 
-  // Creates the worktree, or reuses it when it already exists at this base (repairs).
+  // Reuse the recorded checkout without resetting edits or commits made by earlier work.
   static async create(
     root: string,
     path: string,
@@ -107,7 +106,15 @@ export class Worktree implements Workspace {
     const existing = await git(path, ["rev-parse", "HEAD"], { allowFailure: true, signal }).catch(
       () => "",
     );
-    if (line(existing) !== baseCommit) {
+    if (line(existing)) {
+      const common = line(await git(path, ["rev-parse", "--git-common-dir"], { signal }));
+      const expected = line(await git(root, ["rev-parse", "--git-common-dir"], { signal }));
+      if (resolve(path, common) !== resolve(root, expected))
+        throw new WorktreeError(`Recorded workspace belongs to another repository: ${path}`);
+      const top = line(await git(path, ["rev-parse", "--show-toplevel"], { signal }));
+      if (resolve(top) !== resolve(path))
+        throw new WorktreeError(`Recorded workspace is not a checkout root: ${path}`);
+    } else {
       await mkdir(dirname(path), { recursive: true, mode: 0o700 });
       await git(root, ["worktree", "add", "--detach", path, baseCommit], { signal });
     }
@@ -158,7 +165,7 @@ export class Worktree implements Workspace {
     );
   }
 
-  // A builder must not move HEAD (commits are the coordinator's).
+  // Historical diagnostic; capture continues to compare against the frozen base.
   async headMoved(signal?: AbortSignal): Promise<boolean> {
     return line(await git(this.path, ["rev-parse", "HEAD"], { signal })) !== this.baseCommit;
   }

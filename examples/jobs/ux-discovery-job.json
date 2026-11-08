@@ -4,13 +4,7 @@
     "Install the optional planner definition. Supply the named research files as text with stable, anonymized session/case IDs.",
     "This read-only job analyzes existing evidence and code. It does not recruit participants, collect analytics, operate a browser, or establish that a design is usable."
   ],
-  "config": {
-    "limits": {
-      "concurrency": 3,
-      "costUsd": 10,
-      "repairs": 2
-    }
-  },
+  "config": {},
   "tasks": [
     {
       "id": "interviews",
@@ -19,7 +13,8 @@
       "acceptance": [
         "Separate what participants said or did from interpretations and proposed solutions.",
         "Retain contradictory cases; do not invent participants, quotes, or prevalence estimates."
-      ]
+      ],
+      "instructions": []
     },
     {
       "id": "support",
@@ -28,7 +23,8 @@
       "acceptance": [
         "Cite case IDs and source locations; distinguish duplicate tickets from independent reports.",
         "Explain sampling limits rather than equating ticket counts with population frequency."
-      ]
+      ],
+      "instructions": []
     },
     {
       "id": "journey",
@@ -37,7 +33,8 @@
       "acceptance": [
         "Cite code and notes for each friction point.",
         "Label source-based usability hypotheses separately from actual observed user behavior."
-      ]
+      ],
+      "instructions": []
     },
     {
       "id": "synthesis",
@@ -47,7 +44,8 @@
         "Each finding links observations, interpretation, affected journey stage, proposed change, and confidence.",
         "Include counterevidence and explain prioritization by user impact and evidence strength."
       ],
-      "after": ["interviews", "support", "journey"]
+      "after": ["interviews", "support", "journey"],
+      "instructions": []
     },
     {
       "id": "challenge",
@@ -57,7 +55,8 @@
         "Cite source locations for corrections and counterexamples.",
         "Return unresolved research questions even when the synthesis seems plausible."
       ],
-      "after": ["interviews", "support", "journey", "synthesis"]
+      "after": ["interviews", "support", "journey", "synthesis"],
+      "instructions": []
     },
     {
       "id": "backlog",
@@ -68,7 +67,10 @@
         "Define participant tasks and success signals for real usability evaluation; do not claim an agent simulated a user study.",
         "Separate implementation-ready items from questions needing further research. Return the backlog in the task result."
       ],
-      "after": ["interviews", "support", "journey", "synthesis", "challenge"]
+      "after": ["interviews", "support", "journey", "synthesis", "challenge"],
+      "instructions": []
     }
-  ]
+  ],
+  "schemaVersion": 3,
+  "workspace": "shared"
 }

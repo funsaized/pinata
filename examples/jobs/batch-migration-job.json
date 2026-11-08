@@ -3,16 +3,10 @@
   "instructions": [
     "Install the optional planner definition before running this job.",
     "Template for an npm-workspace repository with an approved logging migration recipe and an existing scripts/check-logging-migration.mjs that exits nonzero on legacy calls.",
-    "The replacement logger dependency is already available. Adapt the explicit package list, ownership, and commands before running."
+    "The replacement logger dependency is already available. Adapt the explicit package list, ownership, and commands before running.",
+    "Coordinator destination check intent (not engine-enforced): [{\"id\":\"all-workspaces\",\"argv\":[\"npm\",\"test\",\"--workspaces\"],\"timeoutMs\":600000},{\"id\":\"migration-scan\",\"argv\":[\"node\",\"scripts/check-logging-migration.mjs\",\"packages/accounts\",\"packages/orders\",\"packages/notifications\"],\"timeoutMs\":180000}]"
   ],
-  "config": {
-    "reviewPolicy": "required",
-    "limits": {
-      "concurrency": 3,
-      "costUsd": 20,
-      "repairs": 2
-    }
-  },
+  "config": {},
   "tasks": [
     {
       "id": "inventory",
@@ -21,7 +15,8 @@
       "acceptance": [
         "List call sites, existing tests, and behavior to preserve for each package.",
         "Identify shared helpers or dependency changes that need a separate prerequisite job."
-      ]
+      ],
+      "instructions": []
     },
     {
       "id": "migrate-accounts",
@@ -33,18 +28,10 @@
         "No shared manifest, lockfile, or other package changes."
       ],
       "after": ["inventory"],
-      "ownership": ["packages/accounts"],
-      "checks": [
-        {
-          "id": "package-tests",
-          "argv": ["npm", "test", "--workspace", "packages/accounts"],
-          "timeoutMs": 180000
-        },
-        {
-          "id": "migration-scan",
-          "argv": ["node", "scripts/check-logging-migration.mjs", "packages/accounts"],
-          "timeoutMs": 180000
-        }
+      "instructions": [
+        "Requested check (coordinator decides when to run it): {\"id\":\"package-tests\",\"argv\":[\"npm\",\"test\",\"--workspace\",\"packages/accounts\"],\"timeoutMs\":180000}",
+        "Requested check (coordinator decides when to run it): {\"id\":\"migration-scan\",\"argv\":[\"node\",\"scripts/check-logging-migration.mjs\",\"packages/accounts\"],\"timeoutMs\":180000}",
+        "Assigned file responsibility: packages/accounts. Preserve unrelated work."
       ]
     },
     {
@@ -56,7 +43,8 @@
         "Approve only when the assigned change meets its acceptance criteria and its available check evidence supports it."
       ],
       "after": ["migrate-accounts", "inventory"],
-      "reviewOf": "migrate-accounts"
+      "reviewOf": "migrate-accounts",
+      "instructions": []
     },
     {
       "id": "migrate-orders",
@@ -68,18 +56,10 @@
         "No shared manifest, lockfile, or other package changes."
       ],
       "after": ["inventory"],
-      "ownership": ["packages/orders"],
-      "checks": [
-        {
-          "id": "package-tests",
-          "argv": ["npm", "test", "--workspace", "packages/orders"],
-          "timeoutMs": 180000
-        },
-        {
-          "id": "migration-scan",
-          "argv": ["node", "scripts/check-logging-migration.mjs", "packages/orders"],
-          "timeoutMs": 180000
-        }
+      "instructions": [
+        "Requested check (coordinator decides when to run it): {\"id\":\"package-tests\",\"argv\":[\"npm\",\"test\",\"--workspace\",\"packages/orders\"],\"timeoutMs\":180000}",
+        "Requested check (coordinator decides when to run it): {\"id\":\"migration-scan\",\"argv\":[\"node\",\"scripts/check-logging-migration.mjs\",\"packages/orders\"],\"timeoutMs\":180000}",
+        "Assigned file responsibility: packages/orders. Preserve unrelated work."
       ]
     },
     {
@@ -91,7 +71,8 @@
         "Approve only when the assigned change meets its acceptance criteria and its available check evidence supports it."
       ],
       "after": ["migrate-orders", "inventory"],
-      "reviewOf": "migrate-orders"
+      "reviewOf": "migrate-orders",
+      "instructions": []
     },
     {
       "id": "migrate-notifications",
@@ -103,18 +84,10 @@
         "No shared manifest, lockfile, or other package changes."
       ],
       "after": ["inventory"],
-      "ownership": ["packages/notifications"],
-      "checks": [
-        {
-          "id": "package-tests",
-          "argv": ["npm", "test", "--workspace", "packages/notifications"],
-          "timeoutMs": 180000
-        },
-        {
-          "id": "migration-scan",
-          "argv": ["node", "scripts/check-logging-migration.mjs", "packages/notifications"],
-          "timeoutMs": 180000
-        }
+      "instructions": [
+        "Requested check (coordinator decides when to run it): {\"id\":\"package-tests\",\"argv\":[\"npm\",\"test\",\"--workspace\",\"packages/notifications\"],\"timeoutMs\":180000}",
+        "Requested check (coordinator decides when to run it): {\"id\":\"migration-scan\",\"argv\":[\"node\",\"scripts/check-logging-migration.mjs\",\"packages/notifications\"],\"timeoutMs\":180000}",
+        "Assigned file responsibility: packages/notifications. Preserve unrelated work."
       ]
     },
     {
@@ -126,7 +99,8 @@
         "Approve only when the assigned change meets its acceptance criteria and its available check evidence supports it."
       ],
       "after": ["migrate-notifications", "inventory"],
-      "reviewOf": "migrate-notifications"
+      "reviewOf": "migrate-notifications",
+      "instructions": []
     },
     {
       "id": "batch-summary",
@@ -144,26 +118,11 @@
         "review-orders",
         "migrate-notifications",
         "review-notifications"
-      ]
+      ],
+      "instructions": []
     }
   ],
   "approval": "Replace with your authorization for migration of accounts, orders, and notifications within their package directories and local validation",
-  "integratedChecks": [
-    {
-      "id": "all-workspaces",
-      "argv": ["npm", "test", "--workspaces"],
-      "timeoutMs": 600000
-    },
-    {
-      "id": "migration-scan",
-      "argv": [
-        "node",
-        "scripts/check-logging-migration.mjs",
-        "packages/accounts",
-        "packages/orders",
-        "packages/notifications"
-      ],
-      "timeoutMs": 180000
-    }
-  ]
+  "schemaVersion": 3,
+  "workspace": "shared"
 }

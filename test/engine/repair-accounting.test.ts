@@ -1,336 +1,53 @@
 import assert from "node:assert/strict";
-import { readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
 import test from "node:test";
-import { FakeBackend, fakeResult } from "../../engine/backends/fake.ts";
-import { agentFiles, followDetached } from "../../engine/backends/process.ts";
-import type { AgentBackend } from "../../engine/backends/types.ts";
 import { createEngine } from "../../engine/core/engine.ts";
-import { fromSnapshot, reduce, replayView } from "../../engine/core/view.ts";
-import { readEvents, replay } from "../../engine/core/store.ts";
-import { addUsage, ZERO_USAGE, type AgentEvent, type Usage } from "../../engine/core/types.ts";
-import { fakeEngine, spec, tempDir } from "./helpers.ts";
-
-const usage: Usage = {
-  input: 100,
-  output: 20,
-  cacheRead: 30,
-  cacheWrite: 40,
-  totalTokens: 190,
-  cost: 0.2,
-};
-const sum = (events: AgentEvent[]) =>
-  events.reduce(
-    (total, e) => (e.t === "agent_settled" ? addUsage(total, e.usage) : total),
-    ZERO_USAGE,
-  );
-
-for (const mode of ["lean", "observe"] as const) {
-  for (const legacy of [false, true]) {
-    test(`${mode}: detached outbox replay survives repeated crashes${legacy ? " with legacy logs" : ""}`, async (t) => {
-      const dir = await tempDir(t);
-      const message = {
-        type: "message_end",
-        message: {
-          role: "assistant",
-          content: [],
-          provider: "fake",
-          model: "fake",
-          stopReason: "stop",
-          usage: { ...usage, cost: { total: usage.cost } },
-        },
-      };
-      const raw = [
-        { type: "turn_start" },
-        message,
-        { type: "tool_execution_start", toolCallId: "result", toolName: "submit_result", args: {} },
-        {
-          type: "tool_execution_end",
-          toolCallId: "result",
-          toolName: "submit_result",
-          result: { details: { pinataResult: fakeResult() } },
-          isError: false,
-        },
-        { type: "agent_settled" },
-      ];
-      let tail = false;
-      const half = {
-        ...message,
-        message: {
-          ...message.message,
-          usage: {
-            ...Object.fromEntries(Object.entries(usage).map(([key, n]) => [key, n / 2])),
-            cost: { total: usage.cost / 2 },
-          },
-        },
-      };
-      const backend: AgentBackend = {
-        kind: "fake",
-        async start(launch, sink, signal) {
-          return this.reattach!(launch, sink, signal).then((handle) => handle!);
-        },
-        async reattach(launch, sink, signal) {
-          // Use the actual detached reader, but no model process or provider.
-          const files = { ...(await agentFiles(launch)), events: join(dir, "outbox.jsonl") };
-          const records = tail
-            ? [
-                ...raw.slice(0, -1),
-                { type: "turn_start" },
-                half,
-                { type: "turn_start" },
-                half,
-                { type: "pinata_user_input", text: "Check again" },
-                raw.at(-1),
-              ]
-            : raw;
-          await writeFile(files.events, records.map((e) => JSON.stringify(e)).join("\n") + "\n");
-          return followDetached(
-            files,
-            { pid: 2147483647, started: "absent-test-process" },
-            launch,
-            sink,
-            signal,
-            undefined,
-            0,
-          );
-        },
-      };
-      const make = () => createEngine({ backends: { fake: backend }, defaultBackend: "fake" });
-      let handle = await make().run([spec("a")], { dir: join(dir, "run"), cwd: dir, mode });
-      await handle.done;
-      // No clean detach/consumed.json, including a second crash after resuming.
-      for (let crash = 0; crash < 4; crash++) {
-        tail = crash >= 2;
-        const kept = (await readEvents(handle.dir))
-          .filter((e) => !["agent_settled", "run_settled"].includes(e.t))
-          .map((e) => {
-            if (legacy) {
-              const { source: _source, ...rest } = e;
-              return rest;
-            }
-            return e;
-          });
-        await writeFile(
-          join(handle.dir, "events.jsonl"),
-          kept.map((e) => JSON.stringify(e)).join("\n") + "\n",
-        );
-        handle = await make().resume(handle.dir, {
-          cwd: dir,
-          limits: { costUsd: crash === 2 ? 0.5 : 0.3 },
-        });
-        const view = await handle.done;
-        assert.deepEqual(view.usage, tail ? addUsage(usage, usage) : usage);
-        assert.equal(view.status, crash === 3 ? "cancelled" : "succeeded");
-        assert.equal(view.agents.a.turns, tail ? 3 : 1);
-        assert.equal(view.agents.a.toolCalls, 1);
-        assert.deepEqual(await replay(handle.dir), view);
-      }
-    });
-  }
-}
-
-test("repair preserves every attempt's spend and counters in views, snapshots, and settlement events", async (t) => {
-  const { engine, run } = await fakeEngine(t, () => ({ usage }));
+import { FakeBackend } from "../../engine/backends/fake.ts";
+import { replay } from "../../engine/core/store.ts";
+import { fakeEngine, spec } from "./helpers.ts";
+test("usage accumulates once across assignments and settled reattachment", async (t) => {
+  const { engine, run } = await fakeEngine(t, {
+    a: { usage: { input: 2, output: 3, totalTokens: 5, cost: 2 } },
+  });
   const handle = await run([spec("a")]);
   await handle.done;
-  for (let n = 2; n <= 3; n++) {
-    engine.repair(handle.id, "a", "Recheck independently");
-    const view = await handle.done;
-    const total = Array.from({ length: n }).reduce<Usage>(
-      (acc) => addUsage(acc, usage),
-      ZERO_USAGE,
-    );
-    assert.deepEqual(view.usage, total);
-    assert.deepEqual(view.agents.a.usage, total);
-    assert.equal(view.agents.a.turns, n);
-    assert.equal(view.agents.a.toolCalls, n);
-    assert.deepEqual(await replay(handle.dir), view);
-    assert.deepEqual(engine.snapshot(handle.id), view);
-    const events = await readEvents(handle.dir);
-    assert.deepEqual(sum(events), total);
-    for (let cut = 0; cut <= events.length; cut++) {
-      const snapshot = fromSnapshot(replayView(events.slice(0, cut)));
-      assert.deepEqual(events.slice(cut).reduce(reduce, snapshot), view);
-    }
-    assert.deepEqual((events.at(-1) as Extract<AgentEvent, { t: "run_settled" }>).usage, total);
-    // Results remain the latest attempt's evidence, never cumulative billing receipts.
-    assert.deepEqual(handle.results().get("a")?.usage, usage);
-  }
-});
-
-test("repair resets per-attempt limits while the aggregate cost limit retains earlier spend", async (t) => {
-  const { engine, run } = await fakeEngine(t, () => ({ usage }));
-  const handle = await run([spec("a")], { limits: { maxTurns: 1, maxToolCalls: 1, costUsd: 0.3 } });
-  assert.equal((await handle.done).status, "succeeded");
-  engine.repair(handle.id, "a", "Recheck");
-  const view = await handle.done;
-  assert.equal(view.status, "cancelled");
-  assert.equal(view.agents.a.reason, "cost limit reached");
-  assert.deepEqual(view.usage, addUsage(usage, usage));
-  assert.equal(view.agents.a.turns, 2);
-});
-
-test("failed repair and never-started blocked dependents keep earlier spend", async (t) => {
-  let fail = false;
-  const { engine, run } = await fakeEngine(t, (launch) => ({
-    usage,
-    result:
-      launch.task.id === "review"
-        ? fakeResult({ review: { taskId: "a", fingerprint: "f", verdict: "approve" } })
-        : fakeResult(),
-    ...(fail && { error: "fixture failure" }),
-  }));
-  const handle = await run(
-    [
-      spec("a", "builder", { ownership: ["x"], noChecksReason: "fixture" }),
-      spec("review", "reviewer", { after: ["a"], reviewOf: "a" }),
-    ],
-    { allowWrites: true },
-  );
+  await engine.steer(handle.id, "a", "next", "followUp");
   await handle.done;
-  const before = handle.view().usage;
-  fail = true;
-  engine.repair(handle.id, "a", "Try again");
-  const view = await handle.done;
-  assert.equal(view.status, "failed");
-  assert.equal(view.agents.review.status, "blocked");
-  assert.deepEqual(view.usage, addUsage(before, usage));
-  assert.deepEqual(view.usage, sum(await readEvents(handle.dir)));
+  assert.equal(handle.view().usage.cost, 4);
+  assert.equal(handle.view().agents.a.turns, 2);
+  assert.deepEqual(await replay(handle.dir), handle.view());
+  const next = createEngine({ backends: { fake: new FakeBackend({ a: { usage: { cost: 3 } } }) } });
+  const restored = await next.resume(handle.dir, { settled: true });
+  await next.steer(restored.id, "a", "third", "followUp");
+  await restored.done;
+  assert.equal(restored.view().usage.cost, 7);
+  assert.equal(restored.view().agents.a.assignments?.[1].usage.cost, 2);
+  await next.shutdown("done");
 });
 
-test("rehydration and lost-agent rerun retain already observed usage without a usage tick", async (t) => {
-  const { backend, run } = await fakeEngine(t, () => ({ usage }));
-  const handle = await run([spec("a")], { mode: "observe" });
-  await handle.done;
-  const events = await readEvents(handle.dir);
-  // A crash after the assistant response, before a throttled usage tick or settlement.
-  const kept = events.filter((e) => !["usage", "agent_settled", "run_settled"].includes(e.t));
-  await writeFile(
-    join(handle.dir, "events.jsonl"),
-    kept.map((e) => JSON.stringify(e)).join("\n") + "\n",
-  );
-  const engine = createEngine({ backends: { fake: backend }, defaultBackend: "fake" });
-  const resumed = await engine.resume(handle.dir, { cwd: handle.dir });
-  const lost = await resumed.done;
-  assert.equal(lost.agents.a.status, "cancelled");
-  assert.deepEqual(lost.usage, usage);
-  engine.rerun(resumed.id);
-  const view = await resumed.done;
-  assert.deepEqual(view.usage, addUsage(usage, usage));
-  assert.equal(view.agents.a.turns, 2);
-  assert.deepEqual(await replay(handle.dir), view);
-  assert.deepEqual(
-    JSON.parse(await readFile(join(handle.dir, "results/a.json"), "utf8")).usage,
-    usage,
-  );
-});
-
-for (const emitTail of [true, false]) {
-  test(`reattachment accounts ${emitTail ? "live tail" : "outcome-only"} spend once and enforces aggregate cost`, async (t) => {
-    const { run, backend } = await fakeEngine(t, () => ({ usage }));
-    const handle = await run([spec("a"), spec("after", "scout", { after: ["a"] })], {
-      mode: "observe",
-    });
-    await handle.done;
-    const events = await readEvents(handle.dir);
-    const started = events.findIndex((e) => e.t === "agent_started" && e.agent === "after");
-    const kept = events
-      .slice(0, started)
-      .filter((e) => e.t !== "run_settled" && e.t !== "agent_settled" && e.t !== "usage");
-    await writeFile(
-      join(handle.dir, "events.jsonl"),
-      kept.map((e) => JSON.stringify(e)).join("\n") + "\n",
-    );
-    const tail: FakeBackend &
-      Pick<import("../../engine/backends/types.ts").AgentBackend, "reattach"> = new FakeBackend(
-      () => (emitTail ? { usage } : { events: [] }),
-    );
-    tail.reattach = async (launch, sink, signal) => {
-      const attached = await tail.start({ ...backend.starts[0].launch, ...launch }, sink, signal);
-      return {
-        ...attached,
-        done: attached.done.then((outcome) => ({
-          ...outcome,
-          usage: addUsage(usage, usage),
-          turns: 2,
-          toolCalls: 2,
-        })),
-      };
-    };
-    const engine = createEngine({ backends: { fake: tail }, defaultBackend: "fake" });
-    const resumed = await engine.resume(handle.dir, { cwd: handle.dir, limits: { costUsd: 0.3 } });
-    const view = await resumed.done;
-    assert.equal(view.status, "cancelled");
-    assert.equal(view.agents.after.status, "cancelled");
-    assert.deepEqual(view.usage, addUsage(usage, usage));
-    assert.equal(view.agents.a.turns, 2);
-    assert.equal(view.agents.a.toolCalls, 2);
-    assert.deepEqual(await replay(handle.dir), view);
-    assert.deepEqual(view.usage, sum(await readEvents(handle.dir)));
+test("interrupted active work stays uncertain and known consumed messages are never re-enqueued", async (t) => {
+  const { engine, run, backend } = await fakeEngine(t, { a: { hang: true } });
+  const handle = await run([spec("a")]);
+  while (!backend.starts.length) await new Promise((resolve) => setTimeout(resolve, 1));
+  await engine.steer(handle.id, "a", "durably recorded payload", "steer", "parent", "consumed-id");
+  await engine.shutdown("interrupted", { detach: () => true });
+  const resumedBackend = new FakeBackend();
+  const recovered = Object.assign(resumedBackend, {
+    consumed: async () => [{ message: "consumed-id", checkpoint: "conversation#entry" }],
   });
-}
-
-for (const mode of ["lean", "observe"] as const) {
-  test(`${mode}: explicit settled loading preserves repair budget and evidence until repair`, async (t) => {
-    const world = await fakeEngine(t);
-    const handle = await world.run([spec("build")], { mode, limits: { repairs: 1 } });
-    await handle.done;
-    await assert.rejects(world.engine.resume(handle.dir), /has settled/);
-    const make = () =>
-      createEngine({ backends: { fake: new FakeBackend() }, defaultBackend: "fake" });
-    let engine = make();
-    let loaded = await engine.resume(handle.dir, { settled: true, limits: { repairs: 1 } });
-    assert.equal((await loaded.done).status, "succeeded");
-    assert.equal((await readEvents(handle.dir)).filter((e) => e.t === "agent_started").length, 1);
-    engine.repair(handle.id, "build", "Check again");
-    await loaded.done;
-    engine = make();
-    loaded = await engine.resume(handle.dir, { settled: true, limits: { repairs: 1 } });
-    assert.throws(() => engine.repair(handle.id, "build", "Again"), /Repair budget exhausted/);
-    assert.equal((await loaded.done).status, "succeeded");
-  });
-}
-
-test("settled loading does not bypass a stopped run", async (t) => {
-  const world = await fakeEngine(t, { build: { hang: true } });
-  const handle = await world.run([spec("build")]);
-  world.engine.cancel(handle.id);
-  await handle.done;
-  const engine = createEngine({ backends: { fake: new FakeBackend() }, defaultBackend: "fake" });
-  await assert.rejects(engine.resume(handle.dir, { settled: true }), /run was stopped/);
-});
-
-test("a saved failed task repairs with its blocked review and accumulated usage", async (t) => {
-  const world = await fakeEngine(t, { build: { result: fakeResult({ status: "failed" }), usage } });
-  const handle = await world.run(
-    [
-      spec("build", "builder", { ownership: ["README.md"], noChecksReason: "fixture" }),
-      spec("review", "reviewer", { after: ["build"], reviewOf: "build" }),
-    ],
-    { allowWrites: true, limits: { costUsd: 1 } },
+  const next = createEngine({ backends: { fake: recovered } });
+  const restored = await next.resume(handle.dir);
+  await restored.done;
+  assert.equal(restored.view().agents.a.status, "uncertain");
+  const retry = await next.steer(
+    restored.id,
+    "a",
+    "durably recorded payload",
+    "steer",
+    "parent",
+    "consumed-id",
   );
-  const before = await handle.done;
-  assert.equal(before.agents.build.status, "failed");
-  assert.equal(before.agents.review.status, "blocked");
-  const backend = new FakeBackend();
-  const engine = createEngine({ backends: { fake: backend }, defaultBackend: "fake" });
-  const loaded = await engine.resume(handle.dir, { settled: true, limits: { costUsd: 1 } });
-  assert.deepEqual(loaded.results().get("build"), handle.results().get("build"));
-  assert.deepEqual(engine.repair(handle.id, "build", "Fix the failed check"), ["build", "review"]);
-  const after = await loaded.done;
-  assert.equal(after.status, "succeeded");
-  assert.equal(after.usage.cost, before.usage.cost);
-  assert.deepEqual(
-    backend.starts.map((s) => s.task),
-    ["build", "review"],
-  );
-});
-
-test("loading a settled run cannot reset its accumulated cost budget", async (t) => {
-  const world = await fakeEngine(t, { build: { usage } });
-  const handle = await world.run([spec("build")], { limits: { costUsd: usage.cost } });
-  await handle.done;
-  const engine = createEngine({ backends: { fake: new FakeBackend() }, defaultBackend: "fake" });
-  await engine.resume(handle.dir, { settled: true, limits: { costUsd: usage.cost } });
-  assert.throws(() => engine.repair(handle.id, "build", "Try again"), /Cost limit reached/);
+  assert.equal(retry.state, "consumed");
+  assert.equal(recovered.starts.length, 0);
+  assert.equal(recovered.steers.length, 0);
+  await next.shutdown("done");
 });

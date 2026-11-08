@@ -1,13 +1,5 @@
 {
   "models": {},
   "codemode": true,
-  "limits": {
-    "concurrency": 3,
-    "taskMs": 1200000,
-    "jobMs": 5400000,
-    "repairs": 2,
-    "maxTurns": 60,
-    "maxToolCalls": 400
-  },
   "passEnv": []
 }

@@ -3,7 +3,7 @@ import { chmod, mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
-import { nativeInvocation, executeNative, pinataIntegrated } from "../../arena/adapters/native.ts";
+import { nativeInvocation, executeNative, pinataDelegated } from "../../arena/adapters/native.ts";
 import { tasks } from "../../arena/corpus/index.ts";
 import { runArena } from "../../arena/runner.ts";
 import { readAdapterRequest } from "../../arena/adapters/protocol.ts";
@@ -50,8 +50,8 @@ test("native invocation sends the whole task and enables Codex subagents with ma
   const pinata = nativeInvocation("pinata", req);
   assert.ok(pinata.args.some((arg) => arg.endsWith("arena/adapters/coordinator.ts")));
   assert.ok(pinata.prompt!.includes("pinata_integrate"));
-  assert.ok(pinata.prompt!.includes("finish your current response promptly"));
-  assert.ok(pinata.prompt!.includes("corrected run with the remaining time"));
+  assert.ok(pinata.prompt!.includes("Yield when no actionable work remains"));
+  assert.ok(pinata.prompt!.includes("A failed worker or review never hides its changes"));
   const input = JSON.parse(pinata.input!);
   assert.equal(input.type, "prompt");
   assert.equal(
@@ -60,7 +60,7 @@ test("native invocation sends the whole task and enables Codex subagents with ma
     "RPC receives the same operational guidance retained in the prompt",
   );
   assert.ok(
-    pinata.prompt!.includes('"reviewer":{"provider":"openai","id":"gpt-6-luna","thinking":"max"}'),
+    pinata.prompt!.includes('"default":{"provider":"openai","id":"gpt-6-luna","thinking":"max"}'),
   );
   assert.throws(() => nativeInvocation("codex", { ...req, workflow: "sequential" }), /native/);
   assert.throws(
@@ -70,20 +70,23 @@ test("native invocation sends the whole task and enables Codex subagents with ma
   );
 });
 
-test("Piñata completion requires observed successful run then verified integration", () => {
-  const event = (toolName: string, status: string, isError = false) =>
-    JSON.stringify({
-      type: "tool_execution_end",
-      toolName,
-      isError,
-      result: { details: { result: { status } } },
-    });
-  const run = event("pinata_run", "succeeded");
-  const integrate = event("pinata_integrate", "verified");
-  assert.equal(pinataIntegrated(run), false);
-  assert.equal(pinataIntegrated(integrate + "\n" + run), false);
-  assert.equal(pinataIntegrated(run + "\n" + event("pinata_integrate", "verified", true)), false);
-  assert.equal(pinataIntegrated(run + "\n" + integrate), true);
+test("delegation evidence is separate from candidate correctness and integration", () => {
+  const event = JSON.stringify({
+    type: "tool_execution_end",
+    toolName: "pinata_run",
+    result: { details: { result: { run: "r", status: "running" } } },
+  });
+  assert.equal(pinataDelegated(event), true);
+  assert.equal(
+    pinataDelegated(
+      JSON.stringify({
+        type: "tool_execution_end",
+        toolName: "pinata_integrate",
+        result: { details: { result: { status: "applied" } } },
+      }),
+    ),
+    false,
+  );
 });
 
 test("native external run retains failures, scores mock implementation and round-trips reports without model calls", async (t) => {
@@ -232,9 +235,7 @@ test("canceling native run stops its process and leaves queued trials unstarted"
   );
   await chmod(mock, 0o755);
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 700);
-  t.after(() => clearTimeout(timer));
-  const batch = await runArena({
+  const pending = runArena({
     out: join(root, "results"),
     tasks: [tasks[0]!],
     workflows: ["native"],
@@ -249,6 +250,17 @@ test("canceling native run stops its process and leaves queued trials unstarted"
       timeoutMs: 10000,
     },
   });
+  t.after(async () => {
+    controller.abort();
+    await pending.catch(() => {});
+  });
+  const startDeadline = Date.now() + 10000;
+  while (!(await readFile(marker, "utf8").catch(() => ""))) {
+    if (Date.now() > startDeadline) throw new Error("Native fixture did not start");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  controller.abort();
+  const batch = await pending;
   assert.equal(await readFile(marker, "utf8"), "started");
   assert.equal(batch.results[0]!.status, "failed");
   assert.ok(batch.results[0]!.errors.some((error) => /cancel/i.test(error)));

@@ -1,12 +1,14 @@
 // Process supervision for agents in their own processes: identity (pid + the OS's start
 // time, so a reused pid is never mistaken for an agent), liveness, and stopping a process
 // with everything it started.
+import { hostname } from "node:os";
 import { execFile, type ChildProcess } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { killTree } from "../verify/checks.ts";
 
 export interface ProcessIdentity {
   pid: number;
+  host?: string;
   // The OS's record of when the process started (format differs per OS; compared verbatim).
   started: string;
 }
@@ -50,11 +52,12 @@ export async function processStart(pid: number): Promise<string | null> {
 
 export async function identify(pid: number): Promise<ProcessIdentity | null> {
   const started = await processStart(pid);
-  return started ? { pid, started } : null;
+  return started ? { pid, started, host: hostname() } : null;
 }
 
 // True only for the same process: same pid and the same start time.
 export async function alive(identity: ProcessIdentity): Promise<boolean> {
+  if ((identity.host && identity.host !== hostname()) || !identity.started) return true;
   return (await processStart(identity.pid)) === identity.started;
 }
 
@@ -93,6 +96,10 @@ export async function stopChild(child: ChildProcess, graceMs = KILL_GRACE_MS): P
 
 // Stops a process known only by identity (a detached agent from an earlier Pi).
 export async function stopIdentity(identity: ProcessIdentity, graceMs = KILL_GRACE_MS) {
+  if ((identity.host && identity.host !== hostname()) || !identity.started)
+    throw new Error(
+      "Process owner is remote or uncertain; reconcile its host and owned activity before releasing the workspace lease",
+    );
   if (!(await alive(identity))) return;
   if (process.platform !== "win32") {
     try {

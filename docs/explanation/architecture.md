@@ -1,154 +1,67 @@
 # Architecture
 
-A run is a set of tasks and their dependencies. Pi turns your request into those
-tasks; Pinata schedules the agents, prepares their workspaces, and checks what
-they return. Pi decides what to do with the results and when to apply changes.
+The coordinator owns workflow. Pinata owns workers, assignment ordering, messages,
+workspaces, cancellation, usage observations and recovery evidence.
 
-## One engine, three surfaces
+## One engine, multiple surfaces
 
-The engine in `engine/core` has no Pi dependency. It starts tasks once their
-predecessors succeed, enforces run limits, and emits events. A pure reducer turns
-those events into the state shown by the widget, detail view, `/pinata`, terminal
-viewer, `pinata logs`, and headless reporter.
+`engine/core` has no Pi imports. The Pi extension, headless host, detached workers,
+Herdr, IPC clients and viewers share its event model and reducer. Agent definitions
+contain reusable instructions and separate access/tool capabilities from workspace mode.
 
-The event stream is also the run log. Replaying it reconstructs a finished run
-or lets a new host resume unfinished work.
+A worker has a stable ID, resolved definition/model/backend and frozen workspace.
+Its FIFO assignments have monotonically increasing IDs. An `after` worker name resolves
+to that worker's latest accepted assignment when the dependent is added. Explicit
+`{worker, assignment}` references select earlier work. FIFO and dependency edges are
+validated together. Completion orders execution; negative assessments and process
+failures are passed as information and do not block descendants. Follow-ups never
+retarget edges or replay descendants.
 
-The pipeline in `engine/pi/pipeline.ts` connects the engine to Pi. For each agent,
-it chooses a model, prepares the workspace, writes the task brief, and verifies
-the result.
+## Context and durable messages
 
-## Backends
+The run store records messages before dispatch and acknowledgment. Each record retains
+ID, target assignment, kind and payload. Dispatch intent, actual disposition and
+conversation consumption are distinct. Pi session custom-message metadata carries the
+message ID; a persisted session entry provides the consumption checkpoint. Text equality
+and queue acceptance do not establish consumption. Retrying an ID identifies the same
+request. Unknown in-flight execution remains uncertain; arbitrary tool effects are never
+promised exactly once or silently replayed.
 
-- **in-process**: the agent is a Pi SDK session inside your Pi, sharing its model
-  connections. Setting one up takes a millisecond or two, and agents set up one at a time
-  until each sends its first request, so a burst of agents does not wait for all of them.
-- **process**: a `pi --mode rpc` child per agent, read through its JSON event stream.
-- **herdr-pi**: an interactive Pi in a Herdr pane, whose agent extension writes the same
-  event records to a file.
+Persistent Pi sessions restore worker context between assignments. Finished live sessions
+are disposed. Process workers share the same saved conversation file across assignments,
+with separate assignment outboxes. Unsupported or missing context requires an explicit
+replacement or reconciliation.
 
-Agents that must outlive Pi run detached: their events go to a file that any later Pi (or a
-headless host) can follow, and the host steers them through a control file.
-When a run resumes, Pinata reconnects to any running workers before preparing
-their workspaces. This lets it stop workers and recover their usage even if the run
-has expired or been cancelled.
+## Workspaces and optional application
 
-## Agents
+Shared is the built-in default. A shared worker edits the current authorized checkout;
+its diff is shared state and cannot establish exclusive authorship. Worktree selection
+freezes a Git base and path. Explicit `inputs` compose selected saved isolated snapshots.
+Dependencies alone do not copy workspace content. Worktrees survive failures and
+cancellation. No verification policy controls snapshot visibility.
 
-An agent definition contains reusable instructions and defaults. A task gives it
-one assignment. Before launching an agent, the Pi adapter finds the definition,
-resolves its model and tools, and saves a snapshot. The core receives the resolved
-data. You manage definitions and tasks; the adapter loads the Markdown and discovers
-extensions.
+Application captures stable Git objects, validates paths, modes and destination state,
+and records writes in a recovery journal. Cursors identify the last applied snapshot by
+worker, assignment and destination; follow-ups apply incremental deltas. The destination
+gate excludes application from Pinata-controlled writable assignments across runs and
+processes, through preparation and owned activity teardown. It does not serialize shared
+workers with one another. External editors do not participate.
 
-Every agent loads `engine/agent`. This extension registers `submit_result` with the
-definition's result contract and guards every tool call, including calls from
-codemode scripts. It refuses tools outside the allowlist.
+## Storage and observability
 
-The workspace mode determines whether an agent reads the live checkout, writes in
-an isolated worktree, or reviews a specific target. The agent's name selects a
-definition; permissions come from that definition's capabilities. Agents with the
-same definition and tool configuration receive byte-identical system prompts.
-Their briefs carry the individual assignments.
+Git runs use `<git common dir>/pinata/<run>`. Non-Git work uses
+`<canonical workspace>/.pinata/runs/<run>`; all surfaces use the same resolver.
+`run.json` schema 3 records workspace/store paths, definitions, models and resume data.
+`events.jsonl` uses schema 2, with a run sequence and assignment identity.
+`assignments/<worker>/<number>.json` and `results/<worker>/<number>.json` preserve history.
+`inbox/`, `sessions/`, `transcripts/` and `integration/` retain transport and recovery data.
+Lifecycle and usage persist in lean mode; observe mode adds detailed activity and telemetry.
+Status uses compact excerpts and pagination, while full results remain on disk.
 
-The shipped presets are scout, builder, and reviewer. Planner and researcher are ordinary
-definitions in `examples/agents`, activated by copying them into a discovery directory.
-The parent composes the workflow and owns integration. Pinata supplies execution,
-workspace modes, evidence, and visibility.
+Background notifications have stable run/worker/assignment IDs. Reattachment deduplicates
+known deliveries without suppressing later assignments. A crash after sending and before
+marking delivery can repeat the same notification ID.
 
-## Scheduling and bounds
-
-Ready tasks share a concurrency limiter that accounts for each provider's rate
-limits. Dispatch rotates between runs. Worktree preparation has a separate limit
-of two concurrent tasks, keeping dependency installation within that limit.
-
-Results are limited to 128 KiB, dependency summaries share a 32 KiB budget, and
-compact status results use pagination. Full evidence stays on disk. Definition and
-context caches have size limits. Slow viewers receive a fresh snapshot or disconnect
-before their output queues grow indefinitely. Completed run history still uses
-memory until its host exits.
-
-## Workspaces
-
-Readers read your live checkout, so they see uncommitted work; a reader whose checkout
-changed while it worked is flagged (`checkoutChanged`). Builders work in a git worktree
-created from a snapshot of your checkout when the run started (uncommitted and untracked
-files included); a dependent builder starts from its predecessors' verified changes.
-
-## Verification and integration
-
-When a builder finishes, Pinata:
-
-1. Captures its changes as a Git tree.
-2. Checks ownership and compares the actual changes with the builder's report.
-3. Runs the configured checks and fingerprints the result.
-4. Gives any assigned reviewer that exact change and its check evidence.
-
-Independent review is optional for new runs. In required mode, each writer needs
-a reviewer before work starts. Older runs with no saved policy still require review.
-In either mode, an assigned reviewer must approve the change. Passing checks alone
-does not mean a change has been independently reviewed.
-
-The reviewer's verdict is tied to the fingerprint and original base and result.
-Private Git refs retain those commits and trees. `pinata_changes` exports them for
-the coordinator even if the destination's HEAD has since moved.
-
-The coordinator chooses when to integrate. `pinata_integrate` checks each file's
-starting contents, records its writes in a journal, applies the patches without
-staging them, and runs destination checks. Conflicts go back to the coordinator.
-
-Headless writer jobs call the same integrator automatically after task success.
-`--no-apply` or `integration: "manual"` leaves delivery for later; `pinata integrate`
-applies a saved run without Pi. The host saves this choice and the starting branch.
-Resume preserves the choice, and integration refuses a branch switch.
-
-`pinata_verify` runs destination checks separately. It records HEAD, the content
-tree, check results, and whether the recorded changes are present exactly.
-Builder reviews still apply to their original patches; a combined or reconciled
-change does not inherit independent review. A per-checkout lock coordinates
-destination changes across Pinata processes. External Git commands and editors
-operate outside this lock.
-
-## Storage
-
-Run records live in `<git common dir>/pinata/<run>`, in private directories (0700):
-
-| Path                       | Contents                                              |
-| -------------------------- | ----------------------------------------------------- |
-| `events.jsonl`             | The run's event log.                                  |
-| `run.json`                 | Saved configuration, definitions, and worktree paths. |
-| `results/`, `transcripts/` | Task results and agent conversations.                 |
-| `handoffs/<digest>/`       | Checked artifacts exported for integration.           |
-| `verification/<attempt>/`  | Destination check results and logs.                   |
-| `integration/journal.json` | The record of applied changes used for rollback.      |
-
-Agents running in separate processes also save per-agent files here.
-
-Working checkouts live separately at `<worktreeRoot>/<repository-id>/<run>/<task>`;
-see [worktree location](../reference/config.md#worktree-location) for platform defaults.
-The absolute paths are frozen in `run.json`'s `resume.data.prep.worktreePaths` before
-agents start. Resume and repair reuse them even if configuration changes. Records
-without saved paths use `<run>/worktrees/<task>`; existing worktrees are not moved.
-
-The `run.json` record uses schema version 2 and contains a table of agent definitions keyed
-by digest. Tasks reference that table; `run_started` carries the same snapshots. Resume,
-repair, and rerun use saved definitions even if local files change or disappear. Required
-extension entry-file hashes are checked before new launches. Dependencies and external
-services remain outside the snapshot. See [events](../reference/events.md).
-
-## Shared instructions and time limits
-
-A host can provide instructions for every worker in a run. Pinata saves them with
-the run and includes them in worker briefs, including during resume and repair.
-
-Each new run has a saved wall-clock deadline. Preparation, work, checks, repairs,
-and destination operations all count against it.
-
-Individual tasks and checks can specify specific, shorter limits. Time accumulates across operations: resume and repair do not reset the clock. See
-[run limits](../reference/config.md#saved-review-policy-and-deadlines) for details.
-
-## Background results
-
-Background runs notify the coordinator when a task fails or a reviewer requests
-changes, even if other work is still running. The coordinator can then decide whether to repair, cancel, or start a new run. A repaired run also sends a new
-final result when it finishes.
+There is no built-in acceptance, review, repair or resource-budget state machine.
+Tests and arena supervisors can bound their own experiments externally. Production
+workers stop on completion, explicit cancellation, host shutdown or backend/provider error.

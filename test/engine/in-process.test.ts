@@ -17,7 +17,7 @@ const submit = (
       status: "succeeded",
       summary: `${turn.agent} done`,
       changedFiles: [],
-      checks: [],
+
       findings: [],
       blockers: [],
       ...(turn.role !== "builder" && turn.role !== "reviewer" && { brief: `${turn.agent} brief` }),

@@ -1,24 +1,23 @@
-import { reviewPolicy, type ReviewPolicy } from "../core/policy.ts";
 // Pinata configuration layers: ~/.pi/agent/pinata.json, then
-// <repo>/.pi/pinata.json, then the run's own config. models, fallbacks and limits merge per
+// <repo>/.pi/pinata.json, then the run's own config. models, fallbacks and tool providers merge per
 // entry; other keys are replaced whole.
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { BACKENDS, type BackendKind, type Mode, type ModelRef } from "../core/types.ts";
 import {
-  BACKENDS,
-  type BackendKind,
-  type Limits,
-  type Mode,
-  type ModelRef,
-} from "../core/types.ts";
-import { checkedKeys, need, strings, validateLimits, validateModel } from "../core/validate.ts";
+  checkedKeys,
+  need,
+  strings,
+  migrationError,
+  workspaceMode,
+  validateModel,
+} from "../core/validate.ts";
 
 export interface PinataConfig {
-  reviewPolicy: ReviewPolicy;
+  workspace: import("../core/types.ts").WorkspaceMode;
   models: Partial<Record<string, ModelRef>>;
   fallbacks: Partial<Record<string, ModelRef[]>>;
-  limits: Limits;
   toolProviders: Record<string, { extension: string; tools: string[] }>;
   passEnv: string[];
   webExtension?: string;
@@ -40,13 +39,12 @@ export const RETIRED: Record<string, string> = {
 };
 
 const KEYS = [
-  "reviewPolicy",
+  "workspace",
   "models",
   "toolProviders",
   "fallbacks",
   "passEnv",
   "webExtension",
-  "limits",
   "setup",
   "worktreeRoot",
   "codemode",
@@ -55,26 +53,11 @@ const KEYS = [
   "backend",
   ...Object.keys(RETIRED),
 ];
-const MERGED = ["models", "fallbacks", "limits", "toolProviders"];
-
-// Ignored limits: emit a notice and remove them before validation.
-const RETIRED_LIMITS: Record<string, string> = {
-  startupMs: "config.limits.startupMs is ignored: agents need no pane or worker startup window.",
-};
-
-function currentLimits(limits: unknown, notices: string[]): unknown {
-  if (!limits || typeof limits !== "object" || Array.isArray(limits)) return limits ?? {};
-  const out = { ...(limits as Record<string, unknown>) };
-  for (const key of Object.keys(RETIRED_LIMITS))
-    if (key in out) {
-      notices.push(RETIRED_LIMITS[key]);
-      delete out[key];
-    }
-  return out;
-}
+const MERGED = ["models", "fallbacks", "toolProviders"];
 
 export function validateConfig(input: unknown = {}): { config: PinataConfig; notices: string[] } {
   const value = input ?? {};
+  migrationError(value, ["limits", "reviewPolicy", "deadlineAt"], "config");
   checkedKeys(value, KEYS, "config");
   const v = value as Record<string, any>;
   const notices = Object.keys(RETIRED)
@@ -130,11 +113,10 @@ export function validateConfig(input: unknown = {}): { config: PinataConfig; not
     need(typeof v.webExtension === "string" && v.webExtension, "webExtension must be a path");
   return {
     config: {
-      reviewPolicy: reviewPolicy(v.reviewPolicy),
+      workspace: workspaceMode(v.workspace),
       models: v.models ?? {},
       toolProviders: v.toolProviders ?? {},
       fallbacks: v.fallbacks ?? {},
-      limits: validateLimits(currentLimits(v.limits, notices)),
       passEnv: v.passEnv ?? [],
       ...(v.webExtension && { webExtension: v.webExtension }),
       ...(v.setup !== undefined && { setup: v.setup }),

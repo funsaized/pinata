@@ -224,7 +224,7 @@ test("the streaming tail and recent tools stay bounded", () => {
 test("event validation rejects malformed socket input", () => {
   const ok = { v: 1, seq: 0, run: "r", at: 1, t: "checkout_changed", agent: "a" };
   assert.equal(validateEvent(ok), ok);
-  assert.throws(() => validateEvent({ ...ok, v: 2 }), /schema version/);
+  assert.throws(() => validateEvent({ ...ok, v: 99 }), /schema version/);
   assert.throws(() => validateEvent({ ...ok, t: "bogus" }), /Unknown event type/);
   assert.throws(() => validateEvent({ ...ok, agent: "../x" }), /agent/);
   assert.throws(() => validateEvent({ ...ok, seq: -1 }), /seq/);

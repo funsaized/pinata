@@ -105,15 +105,6 @@ const config = validateConfig({
   worktreeRoot: join(base, "worktrees"),
   codemode: cfg.codemode !== false,
   setup: false,
-  limits: {
-    concurrency: 3,
-    taskMs: 180_000,
-    jobMs: 600_000,
-    maxTurns: 20,
-    maxToolCalls: 100,
-    repairs: 1,
-    ...cfg.limits,
-  },
 }).config;
 
 console.log(
@@ -188,7 +179,6 @@ async function runCase(name: string, tasks: TaskSpec[], seeded = false) {
       id,
       cwd,
       dir: join(cwd, ".git", "pinata", id),
-      limits: config.limits,
       allowWrites: true,
       data: {
         definitions: resolved.definitions,
@@ -200,7 +190,16 @@ async function runCase(name: string, tasks: TaskSpec[], seeded = false) {
         prep,
       },
     });
-    const view = await handle.done;
+    const timeout = setTimeout(
+      () => void engine.cancel(handle.id, undefined, "quality harness timeout"),
+      600_000,
+    );
+    let view;
+    try {
+      view = await handle.done;
+    } finally {
+      clearTimeout(timeout);
+    }
     report.run = handle.dir;
     for (const task of tasks) {
       const agent = view.agents[task.id];
@@ -223,7 +222,7 @@ async function runCase(name: string, tasks: TaskSpec[], seeded = false) {
         ...(task.role === "scout" ? { claims: scoreClaims(settled?.result?.brief) } : {}),
       });
       if (task.role === "builder" && agent.status === "succeeded") {
-        const worktree = (settled!.data as any).worktree;
+        const worktree = (settled!.data as any)?.worktree ?? cwd;
         const tested = spawnSync(node, [join(HERE, "oracle.mjs"), worktree], {
           encoding: "utf8",
           timeout: 10_000,
@@ -278,8 +277,7 @@ for (let trial = 1; trial <= trials; trial++) {
         "Every parser requirement holds, including invalid calendar dates, early years, zero and unsafe values.",
         "Existing and regression tests pass.",
       ],
-      ownership: ["parse.mjs", "parse.test.mjs"],
-      checks: [check],
+      instructions: [`Run ${JSON.stringify(check.argv)} and report actual outcomes.`],
     },
     reviewTask("review", "build"),
   ]);
@@ -299,8 +297,7 @@ for (let trial = 1; trial <= trials; trial++) {
                 "Implement every parser requirement in README.md.",
                 "Existing tests pass.",
               ],
-              ownership: ["parse.mjs"],
-              checks: [check],
+              instructions: [`Run ${JSON.stringify(check.argv)} and report actual outcomes.`],
             },
             reviewTask("review", "build"),
           ],

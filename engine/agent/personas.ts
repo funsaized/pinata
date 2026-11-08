@@ -20,7 +20,7 @@ export function personaText(role: Role, dir = PROMPTS): string {
   text = text.replace(/\$\{@:-([^}]*)\}/g, "$1").replace(/\$\{@\}/g, "the assigned task");
   text = text.replace(
     /\nIn a managed pinata run[\s\S]*?(?=\n\n|\s*$)/,
-    "\nIn a managed pinata run, report through the submit_result tool, never as JSON in a message.",
+    "\nIn a managed Pinata run, return a concise final response with checks and blockers. Structured reporting is optional.",
   );
   text = text.trim() + "\n";
   if (dir === PROMPTS) cache.set(role, text);

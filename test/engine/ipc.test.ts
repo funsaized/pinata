@@ -129,7 +129,13 @@ test("a slow viewer that falls behind recovers through a fresh snapshot", async 
     client.on(check);
     check();
   });
-  assert.equal(client.view?.agents.a.steers.length, 1101);
+  assert.equal(client.view?.agents.a.steers.length, 20, "presentation window stays compact");
+  const { RunStore } = await import("../../engine/core/store.ts");
+  assert.equal(
+    (await (await RunStore.open(handle.dir, "lean")).readInbox()).length,
+    1101,
+    "all acknowledged messages remain on disk",
+  );
   await engine.cancel(handle.id);
   await handle.done;
   client.close();

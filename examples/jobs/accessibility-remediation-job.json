@@ -2,16 +2,10 @@
   "cwd": "/absolute/path/to/repository",
   "instructions": [
     "Template for a web repository with recorded checkout findings and existing test:a11y:component and test:a11y:journey scripts. Adapt the paths, behavior requirements, and checks.",
-    "The journey script must build and serve its own worktree, use an isolated port, and clean up. Browser dependencies are already installed; the preset scout and reviewer inspect source and logs only."
+    "The journey script must build and serve its own worktree, use an isolated port, and clean up. Browser dependencies are already installed; the preset scout and reviewer inspect source and logs only.",
+    "Coordinator destination check intent (not engine-enforced): [{\"id\":\"a11y\",\"argv\":[\"npm\",\"run\",\"test:a11y\"],\"timeoutMs\":600000},{\"id\":\"regressions\",\"argv\":[\"npm\",\"test\"],\"timeoutMs\":600000}]"
   ],
-  "config": {
-    "reviewPolicy": "required",
-    "limits": {
-      "concurrency": 3,
-      "costUsd": 20,
-      "repairs": 2
-    }
-  },
+  "config": {},
   "tasks": [
     {
       "id": "audit",
@@ -20,7 +14,8 @@
       "acceptance": [
         "Distinguish recorded human observations, automated findings, and hypotheses from source inspection.",
         "Name required behavior and existing test helpers for both components; identify issues outside their scope."
-      ]
+      ],
+      "instructions": []
     },
     {
       "id": "dialog",
@@ -31,13 +26,9 @@
         "Accessible naming and existing modal behavior are preserved."
       ],
       "after": ["audit"],
-      "ownership": ["src/components/dialog", "test/a11y/dialog.test.mjs"],
-      "checks": [
-        {
-          "id": "component",
-          "argv": ["npm", "run", "test:a11y:component", "--", "test/a11y/dialog.test.mjs"],
-          "timeoutMs": 180000
-        }
+      "instructions": [
+        "Requested check (coordinator decides when to run it): {\"id\":\"component\",\"argv\":[\"npm\",\"run\",\"test:a11y:component\",\"--\",\"test/a11y/dialog.test.mjs\"],\"timeoutMs\":180000}",
+        "Assigned file responsibility: src/components/dialog, test/a11y/dialog.test.mjs. Preserve unrelated work."
       ]
     },
     {
@@ -49,7 +40,8 @@
         "Approve only when the assigned change meets its acceptance criteria and its available check evidence supports it."
       ],
       "after": ["dialog", "audit"],
-      "reviewOf": "dialog"
+      "reviewOf": "dialog",
+      "instructions": []
     },
     {
       "id": "form-field",
@@ -60,13 +52,9 @@
         "Existing validation and correction flows remain functional."
       ],
       "after": ["audit"],
-      "ownership": ["src/components/form-field", "test/a11y/form-field.test.mjs"],
-      "checks": [
-        {
-          "id": "component",
-          "argv": ["npm", "run", "test:a11y:component", "--", "test/a11y/form-field.test.mjs"],
-          "timeoutMs": 180000
-        }
+      "instructions": [
+        "Requested check (coordinator decides when to run it): {\"id\":\"component\",\"argv\":[\"npm\",\"run\",\"test:a11y:component\",\"--\",\"test/a11y/form-field.test.mjs\"],\"timeoutMs\":180000}",
+        "Assigned file responsibility: src/components/form-field, test/a11y/form-field.test.mjs. Preserve unrelated work."
       ]
     },
     {
@@ -78,7 +66,8 @@
         "Approve only when the assigned change meets its acceptance criteria and its available check evidence supports it."
       ],
       "after": ["form-field", "audit"],
-      "reviewOf": "form-field"
+      "reviewOf": "form-field",
+      "instructions": []
     },
     {
       "id": "checkout-journey",
@@ -90,13 +79,9 @@
         "List remaining screen-reader, zoom/reflow, and user evaluation work in the result; report component defects for coordinator repair."
       ],
       "after": ["audit", "dialog", "form-field", "review-dialog", "review-form-field"],
-      "ownership": ["test/a11y/checkout.spec.mjs"],
-      "checks": [
-        {
-          "id": "checkout",
-          "argv": ["npm", "run", "test:a11y:journey", "--", "test/a11y/checkout.spec.mjs"],
-          "timeoutMs": 300000
-        }
+      "instructions": [
+        "Requested check (coordinator decides when to run it): {\"id\":\"checkout\",\"argv\":[\"npm\",\"run\",\"test:a11y:journey\",\"--\",\"test/a11y/checkout.spec.mjs\"],\"timeoutMs\":300000}",
+        "Assigned file responsibility: test/a11y/checkout.spec.mjs. Preserve unrelated work."
       ]
     },
     {
@@ -108,20 +93,11 @@
         "Approve only when the assigned change meets its acceptance criteria and its available check evidence supports it."
       ],
       "after": ["checkout-journey"],
-      "reviewOf": "checkout-journey"
+      "reviewOf": "checkout-journey",
+      "instructions": []
     }
   ],
   "approval": "Replace with your authorization for the declared dialog, form-field, and checkout test changes and local accessibility checks",
-  "integratedChecks": [
-    {
-      "id": "a11y",
-      "argv": ["npm", "run", "test:a11y"],
-      "timeoutMs": 600000
-    },
-    {
-      "id": "regressions",
-      "argv": ["npm", "test"],
-      "timeoutMs": 600000
-    }
-  ]
+  "schemaVersion": 3,
+  "workspace": "shared"
 }

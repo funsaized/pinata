@@ -13,7 +13,6 @@ import {
 import { ModelRegistry, ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { InProcessBackend } from "../../engine/backends/in-process.ts";
 import { createEngine, type RunOptions } from "../../engine/core/engine.ts";
-import { Limiter } from "../../engine/core/limiter.ts";
 import { RuntimeCache } from "../../engine/pi/runtime.ts";
 import { piPipeline, type PipelineStages, type PiRunData } from "../../engine/pi/pipeline.ts";
 import { randomUUID } from "node:crypto";
@@ -146,6 +145,10 @@ export async function fauxWorld(
   respond: (turn: FauxTurn) => AssistantMessage | Promise<AssistantMessage>,
   options: { stages?: PipelineStages; files?: Record<string, string> } = {},
 ) {
+  let engine: ReturnType<typeof createEngine> | undefined;
+  t.after(async () => {
+    await engine?.shutdown("test cleanup");
+  });
   const dir = await tempDir(t, "pinata-faux-");
   const agentDir = join(dir, "agent");
   const repo = join(dir, "repo");
@@ -175,10 +178,9 @@ export async function fauxWorld(
     agentDir,
     repoRoot: repo,
   });
-  const engine = createEngine({
+  engine = createEngine({
     backends: { "in-process": backend },
     pipeline: piPipeline(options.stages ?? verificationStages()),
-    limiter: new Limiter({ cap: 64, initial: 64 }),
   });
   let n = 0;
   const run = async (
@@ -210,7 +212,7 @@ export async function fauxWorld(
       ...opts.data,
     };
     dataOf.set(id, data);
-    return engine.run(tasks, {
+    return engine!.run(tasks, {
       cwd: repo,
       dir: join(dir, "runs", `run-${++n}`),
       ...opts,

@@ -29,7 +29,12 @@ import {
 export interface IpcSource {
   view(): RunView | undefined;
   subscribe(consumer: (event: AgentEvent) => void): () => void;
-  steer(agent: string, text: string, as: "steer" | "followUp"): Promise<void>;
+  steer(
+    agent: string,
+    text: string,
+    as: "steer" | "followUp",
+    messageId?: string,
+  ): Promise<unknown>;
   abort(agent: string): Promise<void>;
   messages(agent: string): Promise<{
     messages: unknown[];
@@ -231,9 +236,16 @@ export class RunServer {
   private async handle(client: Client, frame: ClientFrame): Promise<void> {
     try {
       if (frame.type === "ack") client.acked = Math.max(client.acked, frame.seq);
-      else if (frame.type === "steer")
-        await this.options.source.steer(frame.agent, frame.text, frame.as);
-      else if (frame.type === "abort") await this.options.source.abort(frame.agent);
+      else if (frame.type === "steer") {
+        const receipt = await this.options.source.steer(
+          frame.agent,
+          frame.text,
+          frame.as,
+          frame.messageId,
+        );
+        if (frame.messageId)
+          client.send({ type: "message_ack", messageId: frame.messageId, receipt });
+      } else if (frame.type === "abort") await this.options.source.abort(frame.agent);
       else if (frame.type === "messages")
         client.send({
           type: "messages",
@@ -242,7 +254,11 @@ export class RunServer {
         });
       else throw new ProtocolError(`Unexpected ${frame.type} frame from a viewer`);
     } catch (error) {
-      client.send({ type: "error", message: (error as Error).message });
+      client.send({
+        type: "error",
+        message: (error as Error).message,
+        ...(frame.type === "steer" && frame.messageId && { messageId: frame.messageId }),
+      });
     }
   }
 

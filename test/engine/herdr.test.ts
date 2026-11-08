@@ -104,7 +104,7 @@ const submit = (turn: Turn): Reply => ({
         status: "succeeded",
         summary: "done",
         changedFiles: [],
-        checks: [],
+
         findings: [],
         blockers: [],
         brief: `${turn.agent} brief`,
@@ -134,7 +134,7 @@ test(
     const handle = await world.run([spec("talk")]);
     await until(() => waiting, "the agent's second request");
     const pane = JSON.parse(
-      await readFile(join(handle.dir, "agents", "talk", "pane.json"), "utf8"),
+      await readFile(join(handle.dir, "agents", "talk", "1", "pane.json"), "utf8"),
     ) as PaneResource;
     await herdr(["pane", "send-text", pane.pane_id, "Also list the docs folder"]);
     await herdr(["pane", "send-keys", pane.pane_id, "enter"]);

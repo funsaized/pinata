@@ -27,7 +27,7 @@ const submit = (turn: Turn, extra: Record<string, unknown> = {}): Reply => ({
         status: "succeeded",
         summary: `${turn.agent} done`,
         changedFiles: [],
-        checks: [],
+
         findings: [],
         blockers: [],
         ...(turn.role !== "builder" &&
@@ -136,24 +136,8 @@ for (const [kind, make] of worlds) {
     assert.match(sys("a"), /You are pinata's scout/);
     assert.match(sys("a"), /# pinata agent contract/);
     const brief = world.turns.find((x) => x.agent === "a")!.text;
-    for (const secret of ["deadline", "maxTurns", "taskDigest", "attemptDir", "runId", "limits"])
+    for (const secret of ["deadline", "maxTurns", "taskDigest", "attemptDir", "runId"])
       assert(!brief.includes(secret), `brief mentions ${secret}`);
-  });
-
-  test(`${kind}: a missing result gets one reminder in the same session, then fails`, async (t) => {
-    let reminded = 0;
-    const world = await make(t, (turn) => {
-      if (turn.text.includes("You have not called submit_result yet")) {
-        reminded++;
-        return turn.agent === "late" ? submit(turn) : { text: "Still nothing." };
-      }
-      return { text: "I looked around." };
-    });
-    const view = await (await world.run([spec("late"), spec("never")])).done;
-    assert.equal(view.agents.late.status, "succeeded");
-    assert.equal(view.agents.never.status, "failed");
-    assert.match(view.agents.never.summary!, /without calling submit_result/);
-    assert.equal(reminded, 2);
   });
 
   test(`${kind}: invalid submissions return an error the model can fix`, async (t) => {
@@ -164,30 +148,6 @@ for (const [kind, make] of worlds) {
     });
     const view = await (await world.run([spec("s")])).done;
     assert.equal(view.agents.s.status, "succeeded", JSON.stringify(view.agents));
-  });
-
-  test(`${kind}: budgets stop turns, tool calls, cost and wall clock`, async (t) => {
-    const loop: Script = () => ({
-      toolCalls: [{ name: "read", arguments: { path: "README.md" } }],
-    });
-    const world = await make(t, loop);
-    let view = await (await world.run([spec("a")], { limits: { maxTurns: 3 } })).done;
-    assert.equal(view.agents.a.reason, "turn budget exceeded");
-    view = await (await world.run([spec("b")], { limits: { maxToolCalls: 2 } })).done;
-    assert.equal(view.agents.b.reason, "tool call budget exceeded");
-    const priced = await make(t, loop, { priced: true });
-    view = await (await priced.run([spec("c")], { limits: { costUsd: 1 } })).done;
-    assert.equal(view.agents.c.status, "failed");
-    assert.equal(view.agents.c.reason, "cost limit reached");
-    assert.equal(view.status, "cancelled");
-    assert(view.agents.c.usage.cost > 1);
-    const slow = await make(t, async (turn) => {
-      await new Promise((r) => setTimeout(r, 300));
-      return loop(turn);
-    });
-    view = await (await slow.run([spec("d")], { limits: { taskMs: 100 } })).done;
-    assert.equal(view.agents.d.status, "failed");
-    assert.equal(view.agents.d.reason, "deadline exceeded");
   });
 
   test(`${kind}: steering reaches a running agent; snapshots show its history mid-run`, async (t) => {
@@ -210,7 +170,9 @@ for (const [kind, make] of worlds) {
     const roles = (snapshot.messages as Array<{ role: string }>)
       .map((m) => m.role)
       .filter((r) => r !== "system");
-    assert.deepEqual(roles.slice(0, 3), ["user", "assistant", "toolResult"]);
+    assert(roles.includes("custom"));
+    assert(roles.includes("assistant"));
+    assert(roles.includes("toolResult"));
     await world.engine.steer(handle.id, "scout", "Mention the README title", "steer", "user");
     paused.open();
     const view = await handle.done;
@@ -236,7 +198,10 @@ for (const [kind, make] of worlds) {
     await until(() => waiting, "the first request");
     const pids =
       kind === "herdr-pi"
-        ? [JSON.parse(await readFile(join(handle.dir, "agents", "stuck", "pid.json"), "utf8")).pid]
+        ? [
+            JSON.parse(await readFile(join(handle.dir, "agents", "stuck", "1", "pid.json"), "utf8"))
+              .pid,
+          ]
         : [...(world.backend?.children.values() ?? [])].map((c) => c.pid);
     if (kind !== "in-process") assert.equal(pids.length, 1);
     await world.engine.cancel(handle.id, undefined, "cancelled by the test");
@@ -246,49 +211,6 @@ for (const [kind, make] of worlds) {
     assert.equal(view.agents.stuck.status, "cancelled");
     for (const pid of pids) await until(() => !alive(pid), `pid ${pid} to exit`);
     assert.equal(world.backend?.children.size ?? 0, 0);
-  });
-}
-
-for (const [kind, make] of worlds) {
-  test(`${kind}: a builder writes in its worktree within ownership, and its reviewer approves`, async (t) => {
-    const world = await make(
-      t,
-      (turn) => {
-        if (turn.role === "builder") {
-          if (turn.round === 0)
-            return {
-              toolCalls: [
-                { name: "write", arguments: { path: "a.txt", content: "new\n" } },
-                { name: "write", arguments: { path: "b.txt", content: "not mine\n" } },
-              ],
-            };
-          assert.match(turn.text, /outside this builder's ownership/);
-          return submit(turn, { changedFiles: ["a.txt"] });
-        }
-        return submit(turn, { review: { verdict: "approve" } });
-      },
-      { files: { "a.txt": "old\n", "b.txt": "old\n" } },
-    );
-    const handle = await world.run(
-      [
-        spec("build", "builder", { ownership: ["a.txt"], noChecksReason: "fixture" }),
-        spec("review", "reviewer", { reviewOf: "build", after: ["build"] }),
-      ],
-      { allowWrites: true },
-    );
-    const view = await handle.done;
-    assert.equal(view.status, "succeeded", JSON.stringify(view.agents));
-    assert.equal(view.agents.build.workspace?.kind, "worktree");
-    const saved = JSON.parse(await readFile(join(handle.dir, "results", "build.json"), "utf8"));
-    assert.deepEqual(
-      saved.data.changes.changes.map((c: { path: string }) => c.path),
-      ["a.txt"],
-    );
-    assert.equal(
-      await readFile(join(world.repo, "a.txt"), "utf8"),
-      "old\n",
-      "the checkout is untouched",
-    );
   });
 }
 
@@ -349,5 +271,76 @@ for (const [kind, make] of worlds) {
     assert(world.turns[0].tools.includes("web_search"));
     assert(!world.turns[0].tools.includes("bash"));
     assert.equal(handle.results().get("research")?.result?.sources?.[0].path, "README.md");
+  });
+}
+
+for (const [kind, make] of worlds) {
+  test(`${kind}: final text, durable message consumption and restored follow-up context`, async (t) => {
+    const world = await make(t, (turn) => ({
+      text:
+        turn.round === 0
+          ? "Remember the first assignment"
+          : "Second assignment retained the first context",
+    }));
+    const handle = await world.run([spec("worker")]);
+    await handle.done;
+    assert.equal(handle.results().get("worker")?.summary, "Remember the first assignment");
+    const receipt = await world.engine.steer(
+      handle.id,
+      "worker",
+      "Continue the second assignment",
+      "followUp",
+      "parent",
+      "continuation-id",
+    );
+    assert.equal(receipt.target.assignment, 2);
+    await handle.done;
+    const retry = await world.engine.steer(
+      handle.id,
+      "worker",
+      "Continue the second assignment",
+      "followUp",
+      "parent",
+      "continuation-id",
+    );
+    assert.equal(retry.target.assignment, 2);
+    assert.equal(retry.state, "consumed");
+    assert.match(retry.checkpoint!, /conversation\.jsonl#/);
+    assert.equal(world.turns.length, 2);
+    assert.match(world.turns[1].text, /Remember the first assignment/);
+    const first = JSON.parse(
+      await readFile(join(handle.dir, "results", "worker", "1.json"), "utf8"),
+    );
+    assert.equal(first.summary, "Remember the first assignment");
+  });
+}
+
+for (const [kind, make] of worlds) {
+  test(`${kind}: explicit continuation restores context after cancellation`, async (t) => {
+    const paused = gate();
+    const entered = gate();
+    t.after(paused.open);
+    const world = await make(t, async (turn) => {
+      if (turn.round === 0) return { text: "Original durable context" };
+      if (turn.round === 1) {
+        entered.open();
+        await paused.opened;
+      }
+      return { text: "Continued explicitly" };
+    });
+    const handle = await world.run([spec("worker")]);
+    await handle.done;
+    await world.engine.steer(handle.id, "worker", "Interrupted assignment marker", "followUp");
+    await entered.opened;
+    await world.engine.cancel(handle.id, "worker", "explicit cancellation");
+    paused.open();
+    await handle.done;
+    assert.equal(handle.view().agents.worker.status, "cancelled");
+    await world.engine.steer(handle.id, "worker", "Resume cancelled work explicitly", "followUp");
+    await handle.done;
+    assert.equal(handle.view().agents.worker.status, "succeeded");
+    assert.equal(handle.view().agents.worker.assignment, 3);
+    assert.match(world.turns.at(-1)!.text, /Original durable context/);
+    assert.match(world.turns.at(-1)!.text, /Interrupted assignment marker/);
   });
 }

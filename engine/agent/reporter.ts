@@ -2,6 +2,7 @@
 // agent extension writes the session's events itself, in the same records `pi --mode json`
 // prints, to the agent's events file. What the user types into the pane is recorded as a
 // steer. It also writes the agent's process identity and sends the brief as the first prompt.
+import { hostname } from "node:os";
 import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { processStart } from "../backends/supervise.ts";
@@ -35,9 +36,13 @@ export function reporter(pi: ExtensionAPI, opts: ReporterOptions): void {
     }
   };
   void processStart(process.pid).then((started) =>
-    writeFileSync(opts.pid, JSON.stringify({ pid: process.pid, started: started ?? "" }), {
-      mode: 0o600,
-    }),
+    writeFileSync(
+      opts.pid,
+      JSON.stringify({ pid: process.pid, started: started ?? "", host: hostname() }),
+      {
+        mode: 0o600,
+      },
+    ),
   );
   for (const name of EVENTS) pi.on(name as "agent_start", (event) => write(event));
   pi.on("input", (event) => {

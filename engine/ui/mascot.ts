@@ -208,7 +208,7 @@ export function mood(view: RunView | null | undefined, integration?: string | nu
   if (
     agents.some(
       (a) =>
-        (a.workspaceMode === "review-target" || (!a.workspaceMode && a.role === "reviewer")) &&
+        (a.role === "reviewer" || (!a.workspaceMode && a.role === "reviewer")) &&
         a.status === "running",
     )
   )

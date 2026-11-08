@@ -42,7 +42,7 @@ const submit = (extra: Record<string, any> = {}) =>
     status: "succeeded",
     summary: "done",
     changedFiles: [],
-    checks: [],
+
     findings: [],
     blockers: [],
     ...extra,
@@ -95,6 +95,7 @@ test("a standalone detail view can retry a failed transcript load", async (t) =>
 
 test("an agent opened mid-run shows its whole history, then streams live", async (t) => {
   const paused = gate();
+  t.after(() => paused.open());
   let reached = false;
   const story = "The parser lives in src/date.ts. ".repeat(40);
   const world = await fauxWorld(t, async (turn: FauxTurn) => {
@@ -144,8 +145,8 @@ test("an agent opened mid-run shows its whole history, then streams live", async
   assert(seen.includes("text_delta"), `streamed: ${seen.join(",")}`);
   assert.match(after, /The parser lives in src\/date\.ts\./, "the streamed message");
   assert.match(after, /✓ map \(scout\)/);
-  assert.match(after, /Agent not running/);
-  assert(!after.includes("steer"), "finished agents do not advertise steering");
+  assert.match(after, /enter follow-up/);
+  assert(!after.includes("Enter steer"), "finished agents offer continuation");
   detail.handleInput("\x1b");
   assert.equal(closed, 1);
   assert(detail.disposed);
@@ -153,6 +154,7 @@ test("an agent opened mid-run shows its whole history, then streams live", async
 
 test("scrolling, switching agents and steering; a reviewer sees the builder was steered", async (t) => {
   const paused = gate();
+  t.after(() => paused.open());
   let waiting = false;
   const world = await fauxWorld(
     t,
@@ -172,7 +174,7 @@ test("scrolling, switching agents and steering; a reviewer sees the builder was 
   );
   const handle = await world.run(
     [
-      spec("build", "builder", { ownership: ["a.txt"], noChecksReason: "fixture" }),
+      spec("build", "builder", {}),
       spec("review", "reviewer", { reviewOf: "build", after: ["build"] }),
     ],
     { allowWrites: true },
@@ -203,9 +205,10 @@ test("scrolling, switching agents and steering; a reviewer sees the builder was 
   // A queued reviewer cannot be steered.
   detail.handleInput("right");
   assert.equal(detail.agent, "review");
-  assert.match(plain(detail.render(80)), /Agent not running/);
+  assert.match(plain(detail.render(80)), /enter steer/);
   detail.handleInput("\r");
-  assert.match(detail.notice!, /Only a running agent/);
+  assert(detail.input, "queued workers accept initial steering");
+  detail.handleInput("\x1b");
   detail.handleInput("left");
   assert.equal(detail.agent, "build");
   assert.match(plain(detail.render(80)), /steer/);

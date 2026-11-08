@@ -2,15 +2,14 @@
 // running, the next Pi resumes the run from its directory and verifies their results, and
 // agents that could not be reattached are reported and can be started again.
 import assert from "node:assert/strict";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
 import { alive } from "../../engine/backends/supervise.ts";
-import { killTree } from "../../engine/verify/checks.ts";
-import { LOST } from "../../engine/core/engine.ts";
+
 import { readEvents } from "../../engine/core/store.ts";
 import { spec } from "./helpers.ts";
-import { inProcessWorld, processWorld, LOOPBACK, type Reply, type Turn } from "./worlds.ts";
+import { processWorld, type Reply, type Turn } from "./worlds.ts";
 
 const submit = (turn: Turn): Reply => ({
   toolCalls: [
@@ -20,7 +19,7 @@ const submit = (turn: Turn): Reply => ({
         status: "succeeded",
         summary: `${turn.agent} done`,
         changedFiles: [],
-        checks: [],
+
         findings: [],
         blockers: [],
         brief: `${turn.agent} brief`,
@@ -44,7 +43,7 @@ async function until(condition: () => boolean | Promise<boolean>, what: string, 
 }
 
 const identity = async (runDir: string, task: string) =>
-  JSON.parse(await readFile(join(runDir, "agents", task, "pid.json"), "utf8"));
+  JSON.parse(await readFile(join(runDir, "agents", task, "1", "pid.json"), "utf8"));
 
 test("a detached agent finishes while Pi is closed; the next Pi verifies it and continues", async (t) => {
   const paused = gate();
@@ -70,7 +69,7 @@ test("a detached agent finishes while Pi is closed; the next Pi verifies it and 
   assert(await alive(map), "the detached agent keeps running");
   // It finishes while no Pi is watching.
   paused.open();
-  const events = join(handle.dir, "agents", "map", "events.jsonl");
+  const events = join(handle.dir, "agents", "map", "1", "events.jsonl");
   await until(
     async () => (await readFile(events, "utf8")).includes('"agent_settled"'),
     "it to settle",
@@ -112,83 +111,4 @@ test("a resumed run follows a detached agent that is still running, and cancelli
   const view = await next.handle.done;
   assert.equal(view.agents.long.status, "cancelled");
   await until(async () => !(await alive(long)), "the detached process to exit", 15_000);
-});
-
-test("expired resume reaps every detached worker even without scheduling capacity", async (t) => {
-  const paused = gate();
-  t.after(() => paused.open());
-  const waiting = new Set<string>();
-  const world = await processWorld(t, async (turn) => {
-    waiting.add(turn.agent!);
-    await paused.opened;
-    return submit(turn);
-  });
-  const handle = await world.run([spec("one"), spec("two")], {
-    data: { survive: true },
-    limits: { concurrency: 2 },
-  });
-  await until(() => waiting.size === 2, "both detached workers to start");
-  await world.engine.shutdown("parent exit", { detach: () => true });
-  const identities = await Promise.all([identity(handle.dir, "one"), identity(handle.dir, "two")]);
-  t.after(() => identities.forEach(({ pid }) => killTree(pid)));
-  // Recover under an already-expired persisted cutoff; the processes still have their
-  // original longer allowance. No model/workspace preparation should be needed to stop them.
-  const events = await readEvents(handle.dir);
-  const first = events[0];
-  assert.equal(first.t, "run_started");
-  if (first.t === "run_started") first.deadlineAt = Date.now() - 1;
-  await writeFile(
-    join(handle.dir, "events.jsonl"),
-    events.map((e) => JSON.stringify(e)).join("\n") + "\n",
-  );
-  const resumed = await world.engine.resume(handle.dir, {
-    cwd: world.repo,
-    data: { models: { one: LOOPBACK, two: LOOPBACK }, backend: "process" },
-    limits: { concurrency: 1 },
-  });
-  const view = await resumed.done;
-  assert.equal(view.status, "failed");
-  for (const id of ["one", "two"]) assert.equal(view.agents[id].status, "failed");
-  for (const process of identities) assert.equal(await alive(process), false);
-  assert.equal(world.turns.length, 2, "recovery starts no new model calls");
-});
-
-test("in-process agents lost when Pi exited are reported as cancelled, and rerun with one call", async (t) => {
-  let crashed = true;
-  const world = await inProcessWorld(t, (turn) => {
-    if (turn.agent === "lost" && crashed) return { text: "never seen" };
-    return turn.round === 0
-      ? { toolCalls: [{ name: "read", arguments: { path: "README.md" } }] }
-      : submit(turn);
-  });
-  const handle = await world.run([
-    spec("done"),
-    spec("lost"),
-    spec("after", "planner", { after: ["lost"] }),
-  ]);
-  await handle.done;
-  // Simulate a crash: the log ends while "lost" was running and "after" waited for it.
-  const log = (await readFile(join(handle.dir, "events.jsonl"), "utf8")).trim().split("\n");
-  const kept = log.filter((line) => {
-    const e = JSON.parse(line);
-    if (e.t === "run_settled") return false;
-    if ((e.agent === "lost" || e.agent === "after") && e.t !== "agent_queued")
-      return e.agent === "lost" && e.t === "agent_started";
-    return true;
-  });
-  await writeFile(join(handle.dir, "events.jsonl"), kept.join("\n") + "\n");
-  const resumed = await world.engine.resume(handle.dir, {
-    cwd: world.repo,
-    data: world.dataOf!(handle.id),
-  });
-  let view = await resumed.done;
-  assert.equal(view.agents.done.status, "succeeded", "settled work is kept");
-  assert.equal(view.agents.lost.status, "cancelled", JSON.stringify(view.agents.lost));
-  assert.equal(view.agents.lost.reason, LOST);
-  assert.equal(view.agents.after.status, "blocked");
-  crashed = false;
-  assert.deepEqual(world.engine.rerun(handle.id).sort(), ["after", "lost"]);
-  view = await resumed.done;
-  assert.equal(view.status, "succeeded", JSON.stringify(view.agents));
-  assert.throws(() => world.engine.rerun(handle.id), /No task of this run was lost/);
 });

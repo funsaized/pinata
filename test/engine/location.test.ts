@@ -4,11 +4,11 @@ import { mkdir, readFile, realpath, symlink, writeFile } from "node:fs/promises"
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
-import { taskSpec } from "../../engine/core/definitions.ts";
+
 import { validateGraph } from "../../engine/core/validate.ts";
 import { layeredConfig, validateConfig } from "../../engine/pi/config.ts";
-import { readRunRecord, writeRunRecord } from "../../engine/verify/record.ts";
-import { prepareRun, verificationStages, worktreePath } from "../../engine/verify/stages.ts";
+
+import { verificationStages, worktreePath } from "../../engine/verify/stages.ts";
 import { defaultWorktreeRoot, worktreeRunRoot } from "../../engine/workspace/location.ts";
 import { Worktree } from "../../engine/workspace/worktree.ts";
 import { gitRepo } from "./faux.ts";
@@ -120,83 +120,6 @@ test(
   },
 );
 
-test("serialized run paths survive config changes, reattachment, repair and review", async (t) => {
-  const dir = await tempDir(t);
-  const repo = join(dir, "repo");
-  await gitRepo(repo, {
-    "a.txt": "original",
-    ".gitignore": "node_modules/\n",
-    "setup.cjs":
-      "const fs = require('node:fs'); fs.mkdirSync('node_modules', {recursive:true}); fs.appendFileSync('node_modules/ready', 'dependencies');",
-  }).init();
-  const tasks = validateGraph(
-    [
-      spec("build", "builder", { ownership: ["a.txt"], noChecksReason: "fixture" }),
-      spec("review", "reviewer", { reviewOf: "build", after: ["build"] }),
-    ],
-    { allowWrites: true },
-  );
-  const config = validateConfig({
-    worktreeRoot: join(dir, "external"),
-    setup: "node setup.cjs",
-  }).config;
-  const prep = await prepareRun(repo, "run-1", tasks, config);
-  const run: any = {
-    id: "run-1",
-    cwd: repo,
-    dir: join(repo, ".git", "pinata", "run-1"),
-    tasks: new Map(tasks.map((task) => [task.id, task])),
-    results: new Map(),
-    data: { config, prep },
-    limits: config.limits,
-  };
-  const stages = verificationStages();
-  const signal = new AbortController().signal;
-  const tree = (await stages.prepareWorkspace!(run, tasks[0], signal)) as Worktree;
-  assert(!tree.path.includes(`${join(".git", "pinata")}`));
-  await writeFile(join(tree.path, "a.txt"), "retained changes");
-  assert.equal(await readFile(join(tree.path, "node_modules", "ready"), "utf8"), "dependencies");
-  await writeRunRecord(run.dir, {
-    id: run.id,
-    root: repo,
-    head: prep.base!.head,
-    tasks: tasks.map(taskSpec),
-    allowWrites: true,
-    integratedChecks: [],
-    noIntegratedChecksReason: "fixture",
-    passEnv: [],
-    taskMs: 1000,
-    resume: {
-      mode: "lean",
-      limits: {},
-      data: run.data,
-      survive: false,
-      background: false,
-      owner: null,
-    },
-  });
-  const record = await readRunRecord(run.dir);
-  const resumed = { ...run, data: record.resume!.data };
-  (resumed.data.config as any).worktreeRoot = join(dir, "different");
-  for (const reattach of [true, false]) {
-    const reused = (await stages.prepareWorkspace!(resumed, tasks[0], signal, {
-      reattach,
-    })) as Worktree;
-    assert.equal(reused.path, tree.path);
-    assert.equal(await readFile(join(reused.path, "a.txt"), "utf8"), "retained changes");
-    assert.equal(
-      await readFile(join(reused.path, "node_modules", "ready"), "utf8"),
-      "dependencies",
-    );
-  }
-  const reviewer = await stages.prepareWorkspace!(resumed, tasks[1], signal);
-  assert.equal(reviewer!.path, tree.path);
-  assert.equal(stages.workspaceRef!(resumed, tasks[1])!.path, tree.path);
-  assert(!existsSync(join(dir, "different")));
-  await tree.remove();
-  assert(!existsSync(tree.path));
-});
-
 test("legacy runs keep their original worktree; incomplete new records fail explicitly", async (t) => {
   const dir = await tempDir(t);
   const repo = join(dir, "repo");
@@ -207,17 +130,15 @@ test("legacy runs keep their original worktree; incomplete new records fail expl
   const tree = await Worktree.create(repo, path, fixture.git("rev-parse", "HEAD").trim());
   await writeFile(join(path, "README.md"), "old unfinished work");
   assert.equal(worktreePath(run, "build"), path);
-  const task = validateGraph(
-    [spec("build", "builder", { ownership: ["README.md"], noChecksReason: "fixture" })],
-    { allowWrites: true },
-  )[0];
-  const reattached = await verificationStages().prepareWorkspace!(
-    run,
-    task,
-    new AbortController().signal,
-    { reattach: true },
+  const task = validateGraph([spec("build", "builder", { workspace: "worktree" })], {
+    allowWrites: true,
+  })[0];
+  await assert.rejects(
+    verificationStages().prepareWorkspace!(run, task, new AbortController().signal, {
+      reattach: true,
+    }),
+    /No saved workspace/,
   );
-  assert.equal(reattached!.path, path);
   assert.equal(await readFile(join(path, "README.md"), "utf8"), "old unfinished work");
   run.data.prep.worktreePaths = {};
   assert.throws(() => worktreePath(run, "build"), /No recorded worktree path/);

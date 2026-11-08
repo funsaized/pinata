@@ -69,7 +69,7 @@ function step(context: any) {
   }
   // The parent: answer the latest user message (prompts and delivered results arrive as user turns).
   const messages = (context.messages ?? []).filter((m: any) => m.role !== "system");
-  const lastUser = messages.map((m: any) => m.role).lastIndexOf("user");
+  const lastUser = messages.map((m: any) => ["user", "custom"].includes(m.role)).lastIndexOf(true);
   const answered = messages.slice(lastUser + 1).some((m: any) => m.role === "assistant");
   const last = lastUser === -1 ? "" : all[lastUser];
   if (last.includes("smoke-integration")) {
@@ -86,8 +86,7 @@ function step(context: any) {
             role: "builder",
             task: "Change README.md",
             acceptance: ["Updated title"],
-            ownership: ["README.md"],
-            noChecksReason: "Destination smoke checks the title",
+            workspace: "worktree",
           },
           {
             id: "review",
@@ -98,22 +97,12 @@ function step(context: any) {
             after: ["build"],
           },
         ],
-        integratedChecks: [
-          {
-            id: "title",
-            argv: [
-              "node",
-              "-e",
-              "if(require('fs').readFileSync('README.md','utf8')!=='# Integrated smoke\\n')process.exit(1)",
-            ],
-          },
-        ],
       });
     const run = JSON.parse(results[0].content.find((c: any) => c.type === "text").text).run;
-    const next = ["pinata_changes", "pinata_integrate", "pinata_verify"][results.length - 1];
+    const next = ["pinata_changes", "pinata_integrate"][results.length - 1];
     return next ? call(next, { run }) : fauxAssistantMessage(fauxText("SMOKE-INTEGRATION-DONE"));
   }
-  if (!answered && last.includes("pinata run") && last.includes("settled"))
+  if (!answered && last.includes("Pinata assignment completed"))
     return fauxAssistantMessage(fauxText("SMOKE-BACKGROUND-RECEIVED"));
   if (!answered && last.includes("smoke-foreground"))
     return fauxAssistantMessage([fauxToolCall("pinata_run", { tasks: scouts(3, true) })], {

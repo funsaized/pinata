@@ -1,6 +1,5 @@
-import { assertTime, remaining } from "../core/deadline.ts";
-// Runs builder checks and evidence checks: argv without a shell, the approved environment,
-// a timeout with process-tree kill, and bounded, hashed logs. A failed check fails the builder.
+// Command execution for setup and explicit callers: argv without shell interpolation,
+// an approved environment, optional caller timeout, process cleanup and streamed hashed logs.
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createWriteStream, existsSync, statSync } from "node:fs";
@@ -8,8 +7,6 @@ import { mkdir } from "node:fs/promises";
 import { delimiter, extname, isAbsolute, join } from "node:path";
 import type { Check } from "../core/types.ts";
 
-export const MAX_LOG = 16 * 1024 * 1024;
-export const DEFAULT_TIMEOUT_MS = 120_000;
 const KILL_GRACE_MS = 2000;
 
 const POSIX_NAMES = [
@@ -174,26 +171,21 @@ export interface CheckEvidence {
 }
 
 export interface CheckOptions {
-  deadlineAt?: number;
   cwd: string;
   env: NodeJS.ProcessEnv;
   logDir: string;
   signal?: AbortSignal;
-  maxLog?: number;
 }
 
 export async function runCheck(check: Check, options: CheckOptions): Promise<CheckEvidence> {
   await mkdir(options.logDir, { recursive: true, mode: 0o700 });
-  assertTime(options.deadlineAt);
   options.signal?.throwIfAborted();
   const stdoutPath = join(options.logDir, `check-${check.id}.stdout.log`);
   const stderrPath = join(options.logDir, `check-${check.id}.stderr.log`);
   const started = performance.now();
-  const max = options.maxLog ?? MAX_LOG;
   const { file, args, verbatim } = launch(check.argv, options.env);
   return new Promise((resolve) => {
     let reason: string | null = null;
-    let size = 0;
     const out = createWriteStream(stdoutPath, { mode: 0o600 });
     const err = createWriteStream(stderrPath, { mode: 0o600 });
     const hashes = { out: createHash("sha256"), err: createHash("sha256") };
@@ -233,10 +225,10 @@ export async function runCheck(check: Check, options: CheckOptions): Promise<Che
       hard = setTimeout(() => child.pid && killTree(child.pid), KILL_GRACE_MS);
       hard.unref();
     };
-    const timer = setTimeout(
-      () => stop("timed out"),
-      remaining(options.deadlineAt, check.timeoutMs ?? DEFAULT_TIMEOUT_MS),
-    );
+    const timer =
+      check.timeoutMs === undefined
+        ? undefined
+        : setTimeout(() => stop("timed out"), check.timeoutMs);
     const onAbort = () => stop("cancelled");
     options.signal?.addEventListener("abort", onAbort, { once: true });
     if (options.signal?.aborted) onAbort();
@@ -246,10 +238,11 @@ export async function runCheck(check: Check, options: CheckOptions): Promise<Che
       hash: ReturnType<typeof createHash>,
     ) =>
       stream.on("data", (chunk: Buffer) => {
-        size += chunk.length;
-        if (size > max) return stop("output exceeded the limit");
         hash.update(chunk);
-        log.write(chunk);
+        if (!log.write(chunk)) {
+          stream.pause();
+          log.once("drain", () => stream.resume());
+        }
       });
     collect(child.stdout!, out, hashes.out);
     collect(child.stderr!, err, hashes.err);

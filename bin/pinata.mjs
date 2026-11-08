@@ -20,7 +20,8 @@ const USAGE = `Usage:
   pinata run <job.json> [--no-apply] [--mode observe] [--json] [--watch]   run and deliver a job headless
       exit codes: 0 succeeded, 1 failed, 2 invalid job, 3 cancelled
   pinata resume <run>                      continue a run that outlived its Pi
-  pinata integrate <run> [--json]          apply checked changes and run destination checks
+  pinata integrate <run> [--json]          apply saved isolated snapshots with conflict checks
+  pinata migrate <input> [--output <new-file>] convert a legacy job, config or definition
   pinata gc [--confirm]                    preview run cleanup and close finished panes
 
 run: a run id prefix or a run directory. view prefers active work, then the latest saved run;
@@ -143,14 +144,35 @@ async function view(args) {
 
 const [command, ...rest] = process.argv.slice(2);
 try {
-  if (command === "view") await view(rest);
+  if (command === "migrate") {
+    if (!rest[0] || (rest.length !== 1 && (rest.length !== 3 || rest[1] !== "--output")))
+      fail("Usage: pinata migrate <input> [--output <new-file>]");
+    const { registerHooks, stripTypeScriptTypes } = await import("node:module");
+    const engineUrl = new URL("../engine/", import.meta.url).href;
+    const hooks = registerHooks({
+      load(url, context, nextLoad) {
+        if (!url.startsWith(engineUrl) || !url.endsWith(".ts")) return nextLoad(url, context);
+        return {
+          format: "module",
+          source: stripTypeScriptTypes(readFileSync(new URL(url), "utf8"), { sourceUrl: url }),
+          shortCircuit: true,
+        };
+      },
+    });
+    try {
+      const { migrateFile } = await import("../engine/migrate/main.ts");
+      for (const notice of await migrateFile(rest[0], rest[2])) writeSync(2, notice + "\n");
+    } finally {
+      hooks.deregister();
+    }
+  } else if (command === "view") await view(rest);
   else if (command === "logs") await logs(rest);
   else if (command === "run") run(rest);
   else if (command === "resume") await resume(rest);
   else if (command === "integrate") {
-    const args = rest.filter((arg) => arg !== "--json");
-    if (args.length !== 1 || args[0].startsWith("-") || rest.length - args.length > 1)
-      fail("Usage: pinata integrate <run> [--json]");
+    const args = rest.filter((arg) => arg !== "--json" && arg !== "--recover");
+    if (args.length !== 1 || args[0].startsWith("-") || rest.length - args.length > 2)
+      fail("Usage: pinata integrate <run> [--json] [--recover]");
     // Node skips native type stripping in node_modules. Load only our engine sources.
     const { registerHooks, stripTypeScriptTypes } = await import("node:module");
     const engineUrl = new URL("../engine/", import.meta.url).href;
@@ -168,6 +190,7 @@ try {
       const { integrateCommand } = await import("../engine/headless/integration.ts");
       process.exitCode = await integrateCommand(args[0], {
         json: rest.includes("--json"),
+        recover: rest.includes("--recover"),
         write: (line) => writeSync(1, line + "\n"),
       });
     } finally {

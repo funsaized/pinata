@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { copyFile, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
-import { join, sep } from "node:path";
+import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 import { fauxAssistantMessage, fauxText, fauxToolCall } from "@earendil-works/pi-ai";
 import pinata, { registerPinata } from "../../engine/pi/extension.ts";
 import { pinataCommand } from "../../engine/pi/commands.ts";
 import { PinataHost, type HostOptions } from "../../engine/pi/host.ts";
-import { registerTools, statusTool } from "../../engine/pi/tools.ts";
+import { statusTool } from "../../engine/pi/tools.ts";
 import { fauxWorld, type FauxTurn } from "./faux.ts";
 import { spec } from "./helpers.ts";
 
@@ -18,7 +18,7 @@ const submit = (turn: FauxTurn) =>
         status: "succeeded",
         summary: `${turn.agent} done`,
         changedFiles: [],
-        checks: [],
+
         findings: [],
         blockers: [],
         brief: `${turn.agent} brief`,
@@ -108,12 +108,11 @@ test("the extension registers the tools and the command", async (t) => {
     "pinata_cancel",
     "pinata_changes",
     "pinata_integrate",
-    "pinata_repair",
     "pinata_rollback",
     "pinata_run",
     "pinata_status",
     "pinata_steer",
-    "pinata_verify",
+    "pinata_wait",
   ]);
   assert(a.commands.has("pinata"));
   assert(a.handlers.session_shutdown?.length);
@@ -255,7 +254,7 @@ test("pinata_run runs in the foreground, streams progress and returns compact re
   assert.match(transcript.excerpt, /assistant: \[read/);
   assert.match(transcript.transcript, /transcripts[\\/]one\.jsonl$/);
   const steer = await a.call("pinata_steer", { run: r.run, task: "one", message: "x" });
-  assert.match(steer.content[0].text, /not running/);
+  assert.match(steer.content[0].text, /idle.*followUp/);
   const text = await pinataCommand(
     (a.tools.get("pinata_run") as any).host ?? ({} as any),
     "",
@@ -266,15 +265,13 @@ test("pinata_run runs in the foreground, streams progress and returns compact re
 
 test("validation errors come back as tool errors before anything starts", async (t) => {
   const a = await adapter(t, reader);
-  const noApproval = await a.call("pinata_run", {
-    tasks: [spec("b", "builder", { ownership: ["x"], noChecksReason: "n/a" })],
+  const retired = await a.call("pinata_run", {
+    tasks: [{ ...spec("b", "builder"), ownership: ["a"] }],
   });
-  assert.equal(noApproval.isError, true);
-  assert.match(noApproval.content[0].text, /approval is required/);
-  const research = await a.call("pinata_run", { tasks: [spec("r", "research")] });
-  assert.match(research.content[0].text, /pi-web-access/);
+  assert.equal(retired.isError, true);
+  assert.match(retired.content[0].text, /migrate/);
   const cycle = await a.call("pinata_run", { tasks: [spec("a", "scout", { after: ["a"] })] });
-  assert.match(cycle.content[0].text, /after lists itself/);
+  assert.match(cycle.content[0].text, /Cyclic/);
 });
 
 test("Esc aborts a foreground run: every agent is cancelled", async (t) => {
@@ -285,12 +282,14 @@ test("Esc aborts a foreground run: every agent is cancelled", async (t) => {
     });
   });
   const esc = new AbortController();
-  setTimeout(() => esc.abort(), 100);
-  const out = await a.call(
+  const pending = a.call(
     "pinata_run",
     { tasks: [spec("a"), spec("b"), spec("c", "scout", { after: ["a"] })] },
     esc.signal,
   );
+  await until(() => a.world.turns.length >= 2, "foreground workers to start");
+  esc.abort();
+  const out = await pending;
   const r = out.details.result;
   assert.equal(r.status, "cancelled");
   for (const task of r.tasks) assert.equal(task.status, "cancelled");
@@ -304,14 +303,11 @@ test("a background run delivers one follow-up message that resumes the parent", 
   assert.equal(out.details.result.status, "running");
   for (let i = 0; i < 200 && !a.messages.length; i++) await new Promise((r) => setTimeout(r, 10));
   assert.equal(a.messages.length, 1);
-  assert.equal(a.messages[0].message.customType, "pinata-result");
+  assert.equal(a.messages[0].message.customType, "pinata-assignment");
   assert.deepEqual(a.messages[0].options, { triggerTurn: true, deliverAs: "followUp" });
   assert.equal(a.messages[0].message.details.run, run);
   const { deliver } = await import("../../engine/pi/delivery.ts");
-  const handle = {
-    done: Promise.resolve(a.messages[0].message.details),
-    dir: a.messages[0].message.details.dir,
-  } as any;
+  const handle = a.host!.handles.get(run)!;
   assert.equal(
     await deliver({ sendMessage() {} } as any, handle),
     false,
@@ -327,7 +323,7 @@ test("reload or exit cancels in-process agents with the reason and flushes the l
     });
   });
   const running = a.call("pinata_run", { tasks: [spec("a"), spec("b")] });
-  await new Promise((r) => setTimeout(r, 60));
+  await until(() => a.world.turns.length >= 2, "both workers to start");
   for (const handler of a.handlers.session_shutdown)
     await handler({ type: "session_shutdown", reason: "reload" }, a.ctx);
   const r = (await running).details.result;
@@ -351,9 +347,9 @@ test("a reload that arrives while a run is being created still cancels it", asyn
   for (const handler of a.handlers.session_shutdown)
     await handler({ type: "session_shutdown", reason: "quit" }, a.ctx);
   const out = await running;
-  const r = out.details.result;
-  assert.equal(r.status, "cancelled", JSON.stringify(out));
-  assert.equal(r.tasks[0].reason ?? r.tasks[0].summary, "parent exit");
+  assert.equal(out.isError, true);
+  assert.match(out.content[0].text, /parent exit/);
+  assert.equal(a.world.turns.length, 0, "shutdown prevented worker startup");
 });
 
 test("/pinata reports runs, modes and runs a crashed Pi left unsettled", async (t) => {
@@ -717,324 +713,6 @@ test("modes: lean by default with the socket on /pinata view --external; observe
   for (const handler of a.handlers.session_shutdown) await handler({ reason: "quit" }, a.ctx);
 });
 
-test("the next Pi resumes a crashed run: lost tasks are reported, /pinata rerun finishes them, and the result is delivered", async (t) => {
-  const first = await adapter(t, reader);
-  const started = await first.call("pinata_run", {
-    tasks: [spec("kept"), spec("lost"), spec("after", "planner", { after: ["lost"] })],
-    background: true,
-  });
-  const { run, dir } = started.details.result;
-  await until(() => first.messages.length === 1, "the first delivery");
-  // A crash: the log ends while "lost" ran, and nothing was delivered.
-  const lines = (await readFile(join(dir, "events.jsonl"), "utf8")).trim().split("\n");
-  const kept = lines.filter((line) => {
-    const e = JSON.parse(line);
-    if (e.t === "run_settled") return false;
-    if ((e.agent === "lost" || e.agent === "after") && e.t !== "agent_queued")
-      return e.agent === "lost" && e.t === "agent_started";
-    return true;
-  });
-  await writeFile(join(dir, "events.jsonl"), kept.join("\n") + "\n");
-  await rm(join(dir, "delivered.json"), { force: true });
-  // Definitions are frozen: deleting the original and replacing the new Pi's copy
-  // must not alter the queued planner or its rerun.
-  const original = await readFile(
-    join(first.world.agentDir, "pinata", "agents", "planner.md"),
-    "utf8",
-  );
-  await rm(join(first.world.agentDir, "pinata", "agents", "planner.md"));
-  const second = await adapter(t, (turn) => {
-    if (turn.agent === "after") {
-      assert.match(turn.system, /smallest correct implementation/);
-      assert(!turn.system.includes("CHANGED DEFINITION"));
-    }
-    return reader(turn);
-  });
-  await writeFile(
-    join(second.world.agentDir, "pinata", "agents", "planner.md"),
-    original.replace("smallest correct implementation", "CHANGED DEFINITION"),
-  );
-  second.ctx.cwd = first.world.repo;
-  Object.assign(second.ctx, { hasUI: true, mode: "print" });
-  second.ctx.ui.setWidget = () => {};
-  second.ctx.ui.setStatus = () => {};
-  for (const handler of second.handlers.session_start) await handler({}, second.ctx);
-  await until(() => second.notes.some((n) => /resumed 1 run/.test(n)), "the resume notice");
-  await until(() => second.messages.length === 1, "the delivery of the resumed run");
-  assert.match(second.messages[0].message.content, /lost/);
-  const command = second.commands.get("pinata");
-  await command.handler("", second.ctx);
-  assert.match(second.notes.at(-1)!, /cancelled/);
-  await command.handler(`rerun ${run.slice(0, 8)}`, second.ctx);
-  assert.match(second.notes.at(-1)!, /started again (after, lost|lost, after)/);
-  // A run delivers once; the rerun's outcome is in its status.
-  let status: any;
-  for (let i = 0; i < 200; i++) {
-    status = (await second.call("pinata_status", { run })).details.result;
-    if (status.status !== "running") break;
-    await new Promise((resolve) => setTimeout(resolve, 25));
-  }
-  assert.equal(status.status, "succeeded", JSON.stringify(status));
-});
-
-test("orchestrator tools hand off artifacts, integrate after HEAD advancement, and verify the destination", async (t) => {
-  const a = await adapter(t, (turn) => {
-    if (turn.role === "implementer" && turn.round === 0)
-      return fauxAssistantMessage(
-        [fauxToolCall("write", { path: "README.md", content: "# Implemented\n" })],
-        { stopReason: "toolUse" },
-      );
-    return fauxAssistantMessage(
-      [
-        fauxToolCall("submit_result", {
-          status: "succeeded",
-          summary: "done",
-          changedFiles: turn.role === "implementer" ? ["README.md"] : [],
-          checks: [],
-          findings: [],
-          blockers: [],
-          ...(turn.role === "auditor" ? { review: { verdict: "approve" } } : {}),
-        }),
-      ],
-      { stopReason: "toolUse" },
-    );
-  });
-  const directory = join(a.world.agentDir, "pinata", "agents");
-  for (const [preset, name] of [
-    ["builder", "implementer"],
-    ["reviewer", "auditor"],
-  ]) {
-    const text = await readFile(new URL(`../../agents/${preset}.md`, import.meta.url), "utf8");
-    await writeFile(
-      join(directory, `${name}.md`),
-      text.replace(`name: "${preset}"`, `name: "${name}"`),
-    );
-  }
-  const run = await a.call("pinata_run", {
-    approval: "Fixture authorizes these local writes",
-    config: { setup: false, worktreeRoot: join(a.world.dir, "custom worktrees") },
-    tasks: [
-      spec("build", "implementer", { ownership: ["README.md"], noChecksReason: "fixture" }),
-      spec("review", "auditor", { reviewOf: "build", after: ["build"] }),
-    ],
-    integratedChecks: [{ id: "check", argv: [process.execPath, "-e", "0"] }],
-  });
-  const result = run.details.result;
-  assert.equal(result.status, "succeeded", JSON.stringify(run));
-  const saved = JSON.parse(await readFile(join(result.dir, "run.json"), "utf8"));
-  const path = saved.resume.data.prep.worktreePaths.build;
-  assert(path.startsWith((await realpath(join(a.world.dir, "custom worktrees"))) + sep));
-  assert.equal(await readFile(join(path, "README.md"), "utf8"), "# Implemented\n");
-  assert.equal(result.handoff.tool, "pinata_changes");
-  assert.equal(result.tasks[0].artifact.scope, "builder-artifact");
-  assert.equal(result.tasks[0].agent, "implementer");
-  assert.deepEqual(result.tasks[0].engineChecks, {
-    passed: 0,
-    failed: 0,
-    notRun: 0,
-    noChecksReason: "fixture",
-  });
-  assert.equal(result.tasks[1].review.scope, "artifact");
-  assert.equal(result.tasks[1].review.fingerprint, result.tasks[0].artifact.fingerprint);
-  const changes = (await a.call("pinata_changes", { run: result.run })).details.result;
-  assert.equal(changes.scope, "builder-artifacts");
-  assert(existsSync(changes.builders[0].patch));
-  // A new Pi host has only the saved run, as when inspecting a finished CLI run.
-  const fresh = () => {
-    const pi: any = {
-      registerTool: (tool: any) => a.tools.set(tool.name, tool),
-      getSettings: () => ({}),
-      getAllTools: () => [],
-    };
-    const host = new PinataHost(pi);
-    registerTools(pi, host);
-    return host;
-  };
-  const host = fresh();
-  const repaired = await a.call("pinata_repair", {
-    run: result.run,
-    task: "build",
-    feedback: "Recheck the implementation and collect a fresh independent review",
-  });
-  assert.equal(repaired.details.result.status, "succeeded", JSON.stringify(repaired));
-  assert.equal(host.handles.get(result.run)!.view().agents.review.status, "succeeded");
-  assert.equal(
-    saved.resume.data.prep.worktreePaths.build,
-    JSON.parse(await readFile(join(result.dir, "run.json"), "utf8")).resume.data.prep.worktreePaths
-      .build,
-  );
-  const log = (await readFile(join(result.dir, "events.jsonl"), "utf8"))
-    .trim()
-    .split("\n")
-    .map((line) => JSON.parse(line));
-  assert.equal(log.filter((e) => e.t === "agent_started" && e.agent === "review").length, 2);
-  assert.equal(log.filter((e) => e.t === "agent_queued" && e.repair).length, 1);
-
-  assert.equal(
-    (await a.call("pinata_verify", { run: result.run })).details.result.application,
-    "different",
-  );
-  await writeFile(join(a.world.repo, "unrelated.txt"), "next feature");
-  a.world.fixture.git("add", "unrelated.txt");
-  a.world.fixture.git(
-    "-c",
-    "user.name=t",
-    "-c",
-    "user.email=t@e",
-    "-c",
-    "commit.gpgsign=false",
-    "commit",
-    "-qm",
-    "advance",
-  );
-  const integrated = (await a.call("pinata_integrate", { run: result.run })).details.result;
-  assert.equal(integrated.status, "verified", JSON.stringify(integrated));
-  assert.equal(integrated.verification.application, "exact");
-  const status = (await a.call("pinata_status", { run: result.run })).details.result;
-  assert.equal(status.integration, "verified");
-  assert.equal(status.verification.freshness, "current");
-  assert.equal(status.verification.review, "builder-artifacts-only");
-  assert.equal(
-    (await a.call("pinata_rollback", { run: result.run, confirm: true })).details.result.status,
-    "rolled_back",
-  );
-});
-
-test("a rejected saved run repairs in a new session, unblocks downstream work, and integrates", async (t) => {
-  const starts: string[] = [];
-  const respond = (turn: FauxTurn) => {
-    if (turn.round === 0) starts.push(turn.agent!);
-    const repaired = turn.text.includes("Repair feedback");
-    if (turn.role === "builder" && turn.round === 0)
-      return fauxAssistantMessage(
-        [
-          turn.agent === "build"
-            ? fauxToolCall("write", {
-                path: "README.md",
-                content: repaired ? "fixed\n" : "broken\n",
-              })
-            : fauxToolCall("bash", {
-                command:
-                  'node -e \'const fs=require("fs"); fs.copyFileSync("README.md","output.txt")\'',
-              }),
-        ],
-        { stopReason: "toolUse" },
-      );
-    const rejected = turn.agent === "review" && !turn.text.includes("prior approval is invalid");
-    return fauxAssistantMessage(
-      [
-        fauxToolCall("submit_result", {
-          status: "succeeded",
-          summary: rejected ? "README.md must contain fixed, not broken." : "done",
-          changedFiles:
-            turn.role === "builder" ? [turn.agent === "build" ? "README.md" : "output.txt"] : [],
-          checks: [],
-          findings: rejected
-            ? [{ severity: "high", message: "Incorrect content", evidence: "README.md:1" }]
-            : [],
-          blockers: [],
-          ...(turn.role === "reviewer"
-            ? { review: { verdict: rejected ? "changes_requested" : "approve" } }
-            : {}),
-        }),
-      ],
-      { stopReason: "toolUse" },
-    );
-  };
-  const first = await adapter(t, respond);
-  const check = (path: string, expected?: string) => ({
-    id: "content",
-    argv: [
-      process.execPath,
-      "-e",
-      expected
-        ? `require('assert/strict').equal(require('fs').readFileSync('${path}','utf8'),${JSON.stringify(expected)})`
-        : `require('assert/strict').ok(require('fs').readFileSync('${path}','utf8').length)`,
-    ],
-  });
-  const head = first.world.fixture.git("rev-parse", "HEAD");
-  const initial = (
-    await first.call("pinata_run", {
-      approval: "Implement and integrate this fixture locally",
-      config: { setup: false },
-      tasks: [
-        spec("build", "builder", { ownership: ["README.md"], checks: [check("README.md")] }),
-        spec("review", "reviewer", { reviewOf: "build", after: ["build"] }),
-        spec("downstream", "builder", {
-          ownership: ["output.txt"],
-          after: ["review"],
-          checks: [check("output.txt", "fixed\n")],
-        }),
-        spec("review-downstream", "reviewer", { reviewOf: "downstream", after: ["downstream"] }),
-      ],
-      integratedChecks: [check("output.txt", "fixed\n")],
-    })
-  ).details.result;
-  assert.equal(initial.status, "failed");
-  assert.equal(initial.tasks.find((task: any) => task.id === "review").status, "rejected");
-  assert.equal(initial.tasks.find((task: any) => task.id === "downstream").status, "blocked");
-  assert.deepEqual(starts, ["build", "review"]);
-  const originalArtifact = initial.tasks[0].artifact.fingerprint;
-  const recovery = initial.tasks[1].recovery;
-  assert.equal(recovery.tool, "pinata_repair");
-  assert.equal(recovery.arguments.run, initial.run);
-  assert.equal(recovery.arguments.task, "build");
-  assert.match(recovery.arguments.feedback, /README.md must contain fixed/);
-  assert.match(recovery.instruction, /Keep this run ID/);
-  for (const handler of first.handlers.session_shutdown)
-    await handler({ reason: "quit" }, first.ctx);
-
-  const second = await adapter(t, respond);
-  second.ctx.cwd = first.world.repo;
-  const status = (await second.call("pinata_status", { run: initial.run })).details.result;
-  assert.deepEqual(
-    status.tasks[1].recovery,
-    recovery,
-    "historical status preserves the repair action",
-  );
-  const detail = (
-    await second.call("pinata_status", {
-      run: initial.run,
-      task: "review",
-      detail: "result",
-    })
-  ).details.result;
-  assert.deepEqual(detail.recovery, recovery);
-  assert.equal((await second.call("pinata_integrate", { run: initial.run })).isError, true);
-
-  // Follow the actual coordinator guidance, including the pinned run for integration.
-  const repaired = (await second.call(recovery.tool, recovery.arguments)).details.result;
-  assert.equal(repaired.run, initial.run);
-  assert.equal(repaired.status, "succeeded", JSON.stringify(repaired));
-  assert.deepEqual(starts, [
-    "build",
-    "review",
-    "build",
-    "review",
-    "downstream",
-    "review-downstream",
-  ]);
-  assert.notEqual(repaired.tasks[0].artifact.fingerprint, originalArtifact);
-  assert.equal(repaired.tasks[1].review.fingerprint, repaired.tasks[0].artifact.fingerprint);
-  assert.equal(repaired.tasks[1].recovery, undefined, "fresh approval clears repair guidance");
-  assert.equal(repaired.tasks[0].engineChecks.passed, 1);
-  assert.equal(repaired.tasks[2].engineChecks.passed, 1);
-  // A newer unrelated run must not redirect the supplied follow-up actions.
-  await second.call("pinata_run", { tasks: [spec("look")] });
-  const [changes, integrate] = recovery.afterSuccess;
-  assert.deepEqual(changes.arguments, { run: initial.run });
-  assert.deepEqual(integrate.arguments, { run: initial.run });
-  const handoff = await second.call(changes.tool, changes.arguments);
-  assert.equal(handoff.isError, undefined, JSON.stringify(handoff));
-  const integrated = (await second.call(integrate.tool, integrate.arguments)).details.result;
-  assert.equal(integrated.status, "verified", JSON.stringify(integrated));
-  assert.equal(integrated.verification.application, "exact");
-  assert.equal(await readFile(join(first.world.repo, "README.md"), "utf8"), "fixed\n");
-  assert.equal(await readFile(join(first.world.repo, "output.txt"), "utf8"), "fixed\n");
-  assert.equal(first.world.fixture.git("rev-parse", "HEAD"), head);
-  assert.equal(first.world.fixture.git("diff", "--cached", "--name-only"), "");
-});
-
 test("custom definitions execute through the public tool and freeze their prompt", async (t) => {
   const a = await adapter(t, (turn) => {
     assert.match(turn.system, /CUSTOM PROMPT/);
@@ -1054,7 +732,7 @@ test("custom definitions execute through the public tool and freeze their prompt
   await mkdir(directory, { recursive: true });
   await writeFile(
     join(directory, "analyst.md"),
-    "---\nschemaVersion: 1\nname: analyst\ndescription: Analyze a question\nworkspace: live-readonly\ntools: [read]\n---\nCUSTOM PROMPT",
+    "---\nschemaVersion: 2\naccess: read\nname: analyst\ndescription: Analyze a question\nworkspace: shared\ntools: [read]\n---\nCUSTOM PROMPT",
   );
   const available = await a.call("pinata_agents", {});
   assert(available.details.result.some((d: any) => d.name === "analyst"));
@@ -1064,7 +742,6 @@ test("custom definitions execute through the public tool and freeze their prompt
         id: "analysis",
         agent: "analyst",
         task: "Answer",
-        evidenceChecks: [{ id: "evidence", argv: [process.execPath, "-e", "0"] }],
       },
     ],
   });
@@ -1088,7 +765,7 @@ test("custom definitions execute through the public tool and freeze their prompt
     a.ctx,
   )) as any;
   assert.equal(historical.tasks[0].data.answer, 42);
-  assert.deepEqual(historical.tasks[0].engineChecks, { passed: 1, failed: 0, notRun: 0 });
+  assert.equal(historical.tasks[0].engineChecks, undefined);
   await rm(join(out.details.result.dir, "results", "analysis.json"));
   const unavailable = (await statusTool(
     new PinataHost({} as any),
@@ -1100,181 +777,4 @@ test("custom definitions execute through the public tool and freeze their prompt
     undefined,
     "missing evidence must not be represented as unexecuted checks",
   );
-});
-
-test("new writer-only runs export and integrate checked changes under their saved optional policy", async (t) => {
-  const a = await adapter(t, (turn) =>
-    turn.round === 0
-      ? fauxAssistantMessage([fauxToolCall("write", { path: "README.md", content: "updated" })], {
-          stopReason: "toolUse",
-        })
-      : fauxAssistantMessage(
-          [
-            fauxToolCall("submit_result", {
-              status: "succeeded",
-              summary: "updated",
-              changedFiles: ["README.md"],
-              checks: [],
-              findings: [],
-              blockers: [],
-            }),
-          ],
-          { stopReason: "toolUse" },
-        ),
-  );
-  const checks = [
-    {
-      id: "content",
-      argv: [
-        process.execPath,
-        "-e",
-        "require('assert/strict').equal(require('fs').readFileSync('README.md','utf8'),'updated')",
-      ],
-    },
-  ];
-  const out = await a.call("pinata_run", {
-    approval: "Fixture writes authorized",
-    config: { setup: false },
-    tasks: [spec("build", "builder", { ownership: ["README.md"], checks })],
-    integratedChecks: checks,
-  });
-  const result = out.details.result;
-  assert.equal(result.status, "succeeded", JSON.stringify(out));
-  assert.equal(result.reviewPolicy, "optional");
-  assert.equal(result.tasks[0].artifact.reviewState, "unassigned");
-  const saved = JSON.parse(await readFile(join(result.dir, "run.json"), "utf8"));
-  assert.equal(saved.reviewPolicy, "optional");
-  assert.equal(saved.deadlineAt, result.deadlineAt);
-  assert.equal(saved.resume.data.deadlineAt, saved.deadlineAt);
-  await mkdir(join(a.world.repo, ".pi"), { recursive: true });
-  await writeFile(
-    join(a.world.repo, ".pi", "pinata.json"),
-    JSON.stringify({ reviewPolicy: "required" }),
-  );
-  const changes = (await a.call("pinata_changes", { run: result.run })).details.result;
-  assert.equal(changes.reviewPolicy, "optional");
-  assert.deepEqual(changes.builders[0].reviews, []);
-  assert.equal(
-    (await a.call("pinata_integrate", { run: result.run })).details.result.status,
-    "verified",
-  );
-  // Absence in a historical record deliberately has different meaning from new config.
-  delete saved.reviewPolicy;
-  await writeFile(join(result.dir, "run.json"), JSON.stringify(saved));
-  const legacy = await a.call("pinata_changes", { run: result.run });
-  assert.equal(legacy.isError, true);
-  assert.match(JSON.stringify(legacy), /Independent review required/);
-});
-
-test("strict policy rejects every uncovered custom writer before preparing or launching work", async (t) => {
-  const a = await adapter(t, submit);
-  const definition = await readFile(new URL("../../agents/builder.md", import.meta.url), "utf8");
-  await writeFile(
-    join(a.world.agentDir, "pinata", "agents", "writer.md"),
-    definition.replace('name: "builder"', 'name: "writer"'),
-  );
-  const out = await a.call("pinata_run", {
-    approval: "Fixture writes authorized",
-    config: { reviewPolicy: "required", setup: false },
-    tasks: ["first", "second"].map((id) =>
-      spec(id, "writer", { ownership: [id], noChecksReason: "fixture" }),
-    ),
-  });
-  assert.equal(out.isError, true);
-  assert.match(JSON.stringify(out), /Independent review required for: first, second/);
-  assert.equal(a.world.turns.length, 0);
-  assert.equal(a.host!.handles.size, 0);
-  assert(!existsSync(join(a.world.dir, "worktrees")), "strict preflight precedes preparation");
-});
-
-test("trusted assignment persists through reviewer, repaired and resumed worker briefs", async (t) => {
-  const assignment =
-    "Authoritative public assignment: title length is at most 100 characters; default status is open.";
-  const a = await adapter(
-    t,
-    (turn) =>
-      turn.role === "reviewer"
-        ? fauxAssistantMessage(
-            [
-              fauxToolCall("submit_result", {
-                status: "succeeded",
-                summary: "reviewed",
-                changedFiles: [],
-                checks: [],
-                findings: [],
-                blockers: [],
-                review: { verdict: "approve" },
-              }),
-            ],
-            { stopReason: "toolUse" },
-          )
-        : submit(turn),
-    { instructions: [assignment] },
-  );
-  const result = (
-    await a.call("pinata_run", {
-      approval: "Fixture writes authorized",
-      instructions: [],
-      config: { setup: false },
-      tasks: [
-        spec("build", "builder", {
-          task: "enforce lengths",
-          ownership: ["README.md"],
-          noChecksReason: "fixture",
-        }),
-        spec("review", "reviewer", { reviewOf: "build", after: ["build"] }),
-      ],
-    })
-  ).details.result;
-  assert.equal(result.status, "succeeded");
-  for (const turn of a.world.turns) {
-    assert(turn.text.includes(assignment));
-    if (turn.role === "builder")
-      assert(turn.text.includes("Ownership (repository-relative): README.md"));
-  }
-  const record = JSON.parse(await readFile(join(result.dir, "run.json"), "utf8"));
-  assert.deepEqual(record.resume.data.instructions, [assignment]);
-  await a.host!.shutdown("fixture restart");
-  const host = new PinataHost(a.pi, undefined, { instructions: ["Changed host assignment: 999"] });
-  const handle = await host.resumeDir(result.dir, a.ctx, true);
-  host.engine(a.ctx).repair(handle.id, "build", "Check limits again");
-  await handle.done;
-  const repaired = a.world.turns.filter((turn) => turn.text.includes("Repair feedback"));
-  assert(repaired.some((turn) => turn.role === "builder"));
-  assert(repaired.some((turn) => turn.role === "reviewer"));
-  for (const turn of repaired) {
-    assert(turn.text.includes(assignment));
-    assert(!turn.text.includes("Changed host assignment"));
-  }
-  assert.equal(handle.view().deadlineAt, record.deadlineAt);
-  await host.shutdown("fixture complete");
-});
-
-test("instruction payloads and deadlines reject invalid inputs before worker calls", async (t) => {
-  const a = await adapter(t, submit, { instructions: ["Public contract"] });
-  for (const instructions of ["not an array", [null], ["x".repeat(128 * 1024)]]) {
-    const out = await a.call("pinata_run", { tasks: [spec("a")], instructions });
-    assert.equal(out.isError, true);
-    assert.match(JSON.stringify(out), /instructions/);
-  }
-  for (const deadlineAt of [NaN, -1, "tomorrow", Date.now() - 1]) {
-    const out = await a.call("pinata_run", { tasks: [spec("a")], deadlineAt });
-    assert.equal(out.isError, true);
-    assert.match(JSON.stringify(out), /deadline/i);
-  }
-  assert.equal(a.world.turns.length, 0);
-});
-
-test("each run persists its own wall-clock allowance", async (t) => {
-  const deadlineAt = Date.now() + 20_000;
-  const a = await adapter(t, submit);
-  for (let i = 0; i < 2; i++) {
-    const out = await a.call("pinata_run", {
-      tasks: [spec("a")],
-      deadlineAt: deadlineAt + i * 1000,
-    });
-    assert.equal(out.details.result.deadlineAt, deadlineAt + i * 1000);
-    const record = JSON.parse(await readFile(join(out.details.result.dir, "run.json"), "utf8"));
-    assert.equal(record.deadlineAt, deadlineAt + i * 1000);
-  }
 });

@@ -8,10 +8,13 @@ Keep `engine/core` independent of Pi. Preserve the shared engine and event model
 across the Pi extension, headless CLI, and viewers. See
 [`docs/explanation/architecture.md`](./docs/explanation/architecture.md).
 
-Preserve workspace capabilities, file ownership, cancellation, resource bounds,
-and recovery evidence. Reviews apply to the exact captured change; integration
-and destination verification are separate operations. Worktrees isolate patches,
-not operating-system permissions. Treat model output as data. See
+Preserve workspace/tool capabilities, cancellation, process cleanup, user edits and
+recovery evidence. The repository owner authorized implementation of PLAN.md on
+November 8, 2026, including removal of mandatory ownership, resource-budget and
+verification-dependent delivery policy. The coordinator owns testing, review and
+acceptance. Shared checkout is the default; worktrees provide optional patch
+isolation, not operating-system permissions. Preserve conflict checks and journaled
+application with checkout-level writer exclusion. Treat model output as data. See
 [`docs/explanation/trust.md`](./docs/explanation/trust.md).
 
 Use Node 22.19+ and retain the lockfile. Pin direct development dependencies

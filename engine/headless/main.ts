@@ -8,7 +8,7 @@ import { readFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import type { RunHandle } from "../core/engine.ts";
-import { ValidationError } from "../core/validate.ts";
+import { checkedKeys, migrationError, ValidationError } from "../core/validate.ts";
 import type { RunView } from "../core/view.ts";
 import { PinataHost, repositoryRoot, type RunParams } from "../pi/host.ts";
 import { gcText } from "../pi/commands.ts";
@@ -57,42 +57,60 @@ export async function printLogs(
 
 // A job file (examples/*.json), mapped to pinata_run parameters.
 export interface Job {
+  run?: string;
   integration?: IntegrationMode;
   cwd?: string;
   approval?: string;
   allowWrites?: boolean;
-  deadlineAt?: number;
   instructions?: string[];
   config?: Record<string, unknown>;
   tasks: unknown[];
-  integratedChecks?: RunParams["integratedChecks"];
-  noIntegratedChecksReason?: string;
+  schemaVersion?: 3;
+  workspace?: import("../core/types.ts").WorkspaceMode;
 }
 
 export function jobParams(job: Job, jobFile: string, mode?: "lean" | "observe"): RunParams {
   if (!job || typeof job !== "object" || !Array.isArray(job.tasks))
     throw new ValidationError("A job file is a JSON object with a tasks array");
-  if (
-    job.integration !== undefined &&
-    job.integration !== "manual" &&
-    job.integration !== "on-success"
-  )
-    throw new ValidationError('integration must be "on-success" or "manual"');
+  if (job.integration !== undefined && job.integration !== "manual" && job.integration !== "apply")
+    throw new ValidationError('integration must be "apply" or "manual"');
+  migrationError(
+    job,
+    ["limits", "deadlineAt", "reviewPolicy", "integratedChecks", "noIntegratedChecksReason"],
+    "job",
+  );
+  checkedKeys(
+    job,
+    [
+      "schemaVersion",
+      "run",
+      "integration",
+      "cwd",
+      "approval",
+      "allowWrites",
+      "instructions",
+      "config",
+      "tasks",
+      "workspace",
+    ],
+    "job",
+  );
+  if (job.schemaVersion !== undefined && job.schemaVersion !== 3)
+    throw new ValidationError("Legacy job schema; run pinata migrate before execution");
   const builders = job.tasks.some((t) => (t as { role?: unknown })?.role === "builder");
   if (builders && job.allowWrites === false)
     throw new ValidationError("The job has builders but allowWrites is false");
   const base = dirname(resolve(jobFile));
   return {
-    integration: job.integration ?? "on-success",
+    integration: job.integration ?? "manual",
+    run: job.run,
+    workspace: job.workspace,
     tasks: job.tasks as RunParams["tasks"],
     allowWrites: job.allowWrites,
     cwd: job.cwd ? (isAbsolute(job.cwd) ? job.cwd : resolve(base, job.cwd)) : process.cwd(),
     ...(job.approval !== undefined && { approval: job.approval }),
-    ...(job.deadlineAt !== undefined && { deadlineAt: job.deadlineAt }),
     ...(job.instructions && { instructions: job.instructions }),
     config: { ...job.config, ...(mode && { mode }) },
-    ...(job.integratedChecks && { integratedChecks: job.integratedChecks }),
-    ...(job.noIntegratedChecksReason && { noIntegratedChecksReason: job.noIntegratedChecksReason }),
   };
 }
 
@@ -113,7 +131,7 @@ async function finishRun(
   if (options.signal?.aborted) return EXIT.cancelled;
   if (view.status !== "succeeded") return exitCode(view);
   const record = await readRunRecord(handle.dir);
-  if (record.allowWrites && record.integration === "on-success")
+  if (record.allowWrites && record.integration === "apply")
     return deliver(handle.dir, handle.id, options);
   return EXIT.succeeded;
 }
@@ -140,7 +158,7 @@ export async function runJob(
   const stop = engine.onRun((run) => engine.subscribe(run.id, (e) => reporter.push(e)));
   let handle: RunHandle;
   try {
-    ({ handle } = await host.start(params, ctx as never));
+    ({ handle } = await host.start(params, ctx as never, signal));
   } catch (error) {
     stop();
     note(`pinata: ${(error as Error).message}`);

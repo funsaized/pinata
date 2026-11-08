@@ -1,463 +1,271 @@
-import { assertTime, remaining, withDeadline } from "../core/deadline.ts";
-import { PreparationGate } from "../workspace/preparation.ts";
-import { writes, reviews as isReviewer } from "../core/definitions.ts";
-// Verification stages for the Pi pipeline: builders in worktrees (setup, change capture,
-// ownership, checks, fingerprint), reviewers of builders and of existing changes, and evidence
-// checks for any role.
-import { existsSync } from "node:fs";
-import { randomUUID } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
-import type { ReviewTargetBrief } from "../agent/brief.ts";
-import type { RunContext, Settled, Verdict } from "../core/engine.ts";
-import type { AgentResult, ChangeSet, Check, Task, Workspace } from "../core/types.ts";
-import type { PinataConfig } from "../pi/config.ts";
-import type { PipelineStages } from "../pi/pipeline.ts";
-import { writeTree } from "../workspace/changes.ts";
-import { provision, resolveSetup, SetupError, type Setup } from "../workspace/dependencies.ts";
-import { git, line } from "../workspace/git.ts";
-import { copyIncluded } from "../workspace/include.ts";
-import { LiveWorkspace, liveFingerprint } from "../workspace/live.ts";
-import { worktreeRunRoot } from "../workspace/location.ts";
-import { caseInsensitive, owns } from "../workspace/paths.ts";
-import { dropRefs, snapshotBase, type Base } from "../workspace/snapshot.ts";
-import { Worktree, composeBase } from "../workspace/worktree.ts";
-import { environment, runChecks, type CheckEvidence } from "./checks.ts";
-import { builderFingerprint, retainArtifact } from "./evidence.ts";
+// Optional workspace preparation and snapshot capture. Completion carries no acceptance policy.
+import { writeFile } from "node:fs/promises";
+import { privateDir } from "../core/store.ts";
+import { git } from "../workspace/git.ts";
 import {
+  subjectDiff,
   localSubject,
   pullRequestSubject,
-  subjectDiff,
   subjectFingerprint,
   type Subject,
 } from "./subject.ts";
-
-// What prepareRun adds to the run's data before any agent starts.
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { writes } from "../core/definitions.ts";
+import { PreparationError, type RunContext } from "../core/engine.ts";
+import type { ChangeSet, Task } from "../core/types.ts";
+import type { PinataConfig } from "../pi/config.ts";
+import type { PipelineStages } from "../pi/pipeline.ts";
+import { registerWriter } from "../workspace/gate.ts";
+import { snapshotBase, type Base } from "../workspace/snapshot.ts";
+import { worktreeRunRoot } from "../workspace/location.ts";
+import { Worktree, composeBase } from "../workspace/worktree.ts";
+import { copyIncluded } from "../workspace/include.ts";
+import { provision, resolveSetup, type Setup } from "../workspace/dependencies.ts";
+import { digest } from "../workspace/changes.ts";
+import { retainArtifact } from "./evidence.ts";
+import { atomicJson, readJson, runsRoot } from "../core/store.ts";
 export interface RunPrep {
-  // Absolute paths frozen at run creation. Absent only for legacy runs.
   worktreePaths?: Record<string, string>;
+  bases?: Record<string, Base>;
   base?: Base;
   setup?: Setup;
-  subjects: Record<string, Subject>;
 }
-
 export interface BuilderData {
-  fingerprintVersion?: 2;
-  verificationId?: string;
   changes: ChangeSet;
-  checks: CheckEvidence[];
   worktree: string;
   baseCommit: string;
-  setup?: unknown;
+  checks: import("./checks.ts").CheckEvidence[];
+  fingerprintVersion?: 2;
+  verificationId?: string;
 }
-
-type Data = { config: PinataConfig; prep: RunPrep; worktrees?: Map<string, Promise<Workspace>> };
-
-const data = (run: RunContext) => run.data as unknown as Data;
-
 export function worktreePath(run: Pick<RunContext, "dir" | "data">, name: string): string {
   const paths = (run.data.prep as RunPrep | undefined)?.worktreePaths;
-  if (paths) {
-    if (!paths[name]) throw new Error(`No recorded worktree path for ${name}`);
-    return paths[name];
-  }
-  // Runs created before external worktrees retain their exact original location.
-  return join(run.dir, "worktrees", name);
+  if (paths && !paths[name]) throw new Error(`No recorded worktree path for ${name}`);
+  return paths?.[name] ?? join(run.dir, "worktrees", name);
 }
-
-// Snapshot, setup and review subjects: resolved once, before any agent starts, so invalid
-// subjects fail the tool call instead of an agent.
 export async function prepareRun(
   root: string,
   runId: string,
   tasks: readonly Task[],
   config: PinataConfig,
-  deadlineAt?: number,
-): Promise<RunPrep> {
-  try {
-    const prep = await withDeadline(deadlineAt, undefined, (signal) =>
-      resolveRun(root, runId, tasks, config, deadlineAt, signal),
-    );
-    assertTime(deadlineAt);
-    return prep;
-  } catch (error) {
-    // Nothing is left behind by a run that never started.
-    await dropRefs(root, runId).catch(() => {});
-    throw error;
-  }
-}
-
-async function resolveRun(
-  root: string,
-  runId: string,
-  tasks: readonly Task[],
-  config: PinataConfig,
-  deadlineAt?: number,
   signal?: AbortSignal,
 ): Promise<RunPrep> {
-  assertTime(deadlineAt);
-  const builders = tasks.some((t) => writes(t));
-  const reviews = tasks.filter((t) => t.reviewBase !== undefined || t.reviewPr !== undefined);
-  const prep: RunPrep = { subjects: {}, worktreePaths: {} };
-  const names = [
-    ...new Set(
-      tasks.flatMap((task) =>
-        writes(task) ? [task.id] : task.reviewPr !== undefined ? [`pr-${task.reviewPr}`] : [],
-      ),
-    ),
-  ];
-  if (names.length) {
-    const directory = await worktreeRunRoot(root, runId, config.worktreeRoot);
-    prep.worktreePaths = Object.fromEntries(names.map((name) => [name, join(directory, name)]));
+  signal?.throwIfAborted();
+  const prep: RunPrep = { worktreePaths: {}, bases: {} };
+  const isolated = tasks.filter(
+    (task) => (task.workspace ?? task.definition?.workspace ?? config.workspace) === "worktree",
+  );
+  if (!isolated.length) return prep;
+  const base = await snapshotBase(root, runId, config.includeUncommitted, signal);
+  const folder = await worktreeRunRoot(root, runId, config.worktreeRoot);
+  for (const task of isolated) {
+    prep.worktreePaths![task.id] = join(folder, task.id);
+    prep.bases![task.id] = base;
+    await git(
+      root,
+      ["update-ref", `refs/pinata/${runId}/workspaces/${task.id}/base`, base.commit],
+      { signal },
+    );
   }
-  if (builders) prep.base = await snapshotBase(root, runId, config.includeUncommitted, signal);
-  assertTime(deadlineAt);
-  if (builders) prep.setup = await resolveSetup(config.setup, root, prep.base!.commit, signal);
-  assertTime(deadlineAt);
-  const snapshot = reviews.some((t) => t.reviewBase !== undefined)
-    ? prep.base?.uncommittedFiles !== undefined && config.includeUncommitted
-      ? prep.base
-      : await snapshotBase(root, runId, true, signal)
-    : undefined;
-  for (const task of reviews)
-    prep.subjects[task.id] =
-      task.reviewBase !== undefined
-        ? await localSubject(root, task.reviewBase, snapshot!, signal)
-        : await pullRequestSubject(root, runId, task.reviewPr!, config.passEnv, signal);
+  prep.base = base;
+  prep.setup = await resolveSetup(config.setup, root, base.commit, signal);
   return prep;
 }
-
-// The builders a task depends on, directly or transitively, in dependency order.
-function builderAncestors(run: RunContext, task: Task): Task[] {
-  const out: Task[] = [];
-  const seen = new Set<string>();
-  const visit = (t: Task) => {
-    for (const name of t.after) {
-      if (seen.has(name)) continue;
-      seen.add(name);
-      const dep = run.tasks.get(name)!;
-      visit(dep);
-      if (writes(dep)) out.push(dep);
-    }
-  };
-  visit(task);
-  return out;
-}
-
-function builderData(settled: Settled | undefined): BuilderData | undefined {
-  return settled?.data as BuilderData | undefined;
-}
-
-class ReadOnlyTree implements Workspace {
-  readonly kind = "worktree" as const;
-  readonly path: string;
-  constructor(path: string) {
-    this.path = path;
-  }
-  async fingerprint(): Promise<string> {
-    return liveFingerprint(this.path);
-  }
-  async dispose(): Promise<void> {}
-}
-
-async function checksIn(
-  run: RunContext,
-  task: Task,
-  checks: readonly Check[],
-  cwd: string,
-  signal: AbortSignal,
-): Promise<CheckEvidence[]> {
-  if (!checks.length) return [];
-  return runChecks(
-    checks,
-    {
-      cwd,
-      env: environment(data(run).config?.passEnv ?? []),
-      logDir: join(run.dir, "checks", task.id),
-      deadlineAt: run.deadlineAt,
-      signal,
-    },
-    {
-      start: (check) => run.emit(task.id, { t: "check_start", check }),
-      end: (e) => run.emit(task.id, { t: "check_end", check: e.id, passed: e.passed, ms: e.ms }),
-    },
-  );
-}
-
-// Evidence checks in a shared checkout run one at a time, so a mutation is blamed on the check
-// that made it.
-const exclusive = new Map<string, Promise<unknown>>();
-function serially<T>(key: string, work: () => Promise<T>): Promise<T> {
-  const previous = exclusive.get(key) ?? Promise.resolve();
-  const next = previous.then(work, work);
-  const settled = next.catch(() => {});
-  exclusive.set(key, settled);
-  void settled.then(() => {
-    if (exclusive.get(key) === settled) exclusive.delete(key);
-  });
-  return next;
-}
-
-const failed = (
-  verdict: Verdict,
-  reason: string,
-  stage: Verdict["failureStage"] = "verification",
-  extra: Partial<Verdict> = {},
-): Verdict => ({
-  ...verdict,
-  ...extra,
-  status: "failed",
-  summary: reason,
-  reason,
-  failureStage: stage,
-});
-
 export function verificationStages(): PipelineStages {
-  const preparation = new PreparationGate();
   return {
     workspaceRef(run, task) {
-      if (writes(task)) return { kind: "worktree", path: worktreePath(run, task.id) };
-      if (task.reviewOf) return { kind: "worktree", path: worktreePath(run, task.reviewOf) };
-      if (task.reviewPr !== undefined)
-        return { kind: "worktree", path: worktreePath(run, `pr-${task.reviewPr}`) };
-      return undefined;
+      return task.workspace === "worktree"
+        ? { kind: "worktree", path: worktreePath(run, task.id) }
+        : { kind: "live", path: run.cwd };
     },
-
     async prepareWorkspace(run, task, signal, options = {}) {
-      const d = data(run);
-      if (writes(task))
-        return preparation.run(signal, async () => {
-          const path = worktreePath(run, task.id);
-          // A builder an earlier Pi started keeps its worktree exactly as it is.
-          if (options.reattach && existsSync(path)) {
-            const head = line(await git(path, ["rev-parse", "HEAD"], { signal }));
-            return Worktree.create(run.cwd, path, head, signal);
-          }
-          const base = d.prep.base!;
-          const predecessors = builderAncestors(run, task).map((b) => {
-            const changes = builderData(run.results.get(b.id))?.changes;
-            if (!changes) throw new Error(`Dependency ${b.id} has no verified changes`);
-            return changes;
-          });
-          const composed = await composeBase(run.cwd, base.commit, predecessors, signal);
-          const tree = await Worktree.create(run.cwd, path, composed.commit, signal);
-          signal.throwIfAborted();
-          await copyIncluded(run.cwd, path);
-          signal.throwIfAborted();
-          if (d.prep.setup?.command) {
-            try {
-              await provision({
-                worktree: path,
-                baseTree: tree.baseTree,
-                setup: d.prep.setup,
-                cacheRoot: join(run.dir, "..", "cache", "dependencies"),
-                markerDir: join(run.dir, "setup"),
-                task: task.id,
-                root: run.cwd,
-                passEnv: d.config?.passEnv ?? [],
-                logDir: join(run.dir, "setup", task.id),
-                timeoutMs: remaining(run.deadlineAt, run.limits.taskMs),
-                signal,
-              });
-            } catch (error) {
-              if (error instanceof SetupError) throw new Error(error.message);
-              throw error;
-            }
-          }
-          return tree;
-        });
-      if (task.reviewOf) return new ReadOnlyTree(worktreePath(run, task.reviewOf));
-      if (task.reviewPr !== undefined) {
-        const name = `pr-${task.reviewPr}`;
-        d.worktrees ??= new Map();
-        let pending = d.worktrees.get(name);
-        if (!pending) {
-          pending = Worktree.create(
-            run.cwd,
-            worktreePath(run, name),
-            d.prep.subjects[task.id].head,
-            signal,
-          ).then((t) => new ReadOnlyTree(t.path));
-          d.worktrees.set(name, pending);
-        }
-        return pending;
-      }
-      return undefined;
-    },
-
-    async reviewTarget(run, task, _prepared, signal) {
-      // Only reviewers touch the disk here: a reader's prepare stays free of I/O, so agents in a
-      // burst start without waiting behind each other's tool work.
-      if (!isReviewer(task)) return undefined;
-      const reviews = join(run.dir, "reviews");
-      await mkdir(reviews, { recursive: true, mode: 0o700 });
-      if (task.reviewOf) {
-        const settled = run.results.get(task.reviewOf);
-        const b = builderData(settled);
-        if (!settled || settled.status !== "succeeded" || !b || !settled.fingerprint)
-          throw new Error(`Review target ${task.reviewOf} is not verified`);
-        if ((await writeTree(b.worktree, undefined, signal)) !== b.changes.tree)
+      const config = run.data.config as PinataConfig;
+      if (task.workspace !== "worktree") return undefined;
+      const path = worktreePath(run, task.id);
+      const savedFile = join(run.dir, `workspace-${task.id}.json`);
+      const saved = await readJson<{ base: string; subject?: Subject }>(savedFile).catch(
+        (error: NodeJS.ErrnoException) => {
+          if (error.code === "ENOENT") return null;
+          throw error;
+        },
+      );
+      if (saved) {
+        if (!existsSync(path))
           throw new Error(
-            `Review target ${task.reviewOf} changed after verification; repair and re-review`,
+            `Worker workspace is unavailable: ${path}. Restore it or start a replacement worker.`,
           );
-        const diff = join(reviews, `${task.id}.diff`);
+        return Worktree.create(run.cwd, path, saved.base, signal);
+      }
+      if (options.reattach)
+        throw new Error(`No saved workspace for ${task.id}; inspect recovery evidence`);
+      const prep = run.data.prep as RunPrep;
+      const base = prep.bases?.[task.id] ?? prep.base;
+      if (!base) throw new Error(`No frozen base for ${task.id}`);
+      const inputs: ChangeSet[] = [];
+      for (const ref of task.inputs ?? []) {
+        const result = await run.store.readAssignmentResult(ref.worker, ref.assignment);
+        const changes = (result?.data as unknown as BuilderData | undefined)?.changes;
+        if (!changes)
+          throw new Error(
+            `Requested workspace input ${ref.worker}/${ref.assignment} has no saved isolated snapshot`,
+          );
+        inputs.push(changes);
+      }
+      const subject =
+        task.reviewPr !== undefined
+          ? await pullRequestSubject(run.cwd, run.id, task.reviewPr, config.passEnv, signal)
+          : undefined;
+      const composed = await composeBase(run.cwd, subject?.head ?? base.commit, inputs, signal);
+      // Freeze before provisioning. Continuations never rebuild this workspace.
+      await atomicJson(savedFile, { base: composed.commit, path, subject });
+      const tree = await Worktree.create(run.cwd, path, composed.commit, signal);
+      try {
+        await copyIncluded(run.cwd, path);
+        if (prep.setup?.command)
+          await provision({
+            worktree: path,
+            baseTree: tree.baseTree,
+            setup: prep.setup,
+            cacheRoot: join(run.dir, "..", "cache", "dependencies"),
+            markerDir: join(run.dir, "setup"),
+            task: task.id,
+            root: run.cwd,
+            passEnv: config.passEnv,
+            logDir: join(run.dir, "setup", task.id),
+            signal,
+          });
+      } catch (error) {
+        const data = await captureArtifact(run, task, tree);
+        throw new PreparationError(
+          (error as Error).message,
+          data as unknown as Record<string, unknown>,
+          error,
+        );
+      }
+      return tree;
+    },
+    async register(run, task) {
+      if (!writes(task) && task.workspace !== "worktree") return undefined;
+      const path = task.workspace === "worktree" ? worktreePath(run, task.id) : run.cwd;
+      return registerWriter(
+        path,
+        { run: run.id, worker: task.id, assignment: run.assignment ?? 1 },
+        task.workspace === "worktree" ? await runsRoot(run.cwd) : undefined,
+        run.signal,
+      );
+    },
+    async reviewTarget(run, task, _prepared, signal) {
+      if (!task.reviewOf && task.reviewBase === undefined && task.reviewPr === undefined)
+        return undefined;
+      const folder = join(run.dir, "reviews");
+      await privateDir(folder);
+      const file = join(folder, `${task.id}-${run.assignment ?? 1}.diff`);
+      if (task.reviewOf) {
+        const ref = run.dependencies?.find((dependency) => dependency.worker === task.reviewOf);
+        const saved = ref
+          ? await run.store.readAssignmentResult(ref.worker, ref.assignment)
+          : run.results.get(task.reviewOf);
+        const steers = run
+          .view()
+          .agents[task.reviewOf]?.steers?.map(({ by, text }) => ({ by, text }));
+        const snapshot = saved?.data as unknown as BuilderData | undefined;
+        if (!snapshot?.changes)
+          return {
+            taskId: task.reviewOf,
+            fingerprint: "shared-checkout",
+            steers,
+            subject: {
+              path: run.cwd,
+              attribution:
+                "Shared state may include user and other workers' edits. Review the code you actually inspect.",
+            },
+            result: saved?.result,
+            resultPath: join(run.dir, "results", `${task.reviewOf}.json`),
+          };
         await writeFile(
-          diff,
+          file,
           await git(
             run.cwd,
-            ["diff-tree", "-p", "--binary", "--no-renames", b.changes.base, b.changes.tree],
+            [
+              "diff-tree",
+              "-p",
+              "--binary",
+              "--no-ext-diff",
+              "--no-textconv",
+              snapshot.changes.base,
+              snapshot.changes.tree,
+            ],
             { signal },
           ),
           { mode: 0o600 },
         );
-        const target = run.tasks.get(task.reviewOf)!;
-        const steers = run.view().agents[task.reviewOf]?.steers ?? [];
         return {
           taskId: task.reviewOf,
-          fingerprint: settled.fingerprint,
-          task: {
-            id: target.id,
-            task: target.task,
-            acceptance: target.acceptance,
-            ownership: target.ownership,
+          fingerprint: digest({ base: snapshot.baseCommit, tree: snapshot.changes.tree }),
+          steers,
+          subject: {
+            base: snapshot.baseCommit,
+            tree: snapshot.changes.tree,
+            workspace: snapshot.worktree,
           },
-          result: settled.result,
-          resultPath: join(run.dir, "results", `${task.reviewOf}.json`),
-          diff,
-          changedFiles: b.changes.changes.map((c) => ({ status: c.status, path: c.path })),
-          steers: steers.map((s) => ({ by: s.by, text: s.text })),
-        } satisfies ReviewTargetBrief;
+          diff: file,
+          result: saved?.result,
+          changedFiles: snapshot.changes.changes.map(({ status, path }) => ({ status, path })),
+        };
       }
-      const subject = data(run).prep.subjects[task.id];
-      if (!subject) return undefined;
-      const { diff, changedFiles } = await subjectDiff(run.cwd, subject, signal);
-      const file = join(reviews, `${task.id}.diff`);
-      await writeFile(file, diff, { mode: 0o600 });
+      const config = run.data.config as PinataConfig;
+      const savedSubject =
+        task.workspace === "worktree"
+          ? (await readJson<{ subject?: Subject }>(join(run.dir, `workspace-${task.id}.json`)))
+              .subject
+          : undefined;
+      const subject =
+        savedSubject ??
+        (task.reviewBase !== undefined
+          ? await localSubject(
+              run.cwd,
+              task.reviewBase,
+              await snapshotBase(run.cwd, run.id, true, signal),
+              signal,
+            )
+          : await pullRequestSubject(run.cwd, run.id, task.reviewPr!, config.passEnv, signal));
+      const diff = await subjectDiff(run.cwd, subject, signal);
+      await writeFile(file, diff.diff, { mode: 0o600 });
       return {
         taskId: null,
         fingerprint: subjectFingerprint(subject),
         subject: subject as unknown as Record<string, unknown>,
         diff: file,
-        changedFiles,
+        changedFiles: diff.changedFiles,
       };
     },
-
-    async verify(run, task, prepared, outcome, verdict, signal) {
-      const workspace = prepared.workspace;
-      if (writes(task) && workspace instanceof Worktree) {
-        if (!outcome.result && verdict.failureStage === "result")
-          return { ...verdict, retry: "result-only" };
-        if (await workspace.headMoved(signal))
-          return failed(verdict, "The builder moved HEAD; commits are the coordinator's");
-        const changes = await workspace.capture(signal);
-        const ci = caseInsensitive(run.cwd);
-        const unowned = changes.changes
-          .filter((c) => !owns(task.ownership, c.path, ci))
-          .map((c) => c.path);
-        const data: BuilderData = {
-          fingerprintVersion: 2,
-          verificationId: randomUUID(),
-          changes,
-          checks: [],
-          worktree: workspace.path,
-          baseCommit: workspace.baseCommit,
-        };
-        if (unowned.length)
-          return failed(
-            verdict,
-            `Changed files outside ownership: ${unowned.slice(0, 10).join(", ")}`,
-            "verification",
-            { data: data as never },
-          );
-        const result = verdict.result as AgentResult | null;
-        if (!result) return { ...verdict, data: data as never };
-        const actual = changes.changes.map((c) => c.path).sort();
-        const claimed = [...result.changedFiles].sort();
-        if (JSON.stringify(actual) !== JSON.stringify(claimed))
-          return failed(
-            verdict,
-            `Reported changedFiles ${JSON.stringify(claimed)} differ from the actual changes ${JSON.stringify(actual)}`,
-            "verification",
-            {
-              data: data as never,
-            },
-          );
-        if (result.status === "succeeded") {
-          data.checks = await checksIn(
-            run,
-            task,
-            [...task.checks, ...task.evidenceChecks],
-            workspace.path,
-            signal,
-          );
-          const all = task.checks.length + task.evidenceChecks.length;
-          if (data.checks.length !== all || data.checks.some((c) => !c.passed)) {
-            const bad = data.checks.find((c) => !c.passed);
-            return failed(
-              verdict,
-              `Required check ${bad?.id ?? "?"} failed${bad?.reason ? ` (${bad.reason})` : ` (exit ${bad?.code})`}`,
-              "verification",
-              {
-                data: {
-                  ...data,
-                  checkFailure: {
-                    stage: "verification",
-                    workspace: workspace.path,
-                    predecessors: task.after,
-                    check: bad ?? null,
-                  },
-                } as never,
-              },
-            );
-          }
-          // Checks must not change the deliverable.
-          const after = await workspace.capture(signal);
-          if (after.tree !== changes.tree)
-            return failed(
-              verdict,
-              "Checks changed the builder's files; inspect and re-review",
-              "verification",
-              { data: data as never },
-            );
-        }
-        const hash = builderFingerprint(data, result);
-        if (verdict.status === "succeeded")
-          await retainArtifact(run.cwd, run.id, task.id, hash, data, signal);
-        return {
-          ...verdict,
-          data: data as never,
-          fingerprint: hash,
-        };
-      }
-      // Readers: evidence checks run where the reader read, and must not change it.
-      if (task.evidenceChecks.length && verdict.result && verdict.status !== "failed") {
-        const cwd = workspace?.path ?? run.cwd;
-        const { before, checks, after } = await serially(cwd, async () => {
-          const before = await liveFingerprint(cwd, signal);
-          const checks = await checksIn(run, task, task.evidenceChecks, cwd, signal);
-          return { before, checks, after: await liveFingerprint(cwd, signal) };
-        });
-        if (before !== after)
-          return failed(
-            verdict,
-            "Evidence checks changed the files they inspected",
-            "verification",
-            { data: { checks } as never },
-          );
-        const bad = checks.find((c) => !c.passed);
-        if (bad || checks.length !== task.evidenceChecks.length)
-          return failed(verdict, `Evidence check ${bad?.id ?? "?"} failed`, "verification", {
-            data: { checks } as never,
-          });
-        verdict = { ...verdict, data: { checks } as never };
-      }
-      if (task.reviewOf) {
-        const b = builderData(run.results.get(task.reviewOf));
-        if (!b || (await writeTree(b.worktree, undefined, signal)) !== b.changes.tree)
-          return failed(verdict, "Review target changed during review; repair and re-review");
-      }
-      void LiveWorkspace;
-      return verdict;
+    async verify(run, task, prepared, _outcome, verdict) {
+      if (!(prepared.workspace instanceof Worktree)) return verdict;
+      const data = await captureArtifact(run, task, prepared.workspace);
+      const fingerprint = digest({ base: data.baseCommit, tree: data.changes.tree });
+      return {
+        ...verdict,
+        fingerprint,
+        data: { ...verdict.data, ...data } as unknown as Record<string, unknown>,
+      };
     },
   };
+}
+
+async function captureArtifact(
+  run: RunContext,
+  task: Task,
+  workspace: Worktree,
+): Promise<BuilderData> {
+  const changes = await workspace.capture();
+  const data: BuilderData = {
+    changes,
+    worktree: workspace.path,
+    baseCommit: workspace.baseCommit,
+    checks: [],
+  };
+  const fingerprint = digest({ base: data.baseCommit, tree: changes.tree });
+  await retainArtifact(run.cwd, run.id, task.id, fingerprint, data);
+  return data;
 }

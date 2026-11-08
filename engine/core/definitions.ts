@@ -5,9 +5,10 @@ import { ROLE_TOOLS } from "./types.ts";
 import { checkedKeys, id, need, strings, text, validateModel } from "./validate.ts";
 
 export const PRESETS = ["scout", "builder", "reviewer"] as const;
-export type AgentWorkspace = "live-readonly" | "worktree" | "review-target";
+export type AgentWorkspace = "shared" | "worktree";
 export interface AgentDefinition {
-  schemaVersion: 1;
+  schemaVersion: 2;
+  access: "read" | "write";
   name: string;
   description: string;
   workspace: AgentWorkspace;
@@ -33,6 +34,7 @@ export function validateDefinition(input: unknown, source: string): AgentDefinit
       "name",
       "description",
       "workspace",
+      "access",
       "tools",
       "prompt",
       "output",
@@ -41,13 +43,14 @@ export function validateDefinition(input: unknown, source: string): AgentDefinit
     ],
     "agent definition",
   );
-  need(input.schemaVersion === 1, "Unsupported agent definition schemaVersion");
+  need(
+    input.schemaVersion === 2,
+    "Legacy agent definition: run pinata migrate (schemaVersion 2 separates access from workspace)",
+  );
+  need(input.access === "read" || input.access === "write", "Agent access must be read or write");
   const name = id(input.name, "agent name");
   const workspace = input.workspace as AgentWorkspace;
-  need(
-    ["live-readonly", "worktree", "review-target"].includes(workspace),
-    `Agent ${name}: invalid workspace`,
-  );
+  need(["shared", "worktree"].includes(workspace), `Agent ${name}: invalid workspace`);
   const tools = strings(input.tools, "agent tools");
   need(
     tools.length <= 64 && new Set(tools).size === tools.length,
@@ -61,8 +64,8 @@ export function validateDefinition(input: unknown, source: string): AgentDefinit
       `Agent ${name}: invalid tool ${tool}`,
     );
     need(
-      workspace === "worktree" || !["bash", "powershell", "write", "edit"].includes(tool),
-      `Agent ${name}: ${tool} requires a worktree`,
+      input.access === "write" || !["bash", "powershell", "write", "edit"].includes(tool),
+      `Agent ${name}: ${tool} requires write access`,
     );
   }
   checkedKeys(input.output ?? {}, ["require"], "agent output");
@@ -81,7 +84,8 @@ export function validateDefinition(input: unknown, source: string): AgentDefinit
     "Invalid agent fallbacks",
   );
   const value: Omit<AgentDefinition, "digest"> = {
-    schemaVersion: 1,
+    schemaVersion: 2,
+    access: input.access as "read" | "write",
     name,
     description: text(input.description, "agent description", 1000),
     workspace,
@@ -111,10 +115,10 @@ export function agentName(task: Pick<TaskSpec, "agent" | "role">): string {
   return task.agent ?? task.role ?? "";
 }
 export function writes(task: { definition?: AgentDefinition; role?: string }): boolean {
-  return task.definition ? task.definition.workspace === "worktree" : task.role === "builder";
+  return task.definition ? task.definition.access === "write" : task.role === "builder";
 }
 export function reviews(task: { definition?: AgentDefinition; role?: string }): boolean {
-  return task.definition ? task.definition.workspace === "review-target" : task.role === "reviewer";
+  return task.definition ? task.definition.name === "reviewer" : task.role === "reviewer";
 }
 export function taskTools(task: { definition?: AgentDefinition; role?: string }): string[] {
   return task.definition?.tools ?? ROLE_TOOLS[task.role as keyof typeof ROLE_TOOLS] ?? [];

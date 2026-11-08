@@ -1,5 +1,6 @@
 // A viewer's connection to a run's socket server: it keeps the run's view current with the
 // same reducer every surface uses, and acknowledges each batch it applies.
+import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { createConnection, type Socket } from "node:net";
 import { join } from "node:path";
@@ -52,6 +53,10 @@ export class IpcClient {
   private readonly socket: Socket;
   private readonly listeners = new Set<(update: Update) => void>();
   private readonly manualAck: boolean;
+  private readonly messagesPending = new Map<
+    string,
+    { resolve(receipt: unknown): void; reject(error: Error): void }
+  >();
   private readonly requests = new Map<
     string,
     Array<{
@@ -106,6 +111,13 @@ export class IpcClient {
       for (const queue of client.requests.values())
         for (const waiting of queue) waiting.reject(new Error("The viewer is disconnected"));
       client.requests.clear();
+      for (const waiting of client.messagesPending.values())
+        waiting.reject(
+          new Error(
+            "The viewer is disconnected; message delivery may be uncertain. Retry with its original ID.",
+          ),
+        );
+      client.messagesPending.clear();
       client.emit({ kind: "closed" });
     });
     socket.once("connect", () =>
@@ -157,7 +169,16 @@ export class IpcClient {
         });
         break;
       }
+      case "message_ack":
+        this.messagesPending.get(frame.messageId)?.resolve(frame.receipt);
+        this.messagesPending.delete(frame.messageId);
+        break;
       case "error":
+        if (frame.messageId) {
+          this.messagesPending.get(frame.messageId)?.reject(new Error(frame.message));
+          this.messagesPending.delete(frame.messageId);
+          break;
+        }
         // A failed request answers its oldest waiter; anything else goes to listeners.
         for (const [agent, queue] of this.requests)
           if (queue.length) {
@@ -197,8 +218,17 @@ export class IpcClient {
     });
   }
 
-  steer(agent: string, text: string, as: "steer" | "followUp" = "steer"): void {
-    this.send({ type: "steer", agent, text, as });
+  steer(
+    agent: string,
+    text: string,
+    as: "steer" | "followUp" = "steer",
+    messageId = randomUUID(),
+  ): Promise<unknown> {
+    if (this.closed) return Promise.reject(new Error("The viewer is disconnected"));
+    return new Promise((resolve, reject) => {
+      this.messagesPending.set(messageId, { resolve, reject });
+      this.send({ type: "steer", agent, text, as, messageId });
+    });
   }
 
   abort(agent: string): void {

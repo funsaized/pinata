@@ -15,7 +15,7 @@ const submit = (changedFiles: string[] = [], brief?: string) =>
     status: "succeeded",
     summary: "done",
     changedFiles,
-    checks: [],
+
     findings: [],
     blockers: [],
     ...(brief && { brief }),
@@ -27,7 +27,7 @@ function toolResults(turn: FauxTurn): string[] {
     .map((m: any) => (m.content ?? []).map((c: any) => c.text ?? "").join(""));
 }
 
-test("blocked builder writes return an error to the model and never touch disk", async (t) => {
+test("shared writes are allowed inside the workspace while escapes stay blocked", async (t) => {
   const seen: string[] = [];
   const world = await fauxWorld(t, (turn) => {
     const steps = [
@@ -40,22 +40,17 @@ test("blocked builder writes return an error to the model and never touch disk",
     seen.push(...toolResults(turn).slice(-1));
     return steps[turn.round]();
   });
-  const view = await (
-    await world.run(
-      [spec("build", "builder", { ownership: ["a.txt"], noChecksReason: "fixture" })],
-      { allowWrites: true },
-    )
-  ).done;
+  const view = await (await world.run([spec("build", "builder", {})], { allowWrites: true })).done;
   assert.equal(view.agents.build.status, "succeeded", JSON.stringify(view.agents.build));
-  assert.match(seen[0], /b\.txt is outside this builder's ownership \(a\.txt\)/);
+  assert.doesNotMatch(seen[0], /outside/);
   assert.match(seen[1], /outside the workspace/);
   assert.match(seen[2], /not a safe repository path/);
   const tree = view.agents.build.workspace!.path;
-  assert.equal(view.agents.build.workspace!.kind, "worktree");
-  assert(!existsSync(join(tree, "b.txt")));
+  assert.equal(view.agents.build.workspace!.kind, "live");
+  assert(existsSync(join(tree, "b.txt")));
   assert(!existsSync(join(tree, "..", "outside.txt")));
   assert.equal(await readFile(join(tree, "a.txt"), "utf8"), "owned");
-  assert(!existsSync(join(world.repo, "a.txt")), "the live checkout is untouched");
+  assert(existsSync(join(world.repo, "a.txt")), "shared edits are immediately available");
 });
 
 test("codemode scripts cannot bypass the guard", async (t) => {
@@ -64,7 +59,7 @@ test("codemode scripts cannot bypass the guard", async (t) => {
     seen.push(...toolResults(turn).slice(-1));
     if (turn.agent === "build" && turn.round === 0)
       return call("codemode", {
-        code: 'try { await tools.write({ path: "b.txt", content: "x" }); text("wrote"); } catch (e) { text("blocked: " + e.message); }',
+        code: 'try { await tools.write({ path: "../outside.txt", content: "x" }); text("wrote"); } catch (e) { text("blocked: " + e.message); }',
       });
     if (turn.agent === "look" && turn.round === 0)
       return call("codemode", {
@@ -73,20 +68,17 @@ test("codemode scripts cannot bypass the guard", async (t) => {
     return turn.agent === "look" ? submit([], "map") : submit();
   });
   const view = await (
-    await world.run(
-      [
-        spec("build", "builder", { ownership: ["a.txt"], noChecksReason: "fixture" }),
-        spec("look", "scout"),
-      ],
-      { allowWrites: true, data: { codemode: true } },
-    )
+    await world.run([spec("build", "builder", {}), spec("look", "scout")], {
+      allowWrites: true,
+      data: { codemode: true },
+    })
   ).done;
   assert.equal(view.agents.build.status, "succeeded", JSON.stringify(view.agents.build));
   assert.equal(view.agents.look.status, "succeeded", JSON.stringify(view.agents.look));
   const joined = seen.join("\n");
-  assert.match(joined, /blocked: .*b\.txt is outside this builder's ownership/);
+  assert.match(joined, /blocked: .*outside the workspace/);
   assert.match(joined, /blocked: .*bash is not available to the scout role|blocked: .*bash/);
-  assert(!existsSync(join(view.agents.build.workspace!.path, "b.txt")));
+  assert(!existsSync(join(world.repo, "..", "outside.txt")));
   assert(!existsSync(join(world.repo, "c.txt")));
 });
 
@@ -96,7 +88,7 @@ test("the guard rejects unavailable tools and writes from read-only agents", () 
     task: "s",
     role: "scout" as const,
     tools: ["read", "grep", "find", "ls"],
-    ownership: [],
+
     readOnly: true,
   };
   const allowed = allowedTools({ ...scout, codemode: true });

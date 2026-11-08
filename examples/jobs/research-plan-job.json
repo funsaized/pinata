@@ -29,7 +29,8 @@
       "id": "scout",
       "task": "Find the installed version of the HTTP framework from the lockfile and every call site of its routing API.",
       "acceptance": ["States the exact version and lists call sites by file and line"],
-      "agent": "scout"
+      "agent": "scout",
+      "instructions": []
     },
     {
       "id": "research",
@@ -39,14 +40,18 @@
         "Cites fetched official sources",
         "States which changes apply to the found call sites"
       ],
-      "agent": "researcher"
+      "agent": "researcher",
+      "instructions": []
     },
     {
       "id": "plan",
       "after": ["scout", "research"],
       "task": "Plan the upgrade: ordered steps, builder ownership, and the checks that prove each step.",
       "acceptance": ["Names owned paths per builder and a check for each step"],
-      "agent": "planner"
+      "agent": "planner",
+      "instructions": []
     }
-  ]
+  ],
+  "schemaVersion": 3,
+  "workspace": "shared"
 }

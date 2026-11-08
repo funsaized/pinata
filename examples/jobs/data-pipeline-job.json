@@ -4,15 +4,10 @@
     "Template for a repository with small, versionable CSV inputs and an existing deterministic scripts/orders-etl.mjs runner implementing the commands used here. Adapt its CLI and paths before running.",
     "The runner transform command is: node scripts/orders-etl.mjs transform --input <file> --contract data/contracts/orders.json --output <directory>. Its merge command accepts repeated --input <staged-directory>, --contract, and --output.",
     "Profile and validation commands must be read-only, emit evidence to stdout, and exit nonzero on violations. validate-contract exercises existing fixtures; partition/dataset validators recompute results and check reproducibility.",
-    "Use deterministic code for parsing and arithmetic. Agents inspect anomalies and coordinate execution; they must not hand-author rows or invent missing values. Large or sensitive datasets need an external artifact strategy instead of Git patches."
+    "Use deterministic code for parsing and arithmetic. Agents inspect anomalies and coordinate execution; they must not hand-author rows or invent missing values. Large or sensitive datasets need an external artifact strategy instead of Git patches.",
+    "Coordinator destination check intent (not engine-enforced): [{\"id\":\"dataset\",\"argv\":[\"node\",\"scripts/orders-etl.mjs\",\"validate-dataset\",\"--contract\",\"data/contracts/orders.json\",\"--input\",\"data/raw/orders/2025-01.csv\",\"--input\",\"data/raw/orders/2025-02.csv\",\"--output\",\"data/curated/orders\"],\"timeoutMs\":180000}]"
   ],
   "config": {
-    "reviewPolicy": "required",
-    "limits": {
-      "concurrency": 3,
-      "costUsd": 15,
-      "repairs": 2
-    },
     "setup": false
   },
   "tasks": [
@@ -24,21 +19,8 @@
         "Cite the input schema, stable record key, amount and date rules, and reconciliation requirements.",
         "Distinguish sampled observations from full-input counts, which the engine profile check produces."
       ],
-      "evidenceChecks": [
-        {
-          "id": "profile",
-          "argv": [
-            "node",
-            "scripts/orders-etl.mjs",
-            "profile",
-            "--input",
-            "data/raw/orders/2025-01.csv",
-            "--input",
-            "data/raw/orders/2025-02.csv",
-            "--stdout"
-          ],
-          "timeoutMs": 180000
-        }
+      "instructions": [
+        "Requested check (coordinator decides when to run it): {\"id\":\"profile\",\"argv\":[\"node\",\"scripts/orders-etl.mjs\",\"profile\",\"--input\",\"data/raw/orders/2025-01.csv\",\"--input\",\"data/raw/orders/2025-02.csv\",\"--stdout\"],\"timeoutMs\":180000}"
       ]
     },
     {
@@ -50,19 +32,9 @@
         "Contract validation passes against the existing runner and its fixture suite."
       ],
       "after": ["profile"],
-      "ownership": ["data/contracts/orders.json"],
-      "checks": [
-        {
-          "id": "contract",
-          "argv": [
-            "node",
-            "scripts/orders-etl.mjs",
-            "validate-contract",
-            "--contract",
-            "data/contracts/orders.json"
-          ],
-          "timeoutMs": 180000
-        }
+      "instructions": [
+        "Requested check (coordinator decides when to run it): {\"id\":\"contract\",\"argv\":[\"node\",\"scripts/orders-etl.mjs\",\"validate-contract\",\"--contract\",\"data/contracts/orders.json\"],\"timeoutMs\":180000}",
+        "Assigned file responsibility: data/contracts/orders.json. Preserve unrelated work."
       ]
     },
     {
@@ -74,7 +46,8 @@
         "Approve only when the assigned change meets its acceptance criteria and its available check evidence supports it."
       ],
       "after": ["contract", "profile"],
-      "reviewOf": "contract"
+      "reviewOf": "contract",
+      "instructions": []
     },
     {
       "id": "partition-2025-01",
@@ -86,23 +59,9 @@
         "Validation recomputes counts and exact amounts from source and output. Rerunning with the same inputs produces identical artifacts."
       ],
       "after": ["contract", "review-contract"],
-      "ownership": ["data/staged/orders/2025-01"],
-      "checks": [
-        {
-          "id": "partition",
-          "argv": [
-            "node",
-            "scripts/orders-etl.mjs",
-            "validate-partition",
-            "--input",
-            "data/raw/orders/2025-01.csv",
-            "--contract",
-            "data/contracts/orders.json",
-            "--output",
-            "data/staged/orders/2025-01"
-          ],
-          "timeoutMs": 180000
-        }
+      "instructions": [
+        "Requested check (coordinator decides when to run it): {\"id\":\"partition\",\"argv\":[\"node\",\"scripts/orders-etl.mjs\",\"validate-partition\",\"--input\",\"data/raw/orders/2025-01.csv\",\"--contract\",\"data/contracts/orders.json\",\"--output\",\"data/staged/orders/2025-01\"],\"timeoutMs\":180000}",
+        "Assigned file responsibility: data/staged/orders/2025-01. Preserve unrelated work."
       ]
     },
     {
@@ -114,7 +73,8 @@
         "Approve only when the assigned change meets its acceptance criteria and its available check evidence supports it."
       ],
       "after": ["partition-2025-01"],
-      "reviewOf": "partition-2025-01"
+      "reviewOf": "partition-2025-01",
+      "instructions": []
     },
     {
       "id": "partition-2025-02",
@@ -126,23 +86,9 @@
         "Validation recomputes counts and exact amounts from source and output. Rerunning with the same inputs produces identical artifacts."
       ],
       "after": ["contract", "review-contract"],
-      "ownership": ["data/staged/orders/2025-02"],
-      "checks": [
-        {
-          "id": "partition",
-          "argv": [
-            "node",
-            "scripts/orders-etl.mjs",
-            "validate-partition",
-            "--input",
-            "data/raw/orders/2025-02.csv",
-            "--contract",
-            "data/contracts/orders.json",
-            "--output",
-            "data/staged/orders/2025-02"
-          ],
-          "timeoutMs": 180000
-        }
+      "instructions": [
+        "Requested check (coordinator decides when to run it): {\"id\":\"partition\",\"argv\":[\"node\",\"scripts/orders-etl.mjs\",\"validate-partition\",\"--input\",\"data/raw/orders/2025-02.csv\",\"--contract\",\"data/contracts/orders.json\",\"--output\",\"data/staged/orders/2025-02\"],\"timeoutMs\":180000}",
+        "Assigned file responsibility: data/staged/orders/2025-02. Preserve unrelated work."
       ]
     },
     {
@@ -154,7 +100,8 @@
         "Approve only when the assigned change meets its acceptance criteria and its available check evidence supports it."
       ],
       "after": ["partition-2025-02"],
-      "reviewOf": "partition-2025-02"
+      "reviewOf": "partition-2025-02",
+      "instructions": []
     },
     {
       "id": "reconcile",
@@ -172,25 +119,9 @@
         "review-2025-01",
         "review-2025-02"
       ],
-      "ownership": ["data/curated/orders"],
-      "checks": [
-        {
-          "id": "reconciliation",
-          "argv": [
-            "node",
-            "scripts/orders-etl.mjs",
-            "validate-dataset",
-            "--contract",
-            "data/contracts/orders.json",
-            "--input",
-            "data/raw/orders/2025-01.csv",
-            "--input",
-            "data/raw/orders/2025-02.csv",
-            "--output",
-            "data/curated/orders"
-          ],
-          "timeoutMs": 180000
-        }
+      "instructions": [
+        "Requested check (coordinator decides when to run it): {\"id\":\"reconciliation\",\"argv\":[\"node\",\"scripts/orders-etl.mjs\",\"validate-dataset\",\"--contract\",\"data/contracts/orders.json\",\"--input\",\"data/raw/orders/2025-01.csv\",\"--input\",\"data/raw/orders/2025-02.csv\",\"--output\",\"data/curated/orders\"],\"timeoutMs\":180000}",
+        "Assigned file responsibility: data/curated/orders. Preserve unrelated work."
       ]
     },
     {
@@ -202,27 +133,11 @@
         "Approve only when the assigned change meets its acceptance criteria and its available check evidence supports it."
       ],
       "after": ["reconcile"],
-      "reviewOf": "reconcile"
+      "reviewOf": "reconcile",
+      "instructions": []
     }
   ],
   "approval": "Replace with your authorization for creation of the declared data contract, staged partitions, and curated dataset plus execution of the existing local ETL runner; raw inputs remain unchanged",
-  "integratedChecks": [
-    {
-      "id": "dataset",
-      "argv": [
-        "node",
-        "scripts/orders-etl.mjs",
-        "validate-dataset",
-        "--contract",
-        "data/contracts/orders.json",
-        "--input",
-        "data/raw/orders/2025-01.csv",
-        "--input",
-        "data/raw/orders/2025-02.csv",
-        "--output",
-        "data/curated/orders"
-      ],
-      "timeoutMs": 180000
-    }
-  ]
+  "schemaVersion": 3,
+  "workspace": "shared"
 }

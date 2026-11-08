@@ -37,6 +37,9 @@ export interface AgentView {
   model?: ModelRef;
   workspace?: WorkspaceRef;
   queuedAt?: number;
+  assignment?: number;
+  assignments?: Record<number, AssignmentView>;
+  dependencies?: import("./types.ts").AssignmentRef[];
   attemptSeq?: number;
   settledSeq?: number;
   startedAt?: number;
@@ -60,8 +63,10 @@ export interface AgentView {
   reason?: string;
 }
 
+export type AssignmentView = Omit<AgentView, "assignments">;
+
 export interface RunView {
-  reviewPolicy?: import("./policy.ts").ReviewPolicy;
+  reviewPolicy?: "optional" | "required";
   deadlineAt?: number;
   run: string;
   mode: Mode;
@@ -149,7 +154,56 @@ function updateAgent(view: RunView, id: string, change: (agent: AgentView) => Ag
 // so a snapshot followed by the events after it equals a full replay.
 export function reduce(view: RunView, event: AgentEvent): RunView {
   if (event.seq <= view.seq) return view;
-  let next = apply(view, event);
+  let next: RunView;
+  if (event.v === 2 && event.agent && event.assignment) {
+    const worker = event.agent;
+    const existing = view.agents[worker];
+    const assignments = existing?.assignments ?? {};
+    const spec =
+      event.t === "agent_queued" && event.task
+        ? event.task
+        : view.tasks.find((task) => task.id === worker);
+    if (!spec) return { ...view, seq: event.seq };
+    const current = assignments[event.assignment] ?? agentView(spec, event.at);
+    const inner = apply(
+      { ...view, agents: { ...view.agents, [worker]: { ...current, assignments: undefined } } },
+      event,
+    );
+    const { assignments: _nested, ...updated } = inner.agents[worker];
+    const history = {
+      ...assignments,
+      [event.assignment]: {
+        ...updated,
+        assignment: event.assignment,
+        ...(event.t === "agent_queued" && { dependencies: event.dependencies }),
+      },
+    };
+    const ordered = Object.values(history).sort(
+      (a, b) => (a.assignment ?? 0) - (b.assignment ?? 0),
+    );
+    const visible =
+      ordered.find((a) => a.status === "running") ??
+      ordered.find((a) => a.status === "queued") ??
+      ordered.at(-1)!;
+    const agent = {
+      ...visible,
+      assignments: history,
+      usage: ordered.reduce((usage, a) => addUsage(usage, a.usage), ZERO_USAGE),
+      turns: ordered.reduce((n, a) => n + a.turns, 0),
+      toolCalls: ordered.reduce((n, a) => n + a.toolCalls, 0),
+    };
+    const agents = { ...view.agents, [worker]: agent };
+    const tasks = view.tasks.some((task) => task.id === worker)
+      ? view.tasks
+      : [...view.tasks, spec];
+    next = {
+      ...view,
+      agents,
+      tasks,
+      order: view.order.includes(worker) ? view.order : [...view.order, worker],
+      usage: totalUsage(agents),
+    };
+  } else next = apply(view, event);
   if (event.source && event.agent)
     next = updateAgent(next, event.agent, (a) => ({ ...a, source: event.source }));
   return next === view ? { ...view, seq: event.seq } : { ...next, seq: event.seq };
@@ -167,14 +221,20 @@ function apply(view: RunView, e: AgentEvent): RunView {
         mode: e.mode,
         status: "running",
         startedAt: e.at,
-        ...(e.deadlineAt !== undefined && { deadlineAt: e.deadlineAt }),
-        reviewPolicy: e.reviewPolicy ?? "required",
+        ...(e.v === 1 && {
+          reviewPolicy: e.reviewPolicy ?? "required",
+          ...(e.deadlineAt !== undefined && { deadlineAt: e.deadlineAt }),
+        }),
         tasks: e.tasks,
         order: e.tasks.map((t) => t.id),
         agents,
         usage: ZERO_USAGE,
       };
     }
+    case "input_recorded":
+    case "input_dispatched":
+    case "input_consumed":
+      return view;
     case "agent_queued": {
       if (!id) return view;
       const existing = view.agents[id];
@@ -183,7 +243,13 @@ function apply(view: RunView, e: AgentEvent): RunView {
           ...view,
           tasks: [...view.tasks, e.task],
           order: [...view.order, id],
-          agents: { ...view.agents, [id]: agentView(e.task, e.at) },
+          agents: {
+            ...view.agents,
+            [id]: {
+              ...agentView(e.task, e.at),
+              ...(e.assignment !== undefined && { assignment: e.assignment, assignments: {} }),
+            },
+          },
         };
       if (!existing) return view;
       // A requeued agent (repair) starts over, keeping its spend.
@@ -198,6 +264,8 @@ function apply(view: RunView, e: AgentEvent): RunView {
           ...view.agents,
           [id]: {
             ...fresh,
+            ...(e.assignment !== undefined && { assignment: e.assignment }),
+            ...(existing.assignments && { assignments: existing.assignments }),
             attemptSeq: e.seq,
             ...(existing.workspaceMode && { workspaceMode: existing.workspaceMode }),
             usage: existing.usage,
@@ -217,6 +285,9 @@ function apply(view: RunView, e: AgentEvent): RunView {
       return updateAgent(view, id!, (a) => ({
         ...a,
         status: "running",
+        ...((e.assignment ?? a.assignment) !== undefined && {
+          assignment: e.assignment ?? a.assignment,
+        }),
         backend: e.backend,
         model: e.model,
         workspace: e.workspace,
@@ -294,7 +365,9 @@ function apply(view: RunView, e: AgentEvent): RunView {
     case "steer":
       return updateAgent(view, id!, (a) => ({
         ...a,
-        steers: [...a.steers, { by: e.by, text: e.text, as: e.as, at: e.at }],
+        steers: [...a.steers, { by: e.by, text: e.text.slice(0, 1600), as: e.as, at: e.at }].slice(
+          -20,
+        ),
       }));
     case "retry":
       return updateAgent(view, id!, (a) => ({
@@ -326,10 +399,10 @@ function apply(view: RunView, e: AgentEvent): RunView {
     case "agent_settled": {
       const next = updateAgent(view, id!, (a) => ({
         ...a,
-        status: e.status,
+        status: e.assignment && a.assignment && e.assignment < a.assignment ? a.status : e.status,
         settledAt: e.at,
         settledSeq: e.seq,
-        summary: e.summary,
+        summary: e.v === 2 ? e.summary.slice(0, 1600) : e.summary,
         ...(e.reason !== undefined && { reason: e.reason }),
         usage: addUsage(a.previous?.usage ?? ZERO_USAGE, e.usage),
         turns: (a.previous?.turns ?? 0) + e.turns,

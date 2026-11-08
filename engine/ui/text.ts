@@ -30,6 +30,7 @@ export function statusLabel(status: string): string {
     rolled_back: "Rolled back",
     not_run: "Not checked",
     source_changed: "Source changed",
+    applied: "Applied",
     applying: "Applying changes",
     verifying: "Checking checkout",
     destination_checked: "Checkout checked",

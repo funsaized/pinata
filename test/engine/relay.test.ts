@@ -6,11 +6,10 @@ import test, { type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
 import { setup } from "../../examples/relay/setup.mjs";
-import { taskSpec } from "../../engine/core/definitions.ts";
-import { validateGraph } from "../../engine/core/validate.ts";
+
 import { jobParams } from "../../engine/headless/main.ts";
 import { discoverAgents, resolveTasks } from "../../engine/pi/definitions.ts";
-import { integrate, writeRunRecord } from "../../engine/verify/integrate.ts";
+
 import { headCommit } from "../../engine/workspace/snapshot.ts";
 import { fauxWorld } from "./faux.ts";
 import { tempDir } from "./helpers.ts";
@@ -72,6 +71,15 @@ test("Relay setup creates a portable model-ready starter and refuses overwrites"
     assert.equal(job.config.models[role].provider, "REPLACE_WITH_APPROVED_PROVIDER");
 });
 
+function responsibility(id: string): string[] {
+  const component = id.replace("build-", "");
+  if (!id.startsWith("build-")) return [];
+  return [
+    component === "cli" ? "bin/relay.mjs" : `src/${component}.mjs`,
+    `test/${component}.test.mjs`,
+  ];
+}
+
 async function runRelay(t: TestContext, overrides: Record<string, string> = {}) {
   // Exercise the same generated starter as the tutorial, including its acceptance check.
   const source = join(await tempDir(t, "pinata-relay-proof-"), "starter");
@@ -83,10 +91,7 @@ async function runRelay(t: TestContext, overrides: Record<string, string> = {}) 
     job.tasks,
     discoverAgents(undefined, join(ROOT, "absent-agent-dir")),
   );
-  const tasks = resolved.tasks.map((task) => ({
-    ...task,
-    checks: task.checks?.map((c) => ({ ...c, argv: [process.execPath, ...c.argv.slice(1)] })),
-  }));
+  const tasks = resolved.tasks;
   const byId = new Map(tasks.map((task) => [task.id, task]));
   const world = await fauxWorld(
     t,
@@ -94,7 +99,9 @@ async function runRelay(t: TestContext, overrides: Record<string, string> = {}) 
       const task = byId.get(turn.agent!)!;
       if (turn.role === "builder" && turn.round === 0)
         return fauxAssistantMessage(
-          task.ownership!.map((path) => fauxToolCall("write", { path, content: finished[path] })),
+          responsibility(task.id).map((path) =>
+            fauxToolCall("write", { path, content: finished[path] }),
+          ),
           { stopReason: "toolUse" },
         );
       return fauxAssistantMessage(
@@ -102,7 +109,7 @@ async function runRelay(t: TestContext, overrides: Record<string, string> = {}) 
           fauxToolCall("submit_result", {
             status: "succeeded",
             summary: "Scripted fixture response; no live model evaluation.",
-            changedFiles: turn.role === "builder" ? (task.ownership ?? []) : [],
+            changedFiles: turn.role === "builder" ? responsibility(task.id) : [],
             checks: [],
             findings: [],
             blockers: [],
@@ -124,80 +131,20 @@ async function runRelay(t: TestContext, overrides: Record<string, string> = {}) 
     allowWrites: true,
     data: { definitions: resolved.definitions },
   });
-  await writeRunRecord(handle.dir, {
-    schemaVersion: 2,
-    definitions: resolved.definitions,
-    id: handle.id,
-    root: world.repo,
-    head,
-    tasks: validateGraph(tasks, { allowWrites: true, definitions: resolved.definitions }).map(
-      taskSpec,
-    ),
-    allowWrites: true,
-    integratedChecks: job.integratedChecks.map((c: any) => ({
-      ...c,
-      argv: [process.execPath, ...c.argv.slice(1)],
-    })),
-    noIntegratedChecksReason: null,
-    passEnv: [],
-    taskMs: 60_000,
-  });
   return { world, handle, head, tasks, view: await handle.done };
 }
 
-test("Relay job builds, reviews and verifies the destination through the engine with scripted responses", async (t) => {
-  const { world, handle, head, tasks, view } = await runRelay(t);
+test("Relay shared delegation delivers code for ordinary coordinator checks", async (t) => {
+  const { world, head, view } = await runRelay(t);
   assert.equal(view.status, "succeeded", JSON.stringify(view.agents));
-  assert.equal(Object.keys(view.agents).length, 10);
-  for (const task of tasks) {
-    for (const check of task.checks ?? [])
-      assert.equal(view.agents[task.id].checks[check.id].state, "passed");
-    if (task.reviewOf)
-      assert.equal(
-        handle.results().get(task.id)!.result!.review!.fingerprint,
-        handle.results().get(task.reviewOf)!.fingerprint,
-        `${task.id} approves the current builder artifact`,
-      );
-  }
-  const integrated = await integrate(handle.dir);
-  assert.equal(integrated.status, "verified", JSON.stringify(integrated));
-  assert.deepEqual(
-    integrated.checks?.map((check) => [check.id, check.passed]),
-    [
-      ["all-tests", true],
-      ["expected-report", true],
-    ],
-  );
   assert.equal(node(world.repo, "verify.mjs").status, 0);
-  assert.equal(await headCommit(world.repo), head, "integration does not commit");
-  assert.equal(
-    world.fixture.git("diff", "--cached", "--name-only"),
-    "",
-    "integration does not stage",
-  );
-});
-
-test("Relay's independent output check blocks incorrect code even when the builder's own test passes", async (t) => {
-  const { world, handle, head, view } = await runRelay(t, {
-    "bin/relay.mjs": 'console.log("wrong report");\n',
-    "test/cli.test.mjs": `import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import test from "node:test";
-test("a misleading builder-written expectation", () => {
-  const result = spawnSync(process.execPath, ["bin/relay.mjs", "data/events.jsonl"], { encoding: "utf8" });
-  assert.equal(result.status, 0);
-  assert.equal(result.stdout, "wrong report\\n");
-});
-`,
-  });
-  assert.equal(view.status, "failed");
-  assert.equal(view.agents["build-cli"].checks["cli-tests"].state, "passed");
-  assert.equal(view.agents["build-cli"].checks["expected-report"].state, "failed");
-  assert.match(view.agents["build-cli"].reason!, /Required check expected-report failed/);
-  assert.equal(view.agents["review-cli"].status, "blocked");
-  assert(!world.turns.some((turn) => turn.agent === "review-cli"));
-  await assert.rejects(integrate(handle.dir), /Every task must succeed/);
-  assert.match(await readFile(join(world.repo, "bin/relay.mjs"), "utf8"), /Not implemented/);
-  assert.equal(world.fixture.git("status", "--porcelain"), "", "the destination remains untouched");
+  assert.equal(node(world.repo, "--test").status, 0);
   assert.equal(await headCommit(world.repo), head);
+  assert.equal(world.fixture.git("diff", "--cached", "--name-only"), "");
+});
+test("a wrong check or implementation stays visible for coordinator correction", async (t) => {
+  const { world, view } = await runRelay(t, { "bin/relay.mjs": 'console.log("wrong report");\n' });
+  assert.equal(view.status, "succeeded", "execution returns control independently of correctness");
+  assert.notEqual(node(world.repo, "verify.mjs").status, 0);
+  assert.match(await readFile(join(world.repo, "bin/relay.mjs"), "utf8"), /wrong report/);
 });

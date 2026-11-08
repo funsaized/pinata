@@ -232,7 +232,7 @@ async function main() {
       );
       assert.equal(applied.status, 0, applied.stderr || applied.stdout);
       const delivery = JSON.parse(applied.stdout.trim().split("\n").at(-1)!);
-      assert.equal(delivery.status, "verified");
+      assert.equal(delivery.status, "applied");
       console.log(JSON.stringify({ ok: true, files: files.length, commands: names.length }));
     } finally {
       await pi.close();

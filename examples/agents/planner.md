@@ -1,8 +1,9 @@
 ---
-schemaVersion: 1
+schemaVersion: 2
 name: "planner"
 description: "Evidence-based implementation planning with dependencies, ownership, checks, and integration risks."
-workspace: "live-readonly"
+access: "read"
+workspace: "shared"
 tools: ["read", "grep", "find", "ls"]
 output: { "require": ["brief"] }
 ---
@@ -29,4 +30,4 @@ mapping, risks, and unresolved questions. Handoff when the coordinator can turn
 it into explicit tasks; your proposed commands are not execution authorization.
 Do not implement, stage, commit, install, or recursively delegate.
 
-Report through submit_result using the supplied output contract.
+Return a concise final response with evidence, checks actually run, and blockers.

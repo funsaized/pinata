@@ -18,7 +18,7 @@ export type Role = "viewer" | "agent";
 export type ClientFrame =
   | { type: "hello"; v: number; token: string; role: Role; run: string; agent?: string }
   | { type: "ack"; seq: number }
-  | { type: "steer"; agent: string; text: string; as: "steer" | "followUp" }
+  | { type: "steer"; agent: string; text: string; as: "steer" | "followUp"; messageId?: string }
   | { type: "abort"; agent: string }
   // An agent's conversation (Pi AgentMessage shape), for the detail view.
   | { type: "messages"; agent: string }
@@ -42,7 +42,8 @@ export type ServerFrame =
     }
   | { type: "steer"; text: string; as: "steer" | "followUp" }
   | { type: "abort" }
-  | { type: "error"; message: string };
+  | { type: "message_ack"; messageId: string; receipt: unknown }
+  | { type: "error"; message: string; messageId?: string };
 
 // What link.json in the run directory holds.
 export interface Link {
@@ -97,6 +98,7 @@ export function clientFrame(value: unknown): ClientFrame {
       ok(str(value.agent, 64), "agent");
       ok(str(value.text, 65_536) && (value.text as string).trim().length > 0, "text");
       ok(value.as === "steer" || value.as === "followUp", "as");
+      ok(value.messageId === undefined || str(value.messageId, 256), "messageId");
       break;
     case "abort":
     case "messages":
@@ -118,7 +120,16 @@ export function serverFrame(value: unknown): ServerFrame {
   if (!isObject(value) || typeof value.type !== "string")
     throw new ProtocolError("A frame is an object with a type");
   if (
-    !["welcome", "snapshot", "events", "messages", "steer", "abort", "error"].includes(value.type)
+    ![
+      "welcome",
+      "snapshot",
+      "events",
+      "messages",
+      "steer",
+      "abort",
+      "message_ack",
+      "error",
+    ].includes(value.type)
   )
     throw new ProtocolError(`Unknown frame type ${JSON.stringify(value.type).slice(0, 40)}`);
   if (value.type === "welcome" && value.v !== PROTOCOL_VERSION)

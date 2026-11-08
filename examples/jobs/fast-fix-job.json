@@ -6,14 +6,11 @@
       "id": "fix",
       "task": "Fix formatSeconds in src/duration.mjs: convert the seconds argument to milliseconds before calling ms().",
       "acceptance": ["Existing duration tests pass", "Only src/duration.mjs changes"],
-      "ownership": ["src/duration.mjs"],
-      "checks": [
-        {
-          "id": "unit",
-          "argv": ["npm", "test"]
-        }
-      ],
-      "agent": "builder"
+      "agent": "builder",
+      "instructions": [
+        "Requested check (coordinator decides when to run it): {\"id\":\"unit\",\"argv\":[\"npm\",\"test\"]}",
+        "Assigned file responsibility: src/duration.mjs. Preserve unrelated work."
+      ]
     },
     {
       "id": "review",
@@ -21,13 +18,13 @@
       "reviewOf": "fix",
       "task": "Independently review the formatSeconds change, boundary cases, and supervisor check logs.",
       "acceptance": ["Approve only if the fix meets the builder's acceptance criteria"],
-      "agent": "reviewer"
+      "agent": "reviewer",
+      "instructions": []
     }
   ],
-  "integratedChecks": [
-    {
-      "id": "unit",
-      "argv": ["npm", "test"]
-    }
-  ]
+  "schemaVersion": 3,
+  "instructions": [
+    "Coordinator destination check intent (not engine-enforced): [{\"id\":\"unit\",\"argv\":[\"npm\",\"test\"]}]"
+  ],
+  "workspace": "shared"
 }

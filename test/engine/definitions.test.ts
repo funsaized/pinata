@@ -1,5 +1,5 @@
 import { compactRun } from "../../engine/pi/host.ts";
-import { PreparationGate } from "../../engine/workspace/preparation.ts";
+
 import assert from "node:assert/strict";
 import { copyFile, mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -19,13 +19,12 @@ import {
 } from "../../engine/agent/brief.ts";
 import { tempDir, fakeEngine } from "./helpers.ts";
 import { fakeResult } from "../../engine/backends/fake.ts";
-import { Limiter } from "../../engine/core/limiter.ts";
-import { basicPipeline } from "../../engine/core/engine.ts";
 
-const definition = (name = "analyst", workspace = "live-readonly", tools = ["read"]) =>
+const definition = (name = "analyst", workspace = "shared", tools = ["read"]) =>
   validateDefinition(
     {
-      schemaVersion: 1,
+      schemaVersion: 2,
+      access: workspace === "worktree" ? "write" : "read",
       name,
       description: "Test agent",
       workspace,
@@ -59,13 +58,13 @@ test("only three presets; optional examples install through the same loader", as
   assert.equal(agents.size, 5);
   const resolved = resolveTasks([{ id: "p", agent: "planner", task: "Plan" }], agents);
   const [task] = validateGraph(resolved.tasks, { definitions: resolved.definitions });
-  assert.equal(task.definition?.workspace, "live-readonly");
+  assert.equal(task.definition?.workspace, "shared");
   assert.equal(taskSpec(task).definition, task.definition?.digest);
 });
 
 test("definitions reject unsafe combinations and snapshots detect mutation", () => {
-  assert.deepEqual(definition("thinker", "live-readonly", []).tools, []);
-  assert.throws(() => definition("reader", "live-readonly", ["bash"]), /requires a worktree/);
+  assert.deepEqual(definition("thinker", "shared", []).tools, []);
+  assert.throws(() => definition("reader", "shared", ["bash"]), /requires write access/);
   assert.throws(() => definition("recursive", "worktree", ["pinata_run"]), /invalid tool/);
   const agent = definition();
   assert.throws(
@@ -89,7 +88,7 @@ test("repository definitions replace personal defaults; duplicates and preset ov
   const projectDirectory = join(root, ".pi", "pinata", "agents");
   for (const dir of [userDirectory, projectDirectory]) await mkdir(dir, { recursive: true });
   const content = (name: string, prompt: string) =>
-    `---\nschemaVersion: 1\nname: ${name}\ndescription: Test\nworkspace: live-readonly\ntools: []\n---\n${prompt}\n`;
+    `---\nschemaVersion: 2\naccess: read\nname: ${name}\ndescription: Test\nworkspace: shared\ntools: []\n---\n${prompt}\n`;
   await writeFile(join(userDirectory, "analyst.md"), content("analyst", "Personal"));
   const project = join(projectDirectory, "analyst.md");
   await writeFile(project, content("analyst", "Project"));
@@ -104,51 +103,6 @@ test("repository definitions replace personal defaults; duplicates and preset ov
   await rm(duplicate);
   await writeFile(project, content("scout", "Override"));
   assert.throws(() => discoverAgents(root, personal), /reserved preset/);
-});
-
-test("custom writers require authorization and reviewer results bind to the exact target", () => {
-  const writer = definition("implementer", "worktree", ["read", "write"]);
-  const reviewer = definition("auditor", "review-target");
-  const resolved = resolveTasks(
-    [
-      {
-        id: "build",
-        agent: "implementer",
-        task: "Implement",
-        ownership: ["src"],
-        noChecksReason: "fixture",
-      },
-      { id: "review", agent: "auditor", task: "Review", reviewOf: "build", after: ["build"] },
-    ],
-    new Map([
-      [writer.name, writer],
-      [reviewer.name, reviewer],
-    ]),
-  );
-  assert.throws(
-    () => validateGraph(resolved.tasks, { definitions: resolved.definitions }),
-    /approval/,
-  );
-  const tasks = validateGraph(resolved.tasks, {
-    definitions: resolved.definitions,
-    allowWrites: true,
-  });
-  assert.equal(tasks[0].definition?.name, "implementer");
-  const result = validateResult(fakeResult({ review: { verdict: "approve" } as never }), {
-    role: "auditor",
-    definition: reviewer,
-    reviewTarget: { taskId: "build", fingerprint: "exact" },
-  });
-  assert.equal(result.review?.fingerprint, "exact");
-  assert.throws(
-    () =>
-      validateResult(fakeResult({ review: { verdict: "approve", fingerprint: "old" } as never }), {
-        role: "auditor",
-        definition: reviewer,
-        reviewTarget: { taskId: "build", fingerprint: "exact" },
-      }),
-    /must be exact/,
-  );
 });
 
 test("model precedence and local source output work for custom names", () => {
@@ -209,13 +163,12 @@ test("model precedence and local source output work for custom names", () => {
       }),
     /at least one source/,
   );
-  assert.throws(
-    () =>
-      validateResult(fakeResult({ data: { large: "x".repeat(128 * 1024) } }), {
-        role: agent.name,
-        definition: agent,
-      }),
-    /128 KiB/,
+  assert.equal(
+    validateResult(fakeResult({ data: { large: "x".repeat(150000) } }), {
+      role: agent.name,
+      definition: agent,
+    }).data?.large?.toString().length,
+    150000,
   );
 });
 
@@ -272,68 +225,6 @@ test("dependency fan-in stays bounded and points to complete evidence", () => {
   });
   assert(Buffer.byteLength(prompt) < DEPENDENCIES_CAP + 2048);
   assert.match(prompt, /further dependency results omitted/);
-});
-
-test("dispatch is fair across runs with 1000 queued tasks", async (t) => {
-  let release!: () => void;
-  const ready = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  const pipeline = basicPipeline();
-  const { backend, run } = await fakeEngine(t, () => ({ result: fakeResult() }), {
-    limiter: new Limiter({ cap: 1, initial: 1 }),
-    pipeline: {
-      ...pipeline,
-      async prepare(context, task, signal, options) {
-        // Hold the first slot until both runs are registered. Filesystem startup
-        // time on a busy Windows runner is not scheduler starvation.
-        if (task.id === "task-0") await ready;
-        return pipeline.prepare(context, task, signal, options);
-      },
-    },
-  });
-  t.after(() => release());
-  const large = await run(
-    Array.from({ length: 1000 }, (_, i) => ({
-      id: `task-${i}`,
-      role: "scout",
-      task: "Inspect",
-      acceptance: ["Evidence"],
-    })),
-  );
-  const small = await run([
-    { id: "small", role: "scout", task: "Inspect", acceptance: ["Evidence"] },
-  ]);
-  release();
-  assert.equal((await small.done).status, "succeeded");
-  assert(
-    backend.starts.findIndex((s) => s.task === "small") < 5,
-    "small run must not wait behind the entire burst",
-  );
-  assert.equal((await large.done).status, "succeeded");
-});
-
-test("worktree preparation is bounded and cancelled queued work never starts", async () => {
-  const gate = new PreparationGate(1);
-  let finish!: () => void;
-  const first = gate.run(
-    new AbortController().signal,
-    () =>
-      new Promise<void>((resolve) => {
-        finish = resolve;
-      }),
-  );
-  const controller = new AbortController();
-  let started = false;
-  const cancelled = gate.run(controller.signal, async () => {
-    started = true;
-  });
-  controller.abort(new Error("cancel queued setup"));
-  await assert.rejects(cancelled, /cancel queued setup/);
-  finish();
-  await first;
-  assert.equal(started, false);
-  assert.equal(await gate.run(new AbortController().signal, async () => 42), 42);
 });
 
 test("large results paginate within the context budget without hiding task counts", async (t) => {

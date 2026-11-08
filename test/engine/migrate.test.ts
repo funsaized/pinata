@@ -95,9 +95,31 @@ test("ignored config keys produce a one-line notice", () => {
   assert(!notices[0].includes("\n"));
 });
 
-test("limits.startupMs gives a notice instead of an error", () => {
-  const { config, notices } = validateConfig({ limits: { startupMs: 30_000, taskMs: 60_000 } });
-  assert.equal(config.limits.taskMs, 60_000);
-  assert.deepEqual(notices.length, 1);
-  assert.match(notices[0], /startupMs is ignored/);
+test("explicit migration retains isolation and read-only access while moving workflow intent into instructions", async () => {
+  const { convertInput } = await import("../../engine/migrate/inputs.ts");
+  const legacy = {
+    tasks: [
+      {
+        id: "build",
+        role: "builder",
+        task: "Implement",
+        ownership: ["src"],
+        checks: [{ id: "test", argv: ["npm", "test"] }],
+      },
+    ],
+    config: { limits: { maxTurns: 2 }, reviewPolicy: "required" },
+    integration: "on-success",
+  };
+  const converted = convertInput(legacy);
+  const tasks = converted.value.tasks as Array<Record<string, unknown>>;
+  assert.equal(tasks[0].workspace, "worktree");
+  assert.equal(tasks[0].ownership, undefined);
+  assert.match(JSON.stringify(tasks[0].instructions), /npm/);
+  assert.equal((converted.value.config as Record<string, unknown>).limits, undefined);
+  assert.equal(converted.value.integration, "manual");
+  assert(legacy.config.limits, "conversion preserves the original input");
+  assert.equal(
+    convertInput({ name: "reader", workspace: "live-readonly", tools: ["read"] }).value.access,
+    "read",
+  );
 });

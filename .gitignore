@@ -8,8 +8,5 @@ arena/results/
 .env.*
 *.log
 
-# Local implementation checklist, not part of the project or release.
-PLAN.md
-
 # Machine-specific arena adapter paths (regenerate with arena:bootstrap).
 arena/local/

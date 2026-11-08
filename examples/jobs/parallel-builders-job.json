@@ -2,7 +2,6 @@
   "cwd": "/absolute/path/to/repository",
   "approval": "Replace with your approval for two independent builders, two reviews, and local integration",
   "config": {
-    "reviewPolicy": "required",
     "models": {
       "default": {
         "provider": "openai",
@@ -22,29 +21,21 @@
       "id": "api",
       "task": "Replace with the approved server-side change.",
       "acceptance": ["Replace with a concrete acceptance criterion"],
-      "ownership": ["src/server"],
-      "checks": [
-        {
-          "id": "server",
-          "argv": ["npm", "test", "--", "src/server"],
-          "timeoutMs": 180000
-        }
-      ],
-      "agent": "builder"
+      "agent": "builder",
+      "instructions": [
+        "Requested check (coordinator decides when to run it): {\"id\":\"server\",\"argv\":[\"npm\",\"test\",\"--\",\"src/server\"],\"timeoutMs\":180000}",
+        "Assigned file responsibility: src/server. Preserve unrelated work."
+      ]
     },
     {
       "id": "cli",
       "task": "Replace with the approved CLI change.",
       "acceptance": ["Replace with a concrete acceptance criterion"],
-      "ownership": ["src/cli"],
-      "checks": [
-        {
-          "id": "cli",
-          "argv": ["npm", "test", "--", "src/cli"],
-          "timeoutMs": 180000
-        }
-      ],
-      "agent": "builder"
+      "agent": "builder",
+      "instructions": [
+        "Requested check (coordinator decides when to run it): {\"id\":\"cli\",\"argv\":[\"npm\",\"test\",\"--\",\"src/cli\"],\"timeoutMs\":180000}",
+        "Assigned file responsibility: src/cli. Preserve unrelated work."
+      ]
     },
     {
       "id": "review-api",
@@ -52,7 +43,8 @@
       "reviewOf": "api",
       "task": "Review the server change against its acceptance criteria.",
       "acceptance": ["Approve only with evidence"],
-      "agent": "reviewer"
+      "agent": "reviewer",
+      "instructions": []
     },
     {
       "id": "review-cli",
@@ -60,14 +52,13 @@
       "reviewOf": "cli",
       "task": "Review the CLI change against its acceptance criteria.",
       "acceptance": ["Approve only with evidence"],
-      "agent": "reviewer"
+      "agent": "reviewer",
+      "instructions": []
     }
   ],
-  "integratedChecks": [
-    {
-      "id": "all",
-      "argv": ["npm", "test"],
-      "timeoutMs": 300000
-    }
-  ]
+  "schemaVersion": 3,
+  "instructions": [
+    "Coordinator destination check intent (not engine-enforced): [{\"id\":\"all\",\"argv\":[\"npm\",\"test\"],\"timeoutMs\":300000}]"
+  ],
+  "workspace": "shared"
 }

@@ -13,7 +13,6 @@ import { readFile } from "node:fs/promises";
 import { ChildMemorySampler, type ChildMemory } from "../child-memory.ts";
 import { createRssReader } from "../rss-reader.ts";
 import { createEngine, type Engine, type RunHandle } from "../../engine/core/engine.ts";
-import { Limiter } from "../../engine/core/limiter.ts";
 import type { AgentEvent, ModelRef, TaskSpec } from "../../engine/core/types.ts";
 import { piPipeline } from "../../engine/pi/pipeline.ts";
 import { validateConfig } from "../../engine/pi/config.ts";
@@ -172,7 +171,6 @@ export async function runEngineScenario(
   const engine = createEngine({
     backends: { [kind]: backend },
     pipeline,
-    limiter: new Limiter({ cap: 64, initial: 64 }),
   });
   await cache.get(setup.registry);
   const startedAt: Record<string, number> = {};
@@ -239,8 +237,7 @@ export async function runEngineScenario(
     ...(t.after?.length && { after: t.after }),
     ...(t.reviewOf && { reviewOf: t.reviewOf }),
     ...(t.role === "builder" && {
-      ownership: t.ownership ?? [],
-      checks: [{ id: "noop", argv: ["git", "--version"], timeoutMs: 30_000 }],
+      workspace: "worktree" as const,
     }),
   }));
   const { tasks, definitions } = resolveTasks(inputs, agents);
@@ -315,7 +312,6 @@ export async function runEngineScenario(
     const handle = await engine.run(tasks, {
       cwd: setup.repo,
       dir: join(setup.runsDir, scenario.name),
-      limits: { concurrency: 64 },
       // BENCH_MODE=observe measures observe mode's overhead (E5.2).
       mode: process.env.BENCH_MODE === "observe" ? "observe" : "lean",
       allowWrites: true,
@@ -457,7 +453,7 @@ export function summarize(
           ...(child?.errors ?? []).map((error) => `child RSS sampling error: ${error}`),
         ]
       : []),
-    `${raw.maxRunning} agents ran at once (limiter opened to 64)`,
+    `${raw.maxRunning} agents observed running at once; Pinata imposes no concurrency quota`,
     ...raw.errors.slice(0, 5).map((e) => `agent: ${e}`),
   ];
   return {

@@ -1,4 +1,4 @@
-import { validateDeadline } from "../../engine/core/deadline.ts";
+import { validateDeadline } from "../deadline.ts";
 import { readFile } from "node:fs/promises";
 import { isAbsolute } from "node:path";
 import { validateUnitGraph } from "../task-graph.ts";

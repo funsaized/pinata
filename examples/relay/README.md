@@ -1,18 +1,10 @@
-# Relay: build a complete example
+# Relay starter
 
-Relay is the incident-report CLI built in Pinata's demo video. It reads JSONL service
-events and reports event counts, failures, and p95 latency. This example gives you
-[starter modules](starter/), requirements, sample data, and an editable ten-agent job.
+Run `node examples/relay/setup.mjs /tmp/relay-exercise`, then choose approved models in
+the generated job. Setup preserves existing destinations and makes no model calls.
+Running the job spends tokens. The contract is REQUIREMENTS.md.
 
-Follow [Build Relay with your models](../../docs/tutorials/relay.md) to create a fresh
-repository, choose your models and limits, run the agents, inspect their reviews,
-and integrate the result. You need Pi, Pinata, Node 22.19+, Git, and working model
-credentials. The run spends tokens; Relay needs no package installation.
-
-- [Relay reference](../../docs/reference/relay.md) describes the files, setup command,
-  job graph, and expected output.
-- [How Relay checks the work](../../docs/explanation/relay-safeguards.md)
-  explains builder checks, independent review, and destination verification.
-
-[expected-report.md](expected-report.md) is the exact sample output.
-Each run produces its own check logs, reviews, and destination verification.
+The coordinator delegates module responsibilities in the shared checkout. Reviews are
+ordinary assignments; findings do not gate access to edits. Run `node --test` and
+`node verify.mjs` to assess the delivered candidate, then continue workers or fix directly.
+See the [tutorial](../../docs/tutorials/relay.md).

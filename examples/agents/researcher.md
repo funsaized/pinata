@@ -1,8 +1,9 @@
 ---
-schemaVersion: 1
+schemaVersion: 2
 name: "researcher"
 description: "Source-linked web and documentation research through pi-web-access, returning a concise decision brief."
-workspace: "live-readonly"
+access: "read"
+workspace: "shared"
 tools:
   ["read", "grep", "find", "ls", "web_enable", "web_search", "fetch_content", "get_search_content"]
 output: { "require": ["brief", "sources"] }
@@ -42,5 +43,5 @@ material claims. Distinguish documented behavior from anything actually tested;
 do not imply that reading docs verifies runtime behavior. Handoff when the
 planner has enough evidence to decide, or report the precise research blocker.
 
-Report through submit_result using the supplied output contract.
+Return a concise final response with evidence, checks actually run, and blockers.
 Sources name either an HTTP(S) url or a repository-relative path, with title, supports, and applicability.

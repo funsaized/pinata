@@ -1,71 +1,18 @@
 # Events
 
-Read `events.jsonl` when you need the recorded sequence of a run. It lives at
-`<git common dir>/pinata/<run>/events.jsonl`, with one JSON object per line and
-schema version 1. The widget, viewer, `pinata logs`, and recovery all use these
-events through the same reducer. Lean mode saves lifecycle events and usage;
-observe mode saves every event.
+New `events.jsonl` records use schema 2. Schema 1 remains readable as historical evidence.
+Every record has `v`, monotonic `seq`, `run`, timestamp `at`, optional worker `agent`,
+and optional numeric `assignment`. Detached sources add `{id, record}` for replay deduplication.
 
-## Common fields
+Lifecycle events include `run_started`, `agent_queued`, `agent_started`,
+`agent_settled`, `run_resumed`, and `run_settled`. Queued events save resolved dependency
+assignment references and initial message identity. `input_recorded` saves target,
+kind, payload and message ID; `input_dispatched` records queued/handled/uncertain disposition;
+`input_consumed` references a persisted conversation entry by ID. Backend queue acceptance
+alone is never consumption evidence. `steer` provides readable guidance history.
 
-| Field   | Meaning                                         |
-| ------- | ----------------------------------------------- |
-| `v`     | Schema version, currently `1`.                  |
-| `seq`   | Sequence number, increasing within the run.     |
-| `run`   | Run ID.                                         |
-| `agent` | Task ID; absent for events about the whole run. |
-| `at`    | Timestamp in epoch milliseconds.                |
-
-## Detached event recovery
-
-Detached events may carry `source: {id, record}`: a process identity and its outbox
-record number. The engine uses this position to discard replayed records after a
-host crash. Lean logs persist the position with a `usage` checkpoint containing
-the current attempt's usage, turns and tool calls; settlement saves the final
-position. No separate cursor file is trusted for accounting. Logs without
-positions reconcile detached usage at settlement, so aggregate cost enforcement
-for that recovered attempt is delayed until its outcome is available.
-
-## Event types
-
-| `t`                | Fields                                                          | Lean |
-| ------------------ | --------------------------------------------------------------- | ---- |
-| `run_started`      | `tasks`, `mode`, `definitions?`                                 | yes  |
-| `agent_queued`     | `task?` (when added or requeued)                                | yes  |
-| `agent_started`    | `backend`, `model`, `workspace {kind, path}`                    | yes  |
-| `turn_start`       | `turn`                                                          | no   |
-| `text_delta`       | `delta`                                                         | no   |
-| `thinking_delta`   | `delta`                                                         | no   |
-| `message_end`      | `role`, `usage?`, `stopReason?`, `error?`                       | no   |
-| `tool_start`       | `call`, `name`, `args` (a truncated preview)                    | no   |
-| `tool_update`      | `call`, `preview`                                               | no   |
-| `tool_end`         | `call`, `ok`, `preview`, `ms`                                   | no   |
-| `steer`            | `by` (`user`, `parent`), `text`, `as` (`steer`, `followUp`)     | yes  |
-| `retry`            | `attempt`, `reason`                                             | yes  |
-| `check_start`      | `check`                                                         | yes  |
-| `check_end`        | `check`, `passed`, `ms`                                         | yes  |
-| `checkout_changed` | (a reader's live checkout changed while it read)                | yes  |
-| `usage`            | `usage`, `turns?`, `toolCalls?` (current attempt, at most 1/s)  | yes  |
-| `agent_settled`    | `status`, `summary`, `reason?`, `usage`, `turns`, `toolCalls`   | yes  |
-| `telemetry`        | `sample {rssMB, heapUsedMB, elu, lateMs, processes?}` (observe) | no   |
-| `run_resumed`      | `reason` (a repair, a rerun, or a new Pi)                       | yes  |
-| `run_settled`      | `status` (`succeeded`, `failed`, `cancelled`), `usage`          | yes  |
-
-`usage` is `{input, output, cacheRead, cacheWrite, totalTokens, cost}`; `cost` is in dollars.
-
-## Related files and definition snapshots
-
-Results are saved separately in `results/<task>.json`, transcripts in
-`transcripts/<task>.jsonl` (Pi messages), and the run's parameters in `run.json`.
-
-Runs store each resolved definition once in `run_started.definitions`, keyed by its
-SHA-256 digest. Tasks carry `agent` (the definition name) and `definition` (its digest).
-The snapshot includes the prompt, workspace mode, tool
-allowlist, output requirements, defaults, and source. Requeued tasks reuse the digest.
-The event schema is version 1.
-
-`run.json` uses schema version 2 and stores the same definition table plus
-resolved runtime configuration and extension entry identities. Resume validates snapshot
-digests and reuses the saved definitions.
-Stored results keep engine checks and artifact fingerprints separate from agent-reported
-checks. Destination verification records remain separate from both.
+Detailed activity uses turn, text/thinking, tool, message and retry events. Usage events
+are cumulative per assignment; aggregate usage counts each assignment once. Observe mode
+also records telemetry. Lean mode retains lifecycle, messages, consumption and usage;
+full transcripts remain on disk. Stable completion notification IDs use run/worker/assignment.
+Legacy checks, rejection and budget metadata are displayed without rewriting their claims.

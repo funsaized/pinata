@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { appendFile, readFile, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
-import { RunStore, readEvents, replay } from "../../engine/core/store.ts";
+import { RunStore, readEvents, replay, readJsonl } from "../../engine/core/store.ts";
 import { ZERO_USAGE, type AgentEventInput } from "../../engine/core/types.ts";
 import { fakeEngine, spec, tempDir } from "./helpers.ts";
 
@@ -135,4 +135,13 @@ test("process memory sampling works on this OS and maps missing processes to nul
   assert(rss.get(process.pid)! > 1, `own RSS ${rss.get(process.pid)}`);
   assert.equal(rss.get(missing), null);
   assert.equal((await processRss([])).size, 0);
+});
+
+test("a newline-terminated corrupt final JSONL record is not mistaken for interrupted output", async (t) => {
+  const dir = await tempDir(t);
+  const path = join(dir, "corrupt.jsonl");
+  await appendFile(path, '{"complete":true}\n{"incomplete":');
+  assert.deepEqual(await readJsonl(path), [{ complete: true }]);
+  await appendFile(path, "\n");
+  await assert.rejects(readJsonl(path), /corrupt.jsonl line 2/);
 });

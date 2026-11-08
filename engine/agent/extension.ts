@@ -14,6 +14,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { ResultError, resultSchema, validateResult } from "../core/results.ts";
 import type { AgentOptions, AgentResult } from "../core/types.ts";
+import { inputMessage } from "../backends/conversation.ts";
 import { PathError, checkWrite } from "../workspace/paths.ts";
 import { detachedControl, type DetachedOptions } from "./detached.ts";
 import { reporter, type ReporterOptions } from "./reporter.ts";
@@ -23,7 +24,7 @@ const WRITE_TOOLS = new Set(["edit", "write", "bash", "powershell"]);
 
 export interface AgentExtensionOptions extends AgentOptions {
   codemode?: boolean;
-  // Out of process and detached: the control file, reminder and budgets (agent/detached.ts).
+  // Out of process and detached: durable controls and reporting (agent/detached.ts).
   detached?: DetachedOptions;
   // In an interactive Pi (herdr-pi): write events, identity and the first prompt (reporter.ts).
   reporter?: ReporterOptions;
@@ -35,8 +36,8 @@ export interface AgentReporter {
 }
 
 const SUBMIT_DESCRIPTION =
-  "Report your final result to the coordinator. Call it exactly once, when you are done, with every required field. " +
-  "The coordinator verifies changed files and runs checks itself; report only what you actually observed. " +
+  "Report your final result to the coordinator. Use it when structured output was requested. " +
+  "The coordinator decides testing and review; report only what you actually observed. " +
   "If the call returns an error, fix what it names and call it again.";
 
 export function allowedTools(opts: AgentExtensionOptions): Set<string> {
@@ -59,16 +60,10 @@ export function guard(
   if (toolName === "edit" || toolName === "write") {
     if (!opts.writeRoot) return "This agent has no writable workspace.";
     try {
-      checkWrite(
-        opts.writeRoot,
-        cwd,
-        String(input.path ?? ""),
-        opts.ownership,
-        opts.caseInsensitive,
-      );
+      checkWrite(opts.writeRoot, cwd, String(input.path ?? ""), undefined, opts.caseInsensitive);
     } catch (error) {
       if (error instanceof PathError)
-        return `${error.message}. Write only inside your ownership: ${opts.ownership.join(", ")}. If the task needs other files, report a blocker.`;
+        return `${error.message}. Write only inside the authorized workspace.`;
       throw error;
     }
   }
@@ -80,6 +75,30 @@ export function agentExtension(
   reporter?: AgentReporter,
 ): ExtensionFactory {
   return (pi: ExtensionAPI) => {
+    pi.on("before_agent_start", () => {
+      const input = opts.initialInput;
+      if (!input) return;
+      opts.initialInput = undefined;
+      for (const extra of opts.initialInputs ?? [])
+        pi.sendMessage(inputMessage(extra.text, extra.id), { triggerTurn: false });
+      opts.initialInputs = [];
+      return { message: inputMessage(input.text, input.id) };
+    });
+    pi.registerCommand("pinata-input", {
+      description: "Deliver a durable Pinata input",
+      handler: async (raw) => {
+        const request = JSON.parse(raw) as { text: string; id: string; as?: "steer" | "followUp" };
+        if (typeof request.text !== "string" || typeof request.id !== "string")
+          throw new Error("Invalid Pinata input");
+        for (const input of opts.initialInputs ?? [])
+          pi.sendMessage(inputMessage(input.text, input.id), { triggerTurn: false });
+        opts.initialInputs = [];
+        pi.sendMessage(inputMessage(request.text, request.id), {
+          triggerTurn: true,
+          deliverAs: request.as ?? "steer",
+        });
+      },
+    });
     const allowed = allowedTools(opts);
     const schema = resultSchema(opts.definition ?? opts.role);
     pi.registerTool({

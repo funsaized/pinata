@@ -281,3 +281,15 @@ visible status text while accepting labels such as "Status: doing". The v1 score
 is retained for reproducibility; historical scores are not rewritten. This changes
 the task/scorer version, not the public assignment. Re-evaluations of retained
 candidates must be reported separately from their original trial scores.
+
+## Version 3 treatment change
+
+The current Pinata native adapter gives its coordinator ordinary read/search/shell/edit/write
+coding tools as well as delegation. Shared checkout is the default. Completion follows
+process execution, independently of oracle candidate correctness and observed delegation.
+An observed successful whole run followed by verified integration is no longer required.
+No production deadlines, concurrency quotas or repair caps are injected; the arena owns
+its external timeout and records requested worker counts as experimental instructions.
+Historical batches retain their original conditions. Compare matched tool access before
+attributing gains specifically to runtime simplification. Stronger coordinator models are
+separate treatments. Retain complete batches, failures and unknown usage.

@@ -47,7 +47,6 @@ test("example configs and job files satisfy the engine's contracts", async () =>
       definitions: resolved.definitions,
     });
     assert(tasks.length, file);
-    validateChecks(params.integratedChecks ?? [], "integratedChecks");
     validateConfig(params.config ?? {});
   }
 });

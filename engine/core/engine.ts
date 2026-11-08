@@ -1,27 +1,21 @@
-import { reviewPolicy, savedReviewPolicy, type ReviewPolicy } from "./policy.ts";
-import { assertTime, capDeadline, remaining } from "./deadline.ts";
+// Shared runtime. Adapters own model sessions and workspaces; coordinators own workflow.
+import { randomUUID } from "node:crypto";
+import { join } from "node:path";
+import { readdir } from "node:fs/promises";
+import { Graph, assignmentKey } from "./graph.ts";
+import { Scheduler } from "./scheduler.ts";
+import { RunStore, privateDir, atomicJson, readJson, iterateEvents, runsRoot } from "./store.ts";
+import { reduce, emptyView, type RunView } from "./view.ts";
 import {
   writes,
-  reviews,
   taskTools,
   taskSpec,
   taskDefinitions,
+  validateSnapshots,
   type Definitions,
 } from "./definitions.ts";
-// The engine facade: createEngine({ backends, pipeline, store, clock }) runs task graphs.
-// No Pi imports here: backends and the pipeline supply everything Pi-specific.
-import { randomUUID } from "node:crypto";
-import { unlinkSync } from "node:fs";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
-import { AgentBudget } from "./budgets.ts";
+import { migrationError, validateGraph, validateTask, need } from "./validate.ts";
 import { Telemetry } from "./telemetry.ts";
-import { Graph } from "./graph.ts";
-import { Limiter, isRateLimit } from "./limiter.ts";
-import { Scheduler } from "./scheduler.ts";
-import { RunStore, readEvents, runsRoot } from "./store.ts";
-import { reduce, emptyView, replayView, type RunView } from "./view.ts";
-import { validateGraph, validateLimits } from "./validate.ts";
 import {
   ZERO_USAGE,
   addUsage,
@@ -34,21 +28,18 @@ import {
   type AgentResult,
   type AgentSnapshot,
   type AgentStatus,
+  type AssignmentRef,
   type BackendKind,
   type Clock,
   type FailureStage,
-  type Limits,
   type Mode,
   type ModelRef,
-  type RunStatus,
   type Task,
-  type TaskSpec,
   type Usage,
   type Workspace,
   type WorkspaceRef,
 } from "./types.ts";
 
-// Why an agent was aborted. Budgets fail the agent; cancellation cancels it.
 export class StopSignal extends Error {
   readonly status: "failed" | "cancelled";
   constructor(message: string, status: "failed" | "cancelled" = "cancelled") {
@@ -56,65 +47,62 @@ export class StopSignal extends Error {
     this.status = status;
   }
 }
-
 export function stopReason(signal: AbortSignal): {
   status: "failed" | "cancelled";
   reason: string;
 } {
-  const r = signal.reason;
-  if (r instanceof StopSignal) return { status: r.status, reason: r.message };
-  if (r instanceof Error && r.name === "TimeoutError")
-    return { status: "failed", reason: "deadline exceeded" };
-  return { status: "cancelled", reason: typeof r === "string" ? r : (r?.message ?? "cancelled") };
+  return {
+    status: signal.reason instanceof StopSignal ? signal.reason.status : "cancelled",
+    reason:
+      signal.reason instanceof Error ? signal.reason.message : String(signal.reason ?? "cancelled"),
+  };
 }
-
 export interface Settled {
   status: AgentStatus;
   summary: string;
   reason?: string;
   failureStage?: FailureStage;
   result: AgentResult | null;
-  // Binds reviews and integration to the exact verified state.
   fingerprint?: string;
   usage: Usage;
   turns: number;
   toolCalls: number;
   model?: { provider: string; id: string };
-  // Pipeline-specific evidence, saved with the result.
   data?: Record<string, unknown>;
+  assignment?: number;
 }
-
-export type Verdict = Omit<Settled, "usage" | "turns" | "toolCalls" | "model"> & {
-  // Ask the engine for one result-only attempt (builders that produced no valid result).
-  retry?: "result-only";
-};
-
+export type Verdict = Omit<Settled, "usage" | "turns" | "toolCalls" | "model">;
 export interface RunContext {
-  readonly deadlineAt?: number;
-  readonly reviewPolicy?: ReviewPolicy;
   readonly id: string;
   readonly dir: string;
   readonly cwd: string;
   readonly mode: Mode;
-  readonly limits: Limits;
   readonly signal: AbortSignal;
   readonly tasks: ReadonlyMap<string, Task>;
   readonly results: ReadonlyMap<string, Settled>;
   readonly store: RunStore;
-  readonly view: () => RunView;
-  // Adapter-owned data for this run (config, approval, snapshot base, ...).
   readonly data: Record<string, unknown>;
-  // Emits an event for an agent (checks, checkout changes).
+  readonly assignment?: number;
+  readonly dependencies?: AssignmentRef[];
+  view(): RunView;
   emit(agent: string, event: AgentEventInput): void;
 }
-
 export interface Prepared {
   launch: AgentLaunch;
   workspace?: Workspace;
   data?: Record<string, unknown>;
+  release?(): Promise<void>;
 }
-
-// Everything that differs between a test engine and the Pi engine.
+// Preparation may leave useful isolated files before a backend starts. Preserve that
+// snapshot as result data while reporting the actual preparation failure.
+export class PreparationError extends Error {
+  readonly data: Record<string, unknown>;
+  constructor(message: string, data: Record<string, unknown>, cause: unknown) {
+    super(message, { cause });
+    this.name = "PreparationError";
+    this.data = data;
+  }
+}
 export interface Pipeline {
   setup?(run: RunContext): Promise<void>;
   model(run: RunContext, task: Task): ModelRef;
@@ -124,8 +112,7 @@ export interface Pipeline {
     run: RunContext,
     task: Task,
     signal: AbortSignal,
-    // reattach: the agent is already running (resume); reuse its workspace as it is.
-    options?: { resultOnly?: boolean; reattach?: boolean },
+    options?: { reattach?: boolean },
   ): Promise<Prepared>;
   verify(
     run: RunContext,
@@ -134,7 +121,6 @@ export interface Pipeline {
     outcome: AgentOutcome,
     signal: AbortSignal,
   ): Promise<Verdict>;
-  // After an agent settles (release workspaces, write transcripts).
   settled?(
     run: RunContext,
     task: Task,
@@ -143,120 +129,141 @@ export interface Pipeline {
   ): Promise<void>;
   finish?(run: RunContext, view: RunView): Promise<void>;
 }
-
 export interface RunOptions {
-  reviewPolicy?: ReviewPolicy;
-  deadlineAt?: number;
+  signal?: AbortSignal;
   cwd?: string;
-  dir?: string; // run directory; default <git common dir>/pinata/<id>
+  dir?: string;
   id?: string;
   mode?: Mode;
-  limits?: Partial<Limits>;
-  policy?: "allSettled" | "failFast";
   allowWrites?: boolean;
   data?: Record<string, unknown>;
 }
-
-export interface ResumeOptions {
-  reviewPolicy?: ReviewPolicy;
-  deadlineAt?: number;
-  settled?: boolean; // load a settled run without scheduling; explicit repair reopens it
-  cwd?: string; // the repository the run works in
-  limits?: Partial<Limits>;
-  policy?: "allSettled" | "failFast";
-  allowWrites?: boolean;
-  data?: Record<string, unknown>;
+export interface ResumeOptions extends RunOptions {
   reason?: string;
+  settled?: boolean;
 }
-
-// PINATA_DEBUG=1 traces agent phases to stderr (diagnosis only).
-const trace = process.env.PINATA_DEBUG
-  ? (run: string, agent: string, phase: string) =>
-      process.stderr.write(`pinata-debug ${run.slice(0, 8)} ${agent} ${phase}\n`)
-  : () => {};
-
-// Tasks in dependency order.
-function topological(tasks: readonly Task[]): Task[] {
-  const byId = new Map(tasks.map((t) => [t.id, t]));
-  const out: Task[] = [];
-  const seen = new Set<string>();
-  const visit = (t: Task) => {
-    if (seen.has(t.id)) return;
-    seen.add(t.id);
-    for (const d of t.after) if (byId.has(d)) visit(byId.get(d)!);
-    out.push(t);
-  };
-  tasks.forEach(visit);
-  return out;
-}
-
-// The reason an agent that Pi lost (and could not reattach) settles with.
-export const LOST = "Pi exited before this agent settled";
-
 export type Consumer = (event: AgentEvent) => void;
-
 export interface RunHandle {
   readonly id: string;
   readonly dir: string;
   readonly done: Promise<RunView>;
   view(): RunView;
-  // Settled agents' verdicts and results, by task id.
   results(): ReadonlyMap<string, Settled>;
 }
-
-function usageRemainder(total: Usage, observed: Usage): Usage {
-  return Object.fromEntries(
-    Object.entries(total).map(([key, value]) => [
-      key,
-      Math.max(0, value - observed[key as keyof Usage]),
-    ]),
-  ) as unknown as Usage;
+export interface MessageReceipt {
+  id: string;
+  target: AssignmentRef;
+  kind: "steer" | "followUp";
+  state: "recorded" | "dispatching" | "queued" | "handled" | "consumed" | "uncertain";
+  checkpoint?: string;
 }
-
-interface AgentState {
+export interface InboxMessage extends MessageReceipt {
+  payload: string;
+}
+interface Assignment extends AssignmentRef {
   task: Task;
+  after: AssignmentRef[];
+  message: string;
   status: "queued" | "running" | AgentStatus;
-  controller?: AbortController;
   handle?: AgentHandle;
-  budget?: AgentBudget;
-  provider?: string;
-  usageAt: number;
-  // Current attempt, including events recovered before reattachment.
+  controller?: AbortController;
+  result?: Settled;
+  reattach?: boolean;
   observed: { usage: Usage; turns: number; toolCalls: number };
   source?: AgentEventInput["source"];
-  repairs?: number;
-  // Resume: follow the agent an earlier Pi started instead of starting it.
-  reattach?: boolean;
 }
-
-interface RunState extends RunContext {
-  controller: AbortController;
-  agents: Map<string, AgentState>;
+interface Run extends RunContext {
+  tasks: Map<string, Task>;
+  results: Map<string, Settled>;
   graph: Graph;
   scheduler: Scheduler;
-  seq: number;
-  current: RunView;
+  assignments: Map<string, Assignment>;
+  latest: Map<string, number>;
+  inbox: Map<string, InboxMessage>;
   consumers: Set<Consumer>;
-  settledResults: Map<string, Settled>;
-  policy: "allSettled" | "failFast";
-  finished: boolean;
-  // Result files and settle hooks still being written; the run settles after them.
-  pending: Set<Promise<unknown>>;
-  resolve: (view: RunView) => void;
+  current: RunView;
+  seq: number;
   done: Promise<RunView>;
-  usage: Usage;
-  // Pi exited and left the run's detached agents running (survive).
+  resolve(view: RunView): void;
+  reject(reason: unknown): void;
+  finished: boolean;
+  serial: Promise<unknown>;
+  active: Set<Promise<void>>;
+  controller: AbortController;
+  telemetry?: Telemetry;
+  allowWrites: boolean;
   detached?: boolean;
 }
-
-// Default pipeline: live checkout, the task text as the brief, the result's own status.
+export const LOST =
+  "Worker execution was interrupted; effects may have occurred. Inspect its context and workspace, then explicitly continue with a follow-up.";
+export interface EngineOptions {
+  backends: Partial<Record<BackendKind | "fake", AgentBackend>>;
+  pipeline?: Pipeline;
+  clock?: Clock;
+  telemetryMs?: number;
+  defaultBackend?: BackendKind | "fake";
+}
+export interface Engine {
+  run(specs: unknown, options?: RunOptions): Promise<RunHandle>;
+  add(
+    run: string,
+    specs: unknown,
+    options?: { definitions?: Definitions },
+  ): Promise<AssignmentRef[]>;
+  status(run?: string): RunView | RunView[] | undefined;
+  runs(): string[];
+  steer(
+    run: string,
+    agent: string,
+    text: string,
+    as?: "steer" | "followUp",
+    by?: "user" | "parent",
+    messageId?: string,
+  ): Promise<MessageReceipt>;
+  cancel(run: string, agent?: string, reason?: string): Promise<void>;
+  subscribe(run: string, consumer: Consumer): () => void;
+  onRun(listener: (run: RunHandle) => void): () => void;
+  snapshot(run: string): RunView | undefined;
+  snapshot(run: string, agent: string): Promise<AgentSnapshot | undefined>;
+  resume(dir: string, options?: ResumeOptions): Promise<RunHandle>;
+  shutdown(reason: string, options?: { detach?: (run: RunHandle) => boolean }): Promise<void>;
+}
+export function judge(outcome: AgentOutcome): Verdict {
+  if (outcome.disposition === "handled" && !outcome.turns)
+    return {
+      status: "uncertain",
+      summary:
+        "Input was handled by an extension; model execution of this assignment is not established.",
+      result: outcome.result,
+    };
+  if (outcome.stopReason === "aborted")
+    return {
+      status: "cancelled",
+      summary: outcome.error ?? "cancelled",
+      reason: outcome.error ?? "cancelled",
+      result: outcome.result,
+    };
+  if (outcome.stopReason === "error")
+    return {
+      status: "failed",
+      summary: outcome.error ?? "provider error",
+      reason: outcome.error,
+      failureStage: "process",
+      result: outcome.result,
+    };
+  return {
+    status: "succeeded",
+    summary: outcome.text ?? outcome.result?.summary ?? "Assignment completed",
+    result: outcome.result,
+  };
+}
 export function basicPipeline(
   defaults: { model?: ModelRef; backend?: BackendKind | "fake" } = {},
 ): Pipeline {
-  const fallback: ModelRef = defaults.model ?? {
+  const fallback = defaults.model ?? {
     provider: "fake",
     id: "fake-model",
-    thinking: "off",
+    thinking: "off" as const,
   };
   return {
     model: (_run, task) => task.model ?? fallback,
@@ -271,18 +278,12 @@ export function basicPipeline(
           tools: taskTools(task),
           persona: "",
           brief: task.task,
-          budgets: {
-            deadline: Date.now() + remaining(run.deadlineAt, run.limits.taskMs),
-            maxTurns: run.limits.maxTurns,
-            maxToolCalls: run.limits.maxToolCalls,
-          },
           agent: {
             run: run.id,
             task: task.id,
             role: task.role,
             definition: task.definition,
             tools: taskTools(task),
-            ownership: task.ownership,
             readOnly: !writes(task),
           },
           mode: run.mode,
@@ -295,935 +296,915 @@ export function basicPipeline(
     },
   };
 }
-
-// Maps an agent outcome to a verdict without further verification.
-export function judge(outcome: AgentOutcome): Verdict {
-  if (outcome.stopReason === "error")
-    return {
-      status: "failed",
-      summary: outcome.error ?? "agent error",
-      reason: outcome.error,
-      failureStage: "process",
-      result: null,
-    };
-  if (!outcome.result)
-    return {
-      status: "failed",
-      summary: "The agent finished without calling submit_result",
-      reason: outcome.error ?? "no result",
-      failureStage: "result",
-      result: null,
-    };
-  const r = outcome.result;
-  // A review that reached a verdict is a completed review: changes_requested is "rejected"
-  // even when the reviewer also called its own status failed. An approval must say succeeded.
-  const status: AgentStatus =
-    r.review?.verdict === "changes_requested" && (r.status === "succeeded" || r.status === "failed")
-      ? "rejected"
-      : r.status;
+// Full results stay on disk; retained engine state is a display/dependency excerpt.
+function compactSettled(settled: Settled): Settled {
+  if (Buffer.byteLength(JSON.stringify(settled)) < 64 * 1024) return settled;
   return {
-    status,
-    summary: r.summary,
-    result: r,
-    ...(r.status !== "succeeded" && r.blockers.length && { reason: r.blockers.join("; ") }),
+    ...settled,
+    summary: settled.summary.slice(0, 1600),
+    result: settled.result
+      ? {
+          ...settled.result,
+          summary: settled.result.summary.slice(0, 1600),
+          brief: settled.result.brief?.slice(0, 8000),
+          data: undefined,
+          findings: settled.result.findings.slice(0, 8),
+          sources: settled.result.sources?.slice(0, 8),
+          checks: settled.result.checks.slice(0, 8),
+          changedFiles: settled.result.changedFiles.slice(0, 64),
+          blockers: settled.result.blockers.slice(0, 8),
+        }
+      : null,
+    data: undefined,
   };
 }
-
-export interface EngineOptions {
-  backends: Partial<Record<BackendKind | "fake", AgentBackend>>;
-  pipeline?: Pipeline;
-  clock?: Clock;
-  // Observe-mode telemetry interval (default 2 s).
-  telemetryMs?: number;
-  limiter?: Limiter;
-  defaultBackend?: BackendKind | "fake";
-}
-
-export interface Engine {
-  run(specs: unknown, options?: RunOptions): Promise<RunHandle>;
-  status(run?: string): RunView | RunView[] | undefined;
-  runs(): string[];
-  steer(
-    run: string,
-    agent: string,
-    text: string,
-    as?: "steer" | "followUp",
-    by?: "user" | "parent",
-  ): Promise<void>;
-  cancel(run: string, agent?: string, reason?: string): Promise<void>;
-  // Re-runs a settled task with feedback, and requeues its reviewers. Returns the reopened ids.
-  repair(run: string, task: string, feedback: string): string[];
-  subscribe(run: string, consumer: Consumer): () => void;
-  // Called for every new run, so surfaces can follow runs they did not start.
-  onRun(listener: (run: RunHandle) => void): () => void;
-  snapshot(run: string): RunView | undefined;
-  snapshot(run: string, agent: string): Promise<AgentSnapshot | undefined>;
-  // Rebuilds an unsettled run from its directory after Pi restarted: settled agents keep
-  // their results, detached agents are followed again, agents that cannot be reattached are
-  // cancelled, and the graph continues.
-  resume(dir: string, options?: ResumeOptions): Promise<RunHandle>;
-  // Starts again the tasks a run lost when Pi exited (cancelled, not reattachable), with
-  // their dependents. Returns the reopened ids.
-  rerun(run: string): string[];
-  // Cancels everything (parent reload or exit) and flushes logs. Runs that `detach` selects
-  // are left running instead: their detached agents keep going without this Pi.
-  shutdown(reason: string, options?: { detach?: (run: RunHandle) => boolean }): Promise<void>;
-  readonly limiter: Limiter;
-}
-
 export function createEngine(options: EngineOptions): Engine {
   const clock = options.clock ?? { now: () => Date.now() };
   const pipeline = options.pipeline ?? basicPipeline({ backend: options.defaultBackend });
-  const limiter = options.limiter ?? new Limiter();
-  const runs = new Map<string, RunState>();
-  const runListeners = new Set<(run: RunHandle) => void>();
-
-  const handleOf = (run: RunState): RunHandle => ({
+  const runs = new Map<string, Run>();
+  const listeners = new Set<(handle: RunHandle) => void>();
+  let closing = false;
+  const get = (id: string): Run => {
+    const run = runs.get(id);
+    if (!run) throw new Error(`Unknown run ${id}`);
+    return run;
+  };
+  const handle = (run: Run): RunHandle => ({
     id: run.id,
     dir: run.dir,
-    // A repair reopens the run with a new done promise.
     get done() {
       return run.done;
     },
     view: () => run.current,
     results: () => run.results,
   });
-
-  function emit(run: RunState, agent: string | undefined, body: AgentEventInput): AgentEvent {
+  const serial = <T>(run: Run, work: () => Promise<T>): Promise<T> => {
+    const next = run.serial.then(work);
+    run.serial = next.catch(() => {});
+    return next;
+  };
+  function emit(
+    run: Run,
+    worker: string | undefined,
+    body: AgentEventInput,
+    assignment?: number,
+  ): AgentEvent {
     const event = {
-      v: 1,
+      v: 2,
       seq: ++run.seq,
       run: run.id,
-      ...(agent && { agent }),
       at: clock.now(),
+      ...(worker && { agent: worker }),
+      ...(assignment && { assignment }),
       ...body,
     } as AgentEvent;
-    run.current = reduce(run.current, event);
     run.store.append(event);
-    for (const consumer of run.consumers) {
-      try {
-        consumer(event);
-      } catch {
-        // A failing surface never breaks the run.
-      }
-    }
+    run.current = reduce(run.current, event);
+    for (const consumer of run.consumers) consumer(event);
     return event;
   }
-
-  // Release a slot anywhere: other runs may be waiting on the same provider.
-  let dispatchCursor = 0;
-  function pumpAll() {
-    const active = [...runs.values()].filter((run) => !run.finished);
-    if (!active.length) return;
-    // One start per run per round. Keep the cursor across slot releases.
-    let idle = 0;
-    while (idle < active.length) {
-      const run = active[dispatchCursor % active.length];
-      dispatchCursor = (dispatchCursor + 1) % active.length;
-      if (run.scheduler.pump(1)) idle = 0;
-      else idle++;
-    }
+  async function durable(run: Run): Promise<void> {
+    await run.store.flush(true);
+    if (run.store.error) throw run.store.error;
   }
-
-  function onAgentEvent(run: RunState, id: string, state: AgentState, event: AgentEventInput) {
-    // Late events from an aborted loop never change a settled agent.
-    if (state.status !== "running") return;
-    // The position and its accounting are persisted together in the run log. A
-    // detached process may replay its entire outbox after an unclean host exit.
-    if (event.source) {
-      if (state.source?.id === event.source.id && event.source.record <= state.source.record)
-        return;
-      state.source = event.source;
-    }
-    const added = state.budget
-      ? state.budget.observe(event)
-      : event.t === "message_end"
-        ? event.usage
-        : undefined;
-    if (event.t === "turn_start") state.observed.turns++;
-    if (event.t === "tool_start") state.observed.toolCalls++;
-    if (added) state.observed.usage = addUsage(state.observed.usage, added);
-    // Lean logs checkpoint positions only alongside complete accounting. A retained
-    // steer/retry must not advance past usage events omitted between usage ticks.
-    const { source: _source, ...body } = event;
-    emit(run, id, run.mode === "lean" ? body : event);
-    if (event.t === "message_end" && event.role === "assistant" && state.provider) {
-      if (event.stopReason === "error" && isRateLimit(event.error))
-        limiter.rateLimited(state.provider);
-      else if (event.stopReason === "stop" || event.stopReason === "toolUse")
-        limiter.succeeded(state.provider);
-    }
-    if (event.t === "retry" && state.provider && isRateLimit(event.reason))
-      limiter.rateLimited(state.provider);
-    if (added) {
-      run.usage = addUsage(run.usage, added);
-      const now = clock.now();
-      if (now - state.usageAt >= 1000) {
-        state.usageAt = now;
-        emit(run, id, {
-          t: "usage",
-          ...state.observed,
-          ...(event.source && { source: event.source }),
-        });
-      }
-      const cap = run.limits.costUsd;
-      if (cap !== undefined && run.usage.cost > cap && !run.controller.signal.aborted)
-        cancelRun(run, new StopSignal("cost limit reached", "cancelled"));
-    }
+  async function saveAssignment(run: Run, a: Assignment): Promise<void> {
+    const folder = join(run.dir, "assignments", a.worker);
+    await privateDir(folder);
+    await atomicJson(join(folder, `${a.assignment}.json`), {
+      worker: a.worker,
+      assignment: a.assignment,
+      task: taskSpec(a.task),
+      after: a.after,
+      message: a.message,
+      status: a.status,
+    });
   }
-
-  async function startAgent(run: RunState, id: string) {
-    const state = run.agents.get(id)!;
-    const expired = run.deadlineAt !== undefined && run.deadlineAt <= clock.now();
-    if (expired && !state.reattach) {
-      cancelRun(run, new StopSignal("run deadline exceeded", "failed"));
+  async function saveMessage(run: Run, message: InboxMessage): Promise<void> {
+    await run.store.writeInbox(message.id, message);
+    run.inbox.set(message.id, message);
+  }
+  function reopen(run: Run): void {
+    if (!run.finished) return;
+    run.finished = false;
+    run.done = new Promise((resolve, reject) => {
+      run.resolve = resolve;
+      run.reject = reject;
+    });
+    emit(run, undefined, { t: "run_resumed", reason: "additional assignment" });
+    run.scheduler.resume();
+  }
+  async function accept(run: Run, tasks: Task[], messageId?: string): Promise<AssignmentRef[]> {
+    const latest = new Map(run.latest);
+    const additions = tasks.map((task) => {
+      const assignment = (latest.get(task.id) ?? 0) + 1;
+      latest.set(task.id, assignment);
+      return { task, worker: task.id, assignment };
+    });
+    const nodes = additions.map(({ task, worker, assignment }) => {
+      const after = task.after.map((ref) =>
+        typeof ref === "string" ? { worker: ref, assignment: latest.get(ref)! } : ref,
+      );
+      if (assignment > 1) after.push({ worker, assignment: assignment - 1 });
+      return { worker, assignment, after };
+    });
+    // Validate atomically before touching accepted state.
+    const candidate = new Graph([...run.graph.nodes.values(), ...nodes]);
+    void candidate;
+    const definitions = taskDefinitions([...run.tasks.values(), ...tasks]);
+    await atomicJson(join(run.dir, "definitions.json"), definitions);
+    run.data.definitions = definitions;
+    reopen(run);
+    for (const [i, addition] of additions.entries()) {
+      const a: Assignment = {
+        ...addition,
+        after: nodes[i].after,
+        message: messageId ?? `${addition.worker}:${addition.assignment}`,
+        status: "queued",
+        observed: { usage: ZERO_USAGE, turns: 0, toolCalls: 0 },
+      };
+      await saveAssignment(run, a);
+      emit(
+        run,
+        a.worker,
+        { t: "agent_queued", task: taskSpec(a.task), dependencies: a.after, message: a.message },
+        a.assignment,
+      );
+      run.assignments.set(assignmentKey(a), a);
+      run.latest.set(a.worker, a.assignment);
+      run.tasks.set(a.worker, a.task);
+    }
+    run.graph.add(nodes);
+    await durable(run);
+    return additions.map(({ worker, assignment }) => ({ worker, assignment }));
+  }
+  function context(run: Run, a: Assignment): RunContext {
+    const results = new Map<string, Settled>();
+    for (const ref of a.after) {
+      const settled = run.assignments.get(assignmentKey(ref))?.result;
+      if (settled) results.set(ref.worker, settled);
+    }
+    return {
+      id: run.id,
+      dir: run.dir,
+      cwd: run.cwd,
+      mode: run.mode,
+      signal: a.controller!.signal,
+      tasks: run.tasks,
+      results,
+      store: run.store,
+      data: run.data,
+      assignment: a.assignment,
+      dependencies: a.after,
+      view: run.view,
+      emit: (worker, body) => {
+        emit(run, worker, body, a.assignment);
+      },
+    };
+  }
+  async function finish(run: Run): Promise<void> {
+    if (
+      run.finished ||
+      [...run.assignments.values()].some((a) => a.status === "queued" || a.status === "running")
+    )
       return;
-    }
-    const task = state.task;
-    state.status = "running";
-    const controller = new AbortController();
-    state.controller = controller;
-    if (expired) cancelRun(run, new StopSignal("run deadline exceeded", "failed"));
-    // The wall clock is an explicit timer: AbortSignal.any() holds its sources weakly, so an
-    // AbortSignal.timeout() kept only there can be garbage-collected before it fires.
-    const workerDeadline = clock.now() + remaining(run.deadlineAt, run.limits.taskMs, clock.now());
-    const deadline = setTimeout(
-      () => controller.abort(new StopSignal("deadline exceeded", "failed")),
-      remaining(run.deadlineAt, run.limits.taskMs, clock.now()),
+    run.finished = true;
+    run.telemetry?.stop();
+    const states = [...run.latest].map(
+      ([worker, assignment]) => run.assignments.get(`${worker}/${assignment}`)!.status,
     );
-    (deadline as { unref?: () => void }).unref?.();
-    const signal = AbortSignal.any([run.controller.signal, controller.signal]);
+    emit(run, undefined, {
+      t: "run_settled",
+      status: states.every((s) => s === "succeeded")
+        ? "succeeded"
+        : states.some((s) => s === "cancelled")
+          ? "cancelled"
+          : "failed",
+      usage: run.current.usage,
+    });
+    await durable(run);
+    await pipeline.finish?.(run, run.current);
+    run.resolve(run.current);
+  }
+  function pump(run: Run): void {
+    if (run.detached) return;
+    run.scheduler.pump();
+    void serial(run, () => finish(run));
+  }
+  async function dispatchSteer(run: Run, a: Assignment, message: InboxMessage): Promise<void> {
+    if (!a.handle || message.state !== "recorded") return;
+    message = { ...message, state: "dispatching" };
+    await saveMessage(run, message);
+    try {
+      const disposition = await a.handle.steer(message.payload, message.id);
+      const current = run.inbox.get(message.id)!;
+      if (current.state !== "consumed")
+        await saveMessage(run, { ...current, state: disposition ?? "queued" });
+      emit(
+        run,
+        a.worker,
+        { t: "input_dispatched", message: message.id, disposition: disposition ?? "queued" },
+        a.assignment,
+      );
+    } catch {
+      await saveMessage(run, { ...run.inbox.get(message.id)!, state: "uncertain" });
+      emit(
+        run,
+        a.worker,
+        { t: "input_dispatched", message: message.id, disposition: "uncertain" },
+        a.assignment,
+      );
+    }
+    await durable(run);
+  }
+  async function execute(run: Run, a: Assignment): Promise<void> {
+    a.status = "running";
+    a.controller = new AbortController();
     let prepared: Prepared | undefined;
     let outcome: AgentOutcome | undefined;
     let verdict: Verdict | undefined;
-    const model = pipeline.model(run, task);
-    const kind =
-      pipeline.backend?.(run, task) ?? task.backend ?? options.defaultBackend ?? "in-process";
-    // Resume: the agent is already running (or finished) in a process an earlier Pi started.
-    const reattach = state.reattach === true;
-    state.reattach = false;
-    let detaching = false;
-    try {
-      if (!reattach)
-        emit(run, id, {
-          t: "agent_started",
-          backend: kind,
-          model,
-          workspace: pipeline.workspaceRef?.(run, task) ?? { kind: "live", path: run.cwd },
-        });
-      const backend = options.backends[kind];
-      if (!backend) throw new Error(`Backend ${kind} is not available`);
-      // A builder without a valid result gets one result-only attempt with write tools removed.
-      for (let attempt = 0; attempt < 2; attempt++) {
-        const resultOnly = attempt > 0;
-        const following = reattach && attempt === 0;
-        // Older logs have totals but no durable source position. Reconcile those
-        // detached outboxes from their final outcome instead of charging a replay.
-        const legacy =
-          following &&
-          !state.source &&
-          (Object.values(state.observed.usage).some((n) => n > 0) ||
-            state.observed.turns > 0 ||
-            state.observed.toolCalls > 0);
-        let sourced = false;
-        const sink = (e: AgentEventInput) => {
-          if (e.source) {
-            sourced = true;
-            if (legacy) return;
-          }
-          onAgentEvent(run, id, state, e);
-        };
-        if (following) {
-          const handle = backend.reattach
-            ? await backend.reattach(
-                { run: run.id, task, mode: run.mode, transcript: run.store.transcriptPath(id) },
-                sink,
-                signal,
-              )
-            : null;
-          if (!handle) {
-            signal.throwIfAborted();
-            verdict = {
-              status: "cancelled",
-              summary: `${LOST}; /pinata rerun starts it again`,
-              reason: LOST,
-              failureStage: "process",
-              result: null,
-            };
-            break;
-          }
-          state.handle = handle;
-        }
-        // Own the recovered process before workspace validation, which can fail or be
-        // cancelled. An expired resume follows only to stop it and recover its usage.
-        if (!following || !signal.aborted) {
-          prepared = await pipeline.prepare(run, task, signal, {
-            resultOnly,
-            ...(following && { reattach: true }),
-          });
-          prepared.launch.budgets.deadline = Math.min(
-            prepared.launch.budgets.deadline,
-            workerDeadline,
-          );
-          // An agent being reattached is followed even when cancelled meanwhile, so its
-          // process is stopped through the handle.
-          if (!following && clock.now() >= workerDeadline)
-            throw new StopSignal("deadline exceeded", "failed");
-          if (signal.aborted && !following) throw signal.reason;
-          // A reattached agent enforced its own budgets while no Pi was watching.
-          if (!following && !state.budget) {
-            state.budget = new AgentBudget(
-              {
-                maxTurns: prepared.launch.budgets.maxTurns,
-                maxToolCalls: prepared.launch.budgets.maxToolCalls,
-                maxCostUsd: prepared.launch.budgets.maxCostUsd,
-              },
-              (reason) => controller.abort(new StopSignal(reason, "failed")),
-            );
-            // A result-only retry after reattachment shares this attempt's budget.
-            Object.assign(state.budget, state.observed);
-          }
-        }
-        if (!following) state.handle = await backend.start(prepared!.launch, sink, signal);
-        const activeHandle = state.handle;
-        if (!activeHandle) throw new Error("Backend returned no agent handle");
-        // Pi is exiting and the run survives it: leave the agent running.
-        if (run.detached && activeHandle.detach) {
-          detaching = true;
-          await activeHandle.detach();
+    const ctx = context(run, a);
+    const signal = a.controller.signal;
+    const backendKind = pipeline.backend?.(ctx, a.task) ?? options.defaultBackend ?? "fake";
+    const backend = options.backends[backendKind];
+    const sink = (body: AgentEventInput) => {
+      if (body.t === "input_consumed") {
+        const known = run.inbox.get(body.message);
+        if (
+          body.message !== a.message &&
+          (!known || assignmentKey(known.target) !== assignmentKey(a))
+        )
           return;
-        }
-        trace(run.id, id, "following");
-        outcome = await activeHandle.done;
-        if (following && (!sourced || legacy)) {
-          // Detached outcomes include records already consumed by the previous host. Only
-          // their unobserved remainder is new spend; missing processes keep recovered usage.
-          const missing = usageRemainder(outcome.usage, state.observed.usage);
-          run.usage = addUsage(run.usage, missing);
-          state.observed = {
-            usage: addUsage(state.observed.usage, missing),
-            turns: Math.max(state.observed.turns, outcome.turns),
-            toolCalls: Math.max(state.observed.toolCalls, outcome.toolCalls),
-          };
-        }
-        if (following && run.limits.costUsd !== undefined && run.usage.cost > run.limits.costUsd)
-          cancelRun(run, new StopSignal("cost limit reached", "cancelled"));
-        trace(run.id, id, `done ${outcome.stopReason}`);
-        if (signal.aborted) {
-          const why = stopReason(signal);
-          verdict = {
-            status: why.status,
-            summary: why.reason,
-            reason: why.reason,
-            failureStage: "process",
-            result: outcome.result,
-          };
-          break;
-        }
-        verdict = await pipeline.verify(run, task, prepared!, outcome, signal);
-        signal.throwIfAborted();
-        if (clock.now() >= workerDeadline) throw new StopSignal("deadline exceeded", "failed");
-        trace(run.id, id, `verified ${verdict.status}`);
-        if (verdict.retry !== "result-only" || resultOnly) break;
-        await activeHandle.dispose().catch(() => {});
-        state.handle = undefined;
+        if (known?.state === "consumed" && known.checkpoint === body.checkpoint) return;
+      }
+      if (body.source && a.source?.id === body.source.id && body.source.record <= a.source.record)
+        return;
+      if (body.source) a.source = body.source;
+      if (body.t === "message_end") a.observed.usage = addUsage(a.observed.usage, body.usage);
+      if (body.t === "turn_start") a.observed.turns = body.turn;
+      if (body.t === "tool_start") a.observed.toolCalls++;
+      emit(run, a.worker, body, a.assignment);
+      if (body.t === "message_end" && body.usage)
+        emit(run, a.worker, { t: "usage", ...a.observed, source: body.source }, a.assignment);
+      if (body.t === "input_consumed")
+        void serial(run, async () => {
+          const message = run.inbox.get(body.message);
+          if (message)
+            await saveMessage(run, { ...message, state: "consumed", checkpoint: body.checkpoint });
+          await durable(run);
+        });
+    };
+    try {
+      need(backend, `Backend ${backendKind} unavailable`);
+      const ref = pipeline.workspaceRef?.(ctx, a.task) ?? { kind: "live" as const, path: run.cwd };
+      if (!a.reattach)
+        emit(
+          run,
+          a.worker,
+          {
+            t: "agent_started",
+            backend: backendKind,
+            model: pipeline.model(ctx, a.task),
+            workspace: ref,
+          },
+          a.assignment,
+        );
+      await saveAssignment(run, a);
+      await durable(run);
+      const sessionDir = join(run.dir, "sessions", a.worker);
+      await privateDir(sessionDir);
+      const sessionFile = join(sessionDir, "conversation.jsonl");
+      const attachment = {
+        run: run.id,
+        task: a.task,
+        mode: run.mode,
+        transcript: run.store.transcriptPath(a.worker),
+        assignment: a.assignment,
+        sessionFile,
+      };
+      if (a.reattach) {
+        prepared = await pipeline.prepare(ctx, a.task, signal, { reattach: true });
+        a.handle = (await backend.reattach?.(attachment, sink, signal)) ?? undefined;
+      }
+      if (a.reattach && !a.handle) {
+        verdict = { status: "uncertain", summary: LOST, reason: LOST, result: null };
+      } else if (!a.handle) {
+        prepared = await pipeline.prepare(ctx, a.task, signal);
+        const steering = [...run.inbox.values()].filter(
+          (m) =>
+            m.kind === "steer" &&
+            assignmentKey(m.target) === assignmentKey(a) &&
+            m.state === "recorded",
+        );
+        const launch = {
+          ...prepared.launch,
+          assignment: a.assignment,
+          messageId: a.message,
+          sessionFile,
+          agent: {
+            ...prepared.launch.agent,
+            initialInputs: steering.map((m) => ({ id: m.id, text: m.payload })),
+          },
+        };
+        // The durable assignment is dispatch intent. A crash from here is ambiguous and is never replayed automatically.
+        const request = run.inbox.get(a.message);
+        if (request)
+          await serial(run, () => saveMessage(run, { ...request, state: "dispatching" }));
+        for (const message of steering)
+          await serial(run, () => saveMessage(run, { ...message, state: "dispatching" }));
+        a.handle = await backend.start(launch, sink, signal);
+        for (const message of steering)
+          await serial(run, () =>
+            saveMessage(run, {
+              ...run.inbox.get(message.id)!,
+              state: run.inbox.get(message.id)?.state === "consumed" ? "consumed" : "queued",
+            }),
+          );
+      }
+      if (a.handle) {
+        // Messages recorded while preparation was in progress.
+        for (const message of run.inbox.values())
+          if (
+            message.kind === "steer" &&
+            assignmentKey(message.target) === assignmentKey(a) &&
+            message.state === "recorded"
+          )
+            await serial(run, () => dispatchSteer(run, a, message));
+        outcome = await a.handle.done;
+        await serial(run, async () => {
+          const request = run.inbox.get(a.message);
+          if (!request) return;
+          const disposition = outcome!.disposition === "handled" ? "handled" : "queued";
+          if (request.state !== "consumed")
+            await saveMessage(run, { ...request, state: disposition });
+          emit(
+            run,
+            a.worker,
+            { t: "input_dispatched", message: request.id, disposition },
+            a.assignment,
+          );
+          await durable(run);
+        });
+        verdict = judge(outcome);
       }
     } catch (error) {
-      const why = signal.aborted ? stopReason(signal) : null;
-      const message = why?.reason ?? (error as Error)?.message ?? String(error);
+      await serial(run, async () => {
+        for (const message of run.inbox.values())
+          if (assignmentKey(message.target) === assignmentKey(a) && message.state === "dispatching")
+            await saveMessage(run, { ...message, state: "uncertain" });
+      });
       verdict = {
-        status: why?.status ?? "failed",
-        summary: message,
-        reason: message,
-        failureStage: outcome ? "verification" : prepared ? "process" : "workspace",
-        result: null,
+        status: signal.aborted ? stopReason(signal).status : "failed",
+        summary: signal.aborted ? stopReason(signal).reason : (error as Error).message,
+        reason: (error as Error).message,
+        result: outcome?.result ?? null,
+        ...(error instanceof PreparationError && { data: error.data }),
       };
     } finally {
-      clearTimeout(deadline);
-      if (!detaching) await state.handle?.dispose().catch(() => {});
-      trace(run.id, id, "disposed");
+      // Stop owned activity before capturing a stable snapshot, while still holding its lease.
+      let stopped = true;
+      try {
+        if (a.handle) await a.handle.dispose();
+      } catch (error) {
+        stopped = false;
+        verdict = {
+          status: "uncertain",
+          summary: `Owned activity could not be confirmed stopped: ${(error as Error).message}. Reconcile its writer lease before application.`,
+          result: outcome?.result ?? null,
+        };
+      }
+      if (prepared && stopped) {
+        const capturedOutcome = outcome ?? {
+          result: verdict?.result ?? null,
+          stopReason: "error" as const,
+          error: verdict?.reason ?? verdict?.summary,
+          ...a.observed,
+        };
+        try {
+          const captured = await pipeline.verify(ctx, a.task, prepared, capturedOutcome, signal);
+          verdict = outcome
+            ? captured
+            : { ...verdict!, data: captured.data, fingerprint: captured.fingerprint };
+        } catch (error) {
+          verdict = {
+            ...verdict!,
+            status: "failed",
+            summary: `Snapshot capture failed: ${(error as Error).message}`,
+            reason: (error as Error).message,
+          };
+        }
+      }
+      await prepared?.workspace?.dispose();
+      if (stopped) await prepared?.release?.();
+      a.handle = undefined;
     }
-    if (!verdict) throw new Error("unreachable: no verdict");
-    const { retry: _retry, ...final } = verdict;
+    if (run.detached) return;
+    if (signal.aborted)
+      verdict = { ...verdict!, ...stopReason(signal), summary: stopReason(signal).reason };
     const settled: Settled = {
-      ...final,
-      usage: state.budget?.usage ?? state.observed.usage,
-      turns: state.budget?.turns ?? state.observed.turns,
-      toolCalls: state.budget?.toolCalls ?? state.observed.toolCalls,
-      ...(outcome?.model && { model: outcome.model }),
+      ...verdict!,
+      usage: outcome?.usage ?? a.observed.usage,
+      turns: outcome?.turns ?? a.observed.turns,
+      toolCalls: outcome?.toolCalls ?? a.observed.toolCalls,
+      model: outcome?.model,
+      assignment: a.assignment,
     };
-    settle(run, id, settled);
-    if (pipeline.settled) await track(run, pipeline.settled(run, task, prepared, settled));
-  }
-
-  function ancestorsOf(run: RunState, task: Task, seen = new Set<string>()): Set<string> {
-    for (const name of task.after) {
-      if (seen.has(name)) continue;
-      seen.add(name);
-      const dep = run.agents.get(name);
-      if (dep) ancestorsOf(run, dep.task, seen);
-    }
-    return seen;
-  }
-
-  function track(run: RunState, work: Promise<unknown>): Promise<void> {
-    const p = work.then(
-      () => {},
-      () => {},
-    );
-    run.pending.add(p);
-    void p.then(() => run.pending.delete(p));
-    return p;
-  }
-
-  function settle(run: RunState, id: string, settled: Settled) {
-    const state = run.agents.get(id)!;
-    if (state.status !== "queued" && state.status !== "running") return;
-    state.status = settled.status;
-    state.handle = undefined;
-    run.settledResults.set(id, settled);
-    void track(run, run.store.writeResult(id, { task: id, ...settled }));
-    emit(run, id, {
-      t: "agent_settled",
-      status: settled.status,
-      summary: settled.summary,
-      ...(settled.reason !== undefined && { reason: settled.reason }),
-      usage: settled.usage,
-      turns: settled.turns,
-      toolCalls: settled.toolCalls,
-      ...(state.source && { source: state.source }),
+    await serial(run, async () => {
+      a.result = settled;
+      a.status = settled.status;
+      await run.store.writeAssignmentResult(a.worker, a.assignment, settled);
+      run.results.set(a.worker, compactSettled(settled));
+      a.result = compactSettled(settled);
+      await pipeline.settled?.(ctx, a.task, prepared, settled);
+      await saveAssignment(run, a);
+      emit(
+        run,
+        a.worker,
+        {
+          t: "agent_settled",
+          status: settled.status,
+          summary: settled.summary,
+          reason: settled.reason,
+          usage: settled.usage,
+          turns: settled.turns,
+          toolCalls: settled.toolCalls,
+        },
+        a.assignment,
+      );
+      await durable(run);
+      run.scheduler.settle(assignmentKey(a));
     });
-    const { blocked } = run.scheduler.settle(id, settled.status === "succeeded");
-    for (const b of blocked) {
-      const reason = `blocked: required task ${b.by} did not succeed`;
-      settleQuiet(run, b.id, { status: "blocked", summary: reason, reason });
-    }
-    if (
-      settled.status !== "succeeded" &&
-      run.policy === "failFast" &&
-      !run.controller.signal.aborted
-    )
-      cancelRun(run, new StopSignal(`failFast: ${id} ${settled.status}`, "cancelled"));
-    pumpAll();
-    maybeFinish(run);
+    pump(run);
   }
-
-  // Settles an agent that never started.
-  function settleQuiet(
-    run: RunState,
+  function make(
     id: string,
-    verdict: { status: AgentStatus; summary: string; reason?: string },
-  ) {
-    const state = run.agents.get(id)!;
-    if (state.status !== "queued") return;
-    state.status = verdict.status;
-    const settled: Settled = {
-      ...verdict,
-      result: null,
-      usage: ZERO_USAGE,
-      turns: 0,
-      toolCalls: 0,
-    };
-    run.settledResults.set(id, settled);
-    emit(run, id, {
-      t: "agent_settled",
-      status: verdict.status,
-      summary: verdict.summary,
-      ...(verdict.reason !== undefined && { reason: verdict.reason }),
-      usage: ZERO_USAGE,
-      turns: 0,
-      toolCalls: 0,
-    });
-    run.scheduler.settle(id, false);
-  }
-
-  function cancelRun(run: RunState, reason: StopSignal) {
-    if (!run.controller.signal.aborted) run.controller.abort(reason);
-    run.scheduler.stop();
-    for (const [id, state] of run.agents) {
-      if (state.status !== "queued") continue;
-      // Queued reattachments already own live processes, even without a scheduling slot.
-      if (state.reattach) void startAgent(run, id);
-      else
-        settleQuiet(run, id, {
-          status: "cancelled",
-          summary: reason.message,
-          reason: reason.message,
-        });
-    }
-    maybeFinish(run);
-  }
-
-  function startTelemetry(run: RunState) {
-    const holder = run as { telemetry?: Telemetry };
-    holder.telemetry ??= new Telemetry();
-    holder.telemetry.start((sample) => {
-      if (!run.finished) emit(run, undefined, { t: "telemetry", sample });
-    }, options.telemetryMs);
-  }
-
-  function maybeFinish(run: RunState) {
-    if (run.finished) return;
-    for (const state of run.agents.values())
-      if (state.status === "queued" || state.status === "running") return;
-    run.finished = true;
-    const telemetry = (run as { telemetry?: Telemetry }).telemetry;
-    if (telemetry?.running) {
-      emit(run, undefined, { t: "telemetry", sample: telemetry.sample() });
-      telemetry.stop();
-    }
-    const statuses = [...run.agents.values()].map((s) => s.status);
-    const status: RunStatus = statuses.every((s) => s === "succeeded")
-      ? "succeeded"
-      : run.controller.signal.aborted && stopReason(run.controller.signal).status === "cancelled"
-        ? "cancelled"
-        : "failed";
-    // Results are invalidated on repair; the view retains effort from every attempt.
-    emit(run, undefined, {
-      t: "run_settled",
-      status,
-      usage: run.current.usage,
-      ...(run.controller.signal.aborted && { stopped: true }),
-    });
-    const view = run.current;
-    void (async () => {
-      // Settle hooks of the last agent are tracked right after it settles; let them register.
-      await Promise.resolve();
-      while (run.pending.size) await Promise.allSettled(run.pending);
-      await run.store.close();
-      if (pipeline.finish) await pipeline.finish(run, view).catch(() => {});
-      run.resolve(view);
-    })();
-  }
-
-  // A run's in-memory state (new runs and resumed ones).
-  function createRun(p: {
-    id: string;
-    dir: string;
-    cwd: string;
-    mode: Mode;
-    limits: Limits;
-    tasks: Task[];
-    store: RunStore;
-    opts: {
-      reviewPolicy?: ReviewPolicy;
-      deadlineAt?: number;
-      policy?: "allSettled" | "failFast";
-      data?: Record<string, unknown>;
-    };
-  }): RunState {
-    const controller = new AbortController();
-    const graph = new Graph(p.tasks);
+    dir: string,
+    cwd: string,
+    mode: Mode,
+    store: RunStore,
+    opts: RunOptions,
+  ): Run {
     let resolve!: (view: RunView) => void;
-    const done = new Promise<RunView>((r) => (resolve = r));
-    const run = {
-      id: p.id,
-      dir: p.dir,
-      cwd: p.cwd,
-      mode: p.mode,
-      limits: p.limits,
-      deadlineAt: p.opts.deadlineAt,
-      reviewPolicy: p.opts.reviewPolicy,
+    let reject!: (reason: unknown) => void;
+    const done = new Promise<RunView>((resolveDone, rejectDone) => {
+      resolve = resolveDone;
+      reject = rejectDone;
+    });
+    const controller = new AbortController();
+    const graph = new Graph();
+    const run: Run = {
+      id,
+      dir,
+      cwd,
+      mode,
+      store,
+      data: opts.data ?? {},
       signal: controller.signal,
-      tasks: graph.tasks,
-      results: new Map<string, Settled>(),
-      store: p.store,
-      data: p.opts.data ?? {},
       controller,
-      agents: new Map(
-        p.tasks.map((t) => [
-          t.id,
-          {
-            task: t,
-            status: "queued" as const,
-            usageAt: 0,
-            observed: { usage: ZERO_USAGE, turns: 0, toolCalls: 0 },
-          },
-        ]),
-      ),
       graph,
+      scheduler: undefined as unknown as Scheduler,
+      tasks: new Map(),
+      results: new Map(),
+      assignments: new Map(),
+      latest: new Map(),
+      inbox: new Map(),
+      consumers: new Set(),
+      current: emptyView(id),
       seq: -1,
-      current: emptyView(p.id),
-      consumers: new Set<Consumer>(),
-      policy: p.opts.policy ?? "allSettled",
-      finished: false,
-      pending: new Set(),
-      resolve,
       done,
-      usage: ZERO_USAGE,
-    } as unknown as RunState;
-    (run as { settledResults: Map<string, Settled> }).settledResults = run.results as Map<
-      string,
-      Settled
-    >;
-    (run as { view: () => RunView }).view = () => run.current;
-    (run as { emit: RunContext["emit"] }).emit = (agent, event) => void emit(run, agent, event);
-    run.scheduler = new Scheduler(
-      graph,
-      limiter,
-      (taskId) => {
-        const state = run.agents.get(taskId)!;
-        state.provider ??= pipeline.model(run, state.task).provider;
-        return state.provider;
+      resolve,
+      reject,
+      finished: false,
+      serial: Promise.resolve(),
+      active: new Set(),
+      allowWrites: opts.allowWrites ?? false,
+      view: () => run.current,
+      emit: (worker, body) => {
+        emit(run, worker, body);
       },
-      (taskId) => void startAgent(run, taskId),
-      p.limits.concurrency,
-    );
-    runs.set(p.id, run);
+    };
+    run.scheduler = new Scheduler(graph, (key) => {
+      const work = execute(run, run.assignments.get(key)!);
+      run.active.add(work);
+      void work
+        .finally(() => run.active.delete(work))
+        .catch((error) => {
+          run.reject(error);
+        });
+    });
+    if (mode === "observe") {
+      run.telemetry = new Telemetry();
+      run.telemetry.start(
+        (sample) => emit(run, undefined, { t: "telemetry", sample }),
+        options.telemetryMs,
+      );
+    }
+    runs.set(id, run);
     return run;
   }
-
-  function startJobDeadline(run: RunState) {
-    const deadline = setTimeout(
-      () => {
-        if (!run.finished) cancelRun(run, new StopSignal("run deadline exceeded", "failed"));
-      },
-      remaining(run.deadlineAt, run.limits.jobMs, clock.now()),
-    );
-    deadline.unref?.();
-    void run.done.then(() => clearTimeout(deadline));
-  }
-
-  // Leaves a surviving run's detached agents running and drops the run from this engine.
-  async function detachRun(run: RunState) {
-    run.detached = true;
-    run.scheduler.stop();
-    const waits: Promise<unknown>[] = [];
-    for (const state of run.agents.values()) {
-      if (state.status !== "running") continue;
-      if (state.handle?.detach) waits.push(state.handle.detach().catch(() => {}));
-      else if (state.handle) {
-        // An agent that cannot outlive Pi (in process) is cancelled.
-        state.controller?.abort(new StopSignal("parent exit", "cancelled"));
-      }
-    }
-    await Promise.all(waits);
-    (run as { telemetry?: Telemetry }).telemetry?.stop();
-    await run.store.flush(true);
-    runs.delete(run.id);
-  }
-
   const engine: Engine = {
-    limiter,
     async run(specs, opts = {}) {
+      need(!closing, "Engine is shutting down; start work in a new host");
+      migrationError(opts, ["limits", "deadlineAt", "reviewPolicy", "policy"], "run");
       const tasks = validateGraph(specs, {
-        allowWrites: opts.allowWrites ?? false,
-        definitions: opts.data?.definitions as Definitions | undefined,
-        reviewPolicy: opts.reviewPolicy,
+        allowWrites: opts.allowWrites,
+        definitions: opts.data?.definitions as Definitions,
       });
-      const limits = validateLimits(opts.limits ?? {});
-      opts = {
-        ...opts,
-        reviewPolicy: reviewPolicy(opts.reviewPolicy),
-        deadlineAt: capDeadline(clock.now() + limits.jobMs, opts.deadlineAt),
-      };
-      assertTime(opts.deadlineAt, clock.now());
       const cwd = opts.cwd ?? process.cwd();
       const id = opts.id ?? randomUUID();
-      const dir =
-        opts.dir ?? join(await runsRoot(cwd).catch(() => join(tmpdir(), "pinata-runs")), id);
+      const dir = opts.dir ?? join(await runsRoot(cwd), id);
       const mode = opts.mode ?? "lean";
-      const store = await RunStore.create(dir, mode);
-      const run = createRun({ id, dir, cwd, mode, limits, tasks, store, opts });
-      const handle = handleOf(run);
-      // Listeners subscribe before the first event, so they see the whole run.
-      for (const listener of runListeners) listener(handle);
+      const run = make(id, dir, cwd, mode, await RunStore.create(dir, mode), opts);
+      for (const listener of listeners) listener(handle(run));
       emit(run, undefined, {
         t: "run_started",
-        deadlineAt: run.deadlineAt,
-        reviewPolicy: run.reviewPolicy,
         tasks: tasks.map(taskSpec),
         definitions: taskDefinitions(tasks),
         mode,
+        cwd,
+        store: dir,
       });
-      for (const task of tasks) emit(run, task.id, { t: "agent_queued" });
-      if (mode === "observe") startTelemetry(run);
-      startJobDeadline(run);
-      try {
-        if (pipeline.setup) await pipeline.setup(run);
-      } catch (error) {
-        cancelRun(run, new StopSignal(`setup failed: ${(error as Error).message}`, "failed"));
-        return handle;
-      }
-      pumpAll();
-      return handle;
-    },
-    async resume(dir, opts = {}) {
-      const events = await readEvents(dir);
-      const first = events[0];
-      if (!first || first.t !== "run_started") throw new Error(`${dir} has no run log`);
-      // A live run is already followed; a finished one in memory is replaced by the log.
-      const existing = runs.get(first.run);
-      if (existing && !existing.finished) return handleOf(existing);
-      opts = {
-        ...opts,
-        reviewPolicy: savedReviewPolicy(first),
-        deadlineAt: capDeadline(
-          first.deadlineAt,
-          ...events.flatMap((event) => (event.t === "run_resumed" ? [event.deadlineAt] : [])),
-          opts.deadlineAt,
-        ),
-      };
-      const before = replayView(events, first.run);
-      if (before.status !== "running" && !opts.settled)
-        throw new Error(`Run ${first.run} has settled`);
-      if (
-        opts.settled &&
-        (before.status === "cancelled" || events.some((e) => e.t === "run_settled" && e.stopped))
-      )
-        throw new Error("The run was stopped; start a new run");
-      // Tasks: the run's own, plus any added or requeued later (last definition wins).
-      const specs = new Map<string, TaskSpec>(first.tasks.map((t) => [t.id, t]));
-      for (const e of events)
-        if (e.t === "agent_queued" && e.task && e.agent) specs.set(e.agent, e.task);
-      const tasks = validateGraph([...specs.values()], {
-        allowWrites: opts.allowWrites ?? true,
-        definitions: first.definitions,
-      });
-      const store = await RunStore.open(dir, before.mode);
-      const run = createRun({
-        id: first.run,
-        dir,
-        cwd: opts.cwd ?? process.cwd(),
-        mode: before.mode,
-        limits: validateLimits(opts.limits ?? {}),
-        tasks,
-        store,
-        opts,
-      });
-      run.current = {
-        ...before,
-        ...(run.deadlineAt !== undefined && { deadlineAt: run.deadlineAt }),
-      };
-      run.seq = before.seq;
-      run.usage = before.usage;
-      // Settled agents keep their verdicts and results; running ones are followed again.
-      for (const task of topological(tasks)) {
-        const agent = before.agents[task.id];
-        const state = run.agents.get(task.id)!;
-        state.source = agent?.source;
-        state.repairs = events.filter(
-          (e) => e.t === "agent_queued" && e.agent === task.id && e.repair === true,
-        ).length;
-        // Older logs identify settled repairs through their reopening reason.
-        state.repairs = Math.max(
-          state.repairs,
-          events.filter((e) => e.t === "run_resumed" && e.reason === `repair of ${task.id}`).length,
+      await accept(run, tasks);
+      const abort = () => {
+        void engine.cancel(
+          id,
+          undefined,
+          opts.signal?.reason instanceof Error
+            ? opts.signal.reason.message
+            : "cancelled during startup",
         );
-        if (agent)
-          state.observed = {
-            usage: usageRemainder(agent.usage, agent.previous?.usage ?? ZERO_USAGE),
-            turns: agent.turns - (agent.previous?.turns ?? 0),
-            toolCalls: agent.toolCalls - (agent.previous?.toolCalls ?? 0),
-          };
-        if (!agent || agent.status === "queued") continue;
-        if (agent.status === "running") {
-          state.reattach = true;
-          continue;
-        }
-        state.status = agent.status;
-        const saved = await store.readResult<Settled & { task?: string }>(task.id);
-        if (saved) {
-          const { task: _task, ...settled } = saved;
-          run.settledResults.set(task.id, settled as Settled);
-        }
-        run.graph.restore(task.id, agent.status === "succeeded");
+      };
+      if (opts.signal?.aborted) abort();
+      else opts.signal?.addEventListener("abort", abort, { once: true });
+      void run.done.finally(() => opts.signal?.removeEventListener("abort", abort)).catch(() => {});
+      try {
+        await pipeline.setup?.(run);
+      } catch (error) {
+        await engine.cancel(id, undefined, (error as Error).message);
       }
-      const handle = handleOf(run);
-      for (const listener of runListeners) listener(handle);
-      if (before.status !== "running") {
-        run.finished = true;
-        run.resolve(run.current);
-        return handle;
-      }
-      emit(run, undefined, {
-        t: "run_resumed",
-        reason: opts.reason ?? "Pi restarted",
-        deadlineAt: run.deadlineAt,
-      });
-      if (run.mode === "observe") startTelemetry(run);
-      startJobDeadline(run);
-      pumpAll();
-      maybeFinish(run);
-      return handle;
+      pump(run);
+      return handle(run);
     },
-    rerun(id) {
-      const run = runs.get(id);
-      assertTime(run?.deadlineAt, clock.now());
-      if (!run) throw new Error(`Unknown run ${id}`);
-      if (run.controller.signal.aborted) throw new Error("The run was stopped; start a new run");
-      const lost = [...run.agents.values()].filter(
-        (a) => a.status === "cancelled" && run.settledResults.get(a.task.id)?.reason === LOST,
+    async add(id, specs, opts = {}) {
+      need(!closing, "Engine is shutting down; start work in a new host");
+      const run = get(id);
+      const refs = await serial(run, () =>
+        accept(
+          run,
+          validateGraph(specs, {
+            allowWrites: run.allowWrites,
+            definitions: opts.definitions ?? (run.data.definitions as Definitions),
+            existing: [...run.tasks.values()],
+          }),
+        ),
       );
-      if (!lost.length) throw new Error("No task of this run was lost when Pi exited");
-      const reopened: string[] = [];
-      for (const a of lost)
-        for (const name of run.graph.reopen(a.task.id))
-          if (!reopened.includes(name)) reopened.push(name);
-      if (run.finished) {
-        run.finished = false;
-        run.done = new Promise<RunView>((resolve) => (run.resolve = resolve));
-        emit(run, undefined, {
-          t: "run_resumed",
-          reason: "rerun of tasks lost when Pi exited",
-          deadlineAt: run.deadlineAt,
-        });
-        startJobDeadline(run);
-        if (run.mode === "observe") startTelemetry(run);
-      }
-      for (const name of reopened) {
-        // Persist invalidation before launching a repair. Another process must not consume
-        // the previous result while queued events are still buffered.
-        try {
-          unlinkSync(join(run.dir, "results", `${name}.json`));
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-        }
-        const s = run.agents.get(name)!;
-        s.status = "queued";
-        s.handle = undefined;
-        s.budget = undefined;
-        s.observed = { usage: ZERO_USAGE, turns: 0, toolCalls: 0 };
-        s.source = undefined;
-        run.settledResults.delete(name);
-        emit(run, name, { t: "agent_queued", task: taskSpec(s.task) });
-      }
-      run.scheduler.resume();
-      pumpAll();
-      return reopened;
+      pump(run);
+      return refs;
     },
-    status(id?: string) {
-      if (id) return runs.get(id)?.current;
-      return [...runs.values()].map((r) => r.current);
+    status(id) {
+      return id ? runs.get(id)?.current : [...runs.values()].map((r) => r.current);
     },
     runs: () => [...runs.keys()],
-    async steer(id, agent, text, as = "steer", by = "user") {
-      const run = runs.get(id);
-      const state = run?.agents.get(agent);
-      if (!run || !state) throw new Error(`Unknown agent ${agent} in run ${id}`);
-      if (state.status !== "running" || !state.handle)
-        throw new Error(`Agent ${agent} is not running`);
-      if (as === "steer") await state.handle.steer(text);
-      else await state.handle.followUp(text);
-      emit(run, agent, { t: "steer", by, text, as });
-    },
-    async cancel(id, agent, reason = "cancelled by user") {
-      const run = runs.get(id);
-      if (!run) throw new Error(`Unknown run ${id}`);
-      if (!agent) {
-        cancelRun(run, new StopSignal(reason, "cancelled"));
-        return;
-      }
-      const state = run.agents.get(agent);
-      if (!state) throw new Error(`Unknown agent ${agent} in run ${id}`);
-      if (state.status === "queued") {
-        settleQuiet(run, agent, { status: "cancelled", summary: reason, reason });
-        maybeFinish(run);
-      } else if (state.status === "running")
-        state.controller?.abort(new StopSignal(reason, "cancelled"));
-    },
-    repair(id, task, feedback) {
-      const run = runs.get(id);
-      assertTime(run?.deadlineAt, clock.now());
-      if (!run) throw new Error(`Unknown run ${id}`);
-      const state = run.agents.get(task);
-      if (!state) throw new Error(`Unknown task ${task} in run ${id}`);
-      if (run.controller.signal.aborted) throw new Error("The run was stopped; start a new run");
-      if (!["failed", "blocked", "succeeded", "rejected"].includes(state.status))
-        throw new Error(
-          `Task ${task} is ${state.status}; wait for it or cancel it before repairing`,
+    async steer(id, worker, text, kind = "steer", by = "user", messageId = randomUUID()) {
+      need(!closing, "Engine is shutting down; send the message after reattachment");
+      const run = get(id);
+      const receipt = await serial(run, async () => {
+        need(
+          typeof text === "string" && text.trim() && !text.includes("\0"),
+          "Message is required",
         );
-      if (run.limits.costUsd !== undefined && run.usage.cost >= run.limits.costUsd)
-        throw new Error("Cost limit reached; start a new run with an appropriate budget");
-      if ((state.repairs ?? 0) >= run.limits.repairs)
-        throw new Error(
-          `Repair budget exhausted for ${task} (limits.repairs ${run.limits.repairs})`,
-        );
-      if (typeof feedback !== "string" || !feedback.trim())
-        throw new Error("Repair feedback is required");
-      const dependents = [...run.agents.values()].filter((a) => ancestorsOf(run, a.task).has(task));
-      for (const d of dependents) {
-        if (d.status === "running")
-          throw new Error(`Dependent ${d.task.id} is running; cancel it first`);
-        const started = d.status !== "queued" && d.status !== "blocked" && d.status !== "cancelled";
-        if (started && !reviews(d.task))
-          throw new Error(
-            `Completed downstream work (${d.task.id}) needs a new run; it is not replayed silently`,
+        const previous = run.inbox.get(messageId);
+        if (previous) {
+          need(
+            previous.target.worker === worker &&
+              previous.payload === text &&
+              previous.kind === kind,
+            "Message ID already identifies a different request",
           );
-      }
-      const data = run.data as { feedback?: Record<string, string> };
-      data.feedback = { ...data.feedback, [task]: feedback };
-      for (const d of dependents)
-        if (reviews(d.task))
-          data.feedback[d.task.id] =
-            "Re-review the repaired target independently; any prior approval is invalid.";
-      const reopened = run.graph.reopen(task);
-      for (const d of dependents)
-        if (!reopened.includes(d.task.id)) reopened.push(...run.graph.reopen(d.task.id));
-      if (run.finished) {
-        run.finished = false;
-        run.done = new Promise<RunView>((resolve) => (run.resolve = resolve));
-        emit(run, undefined, {
-          t: "run_resumed",
-          reason: `repair of ${task}`,
-          deadlineAt: run.deadlineAt,
-        });
-        startJobDeadline(run);
-        if (run.mode === "observe") startTelemetry(run);
-      }
-      state.repairs = (state.repairs ?? 0) + 1;
-      for (const name of reopened) {
-        // Invalidate on disk before the repaired task can start or another host can
-        // export its old approval. The queued event may still be buffered.
-        try {
-          unlinkSync(join(run.dir, "results", `${name}.json`));
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+          return previous;
         }
-        const s = run.agents.get(name)!;
-        s.status = "queued";
-        s.handle = undefined;
-        s.budget = undefined;
-        s.observed = { usage: ZERO_USAGE, turns: 0, toolCalls: 0 };
-        s.source = undefined;
-        run.settledResults.delete(name);
-        emit(run, name, {
-          t: "agent_queued",
-          task: taskSpec(s.task),
-          ...(name === task && { repair: true }),
-        });
-      }
-      run.scheduler.resume();
-      pumpAll();
-      return reopened;
+        const latest = run.latest.get(worker);
+        need(latest, `Unknown worker ${worker}`);
+        let a =
+          [...run.assignments.values()].find(
+            (candidate) => candidate.worker === worker && candidate.status === "running",
+          ) ??
+          [...run.assignments.values()].find(
+            (candidate) => candidate.worker === worker && candidate.status === "queued",
+          ) ??
+          run.assignments.get(`${worker}/${latest}`)!;
+        if (kind === "followUp") {
+          const task = { ...run.tasks.get(worker)!, task: text, after: [] };
+          await accept(run, [task], messageId);
+          a = run.assignments.get(`${worker}/${latest + 1}`)!;
+        } else
+          need(
+            a.status === "running" || a.status === "queued",
+            `Worker ${worker} is idle; send a followUp to continue it`,
+          );
+        const message: InboxMessage = {
+          id: messageId,
+          target: { worker, assignment: a.assignment },
+          kind,
+          payload: text,
+          state: "recorded",
+        };
+        if (kind === "followUp") {
+          a.message = messageId;
+          await saveAssignment(run, a);
+        }
+        await saveMessage(run, message);
+        emit(
+          run,
+          worker,
+          { t: "input_recorded", message: messageId, target: message.target, kind, payload: text },
+          a.assignment,
+        );
+        emit(run, worker, { t: "steer", by, text, as: kind }, a.assignment);
+        await durable(run);
+        if (kind === "steer") await dispatchSteer(run, a, message);
+        return run.inbox.get(messageId)!;
+      });
+      pump(run);
+      const { payload: _payload, ...result } = receipt;
+      return result;
+    },
+    async cancel(id, worker, reason = "cancelled by user") {
+      const run = get(id);
+      if (!worker && !run.controller.signal.aborted) run.controller.abort(new StopSignal(reason));
+      if (
+        ![...run.assignments.values()].some(
+          (a) => (!worker || a.worker === worker) && ["queued", "running"].includes(a.status),
+        )
+      )
+        return;
+      await serial(run, async () => {
+        for (const a of run.assignments.values()) {
+          if (worker && a.worker !== worker) continue;
+          if (a.status === "running") a.controller?.abort(new StopSignal(reason));
+          else if (a.status === "queued") {
+            a.status = "cancelled";
+            a.result = {
+              status: "cancelled",
+              summary: reason,
+              result: null,
+              usage: ZERO_USAGE,
+              turns: 0,
+              toolCalls: 0,
+              assignment: a.assignment,
+            };
+            await run.store.writeAssignmentResult(a.worker, a.assignment, a.result);
+            await saveAssignment(run, a);
+            run.results.set(a.worker, a.result);
+            run.graph.settle(assignmentKey(a));
+            emit(run, a.worker, { t: "agent_settled", ...a.result }, a.assignment);
+          }
+        }
+        await durable(run);
+      });
+      pump(run);
     },
     subscribe(id, consumer) {
-      const run = runs.get(id);
-      if (!run) throw new Error(`Unknown run ${id}`);
+      const run = get(id);
       run.consumers.add(consumer);
       return () => run.consumers.delete(consumer);
     },
     onRun(listener) {
-      runListeners.add(listener);
-      return () => runListeners.delete(listener);
+      listeners.add(listener);
+      return () => listeners.delete(listener);
     },
-    snapshot: ((id: string, agent?: string) => {
+    snapshot: ((id: string, worker?: string) => {
       const run = runs.get(id);
-      if (agent === undefined) return run?.current;
-      const handle = run?.agents.get(agent)?.handle;
-      return handle ? handle.snapshot() : Promise.resolve(undefined);
+      if (!worker) return run?.current;
+      const a = run?.assignments.get(`${worker}/${run.latest.get(worker)}`);
+      return a?.handle?.snapshot() ?? Promise.resolve(undefined);
     }) as Engine["snapshot"],
-    async shutdown(reason, options = {}) {
-      const waits: Promise<unknown>[] = [];
-      for (const run of runs.values())
-        if (!run.finished) {
-          if (options.detach?.(handleOf(run))) waits.push(detachRun(run));
-          else {
-            cancelRun(run, new StopSignal(reason, "cancelled"));
-            waits.push(run.done);
+    async resume(dir, opts = {}) {
+      need(!closing, "Engine is shutting down; resume in a new host");
+      const events: AgentEvent[] = [];
+      let view = emptyView("");
+      for await (const event of iterateEvents(dir)) {
+        view = reduce(view, event);
+        if (["run_started", "agent_queued", "agent_started", "agent_settled"].includes(event.t))
+          events.push(event);
+      }
+      const first = events[0];
+      need(first?.t === "run_started", "Missing run_started record");
+      need(
+        first.v === 2,
+        "Legacy runs are read-only. Inspect saved changes, stop old workers, and migrate the job before starting a new run.",
+      );
+      const existing = runs.get(first.run);
+      if (existing) return handle(existing);
+      const cwd = first.cwd ?? opts.cwd ?? process.cwd();
+      const run = make(first.run, dir, cwd, view.mode, await RunStore.open(dir, view.mode), opts);
+      run.current = view;
+      run.seq = view.seq;
+      const definitions = validateSnapshots({
+        ...first.definitions,
+        ...(await readJson<Definitions>(join(dir, "definitions.json")).catch(
+          (error: NodeJS.ErrnoException) => {
+            if (error.code === "ENOENT") return {};
+            throw error;
+          },
+        )),
+        ...(opts.data?.definitions as Definitions),
+      });
+      for (const event of events)
+        if (event.t === "agent_queued" && event.agent && event.assignment && event.task) {
+          const task = [validateTask(event.task, definitions)];
+          const a: Assignment = {
+            worker: event.agent,
+            assignment: event.assignment,
+            task: task[0],
+            after: event.dependencies ?? [],
+            message: event.message ?? `${event.agent}:${event.assignment}`,
+            status: "queued",
+            observed: { usage: ZERO_USAGE, turns: 0, toolCalls: 0 },
+          };
+          // The assignment record also includes a durable follow-up message identity.
+          const saved = await readJson<{ message: string }>(
+            join(dir, "assignments", a.worker, `${a.assignment}.json`),
+          );
+          a.message = saved.message;
+          run.assignments.set(assignmentKey(a), a);
+          run.tasks.set(a.worker, a.task);
+          run.latest.set(a.worker, a.assignment);
+        }
+      // Assignment files are the durable acceptance record. A crash can precede its log append.
+      const folders = await readdir(join(dir, "assignments"), { withFileTypes: true });
+      for (const folder of folders.filter((entry) => entry.isDirectory())) {
+        for (const file of await readdir(join(dir, "assignments", folder.name))) {
+          if (!/^[1-9][0-9]*\.json$/.test(file)) continue;
+          const saved = await readJson<{
+            worker: string;
+            assignment: number;
+            task: unknown;
+            after: AssignmentRef[];
+            message: string;
+            status: Assignment["status"];
+          }>(join(dir, "assignments", folder.name, file));
+          need(
+            saved.worker === folder.name && saved.assignment === Number(file.slice(0, -5)),
+            "Invalid saved assignment identity",
+          );
+          if (run.assignments.has(assignmentKey(saved))) continue;
+          const task = validateTask(saved.task, definitions);
+          const a: Assignment = {
+            worker: saved.worker,
+            assignment: saved.assignment,
+            task,
+            after: saved.after,
+            message: saved.message,
+            status: saved.status,
+            reattach: saved.status === "running",
+            observed: { usage: ZERO_USAGE, turns: 0, toolCalls: 0 },
+          };
+          run.assignments.set(assignmentKey(a), a);
+          if ((run.latest.get(a.worker) ?? 0) < a.assignment) {
+            run.latest.set(a.worker, a.assignment);
+            run.tasks.set(a.worker, task);
+          }
+          emit(
+            run,
+            a.worker,
+            { t: "agent_queued", task: taskSpec(task), dependencies: a.after, message: a.message },
+            a.assignment,
+          );
+          if (!["queued", "running"].includes(a.status)) {
+            a.result = (await run.store.readAssignmentResult(a.worker, a.assignment)) ?? undefined;
+            need(
+              a.result,
+              `Assignment ${assignmentKey(a)} lacks completion evidence; reconcile it before continuation`,
+            );
+            emit(
+              run,
+              a.worker,
+              {
+                t: "agent_settled",
+                status: a.result.status,
+                summary: a.result.summary,
+                reason: a.result.reason,
+                usage: a.result.usage,
+                turns: a.result.turns,
+                toolCalls: a.result.toolCalls,
+              },
+              a.assignment,
+            );
           }
         }
-      await Promise.all(waits);
+      }
+      run.graph.add(
+        [...run.assignments.values()].map((a) => ({
+          worker: a.worker,
+          assignment: a.assignment,
+          after: a.after,
+        })),
+      );
+      for (const event of events) {
+        const a =
+          event.agent && event.assignment
+            ? run.assignments.get(`${event.agent}/${event.assignment}`)
+            : undefined;
+        if (!a) continue;
+        if (event.t === "agent_started") {
+          a.status = "running";
+          a.reattach = true;
+        }
+        if (event.source) a.source = event.source;
+        if (event.t === "agent_settled") {
+          a.status = event.status;
+          a.reattach = false;
+          a.result = (await run.store.readAssignmentResult(a.worker, a.assignment)) ?? undefined;
+          run.graph.settle(assignmentKey(a));
+          if (a.result) {
+            a.result = compactSettled(a.result);
+            run.results.set(a.worker, a.result);
+          }
+        }
+      }
+      for (const a of run.assignments.values())
+        if (a.result) {
+          run.graph.settle(assignmentKey(a));
+          a.result = compactSettled(a.result);
+          if ((run.results.get(a.worker)?.assignment ?? 0) < a.assignment)
+            run.results.set(a.worker, a.result);
+        }
+      for (const a of run.assignments.values()) {
+        const saved = view.agents[a.worker]?.assignments?.[a.assignment];
+        if (saved) {
+          a.observed = { usage: saved.usage, turns: saved.turns, toolCalls: saved.toolCalls };
+          a.source = saved.source;
+        }
+      }
+      for (const message of await run.store.readInbox<InboxMessage>()) {
+        if (message.state === "dispatching" || message.state === "queued")
+          message.state = "uncertain";
+        run.inbox.set(message.id, message);
+      }
+      for (const a of run.assignments.values())
+        if (a.message !== `${a.worker}:${a.assignment}` && !run.inbox.has(a.message)) {
+          await saveMessage(run, {
+            id: a.message,
+            target: { worker: a.worker, assignment: a.assignment },
+            kind: "followUp",
+            payload: a.task.task,
+            state: a.status === "queued" ? "recorded" : "uncertain",
+          });
+        }
+      for (const [worker, assignment] of run.latest) {
+        const task = run.tasks.get(worker)!;
+        const kind = pipeline.backend?.(run, task) ?? options.defaultBackend ?? "fake";
+        const checkpoints =
+          (await options.backends[kind]?.consumed?.({
+            run: run.id,
+            task,
+            mode: run.mode,
+            assignment,
+            sessionFile: join(dir, "sessions", worker, "conversation.jsonl"),
+          })) ?? [];
+        for (const checkpoint of checkpoints) {
+          const message = run.inbox.get(checkpoint.message);
+          if (message)
+            await saveMessage(run, {
+              ...message,
+              state: "consumed",
+              checkpoint: checkpoint.checkpoint,
+            });
+        }
+      }
+      for (const listener of listeners) listener(handle(run));
+      if (
+        view.status !== "running" &&
+        ![...run.assignments.values()].some((a) => a.status === "queued" || a.status === "running")
+      ) {
+        run.finished = true;
+        run.telemetry?.stop();
+        run.resolve(run.current);
+      } else {
+        emit(run, undefined, { t: "run_resumed", reason: opts.reason ?? "reattached" });
+        await durable(run);
+        pump(run);
+      }
+      return handle(run);
+    },
+    async shutdown(reason, opts = {}) {
+      closing = true;
+      for (const run of runs.values()) {
+        if (run.finished) continue;
+        if (opts.detach?.(handle(run))) {
+          run.detached = true;
+          run.scheduler.stop();
+          for (const a of run.assignments.values())
+            if (a.handle?.detach) await a.handle.detach();
+            else a.controller?.abort(new StopSignal(reason));
+          runs.delete(run.id);
+        } else {
+          await engine.cancel(run.id, undefined, reason);
+          await Promise.allSettled(run.active);
+        }
+        run.telemetry?.stop();
+        await run.store.close();
+      }
     },
   };
   return engine;

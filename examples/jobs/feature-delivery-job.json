@@ -3,16 +3,10 @@
   "instructions": [
     "Template for a Node.js repository with docs/specs/export.md, the named source layout, and an existing in-process test harness. Adapt paths and commands before running.",
     "The specification is already approved. Shared dependency or lockfile changes are outside this job; report them as blockers.",
-    "Each check must finish and clean up its own fixtures; no persistent server or production service is required."
+    "Each check must finish and clean up its own fixtures; no persistent server or production service is required.",
+    "Coordinator destination check intent (not engine-enforced): [{\"id\":\"all\",\"argv\":[\"npm\",\"test\"],\"timeoutMs\":600000},{\"id\":\"scenarios\",\"argv\":[\"node\",\"--test\",\"test/scenarios/export.test.mjs\"],\"timeoutMs\":180000}]"
   ],
-  "config": {
-    "reviewPolicy": "required",
-    "limits": {
-      "concurrency": 3,
-      "costUsd": 30,
-      "repairs": 2
-    }
-  },
+  "config": {},
   "tasks": [
     {
       "id": "map",
@@ -21,7 +15,8 @@
       "acceptance": [
         "Cite the requirement IDs, existing interfaces, and test entry points.",
         "Identify ambiguities that prevent implementation; do not invent requirements."
-      ]
+      ],
+      "instructions": []
     },
     {
       "id": "contract",
@@ -32,17 +27,9 @@
         "Document how API and CLI consume the same contract and preserve existing behavior."
       ],
       "after": ["map"],
-      "ownership": [
-        "src/contracts/export",
-        "test/contracts/export.test.mjs",
-        "docs/contracts/export.md"
-      ],
-      "checks": [
-        {
-          "id": "contract",
-          "argv": ["node", "--test", "test/contracts/export.test.mjs"],
-          "timeoutMs": 180000
-        }
+      "instructions": [
+        "Requested check (coordinator decides when to run it): {\"id\":\"contract\",\"argv\":[\"node\",\"--test\",\"test/contracts/export.test.mjs\"],\"timeoutMs\":180000}",
+        "Assigned file responsibility: src/contracts/export, test/contracts/export.test.mjs, docs/contracts/export.md. Preserve unrelated work."
       ]
     },
     {
@@ -54,7 +41,8 @@
         "Approve only when the assigned change meets its acceptance criteria and its available check evidence supports it."
       ],
       "after": ["contract", "map"],
-      "reviewOf": "contract"
+      "reviewOf": "contract",
+      "instructions": []
     },
     {
       "id": "api",
@@ -65,13 +53,9 @@
         "Pagination is deterministic and failures follow the shared contract."
       ],
       "after": ["contract", "review-contract"],
-      "ownership": ["src/api/export", "test/api/export.test.mjs"],
-      "checks": [
-        {
-          "id": "api",
-          "argv": ["node", "--test", "test/api/export.test.mjs"],
-          "timeoutMs": 180000
-        }
+      "instructions": [
+        "Requested check (coordinator decides when to run it): {\"id\":\"api\",\"argv\":[\"node\",\"--test\",\"test/api/export.test.mjs\"],\"timeoutMs\":180000}",
+        "Assigned file responsibility: src/api/export, test/api/export.test.mjs. Preserve unrelated work."
       ]
     },
     {
@@ -83,13 +67,9 @@
         "Tests cover empty results, multiple pages, and interrupted transport without claiming live API verification."
       ],
       "after": ["contract", "review-contract"],
-      "ownership": ["src/cli/export", "test/cli/export.test.mjs"],
-      "checks": [
-        {
-          "id": "cli",
-          "argv": ["node", "--test", "test/cli/export.test.mjs"],
-          "timeoutMs": 180000
-        }
+      "instructions": [
+        "Requested check (coordinator decides when to run it): {\"id\":\"cli\",\"argv\":[\"node\",\"--test\",\"test/cli/export.test.mjs\"],\"timeoutMs\":180000}",
+        "Assigned file responsibility: src/cli/export, test/cli/export.test.mjs. Preserve unrelated work."
       ]
     },
     {
@@ -102,13 +82,9 @@
         "Report that the syntax check does not establish end-to-end behavior; behavioral execution belongs to assemble."
       ],
       "after": ["contract", "review-contract"],
-      "ownership": ["test/scenarios/export.test.mjs"],
-      "checks": [
-        {
-          "id": "scenario-syntax",
-          "argv": ["node", "--check", "test/scenarios/export.test.mjs"],
-          "timeoutMs": 180000
-        }
+      "instructions": [
+        "Requested check (coordinator decides when to run it): {\"id\":\"scenario-syntax\",\"argv\":[\"node\",\"--check\",\"test/scenarios/export.test.mjs\"],\"timeoutMs\":180000}",
+        "Assigned file responsibility: test/scenarios/export.test.mjs. Preserve unrelated work."
       ]
     },
     {
@@ -120,7 +96,8 @@
         "Approve only when the assigned change meets its acceptance criteria and its available check evidence supports it."
       ],
       "after": ["api"],
-      "reviewOf": "api"
+      "reviewOf": "api",
+      "instructions": []
     },
     {
       "id": "review-cli",
@@ -131,7 +108,8 @@
         "Approve only when the assigned change meets its acceptance criteria and its available check evidence supports it."
       ],
       "after": ["cli"],
-      "reviewOf": "cli"
+      "reviewOf": "cli",
+      "instructions": []
     },
     {
       "id": "review-scenarios",
@@ -142,7 +120,8 @@
         "Approve only when the assigned change meets its acceptance criteria and its available check evidence supports it."
       ],
       "after": ["scenarios"],
-      "reviewOf": "scenarios"
+      "reviewOf": "scenarios",
+      "instructions": []
     },
     {
       "id": "assemble",
@@ -154,18 +133,10 @@
         "Changes remain in the owned integration test; report failures outside that scope."
       ],
       "after": ["api", "cli", "scenarios", "review-api", "review-cli", "review-scenarios"],
-      "ownership": ["test/integration/export.test.mjs"],
-      "checks": [
-        {
-          "id": "scenarios",
-          "argv": ["node", "--test", "test/scenarios/export.test.mjs"],
-          "timeoutMs": 180000
-        },
-        {
-          "id": "integration",
-          "argv": ["node", "--test", "test/integration/export.test.mjs"],
-          "timeoutMs": 180000
-        }
+      "instructions": [
+        "Requested check (coordinator decides when to run it): {\"id\":\"scenarios\",\"argv\":[\"node\",\"--test\",\"test/scenarios/export.test.mjs\"],\"timeoutMs\":180000}",
+        "Requested check (coordinator decides when to run it): {\"id\":\"integration\",\"argv\":[\"node\",\"--test\",\"test/integration/export.test.mjs\"],\"timeoutMs\":180000}",
+        "Assigned file responsibility: test/integration/export.test.mjs. Preserve unrelated work."
       ]
     },
     {
@@ -177,20 +148,11 @@
         "Approve only when the assigned change meets its acceptance criteria and its available check evidence supports it."
       ],
       "after": ["assemble"],
-      "reviewOf": "assemble"
+      "reviewOf": "assemble",
+      "instructions": []
     }
   ],
   "approval": "Replace with your authorization for the audit-export contract, API, CLI, scenario and integration test changes in the declared ownership paths, and their local checks",
-  "integratedChecks": [
-    {
-      "id": "all",
-      "argv": ["npm", "test"],
-      "timeoutMs": 600000
-    },
-    {
-      "id": "scenarios",
-      "argv": ["node", "--test", "test/scenarios/export.test.mjs"],
-      "timeoutMs": 180000
-    }
-  ]
+  "schemaVersion": 3,
+  "workspace": "shared"
 }

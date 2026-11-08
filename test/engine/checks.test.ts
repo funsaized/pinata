@@ -70,22 +70,18 @@ test("a timed-out check is killed with everything it started", async (t) => {
   assert.equal(alive(grandchild), false, "no survivors");
 });
 
-test("runaway output is stopped at the log limit", async (t) => {
+test("large command output streams to disk without ending useful work", async (t) => {
   const dir = await tempDir(t);
   const r = await runCheck(
     {
       id: "loud",
-      argv: [
-        node,
-        "-e",
-        "const b = 'x'.repeat(65536); setInterval(() => process.stdout.write(b), 1)",
-      ],
+      argv: [node, "-e", "process.stdout.write('x'.repeat(17 * 1024 * 1024))"],
       timeoutMs: 10_000,
     },
-    { cwd: dir, env: environment(), logDir: dir, maxLog: 1024 * 1024 },
+    { cwd: dir, env: environment(), logDir: dir },
   );
-  assert.equal(r.passed, false);
-  assert.equal(r.reason, "output exceeded the limit");
+  assert.equal(r.passed, true);
+  assert.equal((await readFile(r.stdout)).length, 17 * 1024 * 1024);
 });
 
 test("checks get an allowlisted environment, passEnv, and the recursion guard", async (t) => {
@@ -144,26 +140,3 @@ test(
     assert.deepEqual(JSON.parse(await readFile(r.stdout, "utf8")), args);
   },
 );
-
-test("a check shares the remaining run deadline and an expired check never starts", async (t) => {
-  const dir = await tempDir(t);
-  const started = performance.now();
-  const result = await runCheck(
-    {
-      id: "deadline",
-      argv: [node, "-e", "setInterval(()=>{},1000)"],
-      timeoutMs: 30_000,
-    },
-    { cwd: dir, env: environment(), logDir: dir, deadlineAt: Date.now() + 150 },
-  );
-  assert.equal(result.passed, false);
-  assert.equal(result.reason, "timed out");
-  assert(performance.now() - started < 3000, "deadline plus process cleanup grace");
-  await assert.rejects(
-    runCheck(
-      { id: "expired", argv: [node, "-e", "throw Error('must not start')"] },
-      { cwd: dir, env: environment(), logDir: dir, deadlineAt: Date.now() - 1 },
-    ),
-    /deadline/i,
-  );
-});

@@ -77,8 +77,10 @@ model validation is part of this pilot.
 
 `native.ts` provides whole-task coordinator adapters for Codex, plain Pi (solo),
 and Piñata. They use the `native` workflow and remain unverified. Piñata explicitly
-loads this checkout's extension and requires a successful `pinata_run` followed
-by verified `pinata_integrate` output before reporting completion.
+loads this checkout's extension. Its coordinator has ordinary coding tools and
+can finish shared work directly or explicitly apply isolated changes. Completion
+reports process execution; the oracle scores delivered files independently.
+Delegation is retained as separate evidence, not a prerequisite for correctness.
 
 Run `npm run arena:bootstrap`, `npm run arena:doctor`, then `npm run arena:local`
 for the terminal wizard. Use `npm run arena:local -- --preview` to inspect the

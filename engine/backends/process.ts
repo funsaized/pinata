@@ -8,12 +8,12 @@
 // the durable outbox; the host steers them through control.jsonl, which the agent extension
 // follows (agent/detached.ts). The next Pi reattaches by reading the same files.
 import { spawn, type ChildProcess, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { closeSync, openSync } from "node:fs";
+import { closeSync, existsSync, openSync } from "node:fs";
 import { appendFile, mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { hostname, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { REMINDER } from "../agent/brief.ts";
+import { consumedInputs, finalText } from "./conversation.ts";
 import { SUBMIT } from "../agent/extension.ts";
 import { USER_INPUT } from "../agent/reporter.ts";
 import { appendJsonl, writeJsonl } from "../core/store.ts";
@@ -92,7 +92,11 @@ export function piArgs(
     AGENT_EXTENSION,
     "--append-system-prompt",
     files.persona,
-    ...(sessionDir ? ["--session-dir", sessionDir] : ["--no-session"]),
+    ...(launch.sessionFile
+      ? ["--session", launch.sessionFile]
+      : sessionDir
+        ? ["--session-dir", sessionDir]
+        : ["--no-session"]),
   ];
 }
 
@@ -108,10 +112,12 @@ function partialText(message: any): { text: string; thinking: string } | undefin
 }
 
 // An agent's files: <run>/agents/<task>/ (a temporary directory outside a run).
-export async function agentFiles(launch: Pick<AgentAttachment, "task" | "transcript">) {
+export async function agentFiles(
+  launch: Pick<AgentAttachment, "task" | "transcript" | "assignment">,
+) {
   const runDir = launch.transcript ? dirname(dirname(launch.transcript)) : undefined;
   const dir = runDir
-    ? join(runDir, "agents", launch.task.id)
+    ? join(runDir, "agents", launch.task.id, String(launch.assignment ?? 1))
     : await mkdtemp(join(tmpdir(), "pinata-agent-"));
   return {
     runDir,
@@ -190,14 +196,12 @@ class Records {
         ? "aborted"
         : error
           ? "error"
-          : "no_result";
+          : "completed";
     return {
       result: this.result,
+      text: finalText(last),
       stopReason,
       ...(stopReason === "error" && { error }),
-      ...(stopReason === "no_result" && {
-        error: "The agent finished without calling submit_result",
-      }),
       usage: this.usage,
       turns: this.mapper.turns,
       toolCalls: this.mapper.toolCalls,
@@ -249,11 +253,23 @@ export class ProcessBackend implements AgentBackend {
     child.once("exit", () => this.children.delete(key));
   }
 
+  async consumed(launch: AgentAttachment): Promise<Array<{ message: string; checkpoint: string }>> {
+    const entries: Array<{ message: string; checkpoint: string }> = [];
+    if (launch.sessionFile)
+      await consumedInputs(launch.sessionFile, (event) => {
+        if (event.t === "input_consumed") entries.push(event);
+      });
+    return entries;
+  }
   async start(
     launch: AgentLaunch,
     sink: (e: AgentEventInput) => void,
     signal: AbortSignal,
   ): Promise<AgentHandle> {
+    if ((launch.assignment ?? 1) > 1 && (!launch.sessionFile || !existsSync(launch.sessionFile)))
+      throw new Error(
+        "Saved worker conversation is unavailable; restore it or start a replacement worker.",
+      );
     const files = await agentFiles(launch);
     await mkdir(files.dir, { recursive: true, mode: 0o700 });
     const web = launch.webExtension ?? this.options.webExtension ?? undefined;
@@ -267,9 +283,17 @@ export class ProcessBackend implements AgentBackend {
     const command = this.options.command ?? piCommand(env);
     if (launch.detached)
       return this.startDetached(launch, full, files, env, command, sessionDir, sink, signal);
-    await writeFile(files.options, JSON.stringify({ ...launch.agent, codemode: launch.codemode }), {
-      mode: 0o600,
-    });
+    await writeFile(
+      files.options,
+      JSON.stringify({
+        ...launch.agent,
+        codemode: launch.codemode,
+        initialInput: { id: launch.messageId ?? `${launch.task.id}:1`, text: launch.brief },
+      }),
+      {
+        mode: 0o600,
+      },
+    );
     const { file, args, verbatim } = launchCommand(
       [...command, ...piArgs(full, files, sessionDir)],
       env,
@@ -306,11 +330,12 @@ export class ProcessBackend implements AgentBackend {
       JSON.stringify({
         ...launch.agent,
         codemode: launch.codemode,
-        detached: { control: files.control, remind: true, budgets: launch.budgets },
+        initialInput: { id: launch.messageId ?? `${launch.task.id}:1`, text: launch.brief },
+        detached: { control: files.control },
       }),
       { mode: 0o600 },
     );
-    await writeFile(files.brief, launch.brief, { mode: 0o600 });
+    await writeFile(files.brief, "Continue the recorded assignment.", { mode: 0o600 });
     await writeFile(files.control, "", { mode: 0o600 });
     const { file, args, verbatim } = launchCommand(
       [...command, ...piArgs(full, files, sessionDir, "json")],
@@ -341,7 +366,11 @@ export class ProcessBackend implements AgentBackend {
     }
     child.unref();
     this.track(launch, child);
-    const identity = (await identify(child.pid!)) ?? { pid: child.pid!, started: "" };
+    const identity = (await identify(child.pid!)) ?? {
+      pid: child.pid!,
+      started: "",
+      host: hostname(),
+    };
     await writeFile(files.pid, JSON.stringify(identity), { mode: 0o600 });
     return followDetached(files, identity, launch, sink, signal, child, 0);
   }
@@ -453,15 +482,20 @@ export function followDetached(
   };
   if (signal.aborted) onAbort();
   else signal.addEventListener("abort", onAbort, { once: true });
-  const done = finished.then((error) => records.outcome(signal, error));
+  const done = finished.then(async (error) => {
+    if (launch.sessionFile) await consumedInputs(launch.sessionFile, sink);
+    return records.outcome(signal, error);
+  });
   let disposed = false;
   return {
     done,
-    async steer(text) {
-      await delivered({ type: "steer", message: text });
+    async steer(text, messageId) {
+      await delivered({ type: "steer", message: text, messageId });
+      return "queued";
     },
-    async followUp(text) {
-      await delivered({ type: "follow_up", message: text });
+    async followUp(text, messageId) {
+      await delivered({ type: "follow_up", message: text, messageId });
+      return "queued";
     },
     async abort() {
       onAbort();
@@ -556,37 +590,22 @@ function attach(
   const promptAndSettle = async (message: string) => {
     const settled = new Promise<void>((resolve) => settledWaiters.push(resolve));
     const data = await send({ type: "prompt", message });
-    if (data?.disposition === "handled") return;
+    if (data?.disposition === "handled") return "handled" as const;
     await settled;
     if (exited) throw new Error(exited);
+    return "started" as const;
   };
-
-  if (live)
-    writes = appendJsonl(launch.transcript!, {
-      role: "user",
-      content: launch.brief,
-      timestamp: Date.now(),
-    }).catch(() => {});
 
   const run = async (): Promise<AgentOutcome> => {
     let error: string | undefined;
+    let disposition: "started" | "handled" | undefined;
     try {
-      if (!signal.aborted) await promptAndSettle(launch.brief);
-      const last = records.mapper.lastAssistant;
-      // One reminder in the same session, as in process.
-      if (
-        !records.result &&
-        !signal.aborted &&
-        !exited &&
-        last?.stopReason !== "error" &&
-        last?.stopReason !== "aborted" &&
-        records.mapper.turns < launch.budgets.maxTurns
-      )
-        await promptAndSettle(REMINDER);
+      if (!signal.aborted) disposition = await promptAndSettle("Continue the recorded assignment.");
     } catch (e) {
       error = (e as Error).message;
     }
-    return records.outcome(signal, error);
+    if (launch.sessionFile) await consumedInputs(launch.sessionFile, sink);
+    return { ...records.outcome(signal, error), disposition };
   };
   const done = run();
   const onAbort = () => {
@@ -602,11 +621,19 @@ function attach(
   let disposed = false;
   return {
     done,
-    async steer(text) {
-      await send({ type: "steer", message: text });
+    async steer(text, messageId) {
+      const reply = await send({
+        type: "prompt",
+        message: `/pinata-input ${JSON.stringify({ text, id: messageId, as: "steer" })}`,
+      });
+      return reply?.disposition === "handled" ? "handled" : "queued";
     },
-    async followUp(text) {
-      await send({ type: "follow_up", message: text });
+    async followUp(text, messageId) {
+      const reply = await send({
+        type: "prompt",
+        message: `/pinata-input ${JSON.stringify({ text, id: messageId, as: "followUp" })}`,
+      });
+      return reply?.disposition === "handled" ? "handled" : "queued";
     },
     async abort() {
       await send({ type: "abort" }).catch(() => {});

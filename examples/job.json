@@ -2,10 +2,10 @@
   "cwd": "/absolute/path/to/repository",
   "approval": "Replace with the actual user-approved scope; not authorization by itself",
   "instructions": [
-    "Follow the repository's AGENTS.md and existing toolchain. Preserve unrelated changes. No commits, installs, live spending, pushes, or releases."
+    "Follow the repository's AGENTS.md and existing toolchain. Preserve unrelated changes. No commits, installs, live spending, pushes, or releases.",
+    "Coordinator destination check intent (not engine-enforced): [{\"id\":\"integrated\",\"argv\":[\"node\",\"--test\",\"test/replace-with-relevant-test.mjs\"],\"timeoutMs\":120000}]"
   ],
   "config": {
-    "reviewPolicy": "required",
     "models": {
       "default": {
         "provider": "REPLACE_WITH_APPROVED_PROVIDER",
@@ -19,15 +19,11 @@
       "id": "build",
       "task": "Replace with the approved implementation assignment",
       "acceptance": ["Replace with a concrete acceptance criterion"],
-      "ownership": ["src/replace-with-owned-file.js"],
-      "checks": [
-        {
-          "id": "regression",
-          "argv": ["node", "--test", "test/replace-with-relevant-test.mjs"],
-          "timeoutMs": 120000
-        }
-      ],
-      "agent": "builder"
+      "agent": "builder",
+      "instructions": [
+        "Requested check (coordinator decides when to run it): {\"id\":\"regression\",\"argv\":[\"node\",\"--test\",\"test/replace-with-relevant-test.mjs\"],\"timeoutMs\":120000}",
+        "Assigned file responsibility: src/replace-with-owned-file.js. Preserve unrelated work."
+      ]
     },
     {
       "id": "review",
@@ -37,14 +33,10 @@
       ],
       "after": ["build"],
       "reviewOf": "build",
-      "agent": "reviewer"
+      "agent": "reviewer",
+      "instructions": []
     }
   ],
-  "integratedChecks": [
-    {
-      "id": "integrated",
-      "argv": ["node", "--test", "test/replace-with-relevant-test.mjs"],
-      "timeoutMs": 120000
-    }
-  ]
+  "schemaVersion": 3,
+  "workspace": "shared"
 }

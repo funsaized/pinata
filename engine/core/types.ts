@@ -19,6 +19,9 @@ export const BACKENDS = ["in-process", "process", "herdr-pi"] as const;
 export type BackendKind = (typeof BACKENDS)[number];
 
 export type Mode = "lean" | "observe";
+export type WorkspaceMode = "shared" | "worktree";
+export type AssignmentRef = { worker: string; assignment: number };
+export type Dependency = string | AssignmentRef;
 
 export interface Check {
   id: string;
@@ -35,11 +38,9 @@ export interface TaskSpec {
   acceptance?: string[];
   instructions?: string[];
   context?: string[];
-  after?: string[]; // dependencies; their results are inlined into this task's first message
-  ownership?: string[]; // builders only: repo-relative files or directory prefixes
-  checks?: Check[]; // builders only
-  evidenceChecks?: Check[]; // any role: non-mutating commands for consequential claims
-  noChecksReason?: string;
+  after?: Dependency[]; // dependencies; their results are inlined into this task's first message
+  workspace?: WorkspaceMode;
+  inputs?: AssignmentRef[]; // explicitly compose saved isolated snapshots
   reviewOf?: string; // reviewer of a builder task
   reviewBase?: string; // reviewer of the live checkout against a revision
   reviewPr?: number; // reviewer of a GitHub pull request
@@ -52,12 +53,9 @@ export interface Task extends Omit<TaskSpec, "definition"> {
   role: string;
   definition?: AgentDefinition;
   acceptance: string[];
-  after: string[];
-  ownership: string[];
+  after: Dependency[];
   instructions: string[];
   context: string[];
-  checks: Check[];
-  evidenceChecks: Check[];
 }
 
 export interface Usage {
@@ -88,9 +86,10 @@ export interface WorkspaceRef {
   path: string;
 }
 
-// Events (schema v1). Every event carries the envelope; `seq` increases per run.
+// Events (schema v1 historical, v2 assignment-aware). Every event carries the envelope; `seq` increases per run.
 export interface Envelope {
-  v: 1;
+  v: 1 | 2;
+  assignment?: number;
   seq: number;
   run: string;
   agent?: string;
@@ -111,12 +110,20 @@ export type EventBody =
   | {
       t: "run_started";
       deadlineAt?: number;
-      reviewPolicy?: import("./policy.ts").ReviewPolicy;
+      reviewPolicy?: "optional" | "required";
       tasks: TaskSpec[];
+      cwd?: string;
+      store?: string;
       mode: Mode;
       definitions?: Definitions;
     }
-  | { t: "agent_queued"; task?: TaskSpec; repair?: boolean } // task: added or requeued after run_started
+  | {
+      t: "agent_queued";
+      task?: TaskSpec;
+      repair?: boolean;
+      dependencies?: AssignmentRef[];
+      message?: string;
+    } // task: added or requeued after run_started
   | { t: "agent_started"; backend: BackendKind | "fake"; model: ModelRef; workspace: WorkspaceRef }
   | { t: "turn_start"; turn: number }
   | { t: "text_delta" | "thinking_delta"; delta: string }
@@ -147,6 +154,15 @@ export type EventBody =
     }
   | { t: "run_settled"; status: RunStatus; usage: Usage; stopped?: boolean }
   | { t: "run_resumed"; reason: string; deadlineAt?: number } // a settled run reopened (a repair)
+  | { t: "input_consumed"; message: string; checkpoint: string }
+  | {
+      t: "input_recorded";
+      message: string;
+      target: AssignmentRef;
+      kind: "steer" | "followUp";
+      payload: string;
+    }
+  | { t: "input_dispatched"; message: string; disposition: "queued" | "handled" | "uncertain" }
   | { t: "telemetry"; sample: TelemetrySample }; // observe mode, at most every 2 s
 
 // Observe-mode telemetry for a run: the host process, and each agent process (M6).
@@ -206,10 +222,12 @@ export interface AgentResult {
 }
 
 // How a backend's agent loop ended.
-export type StopReason = "submitted" | "no_result" | "aborted" | "error";
+export type StopReason = "submitted" | "completed" | "no_result" | "aborted" | "error";
 
 export interface AgentOutcome {
   result: AgentResult | null;
+  text?: string;
+  disposition?: "started" | "queued" | "handled";
   stopReason: StopReason;
   error?: string;
   usage: Usage;
@@ -236,23 +254,16 @@ export interface AgentSnapshot {
   counters: AgentCounters;
 }
 
-export interface Budgets {
-  // Absolute epoch deadline for the agent's loop.
-  deadline: number;
-  maxTurns: number;
-  maxToolCalls: number;
-  maxCostUsd?: number;
-}
-
 // Options for the agent extension that runs inside every agent.
 export interface AgentOptions {
+  initialInput?: { id: string; text: string };
+  initialInputs?: Array<{ id: string; text: string }>;
   run: string;
   task: string;
   role: Role;
   tools: string[];
   definition?: AgentDefinition;
-  // Builders: repo-relative ownership and the worktree root edits must stay in.
-  ownership: string[];
+  // The authorized writable root is independent of workspace isolation.
   writeRoot?: string;
   readOnly: boolean;
   caseInsensitive?: boolean;
@@ -262,20 +273,21 @@ export interface AgentOptions {
 
 export interface AgentLaunch {
   run: string;
+  assignment?: number;
+  messageId?: string;
+  sessionFile?: string;
   task: Task;
   model: ModelRef;
   cwd: string;
   tools: string[];
   persona: string; // appended to the system prompt; identical for siblings of a role
   brief: string; // the first user message
-  budgets: Budgets;
   agent: AgentOptions;
   mode: Mode;
   codemode: boolean;
   // Where the transcript is written (lean: at settle; observe: live).
   transcript?: string;
   // Repair feedback or a result-only retry.
-  resultOnly?: boolean;
   // The repository root (the run's cwd), and pi-web-access for research agents.
   root?: string;
   webExtension?: string;
@@ -285,8 +297,8 @@ export interface AgentLaunch {
 }
 
 export interface AgentHandle {
-  steer(text: string): Promise<void>;
-  followUp(text: string): Promise<void>;
+  steer(text: string, messageId?: string): Promise<"queued" | "handled" | void>;
+  followUp(text: string, messageId?: string): Promise<"queued" | "handled" | void>;
   abort(): Promise<void>;
   snapshot(): Promise<AgentSnapshot>;
   readonly done: Promise<AgentOutcome>;
@@ -296,10 +308,14 @@ export interface AgentHandle {
 }
 
 // Following an existing process needs its identity and logs, not a fresh launch/workspace.
-export type AgentAttachment = Pick<AgentLaunch, "run" | "task" | "mode" | "transcript">;
+export type AgentAttachment = Pick<
+  AgentLaunch,
+  "run" | "task" | "mode" | "transcript" | "assignment" | "sessionFile"
+>;
 
 export interface AgentBackend {
   readonly kind: BackendKind | "fake";
+  consumed?(launch: AgentAttachment): Promise<Array<{ message: string; checkpoint: string }>>;
   start(
     launch: AgentLaunch,
     sink: (e: AgentEventInput) => void,
@@ -361,36 +377,8 @@ export function addUsage(a: Usage, b: Partial<Usage> | undefined): Usage {
   };
 }
 
-// Run limits and the engine's global concurrency cap.
-export const LIMITS = {
-  concurrency: 16,
-  taskMs: 1_200_000,
-  jobMs: 5_400_000,
-  repairs: 2,
-  maxTurns: 60,
-  maxToolCalls: 400,
-};
-export const LIMIT_MAX = {
-  concurrency: 64,
-  taskMs: 86_400_000,
-  jobMs: 86_400_000,
-  repairs: 10,
-  maxTurns: 1000,
-  maxToolCalls: 10_000,
-};
-export const COST_MAX = 10_000;
-export interface Limits {
-  concurrency: number;
-  taskMs: number;
-  jobMs: number;
-  repairs: number;
-  maxTurns: number;
-  maxToolCalls: number;
-  costUsd?: number;
-}
-
-// Pi tools granted to each role. Result-only repair is inspection-only.
-export const ROLE_TOOLS: Record<Role | "repair", string[]> = {
+// Default Pi tool capabilities granted to each role.
+export const ROLE_TOOLS: Record<Role, string[]> = {
   scout: ["read", "grep", "find", "ls"],
   research: [
     "read",
@@ -405,7 +393,6 @@ export const ROLE_TOOLS: Record<Role | "repair", string[]> = {
   planner: ["read", "grep", "find", "ls"],
   builder: ["read", "bash", "edit", "write"],
   reviewer: ["read", "grep", "find", "ls"],
-  repair: ["read", "grep", "find", "ls"],
 };
 
 export const TERMINAL: readonly AgentStatus[] = AGENT_STATUSES;

@@ -5,13 +5,7 @@
     "Template input: docs/search-requirements.md names target versions, evaluation date, and the actual product constraints. Research may report that no option is established as suitable.",
     "Use public product facts in web searches; keep private repository requirements in local analysis."
   ],
-  "config": {
-    "limits": {
-      "concurrency": 3,
-      "costUsd": 15,
-      "repairs": 2
-    }
-  },
+  "config": {},
   "tasks": [
     {
       "id": "constraints",
@@ -20,7 +14,8 @@
       "acceptance": [
         "Cite repository evidence for each constraint and identify missing measurements.",
         "Separate mandatory requirements from preferences and unverified estimates."
-      ]
+      ],
+      "instructions": []
     },
     {
       "id": "postgres",
@@ -31,7 +26,8 @@
         "Cite fetched primary sources and distinguish documented behavior from measured performance.",
         "Do not infer latency or cost from marketing claims; name a reproducible experiment for consequential unknowns."
       ],
-      "after": ["constraints"]
+      "after": ["constraints"],
+      "instructions": []
     },
     {
       "id": "meilisearch",
@@ -42,7 +38,8 @@
         "Cite fetched primary sources and distinguish documented behavior from measured performance.",
         "Do not infer latency or cost from marketing claims; name a reproducible experiment for consequential unknowns."
       ],
-      "after": ["constraints"]
+      "after": ["constraints"],
+      "instructions": []
     },
     {
       "id": "opensearch",
@@ -53,7 +50,8 @@
         "Cite fetched primary sources and distinguish documented behavior from measured performance.",
         "Do not infer latency or cost from marketing claims; name a reproducible experiment for consequential unknowns."
       ],
-      "after": ["constraints"]
+      "after": ["constraints"],
+      "instructions": []
     },
     {
       "id": "challenge",
@@ -63,7 +61,8 @@
         "Return a claim-by-claim correction list with inspected sources.",
         "Preserve unresolved contradictions and evidence gaps rather than resolving them by majority vote."
       ],
-      "after": ["constraints", "postgres", "meilisearch", "opensearch"]
+      "after": ["constraints", "postgres", "meilisearch", "opensearch"],
+      "instructions": []
     },
     {
       "id": "decision",
@@ -74,7 +73,10 @@
         "Specify spike inputs, observable pass/fail criteria, ownership, and a stop condition.",
         "Return the brief in the task result; do not modify the repository."
       ],
-      "after": ["constraints", "postgres", "meilisearch", "opensearch", "challenge"]
+      "after": ["constraints", "postgres", "meilisearch", "opensearch", "challenge"],
+      "instructions": []
     }
-  ]
+  ],
+  "schemaVersion": 3,
+  "workspace": "shared"
 }

@@ -10,7 +10,6 @@ import { fauxAssistantMessage, fauxText, fauxToolCall } from "@earendil-works/pi
 import { HerdrPiBackend } from "../../engine/backends/herdr-pi.ts";
 import { ProcessBackend } from "../../engine/backends/process.ts";
 import { createEngine, type RunOptions } from "../../engine/core/engine.ts";
-import { Limiter } from "../../engine/core/limiter.ts";
 import type { ModelRef, TaskSpec } from "../../engine/core/types.ts";
 import { validateGraph } from "../../engine/core/validate.ts";
 import { validateConfig } from "../../engine/pi/config.ts";
@@ -139,6 +138,10 @@ export async function processWorld(
   script: Script,
   options: WorldOptions = {},
 ): Promise<World> {
+  const engines: ReturnType<typeof createEngine>[] = [];
+  t.after(async () => {
+    for (const engine of engines) await engine.shutdown("test cleanup");
+  });
   const dir = await tempDir(t, "pinata-process-");
   const agentDir = join(dir, "agent");
   const repo = join(dir, "repo");
@@ -187,8 +190,8 @@ export async function processWorld(
     const engine = createEngine({
       backends: { process: backend, "herdr-pi": herdrPi },
       pipeline: piPipeline(verificationStages()),
-      limiter: new Limiter({ cap: 64, initial: 64 }),
     });
+    engines.push(engine);
     return { engine, backend };
   };
   const { engine, backend } = newEngine();

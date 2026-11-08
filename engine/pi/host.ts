@@ -1,9 +1,9 @@
+import { hostname } from "node:os";
+import { deliverWhenDone } from "./delivery.ts";
 import { isDelivered } from "./delivery-state.ts";
-import { assertTime, capDeadline } from "../core/deadline.ts";
-import { savedReviewPolicy } from "../core/policy.ts";
-import { writes, taskSpec, taskTools, validateSnapshots } from "../core/definitions.ts";
+import { taskSpec, taskTools, validateSnapshots } from "../core/definitions.ts";
 import { discoverAgents, resolveTasks } from "./definitions.ts";
-import { resolveToolExtensions } from "./tool-providers.ts";
+import { type ToolExtension, resolveToolExtensions } from "./tool-providers.ts";
 // One host per parent Pi session: the engine, the shared child model runtime, the session's
 // mode, and the run-level operations behind the model-facing tools and /pinata commands.
 import { spawn } from "node:child_process";
@@ -24,8 +24,8 @@ import { progressLine } from "../ui/text.ts";
 import { DEPENDENCY_CAP } from "../agent/brief.ts";
 import { createEngine, type Engine, type RunHandle, type Settled } from "../core/engine.ts";
 import { listRuns, replay, runsRoot } from "../core/store.ts";
-import type { AgentEvent, Check, Mode, Task, TaskSpec } from "../core/types.ts";
-import { validateChecks, validateGraph, ValidationError } from "../core/validate.ts";
+import type { AgentEvent, Mode, Task, TaskSpec } from "../core/types.ts";
+import { migrationError, workspaceMode, validateGraph, ValidationError } from "../core/validate.ts";
 import { coalesce, type RunView } from "../core/view.ts";
 import { git, line } from "../workspace/git.ts";
 import { agentDir, layeredConfig, modelCandidates, type PinataConfig } from "./config.ts";
@@ -61,8 +61,9 @@ export interface HostOptions {
 }
 
 export interface RunParams {
+  run?: string;
+  workspace?: import("../core/types.ts").WorkspaceMode;
   integration?: IntegrationMode;
-  deadlineAt?: number;
   tasks: TaskSpec[];
   background?: boolean;
   survive?: boolean;
@@ -71,8 +72,6 @@ export interface RunParams {
   allowWrites?: boolean;
   instructions?: string[];
   config?: Record<string, unknown>;
-  integratedChecks?: Check[];
-  noIntegratedChecksReason?: string;
 }
 
 export interface CompactTask {
@@ -80,6 +79,15 @@ export interface CompactTask {
   role: string; // legacy display alias
   agent?: string;
   status: string;
+  assignment?: number;
+  workspace?: import("../core/types.ts").WorkspaceRef;
+  assignments?: Record<
+    number,
+    { status: string; summary?: string; dependencies?: import("../core/types.ts").AssignmentRef[] }
+  >;
+  resultAssignment?: number;
+  latestAssignment?: number;
+  assignmentsOmitted?: number;
   summary: string;
   reason?: string;
   brief?: string;
@@ -104,46 +112,17 @@ export interface CompactTask {
     check: unknown;
   };
   truncated?: boolean;
-  recovery?: ReviewRecovery;
   artifact?: {
     scope: "builder-artifact";
     baseCommit: string;
     baseTree: string;
     resultTree: string;
     fingerprint: string;
-    reviewState: "unassigned" | "pending" | "approved" | "rejected";
-  };
-}
-
-export interface ReviewRecovery {
-  tool: "pinata_repair";
-  arguments: { run: string; task: string; feedback: string };
-  instruction: string;
-  afterSuccess: Array<{ tool: "pinata_changes" | "pinata_integrate"; arguments: { run: string } }>;
-}
-
-export function reviewRecovery(id: string, view: RunView): ReviewRecovery | undefined {
-  const task = view.tasks.find((task) => task.id === id);
-  if (view.agents[id]?.status !== "rejected" || !task?.reviewOf) return;
-  return {
-    tool: "pinata_repair",
-    arguments: {
-      run: view.run,
-      task: task.reviewOf,
-      feedback: `Address the change requests from ${id}: ${view.agents[id].summary?.slice(0, 1600) ?? "Inspect the full review findings."}`,
-    },
-    instruction:
-      "Read the full review findings and include concrete defects in feedback. Repair the target builder in this original run; its checks and reviewers run again and blocked dependents can continue. Keep this run ID through handoff and integration; do not substitute a standalone review or the latest run. After every required task succeeds, inspect changes and integrate within the user's authorized scope.",
-    afterSuccess: [
-      { tool: "pinata_changes", arguments: { run: view.run } },
-      { tool: "pinata_integrate", arguments: { run: view.run } },
-    ],
+    reviewState: "unassigned" | "pending" | "reported";
   };
 }
 
 export interface CompactRun {
-  reviewPolicy?: import("../core/policy.ts").ReviewPolicy;
-  deadlineAt?: number;
   run: string;
   dir: string;
   status: string;
@@ -162,16 +141,12 @@ export interface CompactRun {
 
 const PROGRESS_MS = 250; // at most 4 updates per second
 
-function artifactReviewState(
-  id: string,
-  view: RunView,
-): "unassigned" | "pending" | "approved" | "rejected" {
+function artifactReviewState(id: string, view: RunView): "unassigned" | "pending" | "reported" {
   const reviewers = view.tasks.filter((task) => task.reviewOf === id);
   if (!reviewers.length) return "unassigned";
-  if (reviewers.some((task) => view.agents[task.id]?.status === "rejected")) return "rejected";
-  return reviewers.every((task) => view.agents[task.id]?.status === "succeeded")
-    ? "approved"
-    : "pending";
+  return reviewers.some((task) => ["queued", "running"].includes(view.agents[task.id]?.status))
+    ? "pending"
+    : "reported";
 }
 
 export function compactTask(id: string, view: RunView, settled: Settled | undefined): CompactTask {
@@ -182,11 +157,26 @@ export function compactTask(id: string, view: RunView, settled: Settled | undefi
     role: a.role,
     agent: a.agent ?? a.role,
     status: a.status,
+    assignment: a.assignment,
+    workspace: a.workspace,
+    assignments: Object.fromEntries(
+      Object.entries(a.assignments ?? {})
+        .slice(-8)
+        .map(([id, item]) => [
+          id,
+          {
+            status: item.status,
+            summary: item.summary?.slice(0, 400),
+            dependencies: item.dependencies,
+          },
+        ]),
+    ),
+    resultAssignment: settled?.assignment,
+    latestAssignment: Math.max(...Object.keys(a.assignments ?? {}).map(Number), a.assignment ?? 1),
+    assignmentsOmitted: Math.max(0, Object.keys(a.assignments ?? {}).length - 8),
     summary: (a.summary ?? "").slice(0, 1600),
   };
   if ((a.summary?.length ?? 0) > 1600) out.truncated = true;
-  const recovery = reviewRecovery(id, view);
-  if (recovery) out.recovery = recovery;
   if (r?.data) out.data = r.data;
   if (r?.sources) out.sources = r.sources;
   if (a.reason && a.reason !== a.summary) out.reason = a.reason;
@@ -203,19 +193,6 @@ export function compactTask(id: string, view: RunView, settled: Settled | undefi
   }
   if (r?.checkoutChanged) out.checkoutChanged = true;
   const b = settled?.data as unknown as import("../verify/stages.ts").BuilderData | undefined;
-  const task = view.tasks.find((task) => task.id === id);
-  const planned = (task?.checks?.length ?? 0) + (task?.evidenceChecks?.length ?? 0);
-  // Missing evidence (for example an unavailable historical result) is not a failed
-  // or unexecuted check. Only summarize a recorded attempt.
-  if (settled && (b?.checks || planned || task?.noChecksReason)) {
-    const checks = b?.checks ?? [];
-    out.engineChecks = {
-      passed: checks.filter((check) => check.passed).length,
-      failed: checks.filter((check) => !check.passed).length,
-      notRun: Math.max(0, planned - checks.length),
-      ...(task?.noChecksReason && { noChecksReason: task.noChecksReason.slice(0, 512) }),
-    };
-  }
   const checkFailure = settled?.data?.checkFailure;
   if (checkFailure) out.checkFailure = checkFailure as CompactTask["checkFailure"];
   if (b?.changes) out.changedFiles = b.changes.changes.map((change) => change.path);
@@ -278,8 +255,6 @@ export function compactRun(
   const nextOffset = offset + tasks.length < view.order.length ? offset + tasks.length : undefined;
   return {
     run: view.run,
-    deadlineAt: view.deadlineAt,
-    reviewPolicy: view.reviewPolicy,
     dir,
     status: view.status,
     costUsd: view.usage.cost,
@@ -306,9 +281,7 @@ export async function repositoryRoot(cwd: string): Promise<string> {
   try {
     return realpathSync(line(await git(cwd, ["rev-parse", "--show-toplevel"])));
   } catch {
-    throw new ValidationError(
-      `${cwd} is not inside a Git repository; pinata runs from a repository`,
-    );
+    return realpathSync(resolve(cwd));
   }
 }
 
@@ -357,7 +330,9 @@ export class PinataHost {
   readonly deliveryCleanups = new Map<string, () => void>();
 
   subscribe(run: string, consumer: (event: AgentEvent) => void): () => void {
-    return this.engineInstance?.subscribe(run, consumer) ?? (() => {});
+    return this.engineInstance?.runs().includes(run)
+      ? this.engineInstance.subscribe(run, consumer)
+      : () => {};
   }
   private engineInstance: Engine | undefined;
   private readonly cache = new RuntimeCache();
@@ -382,7 +357,9 @@ export class PinataHost {
   // it is measured once, in the background).
   private ownerIdentity: ReturnType<typeof identify> | undefined;
   owner(): ReturnType<typeof identify> {
-    this.ownerIdentity ??= identify(process.pid).catch(() => null);
+    this.ownerIdentity ??= identify(process.pid).then(
+      (identity) => identity ?? { pid: process.pid, started: "", host: hostname() },
+    );
     return this.ownerIdentity;
   }
 
@@ -417,6 +394,21 @@ export class PinataHost {
       },
       pipeline: piPipeline(this.stages),
     });
+    this.engineInstance.onRun((handle) => {
+      this.engineInstance!.subscribe(handle.id, (event) => {
+        if (
+          event.t !== "input_recorded" ||
+          event.kind !== "followUp" ||
+          this.deliveryCleanups.has(handle.id)
+        )
+          return;
+        const pending = this.markBackground(handle).then(() => {
+          if (!this.shuttingDown) deliverWhenDone(this.pi, this, handle);
+        });
+        this.deliveryPending.add(pending);
+        void pending.finally(() => this.deliveryPending.delete(pending)).catch(() => {});
+      });
+    });
     return this.engineInstance;
   }
 
@@ -437,17 +429,41 @@ export class PinataHost {
   }
 
   // Runs being created; shutdown waits for them so none starts after Pi shuts down.
+  readonly deliveryPending = new Set<Promise<unknown>>();
+  private readonly runData = new Map<string, PiRunData & Record<string, unknown>>();
   private readonly starting = new Set<Promise<unknown>>();
+  private readonly startControllers = new Set<AbortController>();
+  private readonly metadataChanges = new Map<string, Promise<unknown>>();
+  private metadata<T>(run: string, change: () => Promise<T>): Promise<T> {
+    const previous = this.metadataChanges.get(run) ?? Promise.resolve();
+    const pending = previous.catch(() => {}).then(change);
+    this.metadataChanges.set(run, pending);
+    void pending
+      .finally(() => {
+        if (this.metadataChanges.get(run) === pending) this.metadataChanges.delete(run);
+      })
+      .catch(() => {});
+    return pending;
+  }
 
   start(
     params: RunParams,
     ctx: ExtensionContext,
+    signal?: AbortSignal,
   ): Promise<{ handle: RunHandle; notices: string[] }> {
     if (this.shuttingDown)
       return Promise.reject(
         new Error("Pi is shutting down; start the run again after it restarts"),
       );
-    const pending = this.create(params, ctx);
+    const controller = new AbortController();
+    this.startControllers.add(controller);
+    const abort = () => controller.abort(signal?.reason);
+    if (signal?.aborted) abort();
+    else signal?.addEventListener("abort", abort, { once: true });
+    const pending = this.create(params, ctx, controller.signal).finally(() => {
+      this.startControllers.delete(controller);
+      signal?.removeEventListener("abort", abort);
+    });
     const tracked = pending.catch(() => {});
     this.starting.add(tracked);
     void tracked.then(() => this.starting.delete(tracked));
@@ -457,44 +473,42 @@ export class PinataHost {
   private async create(
     params: RunParams,
     ctx: ExtensionContext,
+    signal: AbortSignal,
   ): Promise<{ handle: RunHandle; notices: string[] }> {
-    const startedAt = Date.now();
+    signal.throwIfAborted();
+    migrationError(
+      params,
+      ["deadlineAt", "limits", "reviewPolicy", "integratedChecks", "noIntegratedChecksReason"],
+      "run",
+    );
     const root = await repositoryRoot(params.cwd ?? ctx.cwd);
     const layered = layeredConfig(params.config ?? {}, root);
     const config = layered.config;
-    const deadlineAt = capDeadline(startedAt + config.limits.jobMs, params.deadlineAt);
-    assertTime(deadlineAt);
     const resolved = resolveTasks(params.tasks, discoverAgents(root));
+    const existingRun = params.run ? await this.find(params.run, root) : undefined;
+    const existingRecord = existingRun ? await readRunRecord(existingRun.dir) : undefined;
+    const existingTasks = existingRecord
+      ? validateGraph(existingRecord.tasks, {
+          allowWrites: existingRecord.allowWrites,
+          definitions: existingRecord.definitions,
+        })
+      : undefined;
     const tasks = validateGraph(resolved.tasks, {
-      allowWrites: params.allowWrites !== false,
+      allowWrites: params.allowWrites !== false && existingRecord?.allowWrites !== false,
       definitions: resolved.definitions,
-      reviewPolicy: config.reviewPolicy,
+      existing: existingTasks,
     });
+    for (const task of tasks)
+      task.workspace = workspaceMode(
+        task.workspace ??
+          (task.definition?.workspace === "worktree" ? "worktree" : undefined) ??
+          params.workspace ??
+          config.workspace,
+      );
     const instructions = runInstructions([
       ...runInstructions(this.options.instructions),
       ...runInstructions(params.instructions),
     ]);
-    const hasWrites = tasks.some(writes);
-    if (hasWrites && !(typeof params.approval === "string" && params.approval.trim()))
-      throw new ValidationError(
-        "approval is required when the run has builders: record the user's authorization for these local writes",
-      );
-    validateChecks(params.integratedChecks ?? [], "integratedChecks");
-    const integration = params.integration ?? "manual";
-    if (integration !== "manual" && integration !== "on-success")
-      throw new ValidationError('integration must be "on-success" or "manual"');
-    if (
-      hasWrites &&
-      integration === "on-success" &&
-      !params.integratedChecks?.length &&
-      !(
-        typeof params.noIntegratedChecksReason === "string" &&
-        params.noIntegratedChecksReason.trim()
-      )
-    )
-      throw new ValidationError(
-        "Automatic integration requires integratedChecks or noIntegratedChecksReason",
-      );
     const toolExtensions = resolveToolExtensions(
       tasks.flatMap(taskTools),
       config,
@@ -509,17 +523,55 @@ export class PinataHost {
         modelCandidates(config, task.role, task.model, session, task.definition),
       ).model;
     const engine = this.engine(ctx);
+    if (params.run) {
+      const found = existingRun!;
+      const handle = found.handle ?? (await this.resumeDir(found.dir, ctx, true));
+      await this.metadata(handle.id, async () => {
+        const record = await readRunRecord(handle.dir);
+        if (record.root !== root)
+          throw new Error("Additional workers must use the run's recorded workspace");
+        const current = record.resume!.data;
+        if (params.workspace === undefined)
+          for (const [i, task] of tasks.entries())
+            if (
+              params.tasks[i].workspace === undefined &&
+              task.definition?.workspace !== "worktree"
+            )
+              task.workspace = workspaceMode(current.workspace ?? config.workspace);
+        const prep = await prepareRun(root, handle.id, tasks, config, signal);
+        const previousPrep = current.prep as import("../verify/stages.ts").RunPrep;
+        current.prep = {
+          ...previousPrep,
+          ...prep,
+          worktreePaths: { ...previousPrep?.worktreePaths, ...prep.worktreePaths },
+          bases: { ...previousPrep?.bases, ...prep.bases },
+        };
+        current.models = { ...(current.models as object), ...models };
+        current.definitions = { ...(current.definitions as object), ...resolved.definitions };
+        current.toolExtensions = [
+          ...(current.toolExtensions as ToolExtension[]),
+          ...toolExtensions,
+        ];
+        // Persist model/definition/workspace resolution before accepting assignments.
+        await writeRunRecord(handle.dir, {
+          ...record,
+          tasks: [...record.tasks, ...tasks.map(taskSpec)],
+          definitions: current.definitions as import("../core/definitions.ts").Definitions,
+          resume: { ...record.resume!, data: current },
+        });
+        const data = this.runData.get(handle.id);
+        if (data) Object.assign(data, current);
+        await engine.add(handle.id, tasks.map(taskSpec), { definitions: resolved.definitions });
+      });
+      return { handle, notices: [...layered.notices, ...resolved.notices] };
+    }
     const id = randomUUID();
-    const branch = await headBranch(root);
-    // Snapshot, setup and review subjects; invalid subjects fail here, before any agent starts.
-    const prep = await prepareRun(root, id, tasks, config, deadlineAt);
-    assertTime(deadlineAt);
-    if (branch !== (await headBranch(root)))
-      throw new Error("Destination branch changed during preparation; start a new run");
+    const prep = await prepareRun(root, id, tasks, config, signal);
+    const branch = await headBranch(root).catch(() => undefined);
+    const head = prep.base?.head ?? (await headCommit(root).catch(() => ""));
     const data: PiRunData & Record<string, unknown> = {
+      workspace: params.workspace ?? config.workspace,
       prep,
-      reviewPolicy: config.reviewPolicy,
-      deadlineAt,
       definitions: resolved.definitions,
       toolExtensions,
       models,
@@ -530,47 +582,38 @@ export class PinataHost {
       webExtension: this.webExtension(config),
       config,
       approval: params.approval ?? null,
-      integratedChecks: params.integratedChecks ?? [],
-      noIntegratedChecksReason: params.noIntegratedChecksReason ?? null,
     };
-    // A JSON copy for run.json, before the pipeline adds runtime state to `data`.
-    const saved = JSON.parse(JSON.stringify(data)) as Record<string, unknown>;
+    const saved = structuredClone(data);
     const dir = join(await runsRoot(root), id);
-    // What integration needs after a reload: the run's tasks, base HEAD and checks.
     await writeRunRecord(dir, {
       id,
       root,
-      head: prep.base?.head ?? (await headCommit(root)),
+      store: dir,
+      head,
       branch,
-      integration,
-      schemaVersion: 2,
-      deadlineAt,
-      reviewPolicy: config.reviewPolicy,
+      integration: params.integration ?? "manual",
+      schemaVersion: 3,
       definitions: resolved.definitions,
       tasks: tasks.map(taskSpec),
-      allowWrites: hasWrites,
-      integratedChecks: params.integratedChecks ?? [],
-      noIntegratedChecksReason: params.noIntegratedChecksReason ?? null,
+      allowWrites: params.allowWrites !== false,
       passEnv: config.passEnv,
-      taskMs: config.limits.taskMs,
       resume: {
         mode: this.mode(config),
-        limits: config.limits as unknown as Record<string, unknown>,
         data: saved,
         survive: params.survive === true,
         background: params.background === true,
         owner: await this.owner(),
       },
     });
+    this.runData.set(id, data);
+    signal.throwIfAborted();
     const handle = await engine.run(tasks.map(taskSpec), {
+      signal,
       id,
       dir,
-      deadlineAt,
-      reviewPolicy: config.reviewPolicy,
       cwd: root,
       mode: this.mode(config),
-      limits: config.limits,
-      allowWrites: hasWrites,
+      allowWrites: params.allowWrites !== false,
       data,
     });
     this.handles.set(handle.id, handle);
@@ -591,13 +634,15 @@ export class PinataHost {
   }
 
   async markBackground(handle: RunHandle): Promise<void> {
-    const record = await readRunRecord(handle.dir);
-    if (record.resume && !record.resume.background)
-      await writeRunRecord(handle.dir, {
-        ...record,
-        resume: { ...record.resume, background: true },
-      });
-    this.background.add(handle.id);
+    await this.metadata(handle.id, async () => {
+      const record = await readRunRecord(handle.dir);
+      if (record.resume && !record.resume.background)
+        await writeRunRecord(handle.dir, {
+          ...record,
+          resume: { ...record.resume, background: true },
+        });
+      this.background.add(handle.id);
+    });
   }
 
   // Starts (or returns) the run's socket server, for viewers.
@@ -618,7 +663,8 @@ export class PinataHost {
       source: {
         view: () => handle.view(),
         subscribe: (consumer) => engine.subscribe(handle.id, consumer),
-        steer: (agent, text, as) => engine.steer(handle.id, agent, text, as, "user"),
+        steer: (agent, text, as, messageId) =>
+          engine.steer(handle.id, agent, text, as, "user", messageId),
         abort: (agent) => engine.cancel(handle.id, agent, "cancelled from a viewer"),
         messages: (agent) => agentMessages(engine, handle.id, handle.dir, handle.view(), agent),
       },
@@ -711,9 +757,16 @@ export class PinataHost {
     return { id, dir, view, handle };
   }
 
-  async readResult(dir: string, task: string): Promise<unknown> {
+  async readResult(dir: string, task: string, assignment?: number): Promise<unknown> {
     try {
-      return JSON.parse(await readFile(join(dir, "results", `${task}.json`), "utf8"));
+      return JSON.parse(
+        await readFile(
+          assignment === undefined
+            ? join(dir, "results", `${task}.json`)
+            : join(dir, "results", task, `${assignment}.json`),
+          "utf8",
+        ),
+      );
     } catch {
       return null;
     }
@@ -726,6 +779,7 @@ export class PinataHost {
 
   private async stop(reason: string, options: { survive?: boolean }): Promise<void> {
     this.shuttingDown = true;
+    for (const controller of this.startControllers) controller.abort(new Error(reason));
     for (const cleanup of this.deliveryCleanups.values()) cleanup();
     this.deliveryCleanups.clear();
     while (this.starting.size) await Promise.allSettled(this.starting);
@@ -745,14 +799,9 @@ export class PinataHost {
       await writeRunRecord(dir, { ...record, resume: { ...record.resume, owner: null } });
       if (process.env.PINATA_NO_CONTINUE !== "1") continueHeadless(dir, record.root);
     }
+    await Promise.allSettled(this.deliveryPending);
     for (const server of this.servers.values()) await (await server.catch(() => null))?.close();
     this.cache.dispose();
-  }
-
-  // Starts again the tasks of a run that were lost when an earlier Pi exited.
-  rerun(id: string): string[] {
-    if (!this.engineInstance) throw new Error(`Run ${id.slice(0, 8)} is not loaded in this Pi`);
-    return this.engineInstance.rerun(id);
   }
 
   // Resumes the runs an earlier Pi left unsettled in this repository (it exited, crashed or
@@ -768,7 +817,12 @@ export class PinataHost {
       const view = await replay(dir).catch(() => null);
       if (view?.status !== "running") continue;
       const owner = record.resume.owner;
-      if (owner && owner.pid !== process.pid && (await alive(owner))) continue;
+      if (
+        owner &&
+        (owner.pid !== process.pid || (owner.host !== undefined && owner.host !== hostname())) &&
+        (await alive(owner))
+      )
+        continue;
       try {
         const handle = await this.resumeRecord(dir, record, ctx, "Pi restarted");
         this.ui?.bind(ctx);
@@ -781,12 +835,16 @@ export class PinataHost {
     return resumed;
   }
 
-  // Resume a surviving run, or explicitly load a settled run for repair.
+  // Resume surviving activity or load settled work for continuation.
   async resumeDir(dir: string, ctx: ExtensionContext, settled = false): Promise<RunHandle> {
     const record = await readRunRecord(dir);
     if (!record.resume) throw new Error(`${dir} cannot be resumed (no resume record)`);
     const owner = record.resume.owner;
-    if (owner && owner.pid !== process.pid && (await alive(owner)))
+    if (
+      owner &&
+      (owner.pid !== process.pid || (owner.host !== undefined && owner.host !== hostname())) &&
+      (await alive(owner))
+    )
       throw new Error(`Run ${record.id.slice(0, 8)} is owned by a running Pi (pid ${owner.pid})`);
     return this.resumeRecord(dir, record, ctx, "continued without Pi", settled);
   }
@@ -799,21 +857,19 @@ export class PinataHost {
     settled = false,
   ): Promise<RunHandle> {
     const resume = record.resume!;
+    if (record.schemaVersion !== 3)
+      throw new Error(
+        "Legacy runs cannot resume under the new runtime; inspect saved changes and migrate the job",
+      );
     validateSnapshots(record.definitions);
+    this.runData.set(record.id, resume.data as PiRunData & Record<string, unknown>);
     // Claim the run first, so another Pi starting now leaves it alone.
     await writeRunRecord(dir, { ...record, resume: { ...resume, owner: await this.owner() } });
     const handle = await this.engine(ctx)
       .resume(dir, {
         cwd: record.root,
-        deadlineAt: record.deadlineAt,
-        reviewPolicy: savedReviewPolicy(record),
-        limits: resume.limits,
         allowWrites: record.allowWrites,
-        data: {
-          ...resume.data,
-          reviewPolicy: savedReviewPolicy(record),
-          deadlineAt: record.deadlineAt,
-        },
+        data: resume.data,
         reason,
         settled,
       })
@@ -839,7 +895,12 @@ export class PinataHost {
       const record = await readRunRecord(dir).catch(() => null);
       if (!record?.resume?.background || this.handles.has(record.id)) continue;
       const owner = record.resume.owner;
-      if (owner && owner.pid !== process.pid && (await alive(owner))) continue;
+      if (
+        owner &&
+        (owner.pid !== process.pid || (owner.host !== undefined && owner.host !== hostname())) &&
+        (await alive(owner))
+      )
+        continue;
       const view = await replay(dir).catch(() => null);
       if (!view || view.status === "running" || (await isDelivered(dir, view))) continue;
       const results = new Map<string, Settled>();

@@ -103,6 +103,10 @@ export function resultSchema(agent: Role | AgentDefinition): TSchema {
       { additionalProperties: false },
     );
   const optional = new Set([
+    "changedFiles",
+    "checks",
+    "findings",
+    "blockers",
     "brief",
     "sources",
     "review",
@@ -155,8 +159,6 @@ export function validateResult(input: AgentResult, ctx: ResultContext): AgentRes
     findings: input.findings ?? [],
     blockers: input.blockers ?? [],
   };
-  if (Buffer.byteLength(JSON.stringify(result)) > 128 * 1024)
-    fail("Result exceeds 128 KiB; return a concise result and reference larger artifacts.");
   const writer = writes(ctx);
   const reviewer = reviews(ctx);
   if (result.status === "succeeded" && result.blockers.length)
@@ -218,16 +220,6 @@ export function validateResult(input: AgentResult, ctx: ResultContext): AgentRes
   if (reviewer) {
     const review = result.review;
     if (!review) fail("A succeeded reviewer result needs review: { verdict }.");
-
-    if (
-      review.verdict === "approve" &&
-      result.findings.some(
-        (f) => f.severity === "critical" || f.severity === "high" || f.severity === "medium",
-      )
-    )
-      fail(
-        "An approval cannot contain unresolved critical, high or medium findings. Use changes_requested, or downgrade findings that are not defects.",
-      );
   }
   return result;
 }

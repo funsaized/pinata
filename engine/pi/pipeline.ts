@@ -1,9 +1,8 @@
-import { remaining } from "../core/deadline.ts";
 import { atomicJson, privateDir } from "../core/store.ts";
 import { writes, taskTools, type Definitions } from "../core/definitions.ts";
 import { validateToolExtensions, type ToolExtension } from "./tool-providers.ts";
 // The Pi pipeline: everything between the engine core and a backend. It picks models and
-// workspaces, builds the persona and brief, and verifies outcomes.
+// workspaces, builds the persona and brief, and captures outcomes.
 import { join } from "node:path";
 import {
   brief,
@@ -19,7 +18,6 @@ import {
   type Verdict,
 } from "../core/engine.ts";
 import {
-  ROLE_TOOLS,
   type AgentOutcome,
   type BackendKind,
   type ModelRef,
@@ -55,6 +53,7 @@ export function selectBackend(
 
 // Optional stages that later milestones plug in (builders, checks, reviews).
 export interface PipelineStages {
+  register?(run: RunContext, task: Task): Promise<(() => Promise<void>) | undefined>;
   workspaceRef?(run: RunContext, task: Task): WorkspaceRef | undefined;
   prepareWorkspace?(
     run: RunContext,
@@ -90,16 +89,20 @@ export function resultPath(run: RunContext, id: string): string {
 }
 
 function dependencies(run: RunContext, task: Task): DependencyBrief[] {
-  return task.after.map((id) => {
-    const settled = run.results.get(id);
-    const dep = run.tasks.get(id)!;
+  return (run.dependencies ?? task.after).map((id) => {
+    const settled = run.results.get(typeof id === "string" ? id : id.worker);
+    const name = typeof id === "string" ? id : id.worker;
+    const dep = run.tasks.get(name)!;
     return {
-      id,
+      id: name,
       role: dep.role,
       status: settled?.status ?? "unknown",
       summary: settled?.summary ?? "",
       result: settled?.result ?? null,
-      path: resultPath(run, id),
+      path:
+        typeof id === "string"
+          ? resultPath(run, name)
+          : join(run.dir, "results", name, `${id.assignment}.json`),
     };
   });
 }
@@ -122,94 +125,96 @@ export function piPipeline(stages: PipelineStages = {}): Pipeline {
     },
     async prepare(run, task, signal, options = {}) {
       const data = runData(run);
-      // Result-only repair does not load the original task's extension tools.
-      const resultOnly = options.resultOnly === true;
-      const tools = resultOnly ? ROLE_TOOLS.repair : taskTools(task);
-      const requiredExtensions = data.toolExtensions?.filter((e) =>
-        e.tools.some((tool) => tools.includes(tool)),
-      );
-      if (requiredExtensions && !options.reattach) validateToolExtensions(requiredExtensions);
-      const workspace =
-        (await stages.prepareWorkspace?.(run, task, signal, {
-          reattach: options.reattach === true,
-        })) ?? new LiveWorkspace(run.cwd, undefined, signal);
-      // A result-only attempt inspects and reports; it cannot write.
-      const canWrite = writes(task) && !resultOnly;
-      const reviewTarget = await stages.reviewTarget?.(run, task, { workspace }, signal);
-      const predecessors = dependencies(run, task);
-      let dependencyIndex: string | undefined;
-      if (predecessors.length > 4) {
-        await privateDir(join(run.dir, "dependencies"));
-        dependencyIndex = join(run.dir, "dependencies", `${task.id}.json`);
-        await atomicJson(
-          dependencyIndex,
-          predecessors.map(({ id, role, status, path }) => ({ id, agent: role, status, path })),
+      const tools = taskTools(task);
+      const release = await stages.register?.(run, task);
+      try {
+        const requiredExtensions = data.toolExtensions?.filter((e) =>
+          e.tools.some((tool) => tools.includes(tool)),
         );
-      }
-      const remainingCost =
-        run.limits.costUsd === undefined
-          ? undefined
-          : Math.max(0, run.limits.costUsd - run.view().usage.cost);
-      return {
-        workspace,
-        launch: {
-          run: run.id,
-          task,
-          model: data.models[task.id],
-          cwd: workspace.path,
-          tools,
-          persona: systemPrompt(task.definition ?? task.role, tools, data.codemode),
-          brief: brief({
-            task,
-            instructions: data.instructions,
-            workspace: { kind: workspace.kind, path: workspace.path },
-            dependencies: predecessors,
+        if (requiredExtensions && !options.reattach) validateToolExtensions(requiredExtensions);
+        const workspace =
+          (await stages.prepareWorkspace?.(run, task, signal, {
+            reattach: options.reattach === true,
+          })) ?? new LiveWorkspace(run.cwd, undefined, signal);
+        const canWrite = writes(task);
+        const reviewTarget = await stages.reviewTarget?.(run, task, { workspace }, signal);
+        const predecessors = dependencies(run, task);
+        let dependencyIndex: string | undefined;
+        if (predecessors.length > 4) {
+          await privateDir(join(run.dir, "dependencies"));
+          dependencyIndex = join(run.dir, "dependencies", `${task.id}.json`);
+          await atomicJson(
             dependencyIndex,
-            reviewTarget,
-            feedback: data.feedback?.[task.id],
-            resultOnly,
-          }),
-          budgets: {
-            deadline: Date.now() + remaining(run.deadlineAt, run.limits.taskMs),
-            maxTurns: run.limits.maxTurns,
-            maxToolCalls: run.limits.maxToolCalls,
-            ...(remainingCost !== undefined && { maxCostUsd: remainingCost }),
-          },
-          agent: {
+            predecessors.map(({ id, role, status, path }) => ({ id, agent: role, status, path })),
+          );
+        }
+        return {
+          release,
+          workspace,
+          launch: {
             run: run.id,
-            task: task.id,
-            role: task.role,
-            definition: task.definition,
+            task,
+            model: data.models[task.id],
+            cwd: workspace.path,
             tools,
-            ownership: task.ownership,
-            readOnly: !canWrite,
-            ...(canWrite && { writeRoot: workspace.path }),
-            ...(reviewTarget && {
-              reviewTarget: { taskId: reviewTarget.taskId, fingerprint: reviewTarget.fingerprint },
+            persona: systemPrompt(task.definition ?? task.role, tools, data.codemode),
+            brief: brief({
+              task,
+              instructions: data.instructions,
+              workspace: { kind: workspace.kind, path: workspace.path },
+              dependencies: predecessors,
+              dependencyIndex,
+              reviewTarget,
+              feedback: data.feedback?.[task.id],
             }),
+            agent: {
+              run: run.id,
+              task: task.id,
+              role: task.role,
+              definition: task.definition,
+              tools,
+              readOnly: !canWrite,
+              ...(canWrite && { writeRoot: workspace.path }),
+              ...(reviewTarget && {
+                reviewTarget: {
+                  taskId: reviewTarget.taskId,
+                  fingerprint: reviewTarget.fingerprint,
+                },
+              }),
+            },
+            mode: run.mode,
+            codemode: data.codemode,
+            transcript: run.store.transcriptPath(task.id),
+            root: run.cwd,
+            // A run that must survive this Pi uses detached processes.
+            ...(data.survive &&
+              selectBackend(task.backend, data) === "process" && { detached: true }),
+            ...(data.toolExtensions
+              ? {
+                  extensions: data.toolExtensions
+                    .filter((e) => e.tools.some((tool) => tools.includes(tool)))
+                    .map((e) => e.path),
+                }
+              : task.role === "research" && data.webExtension
+                ? { webExtension: data.webExtension }
+                : {}),
           },
-          mode: run.mode,
-          codemode: data.codemode,
-          ...(resultOnly && { resultOnly }),
-          transcript: run.store.transcriptPath(task.id),
-          root: run.cwd,
-          // A run that must survive this Pi uses detached processes.
-          ...(data.survive &&
-            selectBackend(task.backend, data) === "process" && { detached: true }),
-          ...(data.toolExtensions
-            ? {
-                extensions: data.toolExtensions
-                  .filter((e) => e.tools.some((tool) => tools.includes(tool)))
-                  .map((e) => e.path),
-              }
-            : task.role === "research" && data.webExtension
-              ? { webExtension: data.webExtension }
-              : {}),
-        },
-      };
+        };
+      } catch (error) {
+        await release?.();
+        throw error;
+      }
     },
     async verify(run, task, prepared, outcome, signal) {
       let verdict = judge(outcome);
+      if (task.definition?.output.require.length && !outcome.result)
+        verdict = {
+          ...verdict,
+          data: {
+            ...verdict.data,
+            outputError: `Structured output was requested (${task.definition.output.require.join(", ")}) but no valid report was submitted. Workspace changes remain available.`,
+          },
+        };
       const workspace = prepared.workspace;
       if (workspace instanceof LiveWorkspace && verdict.result) {
         if (await workspace.changed().catch(() => false)) {

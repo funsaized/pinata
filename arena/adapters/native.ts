@@ -1,5 +1,5 @@
-import { assertTime, capDeadline, remaining } from "../../engine/core/deadline.ts";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { assertTime, capDeadline, remaining } from "../deadline.ts";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, isAbsolute } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runProcess } from "../process.ts";
@@ -34,7 +34,7 @@ export function nativeInvocation(agent: NativeAgent, request: AdapterRequest, ex
     throw new Error("Unsupported thinking level");
   const shared = [
     `# Plan and execute using ${agent === "pinata" ? "Piñata orchestration" : agent === "codex" ? "Codex native subagents" : "Pi built-in tools (solo baseline)"}`,
-    "Begin with a concise execution plan: dependency DAG, file ownership, parallel branches, integration checkpoints, and checks. Then immediately execute it; do not stop after planning or wait for more instructions.",
+    "Begin with a concise execution plan describing responsibilities and useful checks, then immediately execute it. Evolve the plan as needed; do not stop after planning or wait for more instructions.",
     request.task.prompt,
     "Complete the entire assignment in the current candidate checkout.",
     `Public unit boundaries: ${JSON.stringify(request.task.units)}`,
@@ -102,34 +102,17 @@ export function nativeInvocation(agent: NativeAgent, request: AdapterRequest, ex
       "-e",
       join(root, "arena/adapters/coordinator.ts"),
       "--tools",
-      "read,grep,find,ls,pinata_*",
+      "read,bash,edit,write,grep,find,ls,pinata_*",
     );
     const model = { provider, id, thinking };
     shared.push(
-      "You are the Piñata coordinator. Use pinata_run to delegate implementation; do not implement files yourself.",
-      "Design the job from the public units, using builder ownership, dependencies, and reviewers where useful. Use background:true and survive:false so actionable notices can reach you while other branches run. Use background:true for repair when unrelated work remains.",
-      "After starting background work, finish your current response promptly when you have no other actionable work. Do not keep thinking or calling tools to wait: follow-up notices are delivered after your turn ends, and the RPC host keeps the session alive.",
-      "Inspect failure evidence before cancelling or restarting. A failed coordinator-authored check can itself be wrong; compare it with the public contract. Repair implementation defects in the existing run when eligible. If the check or dependency plan must change, start a corrected run with the remaining time; do not ask workers to satisfy a contradictory assertion.",
-      `Pass deadlineAt:${deadlineAt} to each pinata_run so planning and earlier runs consume the remaining trial allowance. The arena supervisor independently stops the entire trial at its wall-clock limit.`,
-      `The user authorizes implementation, review, repairs and local integration of this arena assignment within ${request.cwd}. Record that scope in approval.`,
-      `Pass this config to every pinata_run: ${JSON.stringify({
-        models: { default: model, builder: model, reviewer: model, scout: model },
-        fallbacks: { builder: [], reviewer: [], scout: [] },
-        setup: false,
-        backend: "in-process",
-        worktreeRoot: join(request.evidenceDir, "worktrees"),
-        limits: {
-          concurrency,
-          repairs: request.limits.maxRepairs,
-          taskMs: Math.max(1, remainingMs),
-          jobMs: Math.max(1, remainingMs),
-        },
-      })}`,
-      "after covers implementation AND check dependencies. Worktrees contain the base plus declared predecessors, not eventual siblings. Prefer independent state fixtures for isolated unit checks; put cross-module compatibility checks downstream of both implementations.",
-      "Assigned reviews are binding. If a consumer must wait for approval, depend on the reviewer. Completed downstream writers are not silently replayed by repair; plan a new run when necessary.",
-      "For dependency-free builders, provide useful checks or an honest noChecksReason. Supply integratedChecks or noIntegratedChecksReason.",
-      "After a successful run, call pinata_integrate with its run ID. Builder patches alone are insufficient: the final candidate checkout must contain the implementation.",
-      "Use only builder, reviewer and scout roles. Keep all worker models and reasoning settings as configured above.",
+      "You are the Pinata coordinator. Delegate useful independent work with pinata_run and use ordinary coding tools to inspect, test, reconcile and finish the candidate.",
+      `Choose parallelism appropriate to this assignment; the experimental requested worker count is ${concurrency}. Pinata does not enforce it. Assign responsibilities in task text. Shared checkout is the default; select workspace:worktree only when isolation is useful.`,
+      "Use background:true and survive:false for workers. Yield when no actionable work remains; assignment completion messages resume you. Add workers with pinata_run {run,...}; send pinata_steer with as:followUp to continue a worker in its saved context.",
+      "Inspect failed checks before changing code: coordinator-authored expectations may themselves be wrong. A failed worker or review never hides its changes. after is ordering, not acceptance. Follow-ups do not replay descendants. Request inputs explicitly when composing isolated workspaces.",
+      `The user authorizes implementation, tests, review, follow-ups and local application within ${request.cwd}. The arena supervisor independently enforces its timeout; do not pass deadlines or limits to Pinata.`,
+      `Use this config for workers: ${JSON.stringify({ models: { default: model, builder: model, reviewer: model, scout: model }, fallbacks: { builder: [], reviewer: [], scout: [] }, setup: false, backend: "in-process", workspace: "shared", worktreeRoot: join(request.evidenceDir, "worktrees") })}`,
+      "Shared edits are already delivered. Inspect/apply selected isolated snapshots with pinata_changes and pinata_integrate when useful. Finish the actual candidate using ordinary tools and run the project checks. Execution completion and candidate correctness are recorded independently.",
     );
   }
   const prompt = shared.join("\n\n");
@@ -148,6 +131,23 @@ export function nativeInvocation(agent: NativeAgent, request: AdapterRequest, ex
     : { command: executable ?? "pi", args: [...args, "--", prompt] };
 }
 
+export function pinataDelegated(stdout: string): boolean {
+  return stdout.split("\n").some((line) => {
+    try {
+      const event = JSON.parse(line);
+      return (
+        (event.type === "tool_execution_end" &&
+          !event.isError &&
+          event.toolName === "pinata_run" &&
+          !!event.result?.details?.result?.run) ||
+        (event.type === "message_end" && event.message?.customType === "pinata-assignment")
+      );
+    } catch {
+      return false;
+    }
+  });
+}
+// Historical detector retained only for old evidence readers.
 export function pinataIntegrated(stdout: string): boolean {
   let ran = false;
   for (const line of stdout.split("\n")) {
@@ -237,15 +237,20 @@ export async function executeNative(
     cleanupMs;
   if (remainingMs <= 0) throw new Error("No time remaining after version check");
   const result = await run("native", invocation.command, invocation.args, remainingMs);
-  const integrated =
-    agent !== "pinata" || (!result.stdoutTruncated && pinataIntegrated(result.stdout));
+  const delegationObserved =
+    agent === "pinata" && !result.stdoutTruncated && pinataDelegated(result.stdout);
   const delegationFailed = agent === "codex" && codexSpawnFailure.test(result.stderr);
-  const completed =
-    result.code === 0 && !result.error && !result.timedOut && integrated && !delegationFailed;
+  const completed = result.code === 0 && !result.error && !result.timedOut && !delegationFailed;
   return {
     schemaVersion: 1,
     status: completed ? "completed" : "failed",
-    framework: { name: agent, version: version.stdout.trim() || version.stderr.trim() },
+    framework: {
+      name: agent,
+      version:
+        agent === "pinata"
+          ? `${(JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { version: string }).version} (Pi ${version.stdout.trim() || version.stderr.trim()})`
+          : version.stdout.trim() || version.stderr.trim(),
+    },
     model: request.model,
     usage: {
       inputTokens: null,
@@ -260,13 +265,13 @@ export async function executeNative(
         stage: "native-coordinator",
         status: completed ? "completed" : "failed",
         elapsedMs: result.elapsedMs,
-        detail: `exit=${result.code}; timedOut=${result.timedOut}; integrationObserved=${integrated}; delegationFailed=${delegationFailed}; error=${result.error}`,
+        detail: `exit=${result.code}; timedOut=${result.timedOut}; delegationObserved=${delegationObserved}; delegationFailed=${delegationFailed}; error=${result.error}`,
       },
     ],
     limitations: [
       "Native orchestration is exploratory and not independently verified; external runs remain comparison-ineligible.",
       "Model, delegation, ownership and concurrency compliance require inspection of raw framework evidence.",
-      "Native self-review and iterative fixes are allowed; maxRepairs only configures Piñata engine repair limits, not a shared enforced repair budget.",
+      "Native self-review and iterative fixes are allowed; the harness timeout is external and no production repair or concurrency limits are injected.",
       "Pi is a solo baseline; Codex and Piñata are instructed to delegate. Successful execution alone does not establish delegation.",
       "Installed user/provider configuration can affect behavior; complete dependency and configuration provenance is not captured.",
       "Frameworks differ in sandboxing and tools. This wrapper is not an OS security boundary.",

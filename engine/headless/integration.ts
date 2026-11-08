@@ -1,4 +1,4 @@
-// Headless delivery uses the same evidence, journal and checks as the Pi tool.
+// Headless application uses the same snapshots, conflict checks and journal as Pi.
 import { join } from "node:path";
 import { integrate } from "../verify/integrate.ts";
 import { resolveView } from "../viewer/selection.ts";
@@ -21,27 +21,28 @@ export type DeliveryOptions = {
   json?: boolean;
   write: (line: string) => void;
   signal?: AbortSignal;
+  recover?: boolean;
 };
 
 export async function deliver(
   dir: string,
   run: string,
-  { json, write, signal }: DeliveryOptions,
+  { json, write, signal, recover }: DeliveryOptions,
 ): Promise<number> {
   write(
     json
       ? JSON.stringify({ t: "integration_started", run })
-      : `Pinata ${run.slice(0, 8)} · Applying changes and checking the destination`,
+      : `Pinata ${run.slice(0, 8)} · Applying isolated snapshots`,
   );
   try {
-    const result = await integrate(dir, signal);
+    const result = await integrate(dir, signal, undefined, { recover });
     write(
       json
         ? JSON.stringify({ t: "integration_finished", run, ...result })
-        : `Pinata ${run.slice(0, 8)} · ${result.status} · ${result.files.length} files · receipt ${result.verification.receipt}`,
+        : `Pinata ${run.slice(0, 8)} · ${result.status} · ${result.files.length} files · receipt ${result.journal}`,
     );
     if (signal?.aborted) return 3;
-    return result.status === "verified" || result.status === "applied_unverified" ? 0 : 1;
+    return result.status === "applied" ? 0 : 1;
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     const journal = join(dir, "integration", "journal.json");

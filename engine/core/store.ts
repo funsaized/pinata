@@ -2,26 +2,16 @@
 // (buffered, flushed every 250 ms and on terminal events, fsynced when the run settles),
 // results/<task>.json and transcripts/<task>.jsonl. Directories are private (0700).
 import { spawn } from "node:child_process";
-import { constants } from "node:fs";
-import {
-  appendFile,
-  lstat,
-  mkdir,
-  open,
-  readdir,
-  readFile,
-  realpath,
-  rename,
-  rm,
-} from "node:fs/promises";
-import { join } from "node:path";
-import { randomUUID } from "node:crypto";
+import { constants, createReadStream } from "node:fs";
+import { createInterface } from "node:readline";
+import { appendFile, lstat, mkdir, open, readdir, realpath, rename, rm } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
+import { createHash, randomUUID } from "node:crypto";
 import { retained, terminal, validateEvent } from "./events.ts";
-import { replayView, type RunView } from "./view.ts";
+import { reduce, emptyView, type RunView } from "./view.ts";
 import type { AgentEvent, Mode } from "./types.ts";
 
 export const FLUSH_MS = 250;
-export const MAX_JSON = 16 * 1024 * 1024;
 
 export async function privateDir(dir: string): Promise<void> {
   await mkdir(dir, { recursive: true, mode: 0o700 });
@@ -32,8 +22,6 @@ export async function privateDir(dir: string): Promise<void> {
 // Writes JSON through a temporary file and a rename, so readers never see a partial file.
 export async function atomicJson(file: string, value: unknown): Promise<void> {
   const encoded = JSON.stringify(value, null, 2) + "\n";
-  if (Buffer.byteLength(encoded) > MAX_JSON)
-    throw new Error("State exceeds the JSON artifact limit");
   const tmp = `${file}.${randomUUID()}.tmp`;
   const handle = await open(tmp, "wx", 0o600);
   try {
@@ -44,6 +32,14 @@ export async function atomicJson(file: string, value: unknown): Promise<void> {
   }
   try {
     await rename(tmp, file);
+    if (process.platform !== "win32") {
+      const directory = await open(dirname(file), constants.O_RDONLY);
+      try {
+        await directory.sync();
+      } finally {
+        await directory.close();
+      }
+    }
   } catch (error) {
     await rm(tmp, { force: true });
     throw error;
@@ -54,8 +50,7 @@ export async function readJson<T = unknown>(file: string): Promise<T> {
   const handle = await open(file, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
   try {
     const st = await handle.stat();
-    if (!st.isFile() || st.size > MAX_JSON)
-      throw new Error(`Invalid or oversized JSON file: ${file}`);
+    if (!st.isFile()) throw new Error(`Invalid or oversized JSON file: ${file}`);
     return JSON.parse(await handle.readFile("utf8")) as T;
   } finally {
     await handle.close();
@@ -83,8 +78,18 @@ function git(cwd: string, args: string[]): Promise<string> {
 
 // `<git common dir>/pinata`, shared by every worktree of the repository.
 export async function runsRoot(cwd: string): Promise<string> {
-  const common = await git(cwd, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
-  return join(await realpath(common), "pinata");
+  const canonical = await realpath(resolve(cwd));
+  try {
+    const common = await git(canonical, [
+      "rev-parse",
+      "--path-format=absolute",
+      "--git-common-dir",
+    ]);
+    return join(await realpath(common), "pinata");
+  } catch {
+    // The same resolver is used by Pi, headless, viewers and recovery. No git init.
+    return join(canonical, ".pinata", "runs");
+  }
 }
 
 export class RunStore {
@@ -163,6 +168,41 @@ export class RunStore {
     return readJson<T>(join(this.dir, "results", `${task}.json`)).catch(() => null);
   }
 
+  async writeAssignmentResult(worker: string, assignment: number, value: unknown): Promise<string> {
+    const folder = join(this.dir, "results", worker);
+    await privateDir(folder);
+    const file = join(folder, `${assignment}.json`);
+    await atomicJson(file, value);
+    await this.writeResult(worker, value);
+    return file;
+  }
+  readAssignmentResult<T = import("./engine.ts").Settled>(
+    worker: string,
+    assignment: number,
+  ): Promise<T | null> {
+    return readJson<T>(join(this.dir, "results", worker, `${assignment}.json`)).catch(
+      (error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") return null;
+        throw error;
+      },
+    );
+  }
+  async writeInbox(id: string, value: unknown): Promise<void> {
+    const folder = join(this.dir, "inbox");
+    await privateDir(folder);
+    await atomicJson(join(folder, `${createHash("sha256").update(id).digest("hex")}.json`), value);
+  }
+  async readInbox<T>(): Promise<T[]> {
+    const folder = join(this.dir, "inbox");
+    const files = await readdir(folder).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return [];
+      throw error;
+    });
+    return Promise.all(
+      files.filter((name) => name.endsWith(".json")).map((name) => readJson<T>(join(folder, name))),
+    );
+  }
+
   transcriptPath(task: string): string {
     return join(this.dir, "transcripts", `${task}.jsonl`);
   }
@@ -197,32 +237,51 @@ export class RunStore {
   }
 }
 
-export async function readEvents(dir: string): Promise<AgentEvent[]> {
-  const raw = await readFile(join(dir, "events.jsonl"), "utf8").catch(
-    (error: NodeJS.ErrnoException) => {
-      if (error.code === "ENOENT") return "";
-      throw error;
-    },
-  );
-  const events: AgentEvent[] = [];
-  const lines = raw.split("\n");
-  for (let i = 0; i < lines.length; i++) {
-    if (!lines[i]) continue;
-    try {
-      events.push(validateEvent(JSON.parse(lines[i])));
-    } catch (error) {
-      // A crash can leave a partial last line; anything else is corruption.
-      if (i === lines.length - 1 || (i === lines.length - 2 && !lines[i + 1])) break;
-      throw new Error(`events.jsonl line ${i + 1}: ${(error as Error).message}`);
+export async function* jsonlEntries(file: string): AsyncGenerator<unknown> {
+  const stream = createReadStream(file, { encoding: "utf8" });
+  const lines = createInterface({ input: stream, crlfDelay: Infinity });
+  let endsWithNewline = false;
+  stream.on("data", (chunk) => {
+    endsWithNewline = chunk.toString().endsWith("\n");
+  });
+  let pendingError: Error | undefined;
+  let lineNumber = 0;
+  try {
+    for await (const line of lines) {
+      lineNumber++;
+      if (!line.trim()) continue;
+      if (pendingError) throw pendingError;
+      try {
+        yield JSON.parse(line);
+      } catch (error) {
+        pendingError = new Error(`${file} line ${lineNumber}: invalid JSONL record`, {
+          cause: error,
+        });
+      }
     }
+    // Only a partial final record may be dropped after interruption.
+    if (pendingError && endsWithNewline) throw pendingError;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  } finally {
+    lines.close();
+    stream.destroy();
   }
+}
+export async function* iterateEvents(dir: string): AsyncGenerator<AgentEvent> {
+  for await (const value of jsonlEntries(join(dir, "events.jsonl"))) yield validateEvent(value);
+}
+export async function readEvents(dir: string): Promise<AgentEvent[]> {
+  const events: AgentEvent[] = [];
+  for await (const event of iterateEvents(dir)) events.push(event);
   return events;
 }
 
 // Rebuilds a run's view from its log.
 export async function replay(dir: string): Promise<RunView> {
-  const events = await readEvents(dir);
-  return replayView(events, events[0]?.run ?? "");
+  let view = emptyView("");
+  for await (const event of iterateEvents(dir)) view = reduce(view, event);
+  return view;
 }
 
 // Run directories under a runs root, newest first by directory mtime.
@@ -249,21 +308,8 @@ export async function writeJsonl(file: string, items: readonly unknown[]): Promi
 
 // Reads a JSONL file; a missing file is empty and a partial last line (a crash) is dropped.
 export async function readJsonl(file: string): Promise<unknown[]> {
-  const raw = await readFile(file, "utf8").catch((error: NodeJS.ErrnoException) => {
-    if (error.code === "ENOENT") return "";
-    throw error;
-  });
   const items: unknown[] = [];
-  const lines = raw.split("\n");
-  for (let i = 0; i < lines.length; i++) {
-    if (!lines[i]) continue;
-    try {
-      items.push(JSON.parse(lines[i]));
-    } catch (error) {
-      if (i === lines.length - 1 || (i === lines.length - 2 && !lines[i + 1])) break;
-      throw new Error(`${file} line ${i + 1}: ${(error as Error).message}`);
-    }
-  }
+  for await (const entry of jsonlEntries(file)) items.push(entry);
   return items;
 }
 

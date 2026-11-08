@@ -108,7 +108,7 @@ export function checkWrite(
   root: string,
   cwd: string,
   input: string,
-  ownership: readonly string[],
+  ownership?: readonly string[],
   ci = caseInsensitive(root),
 ): string {
   // An agent process may see its cwd through a different symlink path than the one its
@@ -123,7 +123,7 @@ export function checkWrite(
   );
   const rel = repoRelative(realRoot, realCwd, absolute);
   assertNoLinks(root, rel);
-  if (!owns(ownership, rel, ci))
+  if (ownership && !owns(ownership, rel, ci))
     throw new PathError(
       `${rel} is outside this builder's ownership (${ownership.join(", ") || "none"})`,
     );

@@ -23,12 +23,16 @@ export async function fakeEngine(
   scripts: Record<string, FakeScript> | ConstructorParameters<typeof FakeBackend>[0] = {},
   options: Partial<EngineOptions> = {},
 ) {
+  let engine: ReturnType<typeof createEngine> | undefined;
+  t.after(async () => {
+    await engine?.shutdown("test cleanup");
+  });
   const dir = await tempDir(t);
   const backend = new FakeBackend(scripts);
-  const engine = createEngine({ backends: { fake: backend }, defaultBackend: "fake", ...options });
+  engine = createEngine({ backends: { fake: backend }, defaultBackend: "fake", ...options });
   let n = 0;
   const run = (specs: TaskSpec[], opts: RunOptions = {}) =>
-    engine.run(specs, { cwd: dir, dir: join(dir, `run-${++n}`), ...opts });
+    engine!.run(specs, { cwd: dir, dir: join(dir, `run-${++n}`), ...opts });
   return { engine, backend, dir, run };
 }
 

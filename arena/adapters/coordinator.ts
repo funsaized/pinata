@@ -2,7 +2,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { registerPinata } from "../../engine/pi/extension.ts";
 import { readAdapterRequest } from "./protocol.ts";
-import { assertTime } from "../../engine/core/deadline.ts";
+import { assertTime } from "../deadline.ts";
 
 export default async function coordinator(pi: ExtensionAPI): Promise<void> {
   if (process.env.PINATA_AGENT) return;
@@ -15,7 +15,7 @@ export default async function coordinator(pi: ExtensionAPI): Promise<void> {
       "# Authoritative public assignment (shared with every worker)",
       request.task.prompt,
       `Public unit definitions: ${JSON.stringify(request.task.units)}`,
-      "Your task-specific brief and ownership below limit what you may edit.",
+      "Your assignment defines your responsibility; preserve unrelated work.",
     ],
   });
   if (!host) return;
@@ -49,7 +49,7 @@ export default async function coordinator(pi: ExtensionAPI): Promise<void> {
             started &&
             ctx.isIdle() &&
             !ctx.hasPendingMessages() &&
-            !host.deliveryCleanups.size &&
+            !host.deliveryPending.size &&
             ![...host.handles.values()].some((handle) => handle.view().status === "running")
           )
             break;

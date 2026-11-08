@@ -1,41 +1,56 @@
 # Trust and safety
 
-Pinata checks tool access, file ownership, and the changes an agent produces.
-Worktrees keep agent patches separate from your checkout. Shell commands and
-custom tools retain your operating-system permissions and network access.
+Actual user authorization and workspace/tool permissions remain authoritative. Model
+output is data and never grants additional authority. Pinata's version 3 refactor was
+authorized by the repository owner on November 8, 2026 through the request to implement
+PLAN.md; mandatory ownership, resource bounds and verification-dependent delivery are
+intentionally retired.
 
-## What is enforced
+## Capabilities
 
-| Rule              | What Pinata checks                                                                                                                                                                                                                                                                      |
-| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Tools             | Each definition declares allowed tools. Every call passes through a guard, including calls from codemode scripts.                                                                                                                                                                       |
-| Workspace         | Live readers and review-target agents cannot use the built-in edit, write, or shell tools. Permissions come from the definition's workspace capabilities.                                                                                                                               |
-| Ownership         | Worktree agents edit owned paths in their own worktree, never through symbolic links. The engine also checks the captured change.                                                                                                                                                       |
-| Authorization     | A run with worktree agents requires an `approval` record of the user's authorization for those local writes.                                                                                                                                                                            |
-| Checks and review | The engine runs builder checks. Review verdicts are tied to the exact change and its original base.                                                                                                                                                                                     |
-| Integration       | Destination checks record a separate content tree. Reviewing the combined change requires a separate independent review. Pinata refuses secret-bearing files (`.env*`, `auth.json`, `.npmrc`, `.netrc`), symlinks, submodules, and overlapping file changes made since the run started. |
-| Delegation        | Pinata reserves delegation tools for the coordinator and excludes them from workers (`PINATA_AGENT=1`).                                                                                                                                                                                 |
-| Environment       | Checks and setup receive an allowlist of variables plus names configured in `passEnv`.                                                                                                                                                                                                  |
-| Viewers           | A client must present the run's token from `link.json`, stored with mode 0600 in a private directory.                                                                                                                                                                                   |
+Definitions declare `access: "read" | "write"` independently of
+`workspace: "shared" | "worktree"`, and explicitly list tools. Every tool call, including
+nested codemode calls, passes through the allowlist guard. Read-only workers cannot use
+built-in write, edit or shell tools. Built-in file edits stay inside the authorized root
+and cannot traverse links or Git internals. Workers do not receive coordinator tools.
+Custom tool providers are trusted code and own their side effects.
 
-## What runs with your permissions
+Shell commands retain the user's operating-system permissions and network access.
+Worktrees isolate patches, not processes. Follow-ups and worker output cannot expand
+capabilities or relocate a worker. The coordinator communicates file responsibilities
+in assignments; Pinata does not enforce per-task ownership or reject overlapping work.
 
-A builder's `bash` and every check run with your permissions and network access.
-Read the task, ownership, and checks before authorizing the work.
+## Shared edits and cancellation
 
-Pinata treats model output as data. It removes terminal control sequences from
-that output and labels results passed between agents as evidence.
+Shared workers preserve unrelated user and worker edits. Failure, cancellation and
+shutdown never reset the shared checkout. A shared diff is current workspace state;
+it is not a worker authorship attestation. Cancellation stops owned activity and flushes
+state. Unknown escaped/background processes require ordinary reconciliation.
 
-Custom tool providers are trusted code running with your permissions. Each provider
-is responsible for its tools' side effects, including in read-only workspaces.
-Configure providers deliberately. Saved entry-file hashes detect changes before a
-new launch; imported dependencies and remote services remain outside that check.
+## Isolated patch application
 
-## Independent review
+Saved isolated patches remain inspectable even after failed execution or negative review.
+Application requires explicit authorization and a quiet destination, validates immutable
+Git objects and safe paths, rejects known secret-bearing filenames, symlinks and submodules,
+preserves unrelated edits, and does not stage or commit. HEAD, branch, index and affected
+file conflicts remain separate safeguards. Recovery validates legacy patches with the
+same current rules, without promoting old review evidence.
 
-Runs default to integrate checked changes without an independent reviewer. Pinata allows for a strict review-before-apply mode as it relates to your current branch. To require an independent review for every writer, set `reviewPolicy: "required"`.
+Pinata writers register before writable preparation and retain their lease until owned
+activity stops. Application and registration use the same cross-process gate keyed by the
+canonical checkout. Multiple shared writers coexist. Unknown/stale owners require
+reconciliation; elapsed time never grants access or terminates legitimate work. External
+editors, Git commands and escaped processes do not participate and must be quiescent;
+conflict checks cannot make their check-to-write race atomic.
 
-Any reviewer you assign must approve the exact change before it can be integrated into the target branch.
+## Results and recovery
 
-The other protections still apply: Pinata requires authorization, checks ownership
-and evidence, detects destination conflicts, and records writes for rollback.
+Completion means the assignment ended. Tests, acceptance and review belong to the
+coordinator. A review describes the code actually inspected; later edits or combined
+changes do not inherit it. Durable inbox acknowledgment is distinct from queued/handled
+transport disposition and from consumption in a saved conversation. Interrupted or
+ambiguous tool effects are visible and are never blindly replayed.
+
+Run directories are private. Viewers authenticate with the token in `link.json`.
+Terminal output is sanitized. Setup commands receive an allowlisted environment plus
+configured `passEnv` names; custom extensions and shell tools are trusted capabilities.

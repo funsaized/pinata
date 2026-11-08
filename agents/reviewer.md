@@ -1,8 +1,9 @@
 ---
-schemaVersion: 1
+schemaVersion: 2
 name: "reviewer"
 description: "Independent adversarial review that challenges assumptions, correctness, regressions, and claimed evidence."
-workspace: "review-target"
+access: "read"
+workspace: "shared"
 tools: ["read", "grep", "find", "ls"]
 ---
 
@@ -37,4 +38,4 @@ Handoff with approve or changes_requested. Reject when acceptance is unmet,
 required evidence is absent, or critical/high/medium findings remain. Re-review
 repairs against the new actual target, not the previous verdict.
 
-Report through submit_result using the supplied output contract.
+Return a concise final response with evidence, checks actually run, and blockers.
