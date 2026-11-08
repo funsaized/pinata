@@ -1,19 +1,24 @@
-# Pinata next rewrite plan
+# Pinata v3.0.0 replacement plan
 
-Status: planning only, November 8, 2026. This document does not authorize implementation
-or model spend. [PLAN.md](../../PLAN.md) records the already implemented refactor and
-remains unchanged. The package already reports `3.0.0`; “v3 rewrite” in earlier
-discussion does not identify a new schema or release version.
+Status: implementation authorized by the owner on November 8, 2026. The owner chose
+a **full replacement of core, stores, backends, workspace/application, UI and harness**
+and authorized iterative readiness probes and plan refinement. The development and
+release target is **v3.0.0**. [PLAN.md](../../PLAN.md) records the earlier implemented
+refactor and remains unchanged. Package versions and data-schema versions are separate.
+No model-backed evaluation or live token spend is authorized by this plan.
 
-**Recommendation: staged replacement of the command, lifecycle and persistence
-implementation, followed by the interaction layer. Preserve the execution contracts
-and reuse mechanisms that pass their contract tests.** Do not start with a greenfield
-replacement of all of `engine/`. Fix application recovery and owned-process cleanup
-first. Move acceptance and recovery authority out of the Pi host into one common
-runtime. Replace duplicated validation and state mutation, implement the missing
-product capabilities through that runtime, and retire the old execution path at a
-defined cutover. A smaller file count, more workers or a new scheduler is not a coding
-performance result.
+**Build new implementations of all six layers, preserve the useful contracts and
+historical evidence, and cut over once the replacement passes its acceptance gates.**
+Implement in dependency-ordered slices, not as simultaneous unverified changes. The
+old system is a frozen reference and migration input, not a permanent runtime option.
+The full boundary is the owner's product/architecture decision; measured defects
+justify specific fixes but do not prove a full rewrite will improve coding speed.
+
+M0 has produced maintained baseline reproductions, candidate-mechanism probes, real
+Linux/macOS observations and the decisions below. See the [readiness record](rewrite-readiness.md)
+for commands, results, limitations and retained failed attempts. No production engine
+or existing harness behavior was changed during readiness. The next work is M1's
+new command ledger and atomic acceptance service.
 
 ## Basis, provenance and limits
 
@@ -26,7 +31,35 @@ plan. Also read: [AGENTS.md](../../AGENTS.md), [STYLE.md](../../STYLE.md),
 [P0/P1 validation](p0-p1-validation.md), and [refactor validation](refactor-validation.md).
 Reports describe evidence; they are not substitutes for the source or new tests.
 
-### Inspected checkout
+### Frozen baseline and readiness update
+
+The owner selected the current branch state as the baseline. It is committed on
+`efficiency` as `d1c386f642415ab999ba1c3a8ef4c8f3b00b2689` (parent
+`34fc66e9d163e15aca49796414daed8dd368757e`). This includes all previously dirty and
+untracked implementation, tests, requirements and review/planning documents. The
+capture at `bench/results/readiness-2026-11-08/baseline/` contains a source archive,
+a Git bundle, all 410 tracked-file hashes and an in-place hash inventory of 4,690
+retained historical evidence files. Credentials, user configuration and installed
+dependency bytes are excluded; the lockfile and runtime versions are recorded.
+
+Baseline source archive SHA-256:
+`08c3f328a4fb29b83066af6f47c02201aa5e1c948eb3258a6cb137a58c923224`.
+Bundle SHA-256:
+`564086827985bf2f4a61f1ebfa36791fd3efce8b22120dcb1b01d405c3a35876`.
+
+Readiness adds only probes/tooling, an exact Zod development dependency and planning
+updates. Zod is pinned to `4.6.7`; move it to runtime dependencies when production
+contracts import it. Do not ship a runtime that resolves Zod only from devDependencies.
+The dependency lockfile is retained. The source/probe closure and actual results are
+recorded separately from the frozen baseline; old evidence is never reanalyzed in place.
+
+Owner decisions supersede earlier defaults: full replacement; v3.0.0; Linux/macOS
+verification now, Windows support designed with verification deferred; definitions
+aligned with the linked OpenAI agent configuration; opt-in worker/project memory;
+session-scoped scheduling with no catch-up. Other product defaults are resolved in
+section 6. There are no pending owner decisions that prevent M1 from starting.
+
+### Initial planning inspection, before the baseline commit
 
 - Branch: `efficiency`; HEAD: `34fc66e9d163e15aca49796414daed8dd368757e`.
 - Tracked working-tree difference: eight files, 158 insertions, 24 deletions. Modified:
@@ -37,8 +70,8 @@ Reports describe evidence; they are not substitutes for the source or new tests.
 - Untracked implementation/test inputs: `arena/adapters/observe.ts`, `arena/matrix.ts`,
   `arena/native-evidence.ts`, `test/engine/arena-evidence.test.ts`.
 - Other untracked inputs: `HIGH_LEVEL_REQS.md` and the review, handoff, prompt and
-  P0/P1 validation documents linked above. This plan is the only repository file
-  created by this planning task. No dirty production `engine/` files were present.
+  P0/P1 validation documents linked above. This plan was the only repository file
+  created during the initial planning pass. No dirty production `engine/` files were present.
 - The tracked diff shape and implementation file inventory match the review's
   description. Independently rehashed
   `arena/results/p0-p1-evidence-2026-11-08/harness-source.tar.gz`:
@@ -84,10 +117,11 @@ test/engine/store.test.ts test/engine/validate.test.ts`: 18 tests passed.
   **A1**, a planning observation additional to the review's eight reproduced defects.
   A regression must assert both dependency summaries, not merely both graph edges.
 
-The review's full suite and platform limits remain historical evidence. This task
-did not rerun the full suite, reproduce every review probe, read private user
-configuration, apply `/tmp/*-next.ts` drafts, change retained evidence, or make model
-calls. Temporary probes are aids; regression specifications below do not depend on
+The review's full suite and platform limits remain historical evidence. The initial
+planning pass did not rerun the full suite or every probe. Readiness subsequently
+ran the baseline suite and additional Linux/macOS probes, as recorded separately.
+Neither pass read private user configuration, applied `/tmp/*-next.ts` drafts,
+changed retained evidence, or made model calls. Temporary probes are aids; regression specifications below do not depend on
 their continued existence.
 
 ### Performance facts the design must respect
@@ -124,7 +158,7 @@ the reproduced defects.
 
 Labels used below: **E** is an explicit high-level requirement; **I** is an
 interpretation needed to make it implementable; **D** is a proposed architectural
-decision; **Q** is an unresolved owner choice or investigation. R numbers match
+decision; remaining investigations are explicitly scoped in section 6. R numbers match
 HIGH_LEVEL_REQS.md; C numbers identify preserved contracts in section 5; M numbers
 identify milestones. All proposed behavior is future behavior unless marked current.
 
@@ -135,23 +169,23 @@ identify milestones. All proposed behavior is future behavior unless marked curr
 | **R1a E — delightful, real-time coordinator TUI, emoji**                              | `pi/ui.ts`, `ui/widget.ts`, `detail.ts` and `workspace.ts` already stream activity and preserve drafts. “Delight” has no objective definition.                                                           | **I:** Main conversation keeps a compact fleet widget; entering fleet/detail never starts a model turn. Parent and per-worker drafts, selection and scroll survive navigation, completion and resize. Emoji/grapheme width, ANSI sanitization, narrow terminals, reduced motion and ASCII fallback are tested. Proposed local target: p95 event-to-render-request and key-to-render-request at most 100 ms with eight scripted streaming workers; separately capture terminal output, since render request is not screen paint. Owner walkthrough remains the subjective acceptance gate. M7. |
 | **R1b E — palettes**                                                                  | Pi theme colors plus hardcoded mascot/ribbon colors; package declares no themes.                                                                                                                         | Ship selectable Pinata, Catppuccin, Gruvbox, Tokyo Night, Rose Pine, Dracula, Nord, One Dark, One Light, Solarized, inherit-Pi and terminal-default palettes. Document the chosen family variants; include Solarized dark/light. All semantic colors, agent accents and mascot colors use the same palette. Switching preserves work and takes effect without restarting workers. Test each palette, `NO_COLOR`, light/dark contrast and unsupported terminal fallbacks. M7.                                                                                                                  |
 | **R2 E — foreground/background concurrency and queuing**                              | Parallel ready assignments and FIFO follow-ups exist; `core/scheduler.ts` launches all ready nodes. Foreground wait and background launch exist. No configurable capacity.                               | **D:** Optional user/coordinator-selected `execution.maxConcurrent` limits active assignments per run, including descendants; omitted means unbounded. Ready work queues by acceptance order, independently of dependency waits. No deadline, spend limit, adaptive provider throttle or rejection of excess accepted work. Lowering capacity never cancels active work. Tests cover capacity 1/2/unbounded, dependency release, starvation, cancellation and recovery. Backgrounding releases the caller's wait, not a slot or a worker. M6.                                                 |
-| **R3 E — Markdown custom agents**                                                     | Schema-2 definitions already supply prompt, model/thinking, tools, access and workspace; `pi/definitions.ts` discovers/freeze-hashes them. Skills and color are missing; workers disable ambient skills. | Extend the definition schema with explicit skill references and a validated semantic/hex color; preserve model/thinking/tool/access fields and Markdown body. Resolve precedence and show source/digest. Explicitly load only selected skills across all backends; a skill cannot grant tools. Equivalent definitions yield equivalent launches. Invalid files get path/field errors without silently using an older definition. M5.                                                                                                                                                          |
+| **R3 E — Markdown custom agents**                                                     | Schema-2 definitions already supply prompt, model/thinking, tools, access and workspace; `pi/definitions.ts` discovers/freeze-hashes them. Skills and color are missing; workers disable ambient skills. | Replace the definition codec with the aligned schema below, including explicit skills and validated semantic/hex color; migrate model/thinking/tool/access intent and Markdown instructions. Resolve precedence and show source/digest. Explicitly load only selected skills across all backends; a skill cannot grant tools. Equivalent definitions yield equivalent launches. Invalid files get path/field errors without silently using an older definition. M5.                                                                                                                           |
 | **R4 E — live monitoring, no extra overlays, modifier-arrow navigation**              | Status/tool/token observations exist; context-window utilization is absent. Fleet currently uses `custom({overlay:true})`.                                                                               | Replace the overlay with one screen router: main → fleet → conversation. Keep monitoring in the coordinator thread. Modifier arrows cycle screen/worker; commands provide the same access if terminal key encodings conflict. Show last reported context tokens/window/% with source and timestamp, or unknown; cumulative spend is not context utilization. Test updates during streaming, reconnect, input focus and returning to main. M0 UI probe, M7.                                                                                                                                    |
 | **R5 E — browse and steer live conversations**                                        | Existing detail sources, transcript loading, IPC controls and selection-race tests.                                                                                                                      | Reuse their contracts behind one conversation source interface. Browse every assignment, indicate live versus saved content, and address steering to a visible worker/assignment. A stale asynchronous read cannot replace a newer selection. An unavailable session offers inspect/reconcile/replace actions without inventing a conversation. Test in-process, process, Herdr when available, and log-only viewers. M4/M7.                                                                                                                                                                  |
 | **R6 E — steer, stop, resume, background supported foreground work**                  | Steer/follow-up/cancel, saved context and detached operation exist; “resume” has several meanings and backgrounding an active foreground wait is not a common command.                                   | Expose precise actions: steer active work; cancel an assignment/worker/run; reattach a live owned process; continue stopped work as a new assignment; release a foreground wait into background. No promise to pause/resume an arbitrary tool instruction. Host survival is a separate launch-time capability. Abort of `wait` leaves workers running. Tests cover every state, repeated controls and host shutdown. M2/M4/M7.                                                                                                                                                                |
 | **R7 E — direct `@handle` addressing**                                                | Worker IDs exist but there is no leading-mention router.                                                                                                                                                 | In user input only, a leading `@handle message` starts a named definition if no worker is bound, steers its active/queued assignment, or queues a follow-up for a settled worker. Return exact run/worker/assignment and durable message ID. Existing handle wins over definition lookup; ambiguous cross-run matches require an explicit selector. Bare mentions navigate; embedded email/path/quoted text stays ordinary text. Never parse model output as a command. M7, grammar tests and no-model Pi input tests.                                                                        |
 | **R8 E — optional parent context and agent memory**                                   | Saved worker sessions persist across assignments; `TaskSpec.context` is quoted evidence, not parent-history inheritance. No scoped persistent memory service. Context discovery has F6.                  | **I:** Default inheritance and extra memory are off. Opt-in inheritance snapshots an authorized parent branch through a saved entry at acceptance; later parent turns do not change it. Worker conversation retention remains automatic. Optional worker notes and project-agent memory have explicit namespaces, revisions and read/write grants; no cross-project/user-global memory by default. Missing context produces an explicit unsupported/reconciliation result. Test provenance, compaction, cancellation, backend parity, scope isolation and concurrent memory edits. M5.        |
-| **R9 E — worktrees, automatic completion commits**                                    | Frozen worktrees, private-index tree capture, explicit inputs and application exist. Base/composition Git commits exist, but not automatic per-assignment completion commits.                            | **I/D:** For new isolated workers, create a real Git checkpoint commit and retained private ref for each normally completed assignment with safe changes. Do not move the destination branch/index or remove the worker's worktree. This is a recovery checkpoint, not acceptance. Failed/cancelled partial changes remain inspectable even without a commit. No-change completion returns the prior tree/ref explicitly. Test follow-ups, manual worktree commits, commit failure and recovery. Owner choice about visible branches is Q3. M1/M5.                                            |
+| **R9 E — worktrees, automatic completion commits**                                    | Frozen worktrees, private-index tree capture, explicit inputs and application exist. Base/composition Git commits exist, but not automatic per-assignment completion commits.                            | **I/D:** For new isolated workers, create a real Git checkpoint commit and retained private ref for each normally completed assignment with safe changes. Do not move the destination branch/index or remove the worker's worktree. This is a recovery checkpoint, not acceptance. Failed/cancelled partial changes remain inspectable even without a commit. No-change completion returns the prior tree/ref explicitly. Test follow-ups, manual worktree commits, commit failure and recovery. Private checkpoint refs are the resolved default. M3/M5.                                     |
 | **R10 E — authorized nested delegation with depth limits**                            | Recursion is currently prohibited by `PINATA_AGENT` and tool validation.                                                                                                                                 | Explicit host-approved delegation grants name allowed definitions/capabilities and a maximum descendant depth; default depth 0. Children use the same runtime, root run and lifecycle records. Children cannot expand tools, workspace authority, depth, or control outside their subtree. User cancellation cascades by documented scope; ordinary parent completion does not discard children. Test unauthorized calls, depth boundaries, nesting under capacity 1, spoofed parent IDs and orphan cleanup. No new built-in manager/reviewer role. M6.                                       |
 | **R11 E — session cron, interval, one-shot**                                          | No production temporal scheduler; dependency scheduler and arena matrix are unrelated.                                                                                                                   | Add a session-owned trigger service that submits ordinary assignments through the same acceptance API. Persist schedule/occurrence IDs, timezone, next due time, overlap policy and paused/closed state. End of session stops future triggers; no background daemon or silent replay of missed runs. Fake-clock tests cover DST, clock jumps, overlap, shutdown, crash and duplicate firing. M6; precise semantics below.                                                                                                                                                                     |
-| **R12 E — parent completion notifications and full results**                          | Per-assignment notices and disk results exist; delivery scans whole logs and has an intentional send/record duplicate window.                                                                            | Durable outbox entries reference immutable assignment results, failures and partial artifacts. Stable notification IDs survive reattachment; acknowledge delivery separately from consumption. Full result/transcript access remains paginated or streamed; a compact excerpt never replaces the original. Every completion, including follow-ups, can produce a distinct notice. Test retry, send-before-record crash, absent parent and later attachment. M3/M4.                                                                                                                            |
-| **R13a E — lifecycle, usage, CLI/headless integration**                               | Pi-independent core, common reducer, authenticated IPC, CLI and backends exist, but headless reuses a Pi-owned `PinataHost`; usage coverage is unreliable in the analyzer.                               | One neutral Runtime service owns mutations; Pi and headless adapters submit identical commands and receive identical receipts/events. Viewers are consumers, with control requests routed to that service. Export versioned hooks and usage coverage, not a second scheduler or workflow-policy hook. CLI exit codes describe execution/application, never inferred correctness. Cross-surface replay/control conformance is required. M3/M4/M8.                                                                                                                                              |
-| **R13b E — agent compatibility, skills, typed Zod introspection**                     | Validation is manually duplicated across TypeScript, TypeBox tools, config, events and IPC; Zod is not a direct dependency.                                                                              | **D:** Canonical Zod schemas at all external/persisted boundaries; inferred TypeScript domain types, generated JSON Schema/reference data, and one tested Pi TypeBox bridge. Domain refinements still validate runtime input. `pinata schema <name> --json` and definition/tool discovery expose versions, required fields, examples, errors and outputs without a model call. No parallel hand-maintained schema catalog. M0 compatibility probe, M3/M5/M8.                                                                                                                                  |
-| **R13c E — “CODEX style” definitions**                                                | Current Markdown definitions already cover some intended concepts; the phrase identifies no exact import format.                                                                                         | **I:** Named reusable agent files with explicit description, prompt, model/thinking, tools, skills and color; clear overrides and discoverability. Do not claim byte-compatible import of another product's files. Q2 asks for a sample only if import compatibility is intended. The native Markdown schema can proceed under this interpretation. M5.                                                                                                                                                                                                                                       |
+| **R12 E — parent completion notifications and full results**                          | Per-assignment notices and disk results exist; delivery scans whole logs and has an intentional send/record duplicate window.                                                                            | Durable outbox entries reference immutable assignment results, failures and partial artifacts. Stable notification IDs survive reattachment; acknowledge delivery separately from consumption. Full result/transcript access remains paginated or streamed; a compact excerpt never replaces the original. Every completion, including follow-ups, can produce a distinct notice. Test retry, send-before-record crash, absent parent and later attachment. M2/M4.                                                                                                                            |
+| **R13a E — lifecycle, usage, CLI/headless integration**                               | Pi-independent core, common reducer, authenticated IPC, CLI and backends exist, but headless reuses a Pi-owned `PinataHost`; usage coverage is unreliable in the analyzer.                               | One neutral Runtime service owns mutations; Pi and headless adapters submit identical commands and receive identical receipts/events. Viewers are consumers, with control requests routed to that service. Export versioned hooks and usage coverage, not a second scheduler or workflow-policy hook. CLI exit codes describe execution/application, never inferred correctness. Cross-surface replay/control conformance is required. M1/M2/M4/M8.                                                                                                                                           |
+| **R13b E — agent compatibility, skills, typed Zod introspection**                     | Validation is manually duplicated across TypeScript, TypeBox tools, config, events and IPC; the frozen baseline has no direct Zod dependency.                                                            | **D:** Canonical Zod schemas at all external/persisted boundaries; inferred TypeScript domain types, generated JSON Schema/reference data, and one tested Pi TypeBox bridge. Domain refinements still validate runtime input. `pinata schema <name> --json` and definition/tool discovery expose versions, required fields, examples, errors and outputs without a model call. No parallel hand-maintained schema catalog. M0 compatibility probe, M1/M5/M8.                                                                                                                                  |
+| **R13c E — “CODEX style” definitions**                                                | The owner supplied the OpenAI agent-definitions guide during readiness; it describes SDK configuration, not a Codex Markdown/TOML file grammar.                                                          | **D:** Align core field names and meanings with the owner-linked SDK guide; serialize as Markdown/frontmatter for R3, with a namespaced Pinata extension. Use the explicit mapping below. No executable SDK callbacks or byte-compatible Codex file-import claim. M1/M5.                                                                                                                                                                                                                                                                                                                      |
 | **R14 E — applicable Pinata tenets, modes, optional Herdr, theme**                    | Lean/observe, in-process/process/Herdr, optional detached survival and Pinata identity exist. “Tenants” is interpreted as tenets.                                                                        | Keep backend, workspace, observation and lifetime as independent axes. Herdr remains optional and may report unavailable without substituting another mode. Preserve owned-pane checks, shell quoting and user panes. Ship a Pinata palette without making animation a runtime dependency. Mode compatibility and cleanup tests are release gates; live mode rankings need separate evidence. M2/M4/M7.                                                                                                                                                                                       |
 | **R15 E — Diataxis, complex useful examples, small set**                              | Diataxis directories exist; many examples and contradictory old arena guidance remain.                                                                                                                   | Keep one simple first-run tutorial, one substantial Relay tutorial, and three composable recipes: dynamic shared work, isolated follow-up/application/recovery, authorized nested/scheduled work. Keep other capabilities in focused how-tos/reference rather than proliferating full workflows. Every published job/definition validates; scripted example execution and relative-link checks pass. Do not prescribe review chains as engine policy. M8.                                                                                                                                     |
 | **R16 E — full API reference**                                                        | Tools/config/events/socket docs exist, but no complete schema-derived surface inventory.                                                                                                                 | Document every supported command/tool, input/output/error schema, definition/config field, event, hook, backend capability, CLI exit, storage/version/recovery contract and deprecation. Link generated schemas to short behavioral explanations and examples. An exported API missing reference coverage fails documentation checks. Internal helpers need not become public API. M8.                                                                                                                                                                                                        |
-| **R17 E — arena for the new implementation**                                          | Dirty instrumentation/matrix work exists; F5 and incomplete treatment/provenance evidence remain.                                                                                                        | Version the new adapter and analyzer, preserve old corpus/score channels and all old batches, and use the new command/event API. Offline controls verify harness operation; lifecycle and usage coverage tests must pass before new paid trials. Distinguish the already-3.0.0 package from the future release; Q1 settles the release label. M3/M4/M8.                                                                                                                                                                                                                                       |
+| **R17 E — arena for the new implementation**                                          | Dirty instrumentation/matrix work exists; F5 and incomplete treatment/provenance evidence remain.                                                                                                        | Version the new adapter and analyzer, preserve old corpus/score channels and all old batches, and use the new command/event API. Offline controls verify harness operation; lifecycle and usage coverage tests must pass before new paid trials. Use the owner-selected v3.0.0 target and independently version the new experiment/report schemas. M8.                                                                                                                                                                                                                                        |
 | **R18 E — reference-informed implementation, Pinata identity and measured selection** | Reference behaviors were inspected for definitions, addressing, memory, scheduling and worktrees during planning. They do not establish performance or compatibility.                                    | Implement useful behaviors independently, with Pinata's contracts and measured tradeoffs. Do not reproduce reference-specific workflow policy, silent isolation fallback, automatic worktree deletion or unchecked capability inheritance. Keep the requested reference identity out of product docs and commits; no source was copied for this plan. If future code reuse is proposed, resolve required notices before copying; independent implementation is the default. No reference performance claim substitutes for local measurements.                                                |
 
 ### Conflicts and assumptions resolved explicitly
@@ -165,12 +199,12 @@ identify milestones. All proposed behavior is future behavior unless marked curr
 2. **R9 versus unchanged destination history:** checkpoint commits live under
    Pinata refs for isolated workers. Shared work and application never implicitly
    stage, commit, reset or clean the user's checkout. Worktrees remain patch
-   isolation, not OS permissions. Q3 can change commit presentation, not this safety
-   boundary.
+   isolation, not OS permissions. Commit presentation cannot change this safety boundary.
 3. **R4 versus current UI:** seamless navigation requires replacing the overlay
-   routing, not discarding the tested transcript, draft and rendering components.
-   Default shortcut proposal: retain Shift+Up/Down for worker cycling and add
-   Shift+Left/Right for main/fleet/detail navigation, subject to M0 terminal tests.
+   routing, while reimplementing and retesting the transcript, draft and rendering contracts.
+   Default shortcuts: Shift+Left/Right select workers; Shift+Up opens fleet and
+   Shift+Down returns to the parent screen. M0 verified modifier-key dispatch
+   and non-overlay routing in real terminals; complete journeys remain M7 tests.
    Keys must be configurable; unavailable encodings use equivalent commands.
 4. **R13 versus Pi's actual API:** Zod is the canonical Pinata boundary schema;
    Pi's TypeBox requirement is an adapter concern. Do not assume Pi accepts Zod
@@ -191,41 +225,42 @@ identify milestones. All proposed behavior is future behavior unless marked curr
 
 ### Alternatives considered
 
-| Approach                                                                          | What it buys                                                                                                                                                                                                                    | Main cost/risk                                                                                                                                                                                                                                                                                    | Decision                                                                                                                                                                                                  |
-| --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Targeted refactoring only                                                         | Fastest repair of F1–F8; preserves mature tests, transports and Git behavior; low migration cost.                                                                                                                               | Adding schedules, nested controls and more surfaces on top of separate host metadata, core assignment writes and reducer state multiplies acceptance/recovery paths. Schema and UI inconsistency remain unless those boundaries change.                                                           | Use for immediate safety repairs and proven local hot spots. Insufficient as the whole product plan.                                                                                                      |
-| Staged replacement                                                                | A common command/state authority, explicit ports and one new interaction model; existing backends/workspace mechanisms remain usable behind contract tests. Can compare old and new replays without running tool effects twice. | Temporary adapter and migration work; requires a firm removal gate and careful durable-format design. No automatic live performance benefit.                                                                                                                                                      | **Recommended.** Replace the lifecycle/control implementation as a coherent unit; reuse small algorithms and boundary code where tests justify it.                                                        |
-| Full replacement of core, stores, backends, workspace/application, UI and harness | Maximum freedom to change contracts/layout; no inherited internal design constraints.                                                                                                                                           | Reimplements process ownership, Pi sessions, Windows launching, path validation, journals, discovery and historical readers simultaneously. Destroys the value of existing conformance unless rebuilt. Requires the largest migration and risks changing the treatment before causal measurement. | Do not commit now. Reconsider a specific mechanism only if M0/M2 falsify its viability, or matched profiling shows material residual overhead. No evidence currently justifies replacing every mechanism. |
+| Approach                                      | Benefit                                                                                           | Cost and evidence limit                                                                                                                                              | Decision                                                                                                                                                                                               |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Targeted refactoring                          | Smallest route to the reproduced defects; existing transports and Git code stay in place.         | Does not supply the chosen product or eliminate duplicated authority by itself. It remains a technically credible alternative, not disproved by arena timing.        | Not the owner-selected scope. Keep the frozen branch usable for comparison; do not build new features on it.                                                                                           |
+| Partial staged replacement                    | Rebuild command/state authority and interaction while retaining backend/workspace implementation. | Smaller migration and reimplementation burden; leaves existing internal constraints. It was the initial recommendation.                                              | Superseded by the owner's full-replacement instruction.                                                                                                                                                |
+| Full replacement, delivered in bounded slices | New core, store, backends, workspace/application, UI and harness under one set of contracts.      | Widest regression surface and more work to re-establish portability, recovery and context fidelity. No evidence that rewriting every mechanism causes faster coding. | **Chosen.** New implementations in all six layers; preserved contracts, conformance fixtures, task/oracle data and historical readers. One final package cutover, no permanent old/new runtime toggle. |
 
-The recommendation is a substantial implementation rewrite with a bounded scope,
-not merely moving the existing host into smaller files. Acceptance, state authority,
-effect dispatch and recovery acquire new implementations. The worker/assignment
-model, backend ports, graph semantics, Git protections, scripted fixtures and
-historical evidence survive as contracts. A mechanism can be retained, repaired or
-reimplemented without changing its public promise.
+A full replacement does not require changing every useful public behavior. Worker and
+assignment identity, immutable dependency references, capability boundaries, failed-work
+retention, writer exclusion, conflict checks and recovery uncertainty remain requirements.
+Algorithms and platform APIs may be familiar, but old orchestration, stores, backend
+adapters, application code, UI or harness are not wrapped and relabeled as the new
+implementation. Baseline code remains accessible from its commit/bundle. Historical
+codecs are narrowly scoped read/convert components and cannot dispatch old work.
 
 ### Components and dependency direction
 
 Proposed module names below are implementation targets, not files already present.
 
-| Component                                     | Responsibility / public boundary                                                                                                                                                                                                 | Current material to reuse or replace                                                                                                                                                                                |
-| --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `engine/contracts/`                           | Versioned Zod command, receipt, event, config, definition, result and storage schemas; inferred types; schema export. No Pi types.                                                                                               | Replace duplicated schemas in `core/types.ts`, `validate.ts`, `events.ts`, `pi/tools.ts`, `config.ts`, IPC and headless parsing. Preserve validation semantics and explicit legacy codecs.                          |
-| `engine/core/`                                | Pure command validation against accepted state, assignment graph, FIFO/readiness/capacity rules, state transitions and projections. No Pi or UI imports, provider calls, filesystem discovery, workflow strategy or cron timers. | Keep graph algorithm where sufficient; replace worker-keyed payload lookup and mutable lifecycle state. Keep a pure shared reducer contract; optimize incrementally only with profiles.                             |
-| `engine/runtime/`                             | Single run owner; command serialization, durable commits, effect dispatch/reconciliation, completion outbox, schedule ownership and shutdown. Public `Runtime` service below.                                                    | Replace mutation/recovery portions of `pi/host.ts`, `core/engine.ts`, run-record handling and delivery scans. Move useful host-independent resolution here rather than copying it into headless.                    |
-| `engine/storage/`                             | Canonical path discovery, append/sync/replay, immutable blobs/results, checkpoints and ownership acquisition. No provider or UI dependencies.                                                                                    | Reuse private-directory/atomic-file/JSONL primitives after fault tests; replace independent authoritative writes to run/tasks/inbox/results.                                                                        |
-| `engine/backends/` plus `engine/agent/`       | Pi session creation, conversation import/export, actual model/tool events, steer, stop, context usage and supervised process transports. Explicit capability descriptors.                                                        | Retain in-process, process, detached and Herdr adapters; repair supervision, context discovery and SDK private hooks. Backend outcomes cannot grant authority or accept work.                                       |
-| `engine/workspace/` and `engine/application/` | Shared/worktree preparation, snapshot inputs/checkpoints, path/object checks, writer gate, apply/rollback/recovery.                                                                                                              | Retain Git plumbing, private indexes, setup caching and path checks. Move live capture/application out of `verify/`; retain legacy verification readers in `migrate/`. Repair journal authority first.              |
-| `engine/definitions/` and `engine/context/`   | Definition/skill discovery, precedence, content digests, parent snapshot references and scoped memory.                                                                                                                           | Extract Pi frontmatter/resource-loader bridge from `pi/definitions.ts`; use explicit backend conversation adapters. No general plugin or prompt-policy framework.                                                   |
-| `engine/pi/` and `engine/headless/`           | Translate Pi tools/commands/user input or CLI jobs to Runtime commands; render errors/receipts and parent notifications.                                                                                                         | Keep tool names and CLI entry points where semantics survive. Headless can still use Pi as its model host; orchestration no longer lives in `PinataHost`. No direct ledger/workspace mutations from either surface. |
-| `engine/ui/`, `sources/`, `ipc/`, `viewer/`   | Shared view and conversation-source contracts, screen routing, authenticated bounded transport, log fallback and control clients.                                                                                                | Retain draft/selection/cancellation tests, sanitization and backpressure. Replace overlay navigation, false quality labels and unbounded rescans. Viewers do not own a run merely by attaching.                     |
-| `arena/`, `bench/`                            | External experiment supervision, independent oracle scoring, measurement/provenance.                                                                                                                                             | Repair existing dirty work; preserve historical readers, corpus and batches. Harness limits never enter production assignment contracts.                                                                            |
+| Component                                     | Responsibility / public boundary                                                                                                                                                                                                 | Replacement boundary and preserved contracts                                                                                                                                                                          |
+| --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `engine/contracts/`                           | Versioned Zod command, receipt, event, config, definition, result and storage schemas; inferred types; schema export. No Pi types.                                                                                               | Replace duplicated schemas in `core/types.ts`, `validate.ts`, `events.ts`, `pi/tools.ts`, `config.ts`, IPC and headless parsing. Preserve validation semantics and explicit legacy codecs.                            |
+| `engine/core/`                                | Pure command validation against accepted state, assignment graph, FIFO/readiness/capacity rules, state transitions and projections. No Pi or UI imports, provider calls, filesystem discovery, workflow strategy or cron timers. | Implement a new graph/readiness state machine using full assignment keys. Preserve FIFO and failure-ordering contracts. Build current-state projections incrementally; keep history outside per-delta scans.          |
+| `engine/runtime/`                             | Single run owner; command serialization, durable commits, effect dispatch/reconciliation, completion outbox, schedule ownership and shutdown. Public `Runtime` service below.                                                    | Replace mutation/recovery portions of `pi/host.ts`, `core/engine.ts`, run-record handling and delivery scans. Move useful host-independent resolution here rather than copying it into headless.                      |
+| `engine/storage/`                             | Canonical path discovery, append/sync/replay, immutable blobs/results, checkpoints and ownership acquisition. No provider or UI dependencies.                                                                                    | Implement fresh owner acquisition, framed journal, artifact and checkpoint code on Node filesystem APIs. Replace all independent authoritative writes to run/tasks/inbox/results.                                     |
+| `engine/backends/` plus `engine/agent/`       | Pi session creation, conversation import/export, actual model/tool events, steer, stop, context usage and supervised process transports. Explicit capability descriptors.                                                        | Write new adapters for the preserved in-process/process/Herdr and lifetime modes; use tested public SDK ports and a resident POSIX guardian. Outcomes cannot grant authority or accept work.                          |
+| `engine/workspace/` and `engine/application/` | Shared/worktree preparation, snapshot inputs/checkpoints, path/object checks, writer gate, apply/rollback/recovery.                                                                                                              | Reimplement Git/private-index operations, snapshots, writer exclusion, path validation and authoritative application journals. Read legacy evidence only through migrate codecs; import no old live application path. |
+| `engine/definitions/` and `engine/context/`   | Definition/skill discovery, precedence, content digests, parent snapshot references and scoped memory.                                                                                                                           | Implement the SDK-aligned Markdown codec, public resource-loader adapter and filtered context import. Preserve precedence and frozen grants. No general plugin or prompt-policy framework.                            |
+| `engine/pi/` and `engine/headless/`           | Translate Pi tools/commands/user input or CLI jobs to Runtime commands; render errors/receipts and parent notifications.                                                                                                         | Keep tool names and CLI entry points where semantics survive. Headless can still use Pi as its model host; orchestration no longer lives in `PinataHost`. No direct ledger/workspace mutations from either surface.   |
+| `engine/ui/`, `sources/`, `ipc/`, `viewer/`   | Shared view and conversation-source contracts, screen routing, authenticated bounded transport, log fallback and control clients.                                                                                                | Replace all rendering/routing/source/transport implementations; retain draft/selection/cancellation contracts, sanitization and bounded backpressure. Attachment does not acquire ownership.                          |
+| `arena/`, `bench/`                            | External experiment supervision, independent oracle scoring, measurement/provenance.                                                                                                                                             | Replace runner, native adapters, matrix, observer, accounting, reports and benchmark harness. Preserve task/oracle data and old batches/readers. Experimental limits never enter production assignment contracts.     |
 
 Dependency direction is surfaces → Runtime → core/contracts and injected
 storage/backend/workspace/clock ports. Backends and UI may depend on Pi; core,
 contracts and the runtime command protocol may not. `engine/verify/checks.ts` contains
-useful process helpers: move genuinely generic supervision to its owning module,
-not into a renamed verifier. Optional review-subject helpers remain ordinary
+old process helpers: their behavior informs replacement supervision tests; the new
+runtime must not depend on that live verifier implementation. Optional review-subject helpers remain ordinary
 artifact/context facilities usable by custom agents.
 
 ### Common API and schema strategy
@@ -244,7 +279,11 @@ type CommandEnvelope = {
 type Runtime = {
   execute(request: CommandEnvelope, caller: CallerAuthority): Promise<CommandReceipt>;
   query(request: RuntimeQuery, caller: CallerAuthority): Promise<QueryResult>;
-  subscribe(request: Subscription, consume: (event: RuntimeEvent) => void): () => void;
+  subscribe(
+    request: Subscription,
+    caller: CallerAuthority,
+    consume: (event: RuntimeEvent) => void,
+  ): () => void;
   close(request: ShutdownRequest): Promise<ShutdownReceipt>;
 };
 ```
@@ -284,25 +323,88 @@ Generate Pi's parameter schema through one bridge with round-trip and malformed-
 tests. No unsupported schema cast in every tool. Pin the selected dependency version,
 retain the lockfile and test the packaged runtime, not just development resolution.
 
-Freeze these new field names in M3 so adapters do not develop competing dialects:
+Freeze these fields in M1 so adapters share one dialect:
 
-| Boundary       | Proposed fields and defaults                                                                                                                                                                                                                                                                                                            |
-| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Config         | `schemaVersion: 4`; retain current model/fallback/tool-provider/environment/workspace/backend/observation settings. Add `execution.maxConcurrent: positive integer                                                                                                                                                                      | null`, where omitted/null is unbounded. Add `ui.palette`, `ui.motion`and`ui.keys`; these never affect execution.                                |
-| Definition     | `schemaVersion: 3`; retain name/description/access/workspace/tools/model/fallbacks/output and Markdown body. Add `skills: string[]` (empty), `color` (palette accent), `inheritContext: "none"                                                                                                                                          | "parent"`(none),`memory: {scope, access}`(none/read),`delegation: {agents: string[], maxDepth: integer}`(empty/0), and`checkpoint: "completion" | "off"` (completion for newly resolved worktrees).                                                                                                                               |
-| Worker request | Keep `id`, `agent`, task text, `after`, explicit `inputs`, workspace/model/backend overrides and quoted evidence. Add explicit inheritance/memory/delegation preferences subject to caller grants; return the resolved grants and immutable references. Do not overload the existing quoted `context` array with parent-history import. |
-| Controls       | Cancellation has `scope: "assignment"                                                                                                                                                                                                                                                                                                   | "worker"                                                                                                                                        | "run"`and`descendants` (true). Background changes attachment only. Continuation requires worker plus a new message ID; reconciliation has an explicit operation/owner identity. |
-| Schedule       | `action: create                                                                                                                                                                                                                                                                                                                         | update                                                                                                                                          | pause                                                                                                                                                                           | resume | delete | list`; create includes target run/worker or frozen template, session identity supplied by the host, `trigger`union, and`overlap: skip | queue`. Every occurrence returns an ordinary assignment receipt. |
+| Boundary       | Fields and defaults                                                                                                                                                                                                                                                        |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Config         | `schemaVersion: 4`; preserve model/fallback/tool-provider/environment/workspace/backend/observation intent. Add `execution.maxConcurrent` (positive integer or null; omitted/null is unbounded), `ui.palette`, `ui.motion`, `ui.keys`. UI settings never change execution. |
+| Definition     | `schemaVersion: 3`; SDK-aligned core fields and a `pinata` extension, specified below. The Markdown body is the static instructions.                                                                                                                                       |
+| Worker request | `id`, `agent`, task text, `after`, explicit `inputs`, workspace/model/backend overrides and quoted evidence. Inheritance/memory/delegation are requests constrained by caller grants. Return immutable references and resolved grants.                                     |
+| Controls       | Cancellation `scope` is assignment, worker or run; descendants default true. Background changes attachment only. Continue requires a worker and new message ID; reconciliation requires an exact operation/owner identity.                                                 |
+| Schedule       | One discriminated action: create, update, pause, resume, delete or list. Creation supplies an existing target or frozen template, trigger and skip/queue overlap rule. The host supplies session identity. Every occurrence gets an ordinary assignment receipt.           |
 
-Keep existing configuration layers: personal, project, then run, with model/fallback/
-tool-provider maps merged by entry and other objects replaced as documented. Task
-overrides retain their existing precedence. UI preferences are session settings;
-workers freeze execution settings at acceptance. Authority-sensitive fields describe
-requests only: explicit caller grants always constrain them. Definition skills resolve
-to canonical paths and content digests at worker acceptance and are retained with
-the definition snapshot. Subsequent file edits cannot silently change an accepted
-worker's selected skills or permissions; refreshed project instructions remain the
-separate C5 behavior.
+#### SDK-aligned Markdown agent definition
+
+The owner selected [OpenAI's agent-definitions guide](https://developers.openai.com/api/docs/guides/agents/define-agents)
+as the reference for alignment. It documents SDK configuration rather than a
+Codex-specific file grammar. Pinata uses these configuration concepts in the required
+Markdown format:
+
+| SDK concept             | Pinata representation                                                                                                      |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `name`                  | Stable definition name; worker handles are separate instances.                                                             |
+| `instructions`          | Markdown body; reject conflicting frontmatter instructions.                                                                |
+| `model`, model settings | Provider-qualified model string and typed `modelSettings`; map supported reasoning settings to Pi at the backend boundary. |
+| `tools`                 | Names in the host's tool registry, constrained by caller authority.                                                        |
+| `handoffDescription`    | Routing description shown by agent discovery.                                                                              |
+| `handoffs`              | Named delegation targets; usable only with a separately granted depth/capability.                                          |
+| `outputType`            | Registered typed output-schema name in Markdown, a Zod schema in the trusted TypeScript definition API.                    |
+
+Pinata-specific execution options are namespaced under `pinata`: access, workspace,
+skills, color, inheritContext, memory, delegation depth and checkpoint behavior.
+No arbitrary JavaScript, Python, dynamic callback, remote prompt execution or tool
+implementation is evaluated from frontmatter. Unsupported SDK-only options receive
+field-specific errors; alignment is not an assertion that SDK objects or Codex files
+can be imported byte-for-byte.
+
+Here `handoffs` lists permitted delegation targets. Pinata retains child assignments,
+results and coordinator control; the field does not enable a second SDK routing loop.
+
+```yaml
+---
+schemaVersion: 3
+name: builder
+handoffDescription: Implement a scoped repository change.
+model: openai/gpt-6-luna
+modelSettings:
+  reasoning:
+    effort: high
+tools: [read, edit, write, bash]
+handoffs: []
+outputType: pinata.result.v1
+pinata:
+  access: write
+  workspace: shared
+  skills: []
+  color: accent.blue
+  inheritContext: none
+  memory: { scope: none, access: read }
+  delegation: { maxDepth: 0 }
+  checkpoint: completion
+---
+Implement the requested change and report the result with concrete evidence.
+```
+
+The schema accepts only supported model settings and resolves them to the installed
+backend's declared capabilities. Unknown settings fail before launch. A read-only
+definition cannot acquire write authority from a tool name, skill, output schema,
+handoff or inherited history. Old `description`, prompt body, model/thinking, tools,
+access and workspace fields convert explicitly, with a notice for any semantic change.
+
+Keep current config precedence: personal, project, then run; merge model/fallback/
+tool-provider maps by entry and replace other objects as documented. Task overrides
+retain their existing precedence. UI preferences remain session settings; accepted
+workers freeze execution settings. Skills resolve to canonical paths/digests in the
+definition snapshot. Later skill/definition edits do not silently broaden an existing
+worker; refreshed project instructions remain the separate C5 behavior.
+
+M0's Zod 4.6.7 → JSON Schema draft-07 → Pi 1.1.0 validator probe passed nested objects,
+unions, arrays, optional fields and strict unknown-key checks. Custom refinements still
+run in canonical Zod validation, and unrepresentable transforms are rejected at export.
+Pi normalizes some scalar values/optional nulls before invoking the tool; raw CLI JSON
+stays strict. Document that transport distinction. All surfaces submit the same parsed
+canonical command and share its validation, authority and effects; do not claim raw
+malformed-payload equivalence or duplicate Pi's coercer in the core.
 
 New finite headless jobs still use `pinata run`. Add `pinata session <job>` for an
 explicit foreground headless session that owns temporal triggers until shutdown;
@@ -312,24 +414,23 @@ installed daemon. Schema discovery and schedule management work without a model 
 
 ### Retain, simplify, replace, retire
 
-- **Retain:** stable workers/assignments, immutable edges, FIFO, failed-predecessor
-  ordering, durable message IDs, saved sessions, shared default, optional isolation,
-  explicit inputs, private artifacts, capabilities, cleanup, writer exclusion,
-  safe application, common event projection, all failed-run evidence and scripted
-  fixtures. Retain all execution modes pending actual capability testing.
-- **Simplify:** separate runtime outcome from reports; replace worker “latest”
-  inference with explicit references; make detailed history disk-backed; project
-  current totals incrementally; index outbox/session consumption after profiling.
-  Keep ordinary validation errors short enough to correct in one tool call.
-- **Replace:** split host/core acceptance and recovery mutation; manual parallel
-  schema definitions; cursor/journal authority ambiguity; leader-only cleanup
-  inference; overlay routing; freshness diagnostics that promise more than they
-  observe. These changes address mechanisms found in source, not file size.
-- **Retire at cutover:** old live engine/host mutation path, production legacy role
-  aliases, dead repair/verification terminology, removed-budget compatibility
-  branches in new execution, and superseded example workflows. Keep legacy readers
-  and conversion commands. Retire comparison targets only from active adapters;
-  historical records and their names remain intact.
+- **Retain as contracts/data:** stable worker/assignment identity, immutable edges,
+  FIFO, failed-predecessor ordering, durable message IDs, saved sessions, shared
+  default, optional isolation, explicit inputs, private artifacts, capabilities,
+  cleanup, writer exclusion, safe application, common observations, failed-run
+  evidence and task/oracle/conformance fixtures.
+- **Simplify in the new implementation:** one command authority; exact references;
+  disk-backed history; incremental current projections; indexed outbox and consumed
+  IDs; short actionable errors. The profile justifies avoiding historical scans on
+  every delta, not a multi-minute speed claim for four-worker arena runs.
+- **Replace:** all live core, persistence, backend, workspace/application, UI and
+  harness implementations. Rebuild schema, definition/context, host/CLI/IPC and
+  observation adapters around the same Runtime. Source imports from old live code
+  are forbidden after the corresponding slice and absent from the shipped cutover.
+- **Retire at M8:** the old execution package paths and temporary rewrite entry,
+  live legacy roles/policy branches, obsolete verification/repair terminology,
+  superseded examples and active deprecated comparison adapters. Keep read/convert
+  codecs and historical evidence, including historical names and failed trials.
 
 ## 3. Lifecycle and failure contracts
 
@@ -562,15 +663,17 @@ are immutable and content-addressed or assignment-addressed. A committed transit
 references them. Mutable “latest” aliases, status snapshots and exported event logs
 are projections and may be rebuilt; they cannot authorize execution.
 
-The proposed storage implementation is an append-only, fsynced transaction journal
-using the existing filesystem primitives, not a new database service. Each record
+The selected storage mechanism is a newly implemented append-only, fsynced transaction
+journal on Node filesystem APIs. No database service or experimental SQLite runtime
+is required. Each record
 contains schema version, monotonic transaction revision, request/effect ID, previous
 record digest, typed transition payload and artifact digests. A batch acceptance is
 one record. Write artifacts first, sync the transaction, then acknowledge/publish or
 dispatch. Atomic checkpoint files carry the journal revision/digest and only speed
-replay. M0/M3 must prove crash and IO behavior on supported filesystems before this
-format is finalized; if it fails, revise the storage implementation behind the same
-contract, rather than weakening acknowledgment.
+replay. M0 demonstrated the primitive under process death, lost replies,
+concurrent claims, duplicated follow-ups and torn tails. M1 must implement and test
+the complete codec/owner protocol, IO-failure matrix and artifact durability; M0 is
+not a machine-power-loss certification or a finished store.
 
 Keep durable lifecycle/usage/consumption evidence separate from high-volume text/tool
 preview activity. One versioned `RuntimeEvent` union serves all surfaces: durable
@@ -626,14 +729,34 @@ check descendants/group ownership even if the leader exited before cancellation 
 during SIGTERM. The writer lease remains while any owned activity is live or unknown.
 Do not signal a reused PID/process-group ID or close a user-owned Herdr pane.
 
-M0/M2 must choose the actual portable supervision mechanism. First test retaining a
-stable launcher/supervisor identity, enrollment before tool execution, POSIX group
-liveness and Windows tree/identity behavior. If a native job-object helper is needed
-on Windows, make that dependency/distribution decision explicit before adopting it.
-Until a platform can prove cleanup, it must report `unconfirmed` and preserve the
-lease; do not advertise equivalent cleanup based on Linux alone. Escaped arbitrary
-shell processes and external editors remain outside the managed protocol. Worktrees
-do not change that limitation or the user's OS/network permissions.
+**Selected POSIX mechanism:** a resident Node guardian creates and retains the
+owned process group while payload leaders may exit. Enroll activity before exposing
+writable effects; bind control to the live guardian and an unpredictable nonce, not
+only a PID/start-time string. M0 verified payload-first exit, TERM-resistant descendants,
+wrong-nonce refusal and final group cleanup on Linux and macOS. A forged-generation
+identity was refused; actual PID reuse was not induced.
+
+The supervising runtime confirms disappearance of enrolled activity before releasing
+leases. If the guardian dies unexpectedly, a pipe breaks without a final receipt,
+identity is uncertain or a process escapes the managed group, report `unconfirmed`
+and retain the lease. Do not signal a historical PGID after its identity is lost.
+Reconciliation is explicit and preserves the original ownership evidence. These
+limits are part of the contract, not future promises of universal OS containment.
+
+**Windows support:** keep a distinct supervisor port and native-launch quoting/
+`.cmd` behavior. A Job Object launcher with controlled child enrollment and
+kill-on-close is the planned implementation; `taskkill` after a dead leader is not
+sufficient proof. Dependency/packaging must be evaluated in M2 before selecting a
+specific helper. The owner deferred Windows verification for this pass; absence of
+Windows results does not block Linux/macOS implementation or justify removing Windows
+from the design. Mark Windows cleanup capability unverified until its contract suite
+is actually run. Do not silently substitute unchecked termination.
+
+Herdr's new adapter launches the same owned supervisor where supported and keeps
+pane identity separate from process ownership. Shell processes that deliberately
+escape, same-user hostile activity and external editors remain outside the managed
+protocol. Worktrees never change OS/network permissions. The nonce is a control
+binding within this trust model, not a sandbox boundary.
 
 ### C9. Workspaces, checkpoint commits and freshness
 
@@ -750,10 +873,10 @@ must not lose lifecycle, messages, usage or cancellation.
 
 ### Compatibility and storage cutover
 
-Use a new major release for changed execution/persistence contracts. **Proposed
-label: 4.0.0**, subject to Q1; do not publish another incompatible artifact under
-3.0.0. Package version and individual protocol/schema versions are independent.
-Freeze the following proposed version map in M3 after the codec probe:
+The owner selected **v3.0.0** for this replacement. There is no local v3 tag; a
+read-only registry query during readiness found no published `pi-pinata@3.0.0`.
+Recheck before publishing; never overwrite a registry artifact. Package and protocol
+versions are independent. Freeze the following version map in M1 with fixture codecs:
 
 | Surface                        | Current                                                | Target / compatibility rule                                                                                                                                                                                                             |
 | ------------------------------ | ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -801,267 +924,321 @@ Saved-run handling:
    current conflict/path checks and no promotion of old review evidence. Deleting
    old runs/worktrees is a separate explicit cleanup operation after inspection.
 
-During development, the replacement runtime can live under a temporary module
-entry used only by scripted conformance tests. Never run old and new effect dispatch
-against the same worker/workspace, and never dual-write authority. Replay comparison
-is safe; shadow tool execution is not. M3 introduces the replacement, M4 switches
-both Pi and headless to it and deletes the old mutation/recovery implementation.
-No feature milestone after M4 may call the old engine. Historical codecs and an
-input converter are compatibility components, not a second execution engine.
+During development, put new code under a test-only `rewrite/engine/` and
+`rewrite/arena/` entry; the component table names its final destinations. Do not ship
+these temporary entries or add a production runtime selector. Never run old and new
+effects against the same run/workspace, and never dual-write authority. Replay of
+immutable observations and independent disposable fixtures is safe.
 
-Rollback before M4 is code rollback because the new runtime has only test runs.
-After M4, stop/reconcile new owned activity before reverting the package. Preserve
-new stores, snapshots and user edits; an older binary reads no new mutable format
-and must not resume it. Use the matching new binary for recovery or export patches
-for explicit application. Do not promise a lossless downgrade to old semantics.
-Keep release artifacts/source closure for recovery without retaining two live
-implementations in the shipping source tree.
+M1–M7 build the replacement behind its conformance tests; M8 completes the new harness,
+then moves replacement modules to their final paths and removes all six old live
+implementations in one package cutover. Do not copy old source into a `legacy` runtime
+subtree. Retain historical readers and explicit input converters only. No feature is
+implemented in both runtimes. A milestone cannot be declared complete with an import
+back into the corresponding old production layer.
+
+Before M8, rollback means checking out the frozen baseline; replacement stores are
+only disposable test runs. After cutover, stop/reconcile new owned activity before
+reverting the package. Preserve new stores, snapshots and user edits; the older binary
+must not resume new records. Use the matching new executable for recovery or export
+patches explicitly. Keep source/package artifacts for recovery, not two shipping
+execution engines. A release import graph and package-content check enforce removal.
 
 ### Dependency-ordered milestones
 
-Each implementation milestone follows STYLE.md, formats only changed files, runs
-`npm run check` and relevant focused tests. Run `npm test` at cross-cutting gates
-and release, plus the specific smokes/benchmarks below. These are scripted/loopback
-checks. Live tests require fresh, separately scoped spend authorization.
+Each milestone follows STYLE.md, formats only changed files, runs `npm run check`
+and relevant tests, and retains failed attempts. Full-suite and package gates are
+named below. Scripted/loopback work is authorized; paid work is a separate decision.
+The numbered slices within a milestone are separate reviewable changes in dependency
+order. None may import the old live layer to satisfy its exit gate. Useful fixtures,
+reference data and historical readers may be retained.
 
-#### M0 — Freeze contracts and answer feasibility questions
+#### M0 — Baseline and readiness (completed within the stated scope)
 
-No production rewrite in this milestone. Capture HEAD, dirty/untracked source closure,
-lockfile and nonsecret runtime/environment versions into a new evidence directory;
-do not replace the historical archive. Port the review's reproductions into maintained
-fixtures with deterministic barriers/fault hooks at test boundaries. Keep baseline
-failure expectations separate from tests asserting the future contract.
+Deliverables are the frozen baseline, `test/readiness/`, `scripts/readiness.mjs`,
+this plan and the [readiness record](rewrite-readiness.md). The opt-in
+`npm run test:readiness` command characterizes the frozen implementation and tests
+bounded candidate mechanisms; it is not the future production conformance suite.
 
-Deliverables:
+- F1–F8 and A1 have maintained reproductions; real fault/kill hooks exercise the
+  application writer. Additional A2 proves duplicate orphan-host claims, and A3
+  proves a batch-publication interruption gap. Their scope is recorded separately.
+- A fresh journal prototype demonstrates serialized atomic assignment/inbox records,
+  idempotent receipts, exclusive owner acquisition and explicit torn-tail refusal.
+  A resident POSIX guardian demonstrates cleanup after payload-first exit on Linux
+  and macOS. Neither prototype is production code.
+- Pi's schema bridge, explicit skill loader, session branches, context-usage unknowns
+  and non-overlay UI have concrete no-model results. Parent-session cloning copies
+  host metadata, so the implementation must use a filtered context projection.
+- Linux/macOS profiles identify history-dependent reducer cost and repeated log scans;
+  durable IO costs are measured on btrfs/APFS. They do not measure coding quality.
+- Owner product decisions and bounded implementation defaults are resolved below.
 
-- F1–F8 and A1 regression specifications/fixtures; failure traces identify the
-  public operation, preconditions, durable records and expected observable result.
-- A two-host barrier test for orphan claim, concurrent additions and follow-ups;
-  classify any newly reproduced race separately from the review's proven findings.
-- No-model process-tree probes for early leader exit and PID reuse on all supported
-  OSes; select the ownership mechanism or document the required dependency decision.
-- A Pi 1.1.0/native-runtime UI prototype using supported non-overlay APIs; verify
-  streaming, shortcuts, restoration of editor/draft and disposal. A Zod → Pi schema
-  bridge fixture exercises nested objects, unions, optionals, unknown keys, outputs
-  and domain errors. A parent-session import/context-usage fixture tests real SDK
-  behavior, without a provider call or hidden private API.
-- Baseline measurements for acceptance/durable IO, reducer/outbox/session scans and
-  UI response. Profiles must identify costs before choosing caches/indexes.
+Exit achieved: the next implementation can start without another owner decision.
+Windows verification is deferred; true PID reuse, guardian crash/escape handling,
+full store power-loss semantics, new Herdr-supervisor integration, eight-worker UI responsiveness
+and all-mode context parity remain named implementation gates. Readiness did not
+claim those results or change production behavior. Failed probe attempts are retained.
 
-Affected tests: `integrate`, `backends`, `survive`, `pi-adapter`, `engine`, `store`,
-`arena-evidence`, `in-process`, `fingerprint`, `ui`, `render`; new focused ownership,
-schema and session-import fixtures as needed. Do not “fix” the historical dependency
-incident by relabeling a passing regression.
+#### M1 — New contracts, ledger and atomic command acceptance
 
-Exit: reproduced cases are portable enough to run in CI or explicitly platform-gated;
-the scope of every uncertainty is recorded. Schema/UI/supervision decisions have
-testable feasibility results. Failure of a probe blocks only the affected mechanism's
-commitment; application's proven F1 repair can proceed independently.
+**Smallest coherent first implementation milestone.** Depends on M0. Create
+`rewrite/engine/{contracts,core,storage,runtime}` with no production entry point.
+Freeze the version map and command/receipt vocabulary before adding model execution.
+Move pinned Zod into runtime dependencies when this code is packaged; preserve the
+lockfile and intentional Pi peer ranges.
 
-#### M1 — Repair application/rollback authority
+1. Define canonical Zod boundaries, full assignment keys, immutable graph revisions,
+   typed errors and request IDs. Export JSON schemas through the tested bridge.
+   Implement pure batch/reference/FIFO validation and reducer transitions; no Pi,
+   filesystem discovery, scheduler timers or workflow decisions enter the core.
+2. Implement the new framed journal, artifact writer, manifest, checkpoints and
+   run-owner protocol. Acquire the claim atomically; refuse ambiguous stale claims.
+   Complete the IO-failure matrix and explicit offline reconciliation protocol before
+   supporting ownership transfer. Do not copy the prototype's test-only stale-file
+   removal into production.
+3. Implement `Runtime.execute/query/subscribe` for create/add/follow-up and replay.
+   Commit assignments, inbox messages and idempotent receipts together, sync before
+   acknowledgment, and publish projections afterward. Dispatch only an inert test
+   effect port. No workspace mutation or model launch belongs in M1.
 
-Smallest coherent first implementation milestone. Change
-`engine/verify/{integrate,record,destination,evidence}.ts` only where needed and
-`test/engine/integrate.test.ts`. Treat the journal's terminal phase plus snapshot map
-as authoritative, rebuild/refuse inconsistent cursor projections, and prevent
-terminal rollback publication before its cursor meaning is recoverable. Preserve
-the checkout gate and all object/path/conflict checks.
+Tests: rejected `audit after base/999` leaves no worker/name/launch metadata and a
+corrected retry succeeds (F3); two hosts cannot both own a run (A2); concurrent
+add/follow-up calls linearize; lost replies and exact-ID retries return one receipt;
+conflicting payload retries fail; interrupted write/sync/rename/artifact publication
+cannot fabricate an acknowledgment. Preserve partial/corrupt evidence. Multiple
+references to one worker retain distinct dependency payload identities (A1), including
+replay. A fake effect dispatcher proves accepted effects are not blindly replayed.
 
-Required cases: apply → rollback → same snapshot apply; exact reconstructed F1 state;
-write/sync/rename failure at each journal/cursor boundary; forced process exit at
-those boundaries followed by a fresh recovery process; later user/index/HEAD edits;
-two runs contending with writable assignments. Assertions compare destination bytes,
-cursor meaning, journal phase, index/HEAD, unrelated files and gate retention. Merely
-reversing two writes without recovery validation does not satisfy the gate.
+Exit: fresh-process replay yields the same accepted graph/inbox/receipt revision;
+no rejected request contaminates it; only one owner dispatches; uncertain commit or
+effect states remain explicit. Import-boundary checks, focused contracts/storage/
+acceptance tests, `npm run check` and `npm test` pass. The baseline stays unchanged.
+This establishes authority for the remaining layers, not a usable replacement yet.
 
-Exit: no tested crash state can report a new application while omitting its intended
-delta; recovery either produces the intended bytes or an actionable refusal. Run
-focused integration/path/store tests, `npm run check` and the full scripted suite.
-No new engine, schemas, roles, UI or live experiment is required for this milestone.
+#### M2 — New execution engine and backend supervision
 
-#### M2 — Establish owned-activity cleanup
+Depends on M1. Build new `core`, `runtime`, `backends` and `agent` implementations.
+Define workspace/cleanup ports now and use disposable fixture workspaces until M3.
 
-Repair/replace `backends/supervise.ts` and the cleanup paths in `process.ts`,
-`herdr-pi.ts`, detached/reporter extensions, setup/process helpers and writer-gate
-release in `core/engine.ts` and its backend types. Introduce typed stop receipts and
-durable ownership identity/claim evidence.
-Use M0's measured platform mechanism; do not erase F2 with an unchecked negative-PID
-kill. Ensure partial preparation and cancelled launch have explicit cleanup owners.
+1. Implement readiness, FIFO, immutable dependency release, attempts, exact result
+   lookup, waits (F4), input dispatch/consumption, session checkpoints, settlement,
+   durable completion outbox and usage coverage. Start with scripted ports; prove
+   C1–C4 event ordering and crash boundaries before connecting a model host.
+2. Implement the in-process Pi adapter against installed public declarations.
+   Separate conversation identity from assignment transcript/result references;
+   release idle resources while retaining continuation. No silent empty-session
+   recovery, skill expansion or backend fallback.
+3. Implement process and detached-lifetime adapters with resident POSIX guardians,
+   live control binding, enrollment records and typed cleanup receipts. Test partial
+   setup, aborted spawn, payload-first exit, TERM-resistant descendants and host loss.
+   Verify ownership through a live channel rather than trusting coarse PID start
+   timestamps. Lost guardian/identity yields `unconfirmed`, retaining writer exclusion.
+4. Implement the optional Herdr adapter and its owned-pane checks on the same
+   protocol. Define Windows supervisor/launcher ports and select the Job Object
+   helper only after a packaging/maintenance comparison. Windows verification is
+   deferred; this does not permit a Linux-only wire contract or unchecked stop claims.
 
-Tests: shared backend conformance; leader exits normally or during SIGTERM; descendants
-retain or close pipes and ignore TERM; abrupt host loss; reattachment; PID/PGID reuse;
-remote/unknown identity; pane reuse; writable setup cancelled before/after spawn;
-application blocked until cleanup is confirmed. Test Windows `.cmd`/PowerShell paths
-and macOS process identity, not just Linux groups.
+Tests: shared backend conformance against the new implementations; two predecessor
+assignments produce two actual downstream briefs/results (A1); steer/follow-up
+consumption, repeated cancel, idle/active continuation, wait subscription races,
+unknown host/PID generation, pane reuse and setup cleanup. Add guardian-death and
+out-of-group activity fixtures; prove uncertainty retains exclusion. Actual PID
+reuse and Windows results must be reported only if exercised. Real Pi may use
+scripted/loopback responses without paid calls.
 
-Exit: confirmed stop leaves no enrolled live activity and permits lease release;
-unconfirmed stop retains exclusion and actionable evidence. User processes/panes
-remain untouched. Unsupported cleanup mechanisms block claiming that backend/platform
-complete. Run process/package smokes and cross-platform CI artifacts in addition to
-focused/full tests. A new native helper dependency requires an explicit decision
-before implementation of that helper, not after packaging fails.
+Exit: supported tested backends have identical observable lifecycle/usage semantics;
+confirmed cleanup leaves no enrolled activity, while uncertain cleanup cannot release
+its gate. Pi/process/package smokes and focused/full tests pass on Linux/macOS.
+Unavailable Herdr and unverified Windows capabilities are explicit. No reference to
+an old backend, supervisor or verifier helper remains in the replacement graph.
 
-#### M3 — Build the single command/state authority and repair accounting
+#### M3 — New workspace, snapshot and application layer
 
-Introduce `contracts`, `storage` and `runtime` boundaries, with a temporary test-only
-entry point. Replace acceptance/recovery mutation portions of `core/engine.ts` and
-`pi/host.ts` behind the new Runtime interface. Implement journal, owner claim,
-request deduplication, artifact references, event projection, outbox and typed
-usage coverage. The existing backend/workspace implementations are ports, including
-M1/M2 repairs. No UI feature work or schedule/nesting work belongs in this step.
+Depends on M1 and M2's ownership/cleanup ports. Create new
+`workspace` and `application` implementations; do not relocate the old `verify/`
+implementation and call it replaced.
 
-Deliverables/tests:
+1. Implement shared/non-Git resolution, isolated worktree provisioning, immutable
+   bases, explicit input composition, private-index capture, safe object/path checks
+   and content-scoped freshness (F7). Preserve partial provisioning, manual commits,
+   failed changes and unrelated user files. Fresh context discovery is coordinated
+   with M5; permissions never derive from workspace isolation.
+2. Implement checkout-level writer registration/exclusion across processes and runs,
+   including writable preparation, cancellation and finalization. Keep application
+   gate waits outside run-command serialization; define one lock order.
+3. Implement the authoritative application journal with before/after blobs and cursor
+   maps, apply/rollback/reconcile APIs, typed receipts and legacy-journal read codecs.
+   Publish phase plus cursor meaning atomically (F1). Cursors are projections only.
 
-- Canonical schemas plus Pi bridge and generated command/query inventory. New
-  plain types do not import Pi; import-boundary tests enforce this.
-- Atomic acceptance and follow-up/inbox commit: nonexistent assignment 999, missing
-  worker, cycle, rejected duplicate, concurrent additions, lost receipt and write
-  failure. Corrected retry is accepted; no rejected metadata reserves names (F3).
-- C1–C4 command-state tests, full-reference dependency payloads (A1), one-owner
-  fresh-process recovery and kill/fail matrix for every durable/effect boundary.
-- Same fake backend transcript through old and new state machines for preserved
-  contracts, comparing canonical observations and artifact digests. Differences
-  are justified by explicit defect fixes, not normalized away.
-- Repair `arena/native-evidence.ts` with per-assignment coverage and mixed lean/
-  observe/malformed/cancelled fixtures (F5), as new analysis output. Keep existing
-  batches untouched. Requested/observed modes remain independent of eligibility.
-- Implement historical event/run readers and a dry-run importer before writing
-  new run formats from normal entry points. Schema corruption and legacy fixtures
-  include interrupted journals, sessions, inboxes, results and partial JSONL.
+Tests: every F1 reconstructed and real fault boundary, now asserting correct recovery
+or actionable refusal; before/after destination writes and metadata sync; fresh
+recovery processes; apply/rollback/reapply; dirty-to-dirty and untracked changes;
+concurrent writers, aliases, symlinks/junctions, index/branch/HEAD changes, partial
+outputs and third-party edits. Compare destination bytes, artifact digests, cursor
+meaning, journal state, lease state and index/HEAD—not just a success string.
 
-Exit: durable acknowledgment, no blind effect replay, one-owner dispatch and all
-preserved scripted contracts pass with complete failure evidence. Existing benchmark
-gates pass or a measured durability cost is explicitly accepted; never weaken gates
-just to declare the rewrite faster. M4 is the next runtime milestone; do not add
-new product features to the old path while this implementation exists.
+Exit: no tested crash can report a new application while omitting its intended delta.
+No checkpoint, cleanup or failure discards user edits or recovery evidence. Focused
+Git/path/workspace/integration tests, full suite and package smoke pass on tested
+platforms. Complete M3 before replacement execution uses a real user's checkout.
 
-#### M4 — Cut over every surface and remove the old execution path
+#### M4 — New Pi, headless, IPC surfaces and migration
 
-Route Pi tools/commands, headless jobs, detached continuation, IPC/viewer controls
-and notifications to Runtime. Fix next-wait semantics (F4), context discovery (F6),
-scoped content freshness (F7), and false review/checked claims (F8) in their actual
-consumers. Move current workspace/application code from `verify/` with import
-updates; leave only explicit legacy readers. Remove old host metadata mutation,
-legacy live role/policy branches and duplicate delivery/state logic.
+Depends on M2/M3. Implement new Pi tools/commands, neutral resolution, headless jobs,
+detached attachment, authenticated IPC, read-only sources and notification transport.
+These remain development entry points until M8; this is **not** the package cutover.
 
-Tests: the same recorded scenario through Pi public tools, headless JSON, direct
-Runtime and IPC; assignment selection and wait races; parent/worker cancellation;
-non-Git discovery; log fallback; slow viewer/reconnect; duplicate notifications;
-unreviewed isolated success, shared success, failed partial output and historical
-reviewed output. F6/F7 tests include added/deleted/renamed instruction files and
-dirty-to-dirty/untracked edits. Prove old/new stores cannot dispatch the same worker.
+1. Translate each existing tool/CLI operation to the same Runtime command and typed
+   receipt. Add schema discovery and capability negotiation. Implement outbox
+   delivery/consumption, reconnect and bounded backpressure without whole-log scans.
+2. Implement strict historical readers, definition/config conversion, dry-run
+   `migrate-run`, origin manifests and saved-session import plumbing. Old owners must
+   finish through their matching executable; migration never takes over live effects.
+   Legacy stores and retained evidence stay read-only.
+3. Prove direct Runtime, Pi tools, headless JSON and authenticated IPC produce the
+   same canonical outcomes, errors, exact references and full results. Raw Pi scalar
+   coercion remains a documented transport difference, not duplicate core validation.
 
-Exit: all supported surfaces use only the new authority; no temporary engine selector
-remains in release paths or shipped package. Pi/package smokes, headless/migration
-fixtures, complete `npm test`, import checks and applicable scripted benchmarks pass.
-Legacy inspection works and live legacy continuation requires the matching old owner.
-This is the end of dual implementation, not the start of a long compatibility period.
+Tests: cross-surface transcript replay, F4 waits, absent parent and duplicate notices,
+slow clients/reconnect, malformed/version-mismatched IPC, shared/isolated partial
+results, migration corruption, unresolved legacy journal refusal and old/new owner
+exclusion. Test real headless and packaged-development smokes with loopback providers.
 
-#### M5 — Complete definitions, context and workspace checkpoints
+Exit: all replacement surfaces share one authority and preserve C1–C11; no copied
+host metadata mutation, legacy policy gate or old delivery path remains. Migration
+fixtures preserve grants/defaults and require explicit continuation. Full tests,
+import checks and smokes pass; existing shipping entry points still select the baseline
+until the single M8 cutover.
 
-Implement schema-3 Markdown definitions, explicit skill loading and color validation,
-definition/config precedence, scoped memory and parent seed import. Replace private
-SDK discovery mutation with a supported loader path if M0 demonstrates one; otherwise
-document a narrowly versioned adapter and its test before accepting the dependency.
-Add automatic isolated checkpoint commits under C9 without altering shared delivery.
+#### M5 — New definitions, context, memory and completion checkpoints
 
-Affected modules: definitions/context/runtime ports, Pi resource resolution, all
-backends/agent launch payloads, `workspace/{snapshot,worktree,changes}`, migration,
-agent presets and definition reference. Tests compare actual resolved tools, skills,
-context manifests and sessions across backends; missing/changed resources, malicious
-frontmatter, read-only grants, memory CAS and checkpoint failures stay explicit.
+Depends on M3/M4. Implement the SDK-aligned schema-3 Markdown codec and new
+`definitions`/`context` modules. Use M0's supported resource-loader seam.
 
-Exit: a custom definition works identically through Pi and CLI, retains context on
-follow-up, loads only its selected skills, and never gains rights from inherited
-history/memory. Isolated completion yields an inspectable Git commit/ref; cancellation
-and failed commit retain work. Converted definitions preserve old authority and
-defaults. Run definition/backend/workspace/example tests plus packaging smoke.
+1. Resolve precedence, model settings, tools, explicit skills and color into immutable
+   definition snapshots. Validate capability support before launch. Rediscover absent
+   instruction candidates at every assignment (F6); cache only a validated discovery
+   set and digests. Do not copy ambient skill loading or private SDK mutation.
+2. Implement opt-in filtered parent-context snapshots and worker/project-agent memory
+   with CAS revisions and explicit grants. Filter host control/custom entries; retain
+   valid completed message/tool pairs and compaction provenance. Context import is
+   never permission to replay a tool or expand authority.
+3. Add real isolated completion commits and retained private refs using M3's private
+   capture index. Preserve worktree HEAD/index and manual commits; shared execution
+   never commits automatically. Migrated definitions retain their earlier behavior.
 
-#### M6 — Add queue capacity, authorized children and session triggers
+Tests: real resolved loadouts across available backends, new/renamed/deleted AGENTS.md,
+non-Git/worktree discovery, changed resources, malformed frontmatter, read-only
+capabilities, parent branches/compaction, missing context, memory conflicts and
+checkpoint failures/cancellation. Definitions and examples validate without models.
 
-Implement the R2/R10/R11 schema extensions and commands on the new runtime only.
-Capacity is a small readiness gate over immutable dependency/FIFO semantics.
-Delegation is a scoped capability using that same acceptance service. The schedule
-service submits ordinary follow-ups with deterministic occurrence IDs.
+Exit: Pi and CLI launch the same definition with equivalent tools/context/skills;
+follow-up retains its conversation without gaining authority. Completion commits are
+inspectable and failed/cancelled work remains available. Definition/context/backend/
+workspace tests and package smoke pass. SDK limitations are exposed as capabilities.
 
-Affected modules: core readiness, runtime authority/schedules, agent restricted tool
-bridge, CLI/Pi commands, contracts, status projections and migration notices.
-Fake-clock tests cover temporal rules. Scripted backend tests cover nested depth,
-scope denial, parent finish/cancel, no leaked children and capacity deadlock refusal.
-Stress queued follow-ups/schedules without model calls; test raising/lowering capacity
-and host restart. A nested worker never loads the full coordinator extension.
+#### M6 — Capacity, authorized nesting and session triggers
 
-Exit: all three features obey the same durability, permissions, cleanup and usage
-contracts. No hidden provider throttle, oversubscription, deadline, acceptance gate
-or automatic role appears. Tests explicitly prove omitted capacity is unbounded,
-nesting defaults off and closed sessions cannot fire. No paid schedule is activated
-by tests or migration.
+Depends on M2/M4/M5. Implement R2/R10/R11 on the new runtime only, as three changes:
+capacity over ordinary readiness; a scoped child-command adapter; session-owned
+schedule triggers with idempotent occurrences. Select and pin a cron dependency
+against the explicit C6 DST rules before adding timers.
 
-#### M7 — Ship navigation, addressing, monitoring and palettes
+Tests: capacity 1/2/unbounded and live changes, dependency versus capacity waits,
+parent-child depth/grant violations, cancellation ancestry, no hidden oversubscription,
+no capacity-1 blocking wait deadlock, recovered occupied slots, fake-clock DST/clock
+jumps/overlap/close/crash, duplicate occurrence acceptance and full child usage.
+A nested worker never loads the unrestricted coordinator extension.
 
-Replace overlay routing with the tested screen router and keep the main widget.
-Implement deterministic `@handle` resolution, schema-aware completions and per-screen
-drafts. Add context utilization, queue reason, parent/child relations, schedule state,
-actual mode/lifetime and truthful assessment/delivery labels to shared projections.
-All palettes and Pinata branding go through semantic color tokens.
+Exit: all three features share acceptance, durability, authority and cleanup. Omitted
+capacity is unbounded, nesting defaults off, memory is opt-in, and closed sessions
+cannot fire. No provider throttle, resource budget, deadline, review gate or built-in
+planner role appears. Focused/full tests pass; no paid schedule is activated.
 
-Affected modules: `pi/{ui,commands,render}`, `ui/*`, viewer screens/sources,
-definition discovery, input adapter and package theme assets. Tests run scripted
-streaming/navigation/stop/resume/background flows; ANSI/emoji/CJK/graphemes; narrow
-widths; repeated screen changes; lost sources; inactive/closed session; all palettes;
-`NO_COLOR`; key conflicts and command fallback. Test rendering/output on supported
-terminal/platform combinations and capture actual terminal artifacts where available.
+#### M7 — Entirely new UI, navigation and palettes
 
-Exit: R1/R4–R7 user journeys work without overlays, lost drafts, unintended model
-turns or stale selection. Meet the proposed 100 ms local responsiveness target or
-record an owner-approved revised target with measurements. No timer/subscription/
-session grows monotonically across 100 open/close cycles. Owner walkthrough resolves
-subjective UX and palette variant choices before claiming “delight.”
+Depends on M4–M6. Build new `ui`, viewer screens and Pi rendering around the common
+projections and source contracts, using the tested non-overlay screen API.
 
-#### M8 — Documentation, package and evidence release gate
+1. Implement main/fleet/conversation routing, per-screen drafts, scroll/selection,
+   streaming and deterministic `@handle` input with durable receipt-before-clear.
+2. Show factual execution/cleanup/delivery/assessment labels (F8), context utilization
+   with source/time or unknown, queues, children, schedules and actual modes.
+3. Implement every required palette through semantic tokens and configurable keys;
+   include command fallbacks, reduced motion and ASCII/terminal-default behavior.
 
-Finish schema-derived API reference, Diataxis edits and the small example set.
-Rewrite current contradictory arena guidance while leaving historical validation
-reports as historical records. Update README, AGENTS.md where new R2/R10 policies
-need documenting, architecture/trust, CLI help, prompts, `skills/subagents/`, examples,
-migration and package metadata together. Convert useful retired examples before
-removing their old entry points; link replacements in migration notes.
+Tests: no-model end-to-end navigate/steer/stop/continue/background journeys, input
+addressing grammar, stale selection, ANSI/emoji/CJK/graphemes, narrow terminals,
+all palettes, `NO_COLOR`, 100 open/close cycles and unavailable sources. Capture
+terminal output on Linux/macOS, pinned SDK and native Pi; do not equate a render
+request with screen paint.
 
-Adapt arena/native observer/matrix to the new API and complete provenance/publication
-handling. Add supervisor-owned stage evidence before comparison eligibility can
-change; if unavailable, keep treatment ineligible. Run offline controls and all
-required checks/smokes on the lockfile and packaged artifact, including Node 22.19/24
-on Linux/macOS/Windows. Herdr cases run where installed and are reported as unavailable
-elsewhere; skipped tests are not passes. Attach the actual CI artifacts.
+Exit: no overlays, lost drafts, unintended model turns or invented review/check
+claims; subscriptions/timers plateau; eight-worker p95 response meets the 100 ms
+measurement target or has a documented revised target. A user walkthrough checks
+subjective usability; chosen palette/key defaults need no further decision to build.
+UI/full tests and packaged smokes pass. No old renderer/router remains in this graph.
 
-Exit: every R row has passing behavioral evidence or an explicitly owner-deferred
-requirement; every preserved C contract and F/A regression passes; obsolete live
-paths are removed; no historical evidence was overwritten. Functional release may
-state that coding performance is unmeasured. Any coding-performance release claim
-additionally requires the authorized, controlled evidence in section 5. No missing
-spend authorization blocks truthful functional release or authorizes a paid run.
+#### M8 — New harness, documentation and single package cutover
+
+Depends on M1–M7. Replace all arena/benchmark implementation, keeping corpus/oracle
+inputs and historical read codecs. This is the only shipping runtime cutover.
+
+1. Build a new external runner, native adapters, observer, matrix, usage reconciler,
+   report writer and benchmark harness. Allocate batch/cell IDs durably before launch
+   (A3); every started assignment/attempt has explicit usage coverage (F5). Preserve
+   interrupted/pending/failed trials, requested versus observed capabilities, source
+   closures and independent scoring. Supervisor attestation remains necessary for
+   workflow comparison eligibility. Offline controls never establish coding quality.
+2. Finish schema-derived reference and the small Diataxis example set. Update README,
+   architecture/trust, CLI help, prompts, skills, package exports/themes and migration
+   together. Keep historical reports intact; repair contradictory current guidance.
+3. Move the replacement to the final component paths, switch all entry points, and
+   delete all six old live implementations plus temporary selectors/entries. Keep
+   explicit read/convert codecs only. Port preserved contract tests to the new APIs.
+   Archive the M0 baseline characterizations with this commit/evidence; tests that
+   assert known bad baseline behavior do not remain in the new default suite.
+4. Validate the packaged artifact with checks, full tests, Pi/package/headless smokes,
+   offline arena and scripted performance gates. Capture actual Linux/macOS and
+   Node/Pi versions; run supported Node 22/24 cells where available. Retain Windows
+   build/portability coverage and planned CI, but record the owner's deferred runtime
+   verification explicitly. Unavailable Herdr is not a pass or a fallback to process.
+
+Exit: every R row has passing behavioral evidence or an explicit recorded deferral;
+C1–C11 and all F/A regressions pass in the new implementation; import/package scans
+find no old execution path or temporary runtime switch; evidence hashes remain
+unchanged. Rollback artifacts and migration instructions are usable. A release
+before deferred platform checks states those limits. Functional completion may report
+coding performance as unmeasured; only separately authorized controlled experiments
+can support a coding-performance claim. No push/publication or paid trial follows
+implicitly from a local implementation gate.
 
 ## 5. Verification and performance evidence
 
 ### Reproduced-defect regression matrix
 
 The review's F1–F8 are all mandatory regressions. F9/F10 are observations/investigations,
-not two extra reproduced runtime defects. A1 is the additional planning probe.
+not two extra reproduced runtime defects. A1 is the additional planning probe; A2/A3
+are readiness observations. The baseline-characterization tests assert current bad
+behavior on purpose; replacement regressions must assert the required contract.
 
-| ID and current mechanism                                                                       | Required regression and observation                                                                                                                                                                                                                                             | Owning milestone                |
-| ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
-| **F1** `verify/integrate.ts:328–375`: rollback terminal journal before cursor restoration      | Reconstruct the exact terminal-journal/stale-cursor state and inject IO/exit at every boundary; fresh-process retry must restore `first` after rollback to `base`, or refuse reconciliation. Check cursor semantics and bytes, not just status.                                 | M1; preserve under migration/M4 |
-| **F2** `backends/supervise.ts:70–115`: dead leader treated as stopped tree                     | Non-detached descendant in the owned group survives parent exit/TERM, ignores TERM and closes pipes; stop receipt cannot be confirmed until it is gone. Test lease retention, PID reuse, unknown host and user panes on each OS.                                                | M0/M2                           |
-| **F3** `pi/host.ts:539–576`: run metadata written before core accepts exact refs               | Finish `base/1`; reject `audit after base/999`; assert no accepted worker/name/assignment/ref/launch changes; correct to `after:[base]` and succeed. Repeat after recovery and concurrent add/follow-up.                                                                        | M0/M3                           |
-| **F4** `pi/tools.ts:455–509`: next wait filters to latest queued assignment                    | `a/1` running plus `a/2` queued; next wait returns on `a/1`. Add multiple selected workers, no pending targets, new additions, settlement during subscribe and abort; abort never cancels work.                                                                                 | M4                              |
-| **F5** `arena/native-evidence.ts:150–151`: any worker usage treated as all-worker coverage     | Two workers, only one message total and the other a settlement total; aggregate is reconciled per assignment or unknown, never the first worker alone labeled complete. Cover lean/observe, malformed worker logs, duplicate starts, retries, children and cancellation.        | M3/M8                           |
-| **F6** `backends/in-process.ts:52–71`: warmed discovery cache only checks already-known files  | Warm empty cache, add AGENTS.md, query again and match cold discovery. Repeat ancestor/worktree additions, rename/delete, content changes preserving mtime, and backend parity. Freeze granted authority separately from fresh instructions.                                    | M4/M5                           |
-| **F7** `workspace/live.ts:12–32`: status-only fingerprint misses content changes               | Dirty `first` → dirty `second`, same-path untracked edit, add/delete/mode, index/HEAD and concurrent measurement. Content observation changes or returns unstable/unknown; it never claims authorship or uninterrupted immutability.                                            | M4                              |
-| **F8** `ui/mascot.ts:174–205`, `pi/render.ts:45–57,133–139`: settlement implies reviews/checks | Table-driven shared/isolated unreviewed success, failed partial output and legacy review records through status, widget, detail, tool renderer, CLI and viewer. No current “checked/review complete” claim without exact-subject evidence. Update stale current arena guidance. | M4/M8                           |
-| **A1** `core/engine.ts:441–458`, `pi/pipeline.ts:85–101`: result map keyed only by worker      | Two explicit predecessor assignments from one worker produce two distinct summaries/results in the downstream brief, with immutable paths/digests; follow-ups and replay do not replace either.                                                                                 | M3                              |
+| ID and current mechanism                                                                       | Required regression and observation                                                                                                                                                                                                                                             | Owning milestone |
+| ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| **F1** `verify/integrate.ts:328–375`: rollback terminal journal before cursor restoration      | Reconstruct the exact terminal-journal/stale-cursor state and inject IO/exit at every boundary; fresh-process retry must restore `first` after rollback to `base`, or refuse reconciliation. Check cursor semantics and bytes, not just status.                                 | M3; migration/M4 |
+| **F2** `backends/supervise.ts:70–115`: dead leader treated as stopped tree                     | Non-detached descendant in the owned group survives parent exit/TERM, ignores TERM and closes pipes; stop receipt cannot be confirmed until it is gone. Test lease retention, PID reuse, unknown host and user panes on each OS.                                                | M0/M2            |
+| **F3** `pi/host.ts:539–576`: run metadata written before core accepts exact refs               | Finish `base/1`; reject `audit after base/999`; assert no accepted worker/name/assignment/ref/launch changes; correct to `after:[base]` and succeed. Repeat after recovery and concurrent add/follow-up.                                                                        | M1               |
+| **F4** `pi/tools.ts:455–509`: next wait filters to latest queued assignment                    | `a/1` running plus `a/2` queued; next wait returns on `a/1`. Add multiple selected workers, no pending targets, new additions, settlement during subscribe and abort; abort never cancels work.                                                                                 | M2/M4            |
+| **F5** `arena/native-evidence.ts:150–151`: any worker usage treated as all-worker coverage     | Two workers, only one message total and the other a settlement total; aggregate is reconciled per assignment or unknown, never the first worker alone labeled complete. Cover lean/observe, malformed worker logs, duplicate starts, retries, children and cancellation.        | M2/M8            |
+| **F6** `backends/in-process.ts:52–71`: warmed discovery cache only checks already-known files  | Warm empty cache, add AGENTS.md, query again and match cold discovery. Repeat ancestor/worktree additions, rename/delete, content changes preserving mtime, and backend parity. Freeze granted authority separately from fresh instructions.                                    | M5               |
+| **F7** `workspace/live.ts:12–32`: status-only fingerprint misses content changes               | Dirty `first` → dirty `second`, same-path untracked edit, add/delete/mode, index/HEAD and concurrent measurement. Content observation changes or returns unstable/unknown; it never claims authorship or uninterrupted immutability.                                            | M3               |
+| **F8** `ui/mascot.ts:174–205`, `pi/render.ts:45–57,133–139`: settlement implies reviews/checks | Table-driven shared/isolated unreviewed success, failed partial output and legacy review records through status, widget, detail, tool renderer, CLI and viewer. No current “checked/review complete” claim without exact-subject evidence. Update stale current arena guidance. | M7/M8            |
+| **A1** `core/engine.ts:441–458`, `pi/pipeline.ts:85–101`: result map keyed only by worker      | Two explicit predecessor assignments from one worker produce two distinct summaries/results in the downstream brief, with immutable paths/digests; follow-ups and replay do not replace either.                                                                                 | M1/M2            |
+| **A2** `pi/host.ts` orphan recovery: read-then-save without an atomic run claim                | Two fresh hosts meet after reading the same unowned saved run; only one may claim/dispatch. Losing contenders attach or refuse. Test crash/stale/remote owners and request retries without automatic lock stealing.                                                             | M1/M4            |
+| **A3** `arena/matrix.ts`: batch path published only after run completion                       | Kill after actual batch allocation and before result publication; the durable schedule must still identify the batch/cell and report interrupted uncertainty. No trial disappears or remains falsely complete; restarting preserves the original cell.                          | M8               |
 
-The historical `Worker audit: unknown dependency prices` case has a separate incident
-fixture using the original public payload after creation, follow-up, settlement and
+Maintain a separate incident fixture for the historical `Worker audit: unknown
+dependency prices` case using the original public payload after creation, follow-up, settlement and
 fresh recovery through pinned and native Pi RPC. Capture the invocation, accepted
 graph revision, resolved definitions/config, response and exact source closure.
 Passing it demonstrates current behavior only. Keep the incident open as historically
@@ -1070,20 +1247,20 @@ mechanism. No paid rerun is needed to maintain the current regression.
 
 ### Preservation coverage
 
-| Contract                                                    | Existing tests/evidence to preserve                                                                                                      | Additional release evidence                                                                                                                                                                                                    |
-| ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| C1 identity, FIFO, immutable dependencies, failure ordering | `engine.test.ts`, `scheduler.test.ts`, `pi-adapter.test.ts` active/settled/recovered additions; successful recorded Team Board additions | F3/A1, batch atomicity, multiple refs, request retry/digest conflict, concurrency/recovery interleavings and capacity reason visibility                                                                                        |
-| C2 execution versus assessment/acceptance/delivery          | `engine.test.ts`, `results.test.ts`, `budgets.test.ts`, partial-output integration tests                                                 | Cross-surface negative assessment/malformed report cases; no ownership/budget/review prerequisite; no coordinator final-success inference from a cancelled `agent_end`                                                         |
-| C3 wait, controls, attachment and survival                  | `pi-adapter`, `survive`, `backends`, headless/control tests                                                                              | F4, foreground-to-background without relaunch, explicit continuation versus reattachment, cancel scopes and detached owner handoff                                                                                             |
-| C4 durable input, consumption, notifications, sessions      | `engine`, `repair-accounting`, `store`, `delivery`, `backends`, `survive`                                                                | Kill/fail at record/dispatch/checkpoint/settle/send/ack boundaries, handled-without-turn, absent parent, missing/corrupt session and idempotent follow-up transaction                                                          |
-| C5 context, skills and memory                               | `definitions`, `agent-extension`, `in-process`                                                                                           | F6, scoped memory conflicts, parent-seed provenance/compaction, explicit skill loadout and equivalent resolved context on every supported backend                                                                              |
-| C6 queuing, nesting and triggers                            | Existing FIFO/scheduler fixtures; no existing temporal/nested coverage                                                                   | Fake-clock schedule matrix, capacity changes/recovery, child grants/depth, no nested deadlock, cancellation cascade and complete child usage                                                                                   |
-| C7 authority, ownership and durable recovery                | `store`, `log`, `view`, `migrate`, headless recovery tests                                                                               | Two-host claim; torn versus corrupt committed records; disk-full/sync/rename failure; effect intent races; replay/checkpoint equivalence; old/new single owner; version mismatch                                               |
-| C8 cleanup and capability preservation                      | Backend conformance, Herdr identity tests, `agent-extension`, `paths`, writer exclusion tests                                            | F2, cleanup during launch/setup/finalization; direct/nested custom tool cases, shell/path aliases, junctions, malicious result data and unknown escaped activity                                                               |
-| C9 shared/worktree behavior and usable artifacts            | `workspace`, `builders`, `location`, `git`, `in-process`, current candidate manifests                                                    | F7, non-Git parity, partial provisioning, overlapping input conflicts, safe completion checkpoints, no workspace deletion on failure, manual commits retained                                                                  |
-| C10 application/rollback/conflicts                          | `integrate`, `paths`, `workspace`, legacy patch tests                                                                                    | F1, current validation of legacy artifacts, cross-process gate barriers, index/branch/HEAD edits and external-editor conflict/refusal                                                                                          |
-| C11 events, usage, UI and transport                         | `view`, `ipc`, `viewer`, `headless`, `ui`, `detail`, `render`                                                                            | F5/F8, long histories, malformed IPC, slow clients/reconnect, activity epoch reset, no phantom quality claims and meaningful unknown usage/context                                                                             |
-| Platform/package/document contracts                         | `.github/workflows/ci.yml`, release tests, `pi-smoke.ts`, `package-smoke.ts`, docs/examples tests                                        | Actual Node 22.19/24 × Linux/macOS/Windows artifacts; native/pinned Pi capability matrix; Windows launcher/RSS and process cleanup; packaged schemas/themes/skills; every reference/example runnable without paid models in CI |
+| Contract                                                    | Existing tests/evidence to preserve                                                                                                      | Additional release evidence                                                                                                                                                                                                                                     |
+| ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| C1 identity, FIFO, immutable dependencies, failure ordering | `engine.test.ts`, `scheduler.test.ts`, `pi-adapter.test.ts` active/settled/recovered additions; successful recorded Team Board additions | F3/A1, batch atomicity, multiple refs, request retry/digest conflict, concurrency/recovery interleavings and capacity reason visibility                                                                                                                         |
+| C2 execution versus assessment/acceptance/delivery          | `engine.test.ts`, `results.test.ts`, `budgets.test.ts`, partial-output integration tests                                                 | Cross-surface negative assessment/malformed report cases; no ownership/budget/review prerequisite; no coordinator final-success inference from a cancelled `agent_end`                                                                                          |
+| C3 wait, controls, attachment and survival                  | `pi-adapter`, `survive`, `backends`, headless/control tests                                                                              | F4, foreground-to-background without relaunch, explicit continuation versus reattachment, cancel scopes and detached owner handoff                                                                                                                              |
+| C4 durable input, consumption, notifications, sessions      | `engine`, `repair-accounting`, `store`, `delivery`, `backends`, `survive`                                                                | Kill/fail at record/dispatch/checkpoint/settle/send/ack boundaries, handled-without-turn, absent parent, missing/corrupt session and idempotent follow-up transaction                                                                                           |
+| C5 context, skills and memory                               | `definitions`, `agent-extension`, `in-process`                                                                                           | F6, scoped memory conflicts, parent-seed provenance/compaction, explicit skill loadout and equivalent resolved context on every supported backend                                                                                                               |
+| C6 queuing, nesting and triggers                            | Existing FIFO/scheduler fixtures; no existing temporal/nested coverage                                                                   | Fake-clock schedule matrix, capacity changes/recovery, child grants/depth, no nested deadlock, cancellation cascade and complete child usage                                                                                                                    |
+| C7 authority, ownership and durable recovery                | `store`, `log`, `view`, `migrate`, headless recovery tests                                                                               | Two-host claim; torn versus corrupt committed records; disk-full/sync/rename failure; effect intent races; replay/checkpoint equivalence; old/new single owner; version mismatch                                                                                |
+| C8 cleanup and capability preservation                      | Backend conformance, Herdr identity tests, `agent-extension`, `paths`, writer exclusion tests                                            | F2, cleanup during launch/setup/finalization; direct/nested custom tool cases, shell/path aliases, junctions, malicious result data and unknown escaped activity                                                                                                |
+| C9 shared/worktree behavior and usable artifacts            | `workspace`, `builders`, `location`, `git`, `in-process`, current candidate manifests                                                    | F7, non-Git parity, partial provisioning, overlapping input conflicts, safe completion checkpoints, no workspace deletion on failure, manual commits retained                                                                                                   |
+| C10 application/rollback/conflicts                          | `integrate`, `paths`, `workspace`, legacy patch tests                                                                                    | F1, current validation of legacy artifacts, cross-process gate barriers, index/branch/HEAD edits and external-editor conflict/refusal                                                                                                                           |
+| C11 events, usage, UI and transport                         | `view`, `ipc`, `viewer`, `headless`, `ui`, `detail`, `render`                                                                            | F5/F8, long histories, malformed IPC, slow clients/reconnect, activity epoch reset, no phantom quality claims and meaningful unknown usage/context                                                                                                              |
+| Platform/package/document contracts                         | `.github/workflows/ci.yml`, release tests, `pi-smoke.ts`, `package-smoke.ts`, docs/examples tests                                        | Actual Linux/macOS Node/Pi artifacts; supported Node 22/24 matrix; Windows launcher/RSS/cleanup tests planned with runtime verification owner-deferred; native/pinned Pi capabilities; packaged schemas/themes/skills and runnable scripted references/examples |
 
 Use shared backend conformance for shared behavior. Fault injection must observe
 real storage/process/workspace boundaries, not only mocks that mirror a proposed
@@ -1181,7 +1358,7 @@ Every new batch must retain:
   `running`, `completed`, `timed_out`, `cancelled`, `failed`, or `interrupted_unknown`.
   Oracle state is separate: not scored, pass, fail or scorer error. Allocate the
   batch/cell identity before launch and publish atomically so cancellation between
-  creation and report publication cannot orphan or erase a trial.
+  creation and report publication cannot orphan or erase a trial (A3).
 - Exact tracked and untracked source closure, HEAD/diff/lockfile hashes, artifact
   hashes, prompt/task/corpus/definition/config digests, OS/Node/Pi/native versions,
   commands, requested and observed model/backend/workspace/lifetime, tool/context
@@ -1210,76 +1387,72 @@ Every new batch must retain:
   `comparisonEligible:false`. Offline reference-copy controls prove harness behavior,
   not coding quality or superiority.
 
-## 6. Decisions, investigations and unresolved risks
+## 6. Decisions and remaining risks
 
-### Decisions that can proceed now
+### Resolved choices
 
-- Preserve C1–C11 and implement F1/F2 repairs before product expansion. Do not restore
-  mandatory ownership, budgets or review-dependent delivery.
-- Use staged replacement, a Pi-independent command/state authority, canonical
-  boundary schemas and one shared projection/control model. Keep the existing
-  graph semantics, Git safeguards and backend conformance fixtures.
-- Keep shared default, optional worktrees, explicit application, preserved failed
-  work and honest unknown execution/usage. Add R2 capacity and R10 depth only with
-  their explicit semantics/defaults.
-- Remove the old execution implementation at M4; retain historical readers/import
-  tooling. Keep all historical evidence and qualify every performance claim.
-- Implement the missing UX/features through the common service, definitions and
-  configuration, without adding orchestration roles or a second workflow engine.
+These are implementation inputs, not questions waiting for another approval. Owner
+choices are identified separately from the bounded defaults adopted to finish M0.
 
-### Ranked gates before committing the affected architecture
+| Decision                    | Source and selected behavior                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Replacement boundary        | **Owner:** full new core, stores, backends, workspace/application, UI and harness. Build in dependency order; one M8 package cutover. Old code is the frozen reference, never a permanent runtime option.                                                                                                                                                                                                                                     |
+| Release                     | **Owner:** v3.0.0. No local v3 tag or published registry artifact was found during readiness; recheck before publication. Schema versions remain independent.                                                                                                                                                                                                                                                                                 |
+| Platforms                   | **Owner:** use the Tailscale macOS host for actual probes; Windows verification is deferred for now while support stays in the design. Linux/macOS M0 results are recorded; they do not establish Windows portability.                                                                                                                                                                                                                        |
+| Agent alignment             | **Owner:** align with the linked OpenAI guide. Use its SDK field concepts in R3 Markdown/frontmatter, with namespaced Pinata options; no claim of byte-compatible Codex file grammar.                                                                                                                                                                                                                                                         |
+| Memory                      | **Owner:** opt-in worker/project-agent scope. No global cross-project profile; writes require an explicit scoped grant and revision check.                                                                                                                                                                                                                                                                                                    |
+| Schedules                   | **Owner:** session only, no catch-up. **Default:** skip overlapping occurrences unless queue is chosen; crash/reload leaves schedules paused.                                                                                                                                                                                                                                                                                                 |
+| Completion commits          | **Adopted default:** real private checkpoint refs after normal isolated completion; failed/cancelled work retained without an automatic commit. Shared/destination branches and indexes are untouched.                                                                                                                                                                                                                                        |
+| Concurrency                 | **Adopted default:** per-run optional capacity including children; omitted/null is unbounded. No host-global provider policy or budgets.                                                                                                                                                                                                                                                                                                      |
+| Pi/schema compatibility     | **Measured decision:** canonical Zod, generated draft-07 bridge, strict canonical validation after Pi's own coercion; supported resource loader and filtered context import. Minimum demonstrated SDK is 1.1.0; native UI also passed on 1.5.0. Capability checks govern unavailable APIs.                                                                                                                                                    |
+| Persistence and supervision | **Measured candidates selected:** new Node fsync journal plus atomic owner claim; live nonce-bound POSIX guardian. Complete the production protocols in M1/M2. Windows Job Object supervision remains the planned port, with helper selection in M2.                                                                                                                                                                                          |
+| Palettes and keys           | **Adopted defaults:** inherit Pi initially; selectable Pinata, Catppuccin Mocha/Latte, Gruvbox Dark/Light, Tokyo Night Night, Rose Pine Main/Dawn, Dracula, Nord, One Dark/Light, Solarized Dark/Light and terminal-default. Shift+Up opens fleet, Shift+Down returns to the parent screen, Shift+Left/Right selects workers; all are configurable with command equivalents. The walkthrough can refine feel without delaying implementation. |
+| Evaluations                 | **Existing constraint:** no model-backed runs or token spend authorized. M0 and implementation gates use scripted/loopback providers. Propose a concrete separate study only after measurement/eligibility gates pass.                                                                                                                                                                                                                        |
 
-| Consequence                                          | Investigation / uncertainty                                                                                    | Decision enabled; blocking scope                                                                                                                                                                                     |
-| ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Critical: false delivery or user-edit loss**       | F1 fault matrix and ambiguous legacy terminal journals                                                         | Determines whether journal authority repair suffices and which legacy states require refusal. Blocks trusting application/recovery, not definition/UI planning. M1 is independently actionable.                      |
-| **Critical: live effects after cancellation**        | F2 across POSIX and Windows; stable owner/descendant identity and cleanup proof                                | Select supervisor implementation. Blocks confirmed-stop/lease-release claims and detached/backend release. A native dependency may require owner input; never substitute blind PID kills.                            |
-| **High: duplicate execution/corrupt acceptance**     | Two-host recovery claim, lost command replies, artifact/journal crash boundaries and follow-up/inbox atomicity | Finalizes run ownership and storage mechanism. Blocks M3 production cutover. This is an investigation, not an assertion that every suspected race already occurred.                                                  |
-| **High: false compatibility or authority expansion** | Zod/TypeBox bridge, Pi 1.1.0/native support for non-overlay screens, parent import, skills and context usage   | Finalizes schema adapter/minimum Pi capability matrix. Unsupported Pi capabilities get explicit errors; changing minimum peer compatibility needs a release decision. Blocks affected R3/R4/R8/R13 features, not F1. |
-| **High: deadlocked or unauthorized children**        | Capacity-1 nested wait and scoped control transport; cancellation ancestry                                     | Validates C6 before nesting ships. Reject unsupported blocking waits; do not add silent oversubscription or a mandatory parent planner.                                                                              |
-| **Medium: expensive or misleading freshness**        | Content observation coverage/cost and filesystem races                                                         | Chooses scoped measurement/cache strategy. Blocks “unchanged” claims beyond measured scope, not ordinary shared execution.                                                                                           |
-| **Medium: misleading rankings**                      | F5 coverage, cancellation/publication races, Codex child attestation and environment preflight                 | Blocks live cost/comparison claims and paid study readiness. Does not require paid work to repair the analyzer.                                                                                                      |
-| **Medium: unexplained historical rejection**         | Exact old dirty source/in-memory state unavailable; current RPC recurrence fixture                             | Keep historical incident unexplained. Blocks claiming a fix, not implementation once current invariant tests pass.                                                                                                   |
-| **Medium: unproven performance benefit**             | Strategy/provider ablations and mode matrix remain unrun                                                       | Blocks coding superiority claims. Does not justify core replacement or block a truthful functional release.                                                                                                          |
-| **Lower: scale/visual quality**                      | Reducer/outbox/session profiles and terminal walkthroughs                                                      | Chooses localized indexes/coalescing and keys/palette variants; no claimed multi-minute four-worker bottleneck from large-history microbenchmarks.                                                                   |
+Keep C1–C11, shared default, optional isolation, explicit application, failed-work
+retention and honest unknown states. Do not add workflow roles, mandatory ownership,
+resource budgets or verification-dependent delivery. Runtime ownership and checkout
+writer exclusion are integrity mechanisms, not a coordinator's work-allocation policy.
 
-### Owner questions with defaults and decision deadlines
+### Ranked evidence and remaining implementation gates
 
-These questions do not require stopping the planning task. Resolve them before the
-named feature/release gate; independent repairs can proceed under a later
-implementation instruction.
+| Consequence                                    | What M0 resolved                                                                                                                                                                                           | Remaining gate and blocking scope                                                                                                                                                                                                                                                          |
+| ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Critical: false delivery or user-edit loss** | Real F1 fault/kill boundaries show that terminal journal phase plus stale cursor can claim a new apply while leaving base bytes. Application-cursor interruptions also demonstrate recoverable cases.      | M3 must put cursor meaning in the authoritative terminal record and test every destination/metadata boundary. Ambiguous legacy states refuse or reconcile. Blocks trusting the new application layer, not M1.                                                                              |
+| **Critical: activity after cancellation**      | F2 reproduced on Linux/macOS; keeping a resident group leader and validating its live nonce stops the tested TERM-resistant leaf after payload exit.                                                       | M2 must handle guardian death, enrollment, detached handoff, escaped activity and gate retention. True PID reuse and Windows are unverified. These block confirmed-cleanup claims for those cases; they do not justify blind historical-PGID kills.                                        |
+| **High: duplicate ownership or acceptance**    | A2 reproduces both hosts claiming one unowned saved run. Atomic exclusive create admitted one prototype owner; synced assignment/inbox receipts survived tested process deaths without duplicates.         | M1 must implement complete claims, artifacts, committed-frame validation, IO errors, corruption and explicit reconciliation. The prototype's offline owner-file archiving is test scaffolding, not automatic lock stealing. No power-loss or network-filesystem guarantee was established. |
+| **High: lost context or expanded authority**   | Zod/Pi bridge and explicit skill loading work through supported APIs. Pi branch/fork copies custom host records; context usage can be unknown after compaction. Non-overlay UI/draft/disposal probes pass. | M2/M5 must import filtered conversation data, preserve valid tool pairs, constrain grants and advertise actual backend support. M7 must test the complete screen router and load targets. No raw-payload parity, arbitrary session-clone safety or eight-worker UI latency is claimed.     |
+| **High: deadlocked or unauthorized children**  | C6 chooses one root authority, intersected grants and explicit capacity-blocked waits; no feasibility result required another owner choice.                                                                | M6's capacity-1/depth/cancellation matrix must pass before nesting ships. Do not silently oversubscribe or add a mandatory manager role.                                                                                                                                                   |
+| **Medium: stale context/freshness**            | F6 and F7 have maintained counterexamples; empty-cache discovery and dirty-to-dirty fingerprints are insufficient.                                                                                         | M3/M5 validate discovery-set/content observations, non-Git paths and concurrent edits; performance profiling chooses cache scope. “Unchanged” never claims uninterrupted immutability or authorship.                                                                                       |
+| **Medium: false totals or missing trials**     | F5 mixed totals reproduced; strict per-attempt coverage prototype keeps incomplete totals unknown. A3 kills the real matrix after batch allocation and leaves a running cell with no batch pointer.        | M8 must durably publish batch/cell identities before launch and preserve incomplete cells; M2/M8 reconcile all started attempts. External workflow attestation and complete costs remain prerequisites for rankings.                                                                       |
+| **Medium: historical rejection unexplained**   | Current A1/F3 are distinct mechanisms and do not explain `unknown dependency prices`. The original in-memory state is unavailable.                                                                         | Keep the exact public-payload regression and incident provenance. Only a reproduced historical mechanism closes the incident; it does not block M1.                                                                                                                                        |
+| **Medium: unproven coding benefit**            | Small scripted profiles expose real history-dependent costs, while reviewed arena dispatch gaps were milliseconds and Pinata completed 0/4 trials.                                                         | Strategy/provider/mode experiments require separately authorized controlled trials. Blocks performance/superiority claims, not a truthful functional implementation or release.                                                                                                            |
+| **Lower: scale and subjective feel**           | Baseline reducer/outbox/consumption scans and durable IO are measured; pinned/native Pi navigation restored the test draft on both hosts.                                                                  | M7/M8 add complete responsiveness/resource-plateau measurements and a user walkthrough. Preserve semantic history when indexing/coalescing; microbenchmarks cannot explain multi-minute coding timelines alone.                                                                            |
 
-| ID     | Question / consequence                                                                                             | Proposed assumption until answered                                                                                                                                                         | Needed by                          |
-| ------ | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------- |
-| **Q1** | What public release name should replace the already-3.0.0 package?                                                 | New major 4.0.0, separate schema versions; never reuse a published incompatible version.                                                                                                   | M3 format freeze / M8 release      |
-| **Q2** | Does “CODEX style” require importing a specific external file format?                                              | Native Markdown/frontmatter with named roles/settings and clear overrides; no unverified import-compatibility promise. Request a representative file/spec only if exact import is desired. | M5                                 |
-| **Q3** | Should automatic isolated commits appear on user-visible branches, and should failed assignments also auto-commit? | Private real Git checkpoint refs for normal completion; failed/cancelled snapshots/worktrees retained without automatic commits; no shared/destination commits.                            | M5                                 |
-| **Q4** | Is memory intended to persist across projects or under the user's global account?                                  | Off by default; opt-in worker/project-agent scopes only, explicit memory writes. Global scope is deferred until explicitly required.                                                       | M5                                 |
-| **Q5** | Is queue capacity expected to be global across runs/hosts, or per run?                                             | Per-run optional capacity including descendants; no provider/global policy. Global capacity would require another shared ownership/admission boundary and separate design.                 | M6                                 |
-| **Q6** | Should schedules survive closing Pi, and what overlap/catch-up behavior is desired?                                | Session only; pause on crash/reload, no catch-up, explicit skip/queue policy. Detached recurring work is outside R11's literal scope.                                                      | M6                                 |
-| **Q7** | Are native platform supervision dependencies acceptable if necessary for Windows cleanup?                          | Prefer existing/platform APIs and a small supervised launcher. Do not introduce a compiled helper until M0/M2 prove it necessary and packaging costs are reviewed.                         | M2, only if necessary              |
-| **Q8** | Which palette variants/keybindings and user journeys define the desired feel?                                      | R1/R4 defaults plus short owner walkthrough; all named families and no-overlay behavior remain required.                                                                                   | M7                                 |
-| **Q9** | What paid evaluation budget and practical improvement justify a performance claim?                                 | No live runs authorized. Functional release reports current limits; propose a separate concrete study after measurement/preflight gates.                                                   | Before any model-backed experiment |
+No remaining owner question blocks the first milestone. The Windows helper and cron
+library are implementation selections with concrete compatibility tests, not reasons
+to stop all work. Actual machine-power-loss behavior, network filesystems and hostile
+same-user containment are outside M0 evidence. State supported durability/filesystem
+assumptions before the corresponding production contract ships.
 
-Largest residual risks are accidental loss of recovery evidence during migration,
-SDK/backend divergence in context and control, process ownership that cannot be
-proven on a supported platform, new feature interactions under low capacity, and
-overclaiming performance from correct-but-unfinished candidates. A deadline or
-mandatory reviewer would not resolve these risks. A larger rewrite increases the
-number of contracts that must be re-established at once.
+Largest residual risks are migration losing evidence, SDK/backend context divergence,
+unconfirmed process ownership, feature interactions under low capacity and misleading
+performance claims. Full replacement expands the regression surface; the new-layer
+exit gates and final import/package scan are what make that scope reviewable.
 
 ### Smallest first implementation milestone and acceptance gate
 
-**Start with M1: make application and rollback agree with their durable cursor state.**
-Use the existing integration fixture: `base` → isolated `first` → apply → rollback;
-reconstruct the reviewed terminal-journal/stale-cursor crash state and apply `first`
-again. Repair the authority/reconciliation boundary in the current implementation,
-without waiting for the new runtime or adding product features.
+**Start M1: a new durable command ledger and atomic acceptance service.** Given an
+empty disposable run, accept `base/1`, reject `audit after base/999` without reserving
+`audit`, accept its corrected request, and accept one follow-up plus inbox message.
+Kill at each commit/receipt boundary, reopen in a fresh process, and retry the same
+request ID. Race two independent owners at a barrier. Resolve both `base/1` and
+`base/2` as distinct immutable result references.
 
-The gate is concrete: the exact reproduction and every injected journal/cursor
-write/sync/rename interruption recover in a fresh process to the intended bytes or
-an actionable refusal; none returns a new `applied` success with `base` still present.
-HEAD, branch, index, unrelated user edits, path/object protections and writer exclusion
-remain intact. Focused integration/path/store checks, `npm run check` and the full
-scripted suite pass with retained failure/attempt evidence. Then proceed to M2's
-owned-process boundary. No model calls or retained-evidence changes are part of
-either gate.
+The gate is one accepted graph/inbox/receipt history, one dispatch owner, no name
+contamination or duplicate follow-up, and explicit uncertainty for an unconfirmed
+commit/effect. Invalid or torn evidence stays inspectable. The replacement imports
+no old live implementation or Pi in its core; focused tests, `npm run check` and the
+full scripted suite pass. No production entry point, user workspace or paid provider
+is involved. Proceed to M2 only after this authority is established; application
+replacement and the F1 recovery guarantee follow in M3.

@@ -44,6 +44,7 @@
   "scripts": {
     "test": "node scripts/test.mjs",
     "test:engine": "node --test \"test/engine/**/*.test.ts\"",
+    "test:readiness": "node scripts/readiness.mjs",
     "test:live": "node test/engine/live-smoke.ts",
     "eval:live": "node test/quality/engine.ts",
     "arena": "node arena/run.ts",
@@ -68,7 +69,8 @@
     "oxfmt": "0.71.0",
     "oxlint": "1.86.0",
     "typebox": "1.3.27",
-    "typescript": "7.0.2"
+    "typescript": "7.0.2",
+    "zod": "4.6.7"
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",
