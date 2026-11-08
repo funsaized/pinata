@@ -253,6 +253,7 @@ export function prepareCommand(
       }
       break;
     }
+    case "continue":
     case "follow_up": {
       requireWorker(state, command.worker);
       const previous = {
@@ -261,7 +262,20 @@ export function prepareCommand(
         assignment: state.latest[command.worker],
       };
       const ref = { ...previous, assignment: previous.assignment + 1 };
-      const after = resolveReferences(state, command.after, new Set());
+      if (command.kind === "continue") {
+        const prior = state.assignments[assignmentKey(previous)];
+        if (prior.execution.phase !== "ended" || prior.execution.cleanup !== "confirmed")
+          throw new DomainError(
+            "owner_unconfirmed",
+            "Continue requires confirmed stopped work; attach to live work or reconcile uncertainty first",
+            "worker",
+          );
+      }
+      const after = resolveReferences(
+        state,
+        command.kind === "follow_up" ? command.after : [],
+        new Set(),
+      );
       if (!after.some((entry) => assignmentKey(entry) === assignmentKey(previous)))
         after.push(previous);
       assignments.push({
@@ -269,7 +283,11 @@ export function prepareCommand(
         sequence: firstSequence,
         task: command.text,
         after,
-        inputs: resolveReferences(state, command.inputs, new Set()),
+        inputs: resolveReferences(
+          state,
+          command.kind === "follow_up" ? command.inputs : [],
+          new Set(),
+        ),
         context: [],
         execution: { phase: "queued" },
       });
@@ -332,6 +350,9 @@ export function prepareCommand(
         };
       }),
     },
+    ...(command.kind === "create"
+      ? { maxConcurrent: command.config?.execution.maxConcurrent ?? null }
+      : {}),
     workers,
     assignments,
     messages,

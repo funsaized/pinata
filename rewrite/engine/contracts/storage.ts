@@ -32,7 +32,7 @@ export const journalRecordSchema = z
   .superRefine((record, context) => {
     const transition = record.transition;
     if (
-      transition.kind === "accepted" &&
+      (transition.kind === "accepted" || transition.kind === "control_accepted") &&
       (transition.requestId !== record.requestId ||
         transition.receipt.requestId !== record.requestId ||
         transition.payloadDigest !== record.payloadDigest ||

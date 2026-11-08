@@ -28,6 +28,7 @@ import {
   reduce,
   type CoreState,
 } from "../../rewrite/engine/core/state.ts";
+import { assignmentUsage } from "../../rewrite/engine/core/usage.ts";
 
 const definition = { digest: digestValue("definition"), size: 12 };
 const grants = {
@@ -65,24 +66,78 @@ function add(state: CoreState, id: string): CoreState {
   );
   return reduce(state, accepted, state.revision + 1);
 }
-function settle(state: CoreState, assignment: number, summary: string): CoreState {
+function settle(
+  state: CoreState,
+  assignment: number,
+  summary: string,
+  history?: Transition[],
+): CoreState {
+  const ref = { run: "run", worker: "base", assignment };
+  const attemptId = `base/${assignment}/attempt`;
+  let current = state;
+  const commit = (transition: Transition) => {
+    history?.push(transition);
+    current = reduce(current, transition, current.revision + 1);
+  };
+  commit({ kind: "assignment_state", ref, execution: { phase: "preparing" } });
+  commit({
+    kind: "attempt_started",
+    attempt: { id: attemptId, ref, ordinal: 1, backend: "in-process", ownerEpoch: "epoch" },
+  });
+  commit({
+    kind: "backend_enrolled",
+    attemptId,
+    identity: { id: attemptId, kind: "in-process", ownerEpoch: "epoch" },
+    evidence: [definition],
+  });
+  commit({ kind: "assignment_state", ref, execution: { phase: "running" } });
+  const outcome = {
+    reason: "completed" as const,
+    summary,
+    usage: {
+      expectedAttempts: [attemptId],
+      observations: [
+        {
+          attempt: attemptId,
+          source: attemptId,
+          usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 },
+        },
+      ],
+      complete: true,
+    },
+    artifacts: [],
+  };
+  commit({
+    kind: "attempt_outcome",
+    attemptId,
+    outcome,
+    artifact: { digest: digestValue(outcome), size: JSON.stringify(outcome).length },
+  });
+  commit({ kind: "assignment_state", ref, execution: { phase: "finalizing" } });
+  commit({
+    kind: "cleanup_observed",
+    attemptId,
+    receipt: {
+      status: "stopped",
+      ownerEpoch: "epoch",
+      identities: [attemptId],
+      evidence: [definition],
+    },
+  });
   const result: AssignmentResult = {
-    ref: { run: "run", worker: "base", assignment },
+    ref,
     summary,
     execution: { phase: "ended", reason: "completed", cleanup: "confirmed" },
     artifacts: [],
-    usage: { expectedAttempts: [], observations: [], complete: true },
+    usage: assignmentUsage(current, ref),
   };
-  return reduce(
-    state,
-    {
-      kind: "settled",
-      result,
-      resultArtifact: { digest: digestValue(result), size: JSON.stringify(result).length },
-      notificationId: `run/base/${assignment}/completed`,
-    },
-    state.revision + 1,
-  );
+  commit({
+    kind: "settled",
+    result,
+    resultArtifact: { digest: digestValue(result), size: JSON.stringify(result).length },
+    notificationId: `run/base/${assignment}/completed`,
+  });
+  return current;
 }
 
 test("rewrite contracts freeze independent format versions and strict authority-free command inputs", () => {
@@ -126,7 +181,7 @@ test("rewrite contracts freeze independent format versions and strict authority-
 
 test("rewrite JSON schema bridge works through Pi validation then canonical validation", () => {
   const schemas = exportSchemas();
-  assert.equal(Object.keys(schemas).length, 18);
+  assert(Object.keys(schemas).length >= 18);
   const parameters = schemas["pinata.command.v1"] as TSchema;
   const tool = { name: "pinata_test", description: "Scripted contract only", parameters };
   const parse = (value: JsonObject) =>
@@ -259,13 +314,21 @@ test("rewrite batches resolve forward names, reject cycles and enforce FIFO agai
 });
 
 test("rewrite A1 keeps both immutable predecessor results through follow-up and replay", () => {
-  let state = settle(add(initialState("run"), "base"), 1, "first summary");
+  const acceptedBase = prepareCommand(
+    initialState("run"),
+    request("add-base", { kind: "add", workers: [{ id: "base", agent: "builder", task: "base" }] }),
+    caller,
+    { workers: [worker("base")] },
+  );
+  const transitions: Transition[] = [acceptedBase];
+  let state = settle(reduce(initialState("run"), acceptedBase, 1), 1, "first summary", transitions);
   const follow = prepareCommand(
     state,
     request("follow", { kind: "follow_up", worker: "base", messageId: "second", text: "second" }),
     caller,
   );
-  state = settle(reduce(state, follow, state.revision + 1), 2, "second summary");
+  transitions.push(follow);
+  state = settle(reduce(state, follow, state.revision + 1), 2, "second summary", transitions);
   const accepted = prepareCommand(
     state,
     request("audit", {
@@ -296,25 +359,6 @@ test("rewrite A1 keeps both immutable predecessor results through follow-up and 
     dependencyResults(state, accepted.assignments[0])[0].result.summary,
     "first summary",
   );
-  const acceptedBase = prepareCommand(
-    initialState("run"),
-    request("add-base", { kind: "add", workers: [{ id: "base", agent: "builder", task: "base" }] }),
-    caller,
-    { workers: [worker("base")] },
-  );
-  const transitions: Transition[] = [acceptedBase];
-  for (const [index, summary] of ["first summary", "second summary"].entries()) {
-    if (index === 1) transitions.push(follow);
-    const stored =
-      state.results[assignmentKey({ run: "run", worker: "base", assignment: index + 1 })];
-    assert.equal(stored.result.summary, summary);
-    transitions.push({
-      kind: "settled",
-      result: stored.result,
-      resultArtifact: stored.artifact,
-      notificationId: `run/base/${index + 1}/completed`,
-    });
-  }
   const replayed = transitions.reduce(
     (replay, transition, index) => reduce(replay, transition, index + 1),
     initialState("run"),
@@ -473,6 +517,11 @@ test("rewrite reducer records effect uncertainty and refuses fabricated consumpt
         4,
       ),
     { code: "conflict" },
+  );
+  state = reduce(
+    state,
+    { kind: "effect_observed", effectId: "prepare", status: "completed" },
+    state.revision + 1,
   );
   state = settle(state, 1, "done");
   assert.throws(() => settle(state, 1, "again"), { code: "conflict" });

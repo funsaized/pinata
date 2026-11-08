@@ -50,6 +50,7 @@ export const frozenWorkerSchema = z.strictObject({
   depth: revisionSchema.default(0),
   config: artifactRefSchema.optional(),
   context: artifactRefSchema.optional(),
+  workspacePlan: artifactRefSchema.optional(),
 });
 export type FrozenWorker = z.infer<typeof frozenWorkerSchema>;
 export const triggerSchema = z.discriminatedUnion("kind", [

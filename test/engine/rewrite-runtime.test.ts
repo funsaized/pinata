@@ -11,13 +11,16 @@ import {
   type Grants,
 } from "../../rewrite/engine/contracts/common.ts";
 import { canonicalJson, digestValue } from "../../rewrite/engine/contracts/digest.ts";
-import type {
-  AssignmentResult,
-  CommandReceipt,
-  Transition,
+import {
+  transitionArtifacts,
+  type AssignmentResult,
+  type CommandReceipt,
+  type Transition,
 } from "../../rewrite/engine/contracts/lifecycle.ts";
+import type { BackendOutcome } from "../../rewrite/engine/contracts/backend.ts";
 import type { Manifest } from "../../rewrite/engine/contracts/storage.ts";
-import { dependencyResults } from "../../rewrite/engine/core/state.ts";
+import { dependencyResults, initialState, reduce } from "../../rewrite/engine/core/state.ts";
+import { assignmentUsage } from "../../rewrite/engine/core/usage.ts";
 import {
   Runtime,
   type RuntimeOptions,
@@ -439,13 +442,78 @@ test("full assignment result references retain both predecessor payloads through
   // Scripted committed outcomes exercise the result boundary without introducing
   // model execution or workspace effects into the acceptance milestone.
   const store = await DurableStore.open({ directory: world.directory });
+  let state = initialState(caller.run);
+  for (const frame of store.frames)
+    state = reduce(state, frame.record.transition, frame.record.revision);
+  const append = async (transition: Transition): Promise<void> => {
+    const revision = state.revision + 1;
+    state = reduce(state, transition, revision);
+    await store.append({
+      requestId: `fixture-effect-${revision}`,
+      payloadDigest: digestValue(transition),
+      transition,
+      artifacts: transitionArtifacts(transition),
+    });
+  };
   for (const ref of refs) {
+    const attemptId = `${assignmentKey(ref)}/attempt/1`;
+    const identity = {
+      id: `${attemptId}/scripted`,
+      kind: "in-process" as const,
+      ownerEpoch: store.owner.epoch,
+    };
+    const evidence = await store.putArtifact(
+      Buffer.from(canonicalJson({ identity, stopped: true })),
+    );
+    await append({ kind: "assignment_state", ref, execution: { phase: "preparing" } });
+    await append({
+      kind: "attempt_started",
+      attempt: {
+        id: attemptId,
+        ref,
+        ordinal: 1,
+        backend: "in-process",
+        ownerEpoch: store.owner.epoch,
+      },
+    });
+    await append({ kind: "backend_enrolled", attemptId, identity, evidence: [evidence] });
+    await append({ kind: "assignment_state", ref, execution: { phase: "running" } });
+    const outcome: BackendOutcome = {
+      reason: "completed",
+      summary: `result-${ref.assignment}`,
+      artifacts: [],
+      usage: {
+        expectedAttempts: [attemptId],
+        observations: [
+          {
+            attempt: attemptId,
+            source: `${attemptId}/total`,
+            kind: "attempt_total",
+            usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 },
+          },
+        ],
+        complete: true,
+      },
+    };
+    const outcomeArtifact = await store.putArtifact(Buffer.from(canonicalJson(outcome)));
+    await append({ kind: "attempt_outcome", attemptId, outcome, artifact: outcomeArtifact });
+    await append({ kind: "assignment_state", ref, execution: { phase: "finalizing" } });
+    await append({
+      kind: "cleanup_observed",
+      attemptId,
+      receipt: {
+        status: "stopped",
+        ownerEpoch: store.owner.epoch,
+        identities: [identity.id],
+        evidence: [evidence],
+      },
+    });
     const result: AssignmentResult = {
       ref,
       summary: `result-${ref.assignment}`,
       execution: { phase: "ended", reason: "completed", cleanup: "confirmed" },
       artifacts: [],
-      usage: { expectedAttempts: [], observations: [], complete: true },
+      usage: assignmentUsage(state, ref),
     };
     const artifact = await store.putArtifact(Buffer.from(canonicalJson(result)));
     const transition: Transition = {
@@ -454,12 +522,7 @@ test("full assignment result references retain both predecessor payloads through
       resultArtifact: artifact,
       notificationId: `${caller.run}/base/${ref.assignment}/completed`,
     };
-    await store.append({
-      requestId: `result-${ref.assignment}`,
-      payloadDigest: digestValue(transition),
-      transition,
-      artifacts: [artifact],
-    });
+    await append(transition);
   }
   await store.close();
   await world.reopen();

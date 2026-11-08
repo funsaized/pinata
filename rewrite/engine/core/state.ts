@@ -8,6 +8,8 @@ import {
   type Transition,
 } from "../contracts/index.ts";
 import { validateAcceptance } from "./invariants.ts";
+import { reduceLifecycle } from "./lifecycle.ts";
+import { validateExecutionTransition, validateSettlement } from "./execution.ts";
 
 export type { CoreState, EffectState } from "../contracts/index.ts";
 export type State = CoreState;
@@ -23,6 +25,11 @@ export function initialState(run: string): CoreState {
     inbox: {},
     receipts: {},
     effects: {},
+    attempts: {},
+    sessions: {},
+    contextUsage: {},
+    cancelled: {},
+    attachment: "foreground",
     results: {},
     outbox: {},
     maxConcurrent: null,
@@ -96,6 +103,11 @@ export function reduce(state: CoreState, value: Transition, revision: number): C
         if (state.config) throw new DomainError("conflict", "Run configuration is already frozen");
         next.config = transition.config;
       }
+      if (transition.maxConcurrent !== undefined) {
+        if (state.nextSequence !== 1)
+          throw new DomainError("conflict", "Initial capacity is already frozen");
+        next.maxConcurrent = transition.maxConcurrent;
+      }
       return next;
     }
     case "effect_intent": {
@@ -123,8 +135,7 @@ export function reduce(state: CoreState, value: Transition, revision: number): C
     case "assignment_state": {
       const key = assignmentKey(transition.ref);
       const assignment = requireAssignment(next, key);
-      if (assignment.execution.phase === "ended")
-        throw new DomainError("conflict", "Ended execution cannot be reopened");
+      validateExecutionTransition(state, assignment, transition.execution);
       next.assignments = {
         ...state.assignments,
         [key]: { ...assignment, execution: transition.execution },
@@ -134,6 +145,7 @@ export function reduce(state: CoreState, value: Transition, revision: number): C
     case "settled": {
       const key = assignmentKey(transition.result.ref);
       const assignment = requireAssignment(next, key);
+      validateSettlement(state, transition);
       if (
         transition.result.execution.phase !== "ended" ||
         Object.hasOwn(next.results, key) ||
@@ -152,6 +164,8 @@ export function reduce(state: CoreState, value: Transition, revision: number): C
       setEntry(next.outbox, transition.notificationId, {
         ref: transition.result.ref,
         result: transition.resultArtifact,
+        state: "recorded",
+        attempts: [],
       });
       return next;
     }
@@ -159,6 +173,17 @@ export function reduce(state: CoreState, value: Transition, revision: number): C
       const message = Object.hasOwn(next.inbox, transition.messageId)
         ? next.inbox[transition.messageId]
         : undefined;
+      const consumed = message?.attempts.at(-1);
+      if (
+        message?.state === "consumed" &&
+        transition.state === "consumed" &&
+        consumed?.id === transition.attemptId &&
+        consumed.checkpoint &&
+        transition.checkpoint &&
+        consumed.checkpoint.digest === transition.checkpoint.digest &&
+        consumed.checkpoint.size === transition.checkpoint.size
+      )
+        return next;
       if (
         !message ||
         message.state === "consumed" ||
@@ -168,6 +193,18 @@ export function reduce(state: CoreState, value: Transition, revision: number): C
           "conflict",
           "Inbox observation lacks a valid message or consumption checkpoint",
         );
+      if (transition.state !== "dispatch_intent" && message.state === "recorded")
+        throw new DomainError("conflict", "Input observation precedes its dispatch intent");
+      if (transition.state === "dispatch_intent" && message.state !== "recorded")
+        throw new DomainError(
+          "conflict",
+          "Input delivery must be reconciled before another attempt",
+        );
+      if (
+        transition.state !== "dispatch_intent" &&
+        message.attempts.at(-1)?.id !== transition.attemptId
+      )
+        throw new DomainError("conflict", "Input observation names a different dispatch attempt");
       next.inbox = { ...state.inbox };
       setEntry(next.inbox, transition.messageId, {
         ...message,
@@ -186,6 +223,8 @@ export function reduce(state: CoreState, value: Transition, revision: number): C
     case "capacity_changed":
       next.maxConcurrent = transition.maxConcurrent;
       return next;
+    default:
+      return reduceLifecycle(state, transition, revision);
   }
 }
 

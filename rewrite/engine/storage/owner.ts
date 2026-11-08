@@ -11,7 +11,6 @@ import {
   readOptional,
   StorageError,
   syncDirectory,
-  writeSynced,
   type FaultHook,
 } from "./io.ts";
 
@@ -114,7 +113,7 @@ export async function claimOwner(directory: string, fault?: FaultHook): Promise<
   }
   // The owner directory remains as evidence after any failed claim publication.
   await assertNoReconciliation(directory);
-  await writeSynced(
+  await publishImmutable(
     join(directory, "owner", "claim.json"),
     Buffer.from(JSON.stringify(owner)),
     "owner",

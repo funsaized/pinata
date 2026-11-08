@@ -57,11 +57,48 @@ retains all accepted graph/inbox/receipt identities, keys dependency results by 
 assignment reference, and rejects stale or malformed authority. Effect dispatch is
 an injected inert test port only; recorded uncertain intents are not replayed.
 
+## M2 — execution and backend supervision
+
+Implemented the replacement execution controller, real Pi session adapter,
+supervised process transport and optional Herdr monitor. The core remains Pi-free.
+Worker results, conversation spans, usage coverage and cleanup evidence are distinct.
+Exact assignment waits, durable input consumption, completion notifications and
+explicit recovery share the command ledger. Recovery reattaches the original
+attempt; it never starts a replacement or blindly redispatches uncertain inputs.
+
+The resident supervisor binds control to a live nonce and retains enrollment,
+output and stop evidence. Payload exit and complete output drainage are separate
+observations. Confirmed cleanup covers enrolled activity; unknown ownership or
+escaped activity retains exclusion. Explicit stopped-receipt recovery handles a
+host crash after cleanup but before settlement. Herdr panes are owned monitors;
+steering uses Runtime, not an interactive Pi prompt inside the pane. See
+[backend behavior and limits](rewrite-backends.md).
+
+The fixed M2 source was independently validated in a disposable checkout while
+later milestones continued in the shared checkout. Evidence is retained under
+`bench/results/rewrite-2026-11-08/m2/`:
+
+- Linux Node 26.12: formatting, lint and typecheck passed; full offline suite passed: 528 tests, two platform skips.
+- Linux Node 22.19: 122 replacement contract/runtime/backend tests passed.
+- macOS Node 26.9 and 22.23.1: each passed 135 tests with one unavailable Herdr case
+  skipped. These runs also include the early checkout-gate and capture regressions.
+- Real Linux Herdr monitor creation, rendering, detach/reattach and owned cleanup
+  passed. Pi and installed-package smokes passed without model calls.
+- Source archive and per-file hashes are retained with the logs. Failed attempts
+  remain: the earlier output-drain race, and a disposable dependency-directory
+  symlink that made baseline provenance incomplete. The fixed reruns passed.
+
+Windows has a typed Job Object launcher port and recorded helper selection, but no
+verified helper binary; its process cleanup capability remains unavailable and
+unverified. Actual PID reuse, universal escaped-process containment and machine
+power-loss behavior are not claimed. The shipping package still selects the frozen
+runtime; replacement code is limited to disposable tests until M8.
+
 ## Remaining milestones
 
-M2–M8 have not started. All plan requirements and acceptance gates remain in force,
-including Linux/macOS backend and package testing, explicit unavailable/unverified
-capabilities, full application recovery, migration, definitions/context/memory,
-nesting/schedules, UI navigation and owner walkthrough, replacement harness and the
-single package cutover. Windows runtime verification and model-backed comparative
-evaluations retain the plan's authorized deferrals.
+M3 workspace/application implementation and later independent surface/loadout
+modules are in progress; their complete integration gates have not yet passed.
+M3–M8 requirements remain in force, including application recovery, migration,
+definitions/context/memory, nesting/schedules, UI navigation and owner walkthrough,
+replacement harness and the single package cutover. No paid model calls, push or
+publication are authorized by these local implementation gates.

@@ -476,6 +476,10 @@ test("rewrite store: interrupted claim publication leaves its exclusive claim ev
     "owner.write.after",
     "owner.sync.before",
     "owner.sync.after",
+    "owner.publish.before",
+    "owner.publish.after",
+    "owner.directory-sync.before",
+    "owner.directory-sync.after",
   ]) {
     const directory = await temporaryStore(t);
     await assert.rejects(
@@ -488,12 +492,30 @@ test("rewrite store: interrupted claim publication leaves its exclusive claim ev
         },
       }),
     );
-    const path = join(directory, "owner", "claim.json");
-    const retained = await readFile(path);
+    const ownerDirectory = join(directory, "owner");
+    const names = (await readdir(ownerDirectory)).sort();
+    const retained = await Promise.all(names.map((name) => readFile(join(ownerDirectory, name))));
+    assert(names.length > 0);
+    assert.equal(
+      names.includes("claim.json"),
+      ["owner.publish.after", "owner.directory-sync.before", "owner.directory-sync.after"].includes(
+        boundary,
+      ),
+    );
+    if (
+      boundary.endsWith("before") ||
+      boundary === "owner.write.after" ||
+      boundary === "owner.sync.after"
+    )
+      assert(names.some((name) => name.startsWith(".unaccepted-")));
     await assert.rejects(DurableStore.open({ directory, manifest: manifest(directory) }), {
       code: "owner_unconfirmed",
     });
-    assert.deepEqual(await readFile(path), retained);
+    assert.deepEqual((await readdir(ownerDirectory)).sort(), names);
+    assert.deepEqual(
+      await Promise.all(names.map((name) => readFile(join(ownerDirectory, name)))),
+      retained,
+    );
   }
 });
 

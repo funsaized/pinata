@@ -13,6 +13,17 @@ import {
   workspaceSchema,
 } from "./common.ts";
 import { frozenWorkerSchema } from "./commands.ts";
+import { usageCoverageSchema, usageObservationSchema } from "./usage.ts";
+import {
+  backendIdentitySchema,
+  backendOutcomeSchema,
+  cleanupReceiptSchema,
+  contextUsageSchema,
+  preparedWorkspaceSchema,
+  sessionCheckpointSchema,
+  workspaceCaptureSchema,
+} from "./backend.ts";
+export { usageSchema, usageCoverageSchema } from "./usage.ts";
 
 export const executionSchema = z.discriminatedUnion("phase", [
   z.strictObject({ phase: z.literal("queued") }),
@@ -101,43 +112,59 @@ export const acceptedTransitionSchema = z.strictObject({
   assignments: z.array(assignmentSchema),
   messages: z.array(inboxMessageSchema),
   config: artifactRefSchema.optional(),
+  maxConcurrent: revisionSchema.positive().nullable().optional(),
 });
 export type AcceptedTransition = z.infer<typeof acceptedTransitionSchema>;
 export const effectSchema = z.strictObject({
   id: identitySchema,
   ref: assignmentRefSchema,
-  kind: z.enum(["prepare", "launch", "steer", "cleanup", "capture", "notification"]),
+  kind: z.enum(["prepare", "launch", "steer", "cleanup", "checkpoint", "capture", "notification"]),
   input: artifactRefSchema.optional(),
 });
 export type Effect = z.infer<typeof effectSchema>;
-export const usageSchema = z.strictObject({
-  input: revisionSchema,
-  output: revisionSchema,
-  cacheRead: revisionSchema,
-  cacheWrite: revisionSchema,
-  cost: z.number().nonnegative().nullable(),
-});
-export const usageCoverageSchema = z.strictObject({
-  expectedAttempts: z.array(identitySchema),
-  observations: z.array(
-    z.strictObject({ attempt: identitySchema, source: identitySchema, usage: usageSchema }),
-  ),
-  complete: z.boolean(),
-  reason: textSchema.optional(),
-});
 export const resultSchema = z.strictObject({
   ref: assignmentRefSchema,
   summary: z.string(),
   execution: executionSchema,
   report: artifactRefSchema.optional(),
+  reportingError: textSchema.optional(),
+  finalizationErrors: z.array(textSchema).optional(),
   artifacts: z.array(artifactRefSchema),
   transcript: artifactRefSchema.optional(),
   session: artifactRefSchema.optional(),
+  snapshot: artifactRefSchema.optional(),
   usage: usageCoverageSchema,
 });
 export type AssignmentResult = z.infer<typeof resultSchema>;
+export const controlActionSchema = z.discriminatedUnion("kind", [
+  z.strictObject({ kind: z.literal("cancel"), targets: z.array(assignmentRefSchema) }),
+  z.strictObject({ kind: z.literal("background") }),
+]);
+export const controlTransitionSchema = z.strictObject({
+  kind: z.literal("control_accepted"),
+  requestId: identitySchema,
+  payloadDigest: digestSchema,
+  receipt: acceptedReceiptSchema,
+  action: controlActionSchema,
+});
+export type ControlTransition = z.infer<typeof controlTransitionSchema>;
+export const attemptSchema = z.strictObject({
+  id: identitySchema,
+  ref: assignmentRefSchema,
+  ordinal: revisionSchema.positive(),
+  backend: backendSchema,
+  ownerEpoch: identitySchema,
+});
+export type Attempt = z.infer<typeof attemptSchema>;
+export const outboxObservationStateSchema = z.enum([
+  "dispatch_intent",
+  "delivered",
+  "consumed",
+  "uncertain",
+]);
 export const transitionSchema = z.discriminatedUnion("kind", [
   acceptedTransitionSchema,
+  controlTransitionSchema,
   z.strictObject({ kind: z.literal("effect_intent"), effect: effectSchema }),
   z.strictObject({
     kind: z.literal("effect_observed"),
@@ -170,8 +197,70 @@ export const transitionSchema = z.discriminatedUnion("kind", [
     checkpoint: artifactRefSchema.optional(),
   }),
   z.strictObject({
+    kind: z.literal("inbox_not_delivered"),
+    messageId: identitySchema,
+    attemptId: identitySchema,
+    receipt: artifactRefSchema,
+  }),
+  z.strictObject({
     kind: z.literal("capacity_changed"),
     maxConcurrent: revisionSchema.positive().nullable(),
+  }),
+  z.strictObject({ kind: z.literal("attempt_started"), attempt: attemptSchema }),
+  z.strictObject({
+    kind: z.literal("workspace_prepared"),
+    attemptId: identitySchema,
+    prepared: preparedWorkspaceSchema,
+  }),
+  z.strictObject({
+    kind: z.literal("workspace_captured"),
+    attemptId: identitySchema,
+    capture: workspaceCaptureSchema,
+  }),
+  z.strictObject({
+    kind: z.literal("backend_enrolled"),
+    attemptId: identitySchema,
+    identity: backendIdentitySchema,
+    evidence: z.array(artifactRefSchema),
+  }),
+  z.strictObject({
+    kind: z.literal("attempt_outcome"),
+    attemptId: identitySchema,
+    outcome: backendOutcomeSchema,
+    artifact: artifactRefSchema,
+  }),
+  z.strictObject({
+    kind: z.literal("cleanup_observed"),
+    attemptId: identitySchema,
+    receipt: cleanupReceiptSchema,
+  }),
+  z.strictObject({
+    kind: z.literal("session_checkpoint"),
+    worker: identitySchema,
+    checkpoint: sessionCheckpointSchema,
+  }),
+  z.strictObject({
+    kind: z.literal("usage_observed"),
+    attemptId: identitySchema,
+    observation: usageObservationSchema,
+  }),
+  z.strictObject({
+    kind: z.literal("response_observed"),
+    attemptId: identitySchema,
+    responseId: identitySchema,
+    status: z.enum(["started", "completed", "interrupted"]),
+  }),
+  z.strictObject({
+    kind: z.literal("context_observed"),
+    attemptId: identitySchema,
+    context: contextUsageSchema,
+  }),
+  z.strictObject({
+    kind: z.literal("outbox_state"),
+    notificationId: identitySchema,
+    attemptId: identitySchema,
+    state: outboxObservationStateSchema,
+    checkpoint: artifactRefSchema.optional(),
   }),
 ]);
 export type Transition = z.infer<typeof transitionSchema>;
@@ -182,6 +271,19 @@ export const effectStateSchema = z.strictObject({
   detail: z.string().optional(),
 });
 export type EffectState = z.infer<typeof effectStateSchema>;
+export const attemptStateSchema = z.strictObject({
+  attempt: attemptSchema,
+  prepared: preparedWorkspaceSchema.optional(),
+  capture: workspaceCaptureSchema.optional(),
+  identity: backendIdentitySchema.optional(),
+  enrollmentEvidence: z.array(artifactRefSchema),
+  outcome: backendOutcomeSchema.optional(),
+  outcomeArtifact: artifactRefSchema.optional(),
+  cleanup: cleanupReceiptSchema.optional(),
+  usageObservations: z.array(usageObservationSchema),
+  responses: z.record(z.string(), z.enum(["started", "completed", "interrupted"])),
+});
+export type AttemptState = z.infer<typeof attemptStateSchema>;
 export const coreStateSchema = z.strictObject({
   run: identitySchema,
   revision: revisionSchema,
@@ -196,13 +298,29 @@ export const coreStateSchema = z.strictObject({
     z.strictObject({ payloadDigest: digestSchema, receipt: acceptedReceiptSchema }),
   ),
   effects: z.record(z.string(), effectStateSchema),
+  attempts: z.record(z.string(), attemptStateSchema),
+  sessions: z.record(z.string(), sessionCheckpointSchema),
+  contextUsage: z.record(z.string(), contextUsageSchema),
+  cancelled: z.record(z.string(), z.strictObject({ requestId: identitySchema })),
+  attachment: z.enum(["foreground", "background"]),
   results: z.record(
     z.string(),
     z.strictObject({ result: resultSchema, artifact: artifactRefSchema }),
   ),
   outbox: z.record(
     z.string(),
-    z.strictObject({ ref: assignmentRefSchema, result: artifactRefSchema }),
+    z.strictObject({
+      ref: assignmentRefSchema,
+      result: artifactRefSchema,
+      state: z.enum(["recorded", "dispatch_intent", "delivered", "consumed", "uncertain"]),
+      attempts: z.array(
+        z.strictObject({
+          id: identitySchema,
+          state: outboxObservationStateSchema,
+          checkpoint: artifactRefSchema.optional(),
+        }),
+      ),
+    }),
   ),
   maxConcurrent: revisionSchema.positive().nullable(),
 });
@@ -214,7 +332,7 @@ export function transitionArtifacts(transition: Transition): z.infer<typeof arti
     case "accepted":
       artifacts.push(transition.config);
       for (const worker of transition.workers)
-        artifacts.push(worker.definition, worker.config, worker.context);
+        artifacts.push(worker.definition, worker.config, worker.context, worker.workspacePlan);
       break;
     case "effect_intent":
       artifacts.push(transition.effect.input);
@@ -225,12 +343,47 @@ export function transitionArtifacts(transition: Transition): z.infer<typeof arti
         transition.result.report,
         transition.result.transcript,
         transition.result.session,
+        transition.result.snapshot,
         ...transition.result.artifacts,
       );
       break;
     case "inbox_state":
+    case "outbox_state":
       artifacts.push(transition.checkpoint);
       break;
+    case "inbox_not_delivered":
+      artifacts.push(transition.receipt);
+      break;
+    case "backend_enrolled":
+      artifacts.push(...transition.evidence);
+      break;
+    case "workspace_prepared":
+      artifacts.push(...transition.prepared.artifacts);
+      break;
+    case "workspace_captured":
+      artifacts.push(...transition.capture.artifacts, transition.capture.snapshot);
+      break;
+    case "attempt_outcome":
+      artifacts.push(
+        transition.artifact,
+        transition.outcome.report,
+        transition.outcome.transcript,
+        ...transition.outcome.artifacts,
+        transition.outcome.session?.artifact,
+        transition.outcome.session?.transcript,
+      );
+      break;
+    case "cleanup_observed":
+      artifacts.push(...transition.receipt.evidence);
+      break;
+    case "session_checkpoint":
+      artifacts.push(transition.checkpoint.artifact, transition.checkpoint.transcript);
+      break;
+    case "attempt_started":
+    case "control_accepted":
+    case "usage_observed":
+    case "response_observed":
+    case "context_observed":
     case "effect_observed":
     case "assignment_state":
     case "capacity_changed":
