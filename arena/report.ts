@@ -92,7 +92,7 @@ export function comparisonWarnings(results: RunResult[]): string[] {
   const external = results.filter((result) => result.mode === "external");
   if (external.length) {
     warnings.push(
-      "External workflow labels and stage events are adapter claims. Supervisor-owned stage evidence and live Piñata/Pi/OpenCode integrations are not implemented; external trials are excluded from treatment comparisons even when their candidates pass the oracle.",
+      "External workflow labels and stage events are adapter claims. Supervisor-owned stage evidence is not implemented; external trials are excluded from treatment comparisons even when their candidates pass the oracle.",
     );
     warnings.push(
       "External adapter source fingerprints have partial coverage: direct command files do not cover imported modules, packages, shell/PATH resolution or remote services. A matching hash does not establish adapter equivalence.",

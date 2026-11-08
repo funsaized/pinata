@@ -86,6 +86,7 @@ test("installed RPC coordinator receives assignment completions and continues a 
   t.after(releaseSlow);
   let started = false;
   let continued = false;
+  let addedReviewer = false;
   let slowFinished = false;
   let buildCalls = 0;
   const loopback = await startLoopback({
@@ -95,6 +96,7 @@ test("installed RPC coordinator receives assignment completions and continues a 
       const task = /# Task ([a-z-]+) \(/.exec(text)?.[1];
       if (task) {
         assert(text.includes(publicAssignment));
+        if (task === "audit") return { text: "Reviewed README.md; no findings." };
         if (task === "slow") {
           await slow;
           slowFinished = true;
@@ -133,16 +135,37 @@ test("installed RPC coordinator receives assignment completions and continues a 
           messageId: "second-assignment",
         });
       }
+      if (text.includes("assignment completed: build/2") && !addedReviewer) {
+        addedReviewer = true;
+        const run = /"run"\s*:\s*"([a-f0-9-]{36})"/.exec(text)?.[1];
+        assert(run);
+        return call("pinata_run", {
+          run,
+          background: true,
+          config: { models: { default: model }, setup: false, codemode: false },
+          tasks: [
+            {
+              id: "audit",
+              agent: "reviewer",
+              task: "Review README.md",
+              after: ["build", "slow"],
+              reviewBase: "HEAD",
+            },
+          ],
+        });
+      }
       return { text: "Waiting for assignment completions." };
     },
   });
   t.after(() => loopback.close());
   await loopback.writeModels(agentDir);
   const req = request(repo, join(dir, "evidence"));
-  const result = await executeNative("pinata", req, cli);
+  const result = await executeNative("pinata", req, process.env.PINATA_TEST_NATIVE_PI ?? cli);
   const stdout = await readFile(join(req.evidenceDir, "native.stdout.jsonl"), "utf8");
   assert.equal(result.status, "completed", JSON.stringify(result.events) + stdout.slice(-8000));
   assert(continued);
+  assert(addedReviewer);
+  assert(!stdout.includes("unknown dependency"));
   assert.equal(buildCalls, 4);
   assert(pinataDelegated(stdout));
   assert.equal(await readFile(join(repo, "README.md"), "utf8"), "fixed");
@@ -153,7 +176,7 @@ test("installed RPC coordinator receives assignment completions and continues a 
         line.includes('"type":"message_end"') && line.includes('"customType":"pinata-assignment"'),
     )
     .map((line) => JSON.parse(line).message.details.notificationId);
-  assert.equal(new Set(notifications).size, 3);
+  assert.equal(new Set(notifications).size, 4);
 });
 
 test("installed Pi print mode exits before delayed background completion", async (t) => {

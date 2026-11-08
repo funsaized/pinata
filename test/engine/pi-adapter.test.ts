@@ -778,3 +778,56 @@ test("custom definitions execute through the public tool and freeze their prompt
     "missing evidence must not be represented as unexecuted checks",
   );
 });
+
+for (const state of ["active", "settled", "recovered"] as const) {
+  test(`adding a reviewer resolves existing dependencies in a ${state} run`, async (t) => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    t.after(() => release());
+    const a = await adapter(t, async (turn) => {
+      if (state === "active" && turn.agent === "prices") await gate;
+      return fauxAssistantMessage([fauxText("Assignment complete; no findings.")]);
+    });
+    t.after(() => a.host!.shutdown("test complete"));
+    const started = await a.call("pinata_run", {
+      background: true,
+      config: { setup: false },
+      tasks: [{ id: "prices", agent: "builder", task: "Implement prices" }],
+    });
+    assert(!started.isError, JSON.stringify(started));
+    const run = started.details.result.run;
+    if (state !== "active") await a.host!.handles.get(run)!.done;
+    let host = a.host!;
+    if (state === "recovered") {
+      await host.shutdown("restart");
+      host = new PinataHost(a.pi);
+      t.after(() => host.shutdown("test complete"));
+    }
+    await writeFile(join(a.world.repo, "README.md"), "review this change");
+    const added = await host.start(
+      {
+        run,
+        tasks: [
+          {
+            id: "audit",
+            agent: "reviewer",
+            task: "Review prices",
+            after: ["prices"],
+            reviewBase: "HEAD",
+          },
+        ],
+        config: { setup: false },
+      },
+      a.ctx,
+    );
+    release();
+    await added.handle.done;
+    assert.equal(
+      added.handle.view().agents.audit?.status,
+      "succeeded",
+      JSON.stringify(added.handle.view().agents),
+    );
+  });
+}

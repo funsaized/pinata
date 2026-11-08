@@ -46,7 +46,7 @@ test("native invocation sends the whole task and enables Codex subagents with ma
   assert.ok(!codex.args.at(-1)!.includes("Do not delegate"));
   const pi = nativeInvocation("pi", req);
   assert.ok(pi.args.includes("--no-extensions"));
-  assert.ok(!pi.args.includes("-e"));
+  assert.ok(pi.args.some((arg) => arg.endsWith("arena/adapters/observe.ts")));
   const pinata = nativeInvocation("pinata", req);
   assert.ok(pinata.args.some((arg) => arg.endsWith("arena/adapters/coordinator.ts")));
   assert.ok(pinata.prompt!.includes("pinata_integrate"));
@@ -266,4 +266,22 @@ test("canceling native run stops its process and leaves queued trials unstarted"
   assert.ok(batch.results[0]!.errors.some((error) => /cancel/i.test(error)));
   assert.equal(batch.results[1]!.status, "pending");
   assert.equal(batch.results[1]!.startedAt, null);
+});
+
+test("Pinata native mode settings reach the coordinator and reject unsupported modes", () => {
+  for (const backend of ["in-process", "process", "herdr-pi"]) {
+    for (const workspace of ["shared", "worktree"]) {
+      const req = request("/tmp/candidate");
+      req.model!.settings = { backend, workspace };
+      const invocation = nativeInvocation("pinata", req);
+      assert.ok(invocation.prompt!.includes(`"backend":"${backend}"`));
+      assert.ok(invocation.prompt!.includes(`"workspace":"${workspace}"`));
+      assert.ok(invocation.prompt!.includes(`Use workspace:${workspace} for every worker`));
+    }
+  }
+  for (const settings of [{ backend: "unknown" }, { workspace: "unknown" }]) {
+    const req = request("/tmp/candidate");
+    req.model!.settings = settings;
+    assert.throws(() => nativeInvocation("pinata", req), /Unsupported Pinata/);
+  }
 });

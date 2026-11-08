@@ -1,4 +1,6 @@
 // The arena owns this RPC session's lifetime; the coordinator still owns every workflow decision.
+import { appendFileSync } from "node:fs";
+import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { registerPinata } from "../../engine/pi/extension.ts";
 import { readAdapterRequest } from "./protocol.ts";
@@ -10,6 +12,11 @@ export default async function coordinator(pi: ExtensionAPI): Promise<void> {
   if (typeof file !== "string") throw new Error("Missing public arena request");
   const request = await readAdapterRequest(file);
   assertTime(request.deadlineAt);
+  const record = (type: string, state: Record<string, unknown> = {}) =>
+    appendFileSync(
+      join(request.evidenceDir, "coordinator-lifecycle.jsonl"),
+      JSON.stringify({ at: Date.now(), type, ...state }) + "\n",
+    );
   const host = await registerPinata(pi, {
     instructions: [
       "# Authoritative public assignment (shared with every worker)",
@@ -32,6 +39,7 @@ export default async function coordinator(pi: ExtensionAPI): Promise<void> {
       let stopping: Promise<void> | undefined;
       const stop = () => {
         if (stopping) return;
+        record("timeout_shutdown");
         ctx.abort();
         // The arena owns the timeout; Pinata only needs its normal shutdown lifecycle.
         stopping = host.shutdown("arena timeout", { survive: false });
@@ -43,8 +51,22 @@ export default async function coordinator(pi: ExtensionAPI): Promise<void> {
         pi.sendUserMessage(prompt);
         // A print-mode prompt has no lifetime for later notices. RPC keeps stdin open;
         // this command waits for actual parent idleness and all host-owned delivery work.
+        let previousState = "";
         while (!stopping) {
           await new Promise((resolve) => setTimeout(resolve, 25));
+          const state = {
+            idle: ctx.isIdle(),
+            pendingMessages: ctx.hasPendingMessages(),
+            deliveryPending: host.deliveryPending.size,
+            running: [...host.handles.values()]
+              .filter((handle) => handle.view().status === "running")
+              .map((handle) => handle.id),
+          };
+          const encoded = JSON.stringify(state);
+          if (encoded !== previousState) {
+            record("state", state);
+            previousState = encoded;
+          }
           if (
             started &&
             ctx.isIdle() &&
@@ -54,6 +76,7 @@ export default async function coordinator(pi: ExtensionAPI): Promise<void> {
           )
             break;
         }
+        record(stopping ? "stopped" : "completion_detected");
         await stopping;
       } finally {
         process.removeListener("SIGTERM", stop);

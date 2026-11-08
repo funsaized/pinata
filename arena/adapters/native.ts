@@ -1,3 +1,4 @@
+import { collectNativeEvidence } from "../native-evidence.ts";
 import { assertTime, capDeadline, remaining } from "../deadline.ts";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, isAbsolute } from "node:path";
@@ -28,6 +29,14 @@ export function nativeInvocation(agent: NativeAgent, request: AdapterRequest, ex
   const { provider, id, settings } = request.model;
   const thinking = settings.thinking ?? "max";
   const concurrency = settings.concurrency ?? 4;
+  const backend = settings.backend ?? "in-process";
+  const workspace = settings.workspace ?? "shared";
+  if (agent === "pinata") {
+    if (!["in-process", "process", "herdr-pi"].includes(String(backend)))
+      throw new Error("Unsupported Pinata backend");
+    if (!["shared", "worktree"].includes(String(workspace)))
+      throw new Error("Unsupported Pinata workspace");
+  }
   if (!Number.isInteger(concurrency) || Number(concurrency) < 1 || Number(concurrency) > 16)
     throw new Error("concurrency must be an integer between 1 and 16");
   if (!["off", "minimal", "low", "medium", "high", "xhigh", "max"].includes(String(thinking)))
@@ -86,6 +95,8 @@ export function nativeInvocation(agent: NativeAgent, request: AdapterRequest, ex
     "--no-prompt-templates",
     "--no-context-files",
     "--no-mcp",
+    "-e",
+    join(root, "arena/adapters/observe.ts"),
     "--provider",
     provider,
     "--model",
@@ -107,11 +118,11 @@ export function nativeInvocation(agent: NativeAgent, request: AdapterRequest, ex
     const model = { provider, id, thinking };
     shared.push(
       "You are the Pinata coordinator. Delegate useful independent work with pinata_run and use ordinary coding tools to inspect, test, reconcile and finish the candidate.",
-      `Choose parallelism appropriate to this assignment; the experimental requested worker count is ${concurrency}. Pinata does not enforce it. Assign responsibilities in task text. Shared checkout is the default; select workspace:worktree only when isolation is useful.`,
+      `Choose parallelism appropriate to this assignment; the experimental requested worker count is ${concurrency}. Pinata does not enforce it. Assign responsibilities in task text. Use workspace:${workspace} for every worker in this treatment.`,
       "Use background:true and survive:false for workers. Yield when no actionable work remains; assignment completion messages resume you. Add workers with pinata_run {run,...}; send pinata_steer with as:followUp to continue a worker in its saved context.",
       "Inspect failed checks before changing code: coordinator-authored expectations may themselves be wrong. A failed worker or review never hides its changes. after is ordering, not acceptance. Follow-ups do not replay descendants. Request inputs explicitly when composing isolated workspaces.",
       `The user authorizes implementation, tests, review, follow-ups and local application within ${request.cwd}. The arena supervisor independently enforces its timeout; do not pass deadlines or limits to Pinata.`,
-      `Use this config for workers: ${JSON.stringify({ models: { default: model, builder: model, reviewer: model, scout: model }, fallbacks: { builder: [], reviewer: [], scout: [] }, setup: false, backend: "in-process", workspace: "shared", worktreeRoot: join(request.evidenceDir, "worktrees") })}`,
+      `Use this config for workers: ${JSON.stringify({ models: { default: model, builder: model, reviewer: model, scout: model }, fallbacks: { builder: [], reviewer: [], scout: [] }, setup: false, backend, workspace, worktreeRoot: join(request.evidenceDir, "worktrees") })}`,
       "Shared edits are already delivered. Inspect/apply selected isolated snapshots with pinata_changes and pinata_integrate when useful. Finish the actual candidate using ordinary tools and run the project checks. Execution completion and candidate correctness are recorded independently.",
     );
   }
@@ -197,7 +208,7 @@ export async function executeNative(
         "input" in invocation && { input: invocation.input, inputCompletionId: "arena" }),
       newProcessGroup: false,
       ...(agent === "pinata" && label === "native" && { terminationGraceMs: cleanupMs }),
-      ...(agent === "pinata" &&
+      ...(agent !== "codex" &&
         label === "native" && {
           env: {
             ...process.env,
@@ -211,7 +222,7 @@ export async function executeNative(
       stdoutFile: join(request.evidenceDir, `${label}.stdout.jsonl`),
       stderrFile: join(request.evidenceDir, `${label}.stderr.log`),
     });
-  if (agent === "pinata")
+  if (agent !== "codex")
     writeFileSync(join(request.evidenceDir, "coordinator-request.json"), JSON.stringify(request), {
       flag: "wx",
       mode: 0o600,
@@ -241,6 +252,7 @@ export async function executeNative(
     agent === "pinata" && !result.stdoutTruncated && pinataDelegated(result.stdout);
   const delegationFailed = agent === "codex" && codexSpawnFailure.test(result.stderr);
   const completed = result.code === 0 && !result.error && !result.timedOut && !delegationFailed;
+  const evidence = await collectNativeEvidence(request, agent, result.stdoutTruncated, completed);
   return {
     schemaVersion: 1,
     status: completed ? "completed" : "failed",
@@ -252,12 +264,7 @@ export async function executeNative(
           : version.stdout.trim() || version.stderr.trim(),
     },
     model: request.model,
-    usage: {
-      inputTokens: null,
-      outputTokens: null,
-      costUsd: null,
-      source: "Unknown; raw framework JSONL retained, including available usage events",
-    },
+    usage: evidence.usage,
     attempts: null,
     repairs: null,
     events: [
@@ -266,6 +273,15 @@ export async function executeNative(
         status: completed ? "completed" : "failed",
         elapsedMs: result.elapsedMs,
         detail: `exit=${result.code}; timedOut=${result.timedOut}; delegationObserved=${delegationObserved}; delegationFailed=${delegationFailed}; error=${result.error}`,
+      },
+      {
+        stage: "execution-mode",
+        status: evidence.mode,
+        detail: JSON.stringify({
+          expected: evidence.expected,
+          deviations: evidence.deviations,
+          workers: evidence.workers.length,
+        }),
       },
     ],
     limitations: [
