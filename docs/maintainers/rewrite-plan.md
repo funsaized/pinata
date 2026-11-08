@@ -18,7 +18,8 @@ M0 has produced maintained baseline reproductions, candidate-mechanism probes, r
 Linux/macOS observations and the decisions below. See the [readiness record](rewrite-readiness.md)
 for commands, results, limitations and retained failed attempts. No production engine
 or existing harness behavior was changed during readiness. The next work is M1's
-new command ledger and atomic acceptance service.
+new command ledger and atomic acceptance service. Implementation progress and current
+gate results are tracked in the [implementation record](rewrite-progress.md).
 
 ## Basis, provenance and limits
 

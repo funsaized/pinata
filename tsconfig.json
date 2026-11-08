@@ -22,7 +22,8 @@
     "arena",
     "test/engine",
     "test/readiness",
-    "test/quality/engine.ts"
+    "test/quality/engine.ts",
+    "rewrite"
   ],
   "exclude": ["arena/results"]
 }
