@@ -486,7 +486,7 @@ public static class PinataJobLauncher
                 {
                     if (String.IsNullOrWhiteSpace(directory))
                         continue;
-                    string candidate = Path.Combine(directory.Trim('"'), command);
+                    string candidate = Path.GetFullPath(Path.Combine(cwd, directory.Trim('"'), command));
                     if (!Path.HasExtension(candidate))
                         candidate += ".exe";
                     if (File.Exists(candidate))

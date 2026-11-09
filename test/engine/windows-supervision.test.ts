@@ -309,8 +309,9 @@ test(
     const events: SupervisorEvent[] = [];
     const handle = await launchSupervised({
       directory: cwd,
-      command: script,
+      command: "hello world.cmd",
       args: ["hello world"],
+      env: { ...process.env, PATH: "." },
       cwd,
       ownerEpoch: "cmd-test",
       lifetime: "attached",
