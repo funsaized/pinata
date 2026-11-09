@@ -6,6 +6,7 @@ import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { cleanupReceiptSchema } from "../../engine/contracts/backend.ts";
@@ -192,6 +193,31 @@ test(
     await handle.outputDrained;
     assert.equal(output(events), "one\0two\n");
     assert.equal((await handle.stop({ graceMs: 10 })).status, "stopped");
+  },
+);
+
+test(
+  "rewrite supervisor: stopping interrupts a blocked payload input write",
+  { skip: !supported, timeout: 30_000 },
+  async (t) => {
+    const { handle, events } = await launch(t, "hold");
+    await until(() => output(events).includes("payload"), "payload is running");
+    let settled = false;
+    const write = handle.writeInput("x".repeat(1024 * 1024)).then(
+      () => {
+        settled = true;
+        return "accepted";
+      },
+      () => {
+        settled = true;
+        return "interrupted";
+      },
+    );
+    await delay(100);
+    assert.equal(settled, false, "the unread pipe must fill before stopping");
+    const cleanup = await handle.stop({ graceMs: 10 });
+    assert.equal(cleanup.status, "stopped", JSON.stringify(cleanup));
+    assert.equal(await write, "interrupted");
   },
 );
 

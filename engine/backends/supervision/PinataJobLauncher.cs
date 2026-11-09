@@ -19,6 +19,7 @@ public static class PinataJobLauncher
     static IntPtr job, root;
     static FileStream input;
     static Thread stdoutReader, stderrReader, exitReader;
+    static volatile Thread inputWriter;
     static string jobName, launcherId, fault;
     static bool started, stopped, ownsJob;
 
@@ -118,12 +119,40 @@ public static class PinataJobLauncher
                     case "input":
                         if (input == null)
                             throw new InvalidOperationException("Payload input is closed");
+                        var previousWriter = inputWriter;
+                        if (previousWriter != null && !previousWriter.Join(0))
+                            throw new InvalidOperationException("Payload input write is still pending");
                         byte[] bytes = Convert.FromBase64String(Text(request, "data"));
-                        input.Write(bytes, 0, bytes.Length);
-                        input.Flush();
-                        result = new { accepted = true };
-                        break;
+                        var target = input;
+                        // A full pipe must not prevent the control loop from stopping the job.
+                        inputWriter = new Thread(
+                            () =>
+                            {
+                                object response;
+                                try
+                                {
+                                    target.Write(bytes, 0, bytes.Length);
+                                    target.Flush();
+                                    response =
+                                        new { kind = "response", id = id, ok = true, value = new { accepted = true } };
+                                }
+                                catch (Exception error)
+                                {
+                                    response = new { kind = "response", id = id, ok = false, error = error.Message };
+                                }
+                                // Release the writer slot before acknowledging it to the guardian.
+                                lock (OutputLock)
+                                {
+                                    inputWriter = null;
+                                    Send(response);
+                                }
+                            });
+                        inputWriter.IsBackground = true;
+                        inputWriter.Start();
+                        continue;
                     case "input_end":
+                        if (inputWriter != null)
+                            throw new InvalidOperationException("Payload input write is still pending");
                         if (input != null)
                         {
                             input.Dispose();
@@ -370,6 +399,9 @@ public static class PinataJobLauncher
                 throw new TimeoutException("Job still has active processes");
             Thread.Sleep(10);
         }
+        var writer = inputWriter;
+        if (writer != null && !writer.Join(5000))
+            throw new TimeoutException("Payload input did not release after job termination");
         if (input != null)
         {
             input.Dispose();
