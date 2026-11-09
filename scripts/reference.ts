@@ -118,12 +118,8 @@ export async function checkReference(directory: string): Promise<void> {
   if (canonicalJson(actual) !== canonicalJson(referenceCatalog()))
     throw new Error("API catalog is stale; regenerate it with node scripts/reference.ts");
   const markdown = await readFile(resolve(directory, "generated.md"), "utf8");
-  for (const name of [
-    ...Object.keys(actual.schemas),
-    ...Object.keys(actual.tools),
-    ...Object.keys(actual.workerTools),
-  ])
-    if (!markdown.includes(name)) throw new Error(`API reference omits ${name}`);
+  if (markdown !== schemaReference())
+    throw new Error("API reference is stale; regenerate it with node scripts/reference.ts");
 }
 
 if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {

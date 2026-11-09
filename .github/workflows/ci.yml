@@ -12,6 +12,10 @@ permissions:
 jobs:
   runtime:
     runs-on: ${{ matrix.os }}
+    env:
+      # The accepted Linux latency baseline uses tmpfs. Retain batches on disk
+      # after measurement, as on macOS; never silently substitute storage media.
+      PINATA_BENCH_ROOT: ${{ matrix.os == 'ubuntu-latest' && '/dev/shm' || runner.temp }}
     timeout-minutes: 35
     strategy:
       fail-fast: false

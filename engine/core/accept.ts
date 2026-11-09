@@ -150,7 +150,11 @@ export function checkResolvedWorker(
         field,
       );
   }
-  if (request.model && digestValue(request.model) !== digestValue(worker.model ?? null))
+  if (
+    request.model &&
+    digestValue(request.model) !== digestValue(worker.model ?? null) &&
+    !worker.fallbacks.some((model) => digestValue(model) === digestValue(worker.model ?? null))
+  )
     throw new DomainError(
       "unsupported",
       `Requested model cannot be resolved for ${worker.id}`,

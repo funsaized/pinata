@@ -1,6 +1,6 @@
 # Replacement implementation record
 
-This record tracks implementation of [the replacement plan](rewrite-plan.md).
+This record tracks implementation of [the replacement plan](https://github.com/funsaized/pinata/blob/c426753291351c9b3b79a44c902cd5db17244c2a/docs/maintainers/rewrite-plan.md).
 M1–M8 are complete with the owner-approved latency profiles, 4,096-assignment
 validation cap and deferred Windows runtime verification recorded below.
 The local M8 cutover selects the replacement at `engine/`; the temporary

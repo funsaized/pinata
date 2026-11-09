@@ -82,8 +82,8 @@ export type EffectObservation = {
   detail?: string;
 };
 
-// M1 deliberately accepts an injected inert port only. A model/workspace adapter
-// must implement the execution and cleanup contracts before becoming a dispatcher.
+// An inert port records effect observations without launching a worker. Execution
+// adapters use the backend and workspace contracts instead.
 export type InertEffectPort = {
   dispatch(effect: Effect): Promise<EffectObservation>;
 };

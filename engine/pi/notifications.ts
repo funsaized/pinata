@@ -57,7 +57,7 @@ async function savedNotice(context: ExtensionContext, id: string): Promise<boole
   if (!path || !context.sessionManager.getEntries().some((entry) => noticeId(entry) === id))
     return false;
   try {
-    const file = await open(path, "r");
+    const file = await open(path, process.platform === "win32" ? "r+" : "r");
     try {
       await file.sync();
     } finally {

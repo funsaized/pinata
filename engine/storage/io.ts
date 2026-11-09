@@ -78,7 +78,8 @@ export async function publishImmutable(
   if (existing) {
     if (!existing.equals(bytes))
       throw new StorageError("conflict", `Immutable bytes differ: ${path}`);
-    const file = await open(path, "r");
+    // FlushFileBuffers requires write access on Windows, even for unchanged bytes.
+    const file = await open(path, process.platform === "win32" ? "r+" : "r");
     try {
       await fault?.(`${phase}.sync.before`);
       await file.sync();

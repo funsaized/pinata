@@ -16,26 +16,13 @@ import {
 } from "../../engine/contracts/index.ts";
 import { discoverDefinitions } from "../../engine/definitions/index.ts";
 import { openHost } from "../../engine/host/index.ts";
-import { checkReference, schemaReference } from "../../scripts/reference.ts";
+import { checkReference } from "../../scripts/reference.ts";
 import { checkPublicApi, publicApiFiles } from "../../scripts/public-api.ts";
-import { coordinatorTools } from "../../engine/pi/tools.ts";
 import { setup } from "../../examples/relay/setup.mjs";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 const finished = fileURLToPath(new URL("./fixtures/relay", import.meta.url));
 const execute = promisify(execFile);
-
-test("generated coordinator tool output references match each registered output contract", () => {
-  const reference = schemaReference().split("## Worker tools")[0];
-  for (const tool of coordinatorTools) {
-    const section = reference.split(`### ${tool.name}\n`)[1]?.split("\n### ")[0];
-    assert(section, `Missing generated reference for ${tool.name}`);
-    assert(
-      section.includes(`Output: \`${tool.output ?? "pinata.surface-reply.v1"}\``),
-      `${tool.name} documents the wrong output contract`,
-    );
-  }
-});
 
 test("all published jobs, grants, definitions and generated API boundaries validate", async () => {
   const examples = join(root, "examples");

@@ -19,8 +19,8 @@ supervision; they are not worker deadlines.
 
 ## Behavior coverage
 
-The [preservation map](rewrite-coverage.md) connects the old contracts and observed
-defects to the replacement tests. Core and storage tests exercise atomic command
+The [coverage map](rewrite-coverage.md) connects the contracts and observed
+defects to their regression tests. Core and storage tests exercise atomic command
 acceptance, immutable assignment dependencies, durable messages, torn records,
 owner claims and recovery. Runtime/backend tests exercise real Pi sessions with
 scripted responses, tool capabilities, continuation, nested children, cancellation
@@ -96,7 +96,7 @@ results; planned CI is not a recorded pass.
 
 ## Model-backed evaluation
 
-The new [arena](coding-arena.md) replaces the old live smoke and quality evaluator.
+The [arena](coding-arena.md) runs model-backed coding evaluations separately.
 It records task versions, independent oracle results, every requested trial,
 execution outcomes and incomplete usage. Bootstrap, doctor and preview make no
 model calls. Native runs require `--allow-external` and separate authorization for

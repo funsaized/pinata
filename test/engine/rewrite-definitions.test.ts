@@ -208,10 +208,25 @@ test("worker resolution freezes precedence, fallbacks and backend capabilities b
   assert.equal(resolved.fallbacks[0].id, "alternate");
   assert(resolved.loadout);
   assert.equal((await readLoadout(resolved.loadout, f.artifacts)).color, "#aabbcc");
-  const fallback = await f.resolve({ modelAvailable: (candidate) => candidate.id === "alternate" });
+  const explicitModel = model("unavailable");
+  const fallback = await f.resolve(
+    { modelAvailable: (candidate) => candidate.id === "alternate" },
+    { model: explicitModel },
+  );
   assert.equal(fallback.model?.id, "alternate");
   assert(fallback.loadout);
   assert.equal((await readLoadout(fallback.loadout, f.artifacts)).provenance.model, "fallback:1");
+  const request = workerRequestSchema.parse({
+    id: "reader",
+    agent: "reader",
+    task: "Read",
+    model: explicitModel,
+  });
+  checkResolvedWorker(request, fallback, caller);
+  assert.throws(
+    () => checkResolvedWorker(request, { ...fallback, model: model("unconfigured") }, caller),
+    { code: "unsupported" },
+  );
   assert.deepEqual(
     (await f.resolve({ config: { run: { fallbacks: { reader: [] } } } })).fallbacks,
     [],

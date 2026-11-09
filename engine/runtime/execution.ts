@@ -842,6 +842,8 @@ export class ExecutionCoordinator {
         });
       }
     });
+    if (checkpoint)
+      await this.record({ kind: "session_checkpoint", worker: active.worker.id, checkpoint });
     if (!checkpoint && active.handle && !cleanup) {
       const effectId = `${active.attemptId}/checkpoint`;
       await this.recordEffectIntent(active, "checkpoint");
@@ -855,8 +857,6 @@ export class ExecutionCoordinator {
         await this.recordEffectObservation(effectId, "failed", message);
       }
     }
-    if (checkpoint)
-      await this.record({ kind: "session_checkpoint", worker: active.worker.id, checkpoint });
     await this.host.transaction(async (transaction) => {
       const assignment = transaction.state().assignments[assignmentKey(ref)];
       if (assignment.execution.phase !== "ended" && assignment.execution.phase !== "finalizing")

@@ -11,9 +11,10 @@ Workspace mode is independent. Each backend can use the shared checkout or an
 explicit worktree where supported. Tools, selected skills, filtered context,
 memory and ordinary continuation follow the same frozen worker contract.
 
-`attached` lifetime stops with its owning host. `surviving` is an explicit process
-capability and requires a supported supervised backend. It preserves the original
-attempt for reattachment; it does not mean a new owner may blindly repeat effects.
+`attached` lifetime stops when its owning host disconnects. `surviving` requires a
+supported supervised backend and preserves the original attempt for reattachment
+after the host is lost. Explicit host shutdown stops both lifetimes. A new owner
+must inspect the retained attempt before deciding how to continue.
 The worktree and durable store outlive idle session disposal.
 
 Stop receipts distinguish stopped activity from unconfirmed ownership. Payload exit

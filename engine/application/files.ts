@@ -75,7 +75,12 @@ export async function readApplicationFile(
   await assertNoLinks(root, path);
   let file;
   try {
-    file = await open(join(root, path), constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+    // A FIFO can replace an ordinary destination. Open without waiting for a
+    // writer, then reject non-files before reading or taking application action.
+    file = await open(
+      join(root, path),
+      constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0),
+    );
   } catch (error) {
     if (isMissing(error)) return null;
     throw error;

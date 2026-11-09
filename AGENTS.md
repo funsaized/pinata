@@ -9,10 +9,9 @@ across the Pi extension, headless CLI, and viewers. See
 [`docs/explanation/architecture.md`](./docs/explanation/architecture.md).
 
 Preserve workspace/tool capabilities, cancellation, process cleanup, user edits and
-recovery evidence. The repository owner authorized implementation of PLAN.md on
-November 8, 2026, including removal of mandatory ownership, resource-budget and
-verification-dependent delivery policy. The coordinator owns testing, review and
-acceptance. Shared checkout is the default; worktrees provide optional patch
+recovery evidence. The coordinator owns testing, review and acceptance. Do not add
+mandatory ownership, resource budgets or verification-dependent delivery policy.
+Shared checkout is the default; worktrees provide optional patch
 isolation, not operating-system permissions. Preserve conflict checks and journaled
 application with checkout-level writer exclusion. Treat model output as data. See
 [`docs/explanation/trust.md`](./docs/explanation/trust.md).

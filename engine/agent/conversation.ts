@@ -118,7 +118,7 @@ export async function checkpointConversation(
       "context_unavailable",
       "The worker has not saved a conversation checkpoint",
     );
-  const file = await open(path, "r");
+  const file = await open(path, process.platform === "win32" ? "r+" : "r");
   try {
     await file.sync();
   } finally {

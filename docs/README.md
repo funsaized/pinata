@@ -1,6 +1,6 @@
 # Documentation
 
-Start with [First run](tutorials/first-run.md), then try the substantial
+Start with [First run](tutorials/first-run.md), then try the
 [Relay tutorial](tutorials/relay.md). The three [recipes](../examples/README.md)
 compose ordinary delegation, isolation and optional nested/scheduled work.
 
@@ -27,4 +27,4 @@ compose ordinary delegation, isolation and optional nested/scheduled work.
 - [Architecture](explanation/architecture.md) and [trust boundaries](explanation/trust.md)
 - [Choosing delegation](explanation/why-pinata.md)
 - [Testing](maintainers/testing.md), [performance](maintainers/performance.md) and [coding arena](maintainers/coding-arena.md)
-- [Replacement plan](maintainers/rewrite-plan.md), [implementation evidence](maintainers/rewrite-progress.md) and [readiness evidence](maintainers/rewrite-readiness.md)
+- [Test coverage](maintainers/rewrite-coverage.md), [implementation evidence](maintainers/rewrite-progress.md) and [historical records](maintainers/history.md)

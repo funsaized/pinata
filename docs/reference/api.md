@@ -36,7 +36,7 @@ for bounded model-facing presentation. These do not replace caller validation.
 model runtime, backend adapters and caller authority. It returns `runtime`, `caller`,
 `source`, `workspace`, `directory`, resolved `config` and asynchronous `close(reason)`.
 Use a fresh directory or an explicitly selected existing manifest. A mismatching
-run/workspace is refused. Closing cancels attached activity and records cleanup;
+run/workspace is refused. Closing cancels owned activity and records cleanup;
 unconfirmed ownership is returned rather than hidden.
 
 `HostOptions` accepts `workspace`, `directory`, `run`, `sessionId`, import `origin`,
@@ -77,7 +77,7 @@ execution uses `execution.backends` and `execution.workspace`.
 | `close({reason})`                                     | Close schedules, stop owned attached work, flush state and report cleanup.                                                            |
 | `importHistory(history, caller)`                      | Import validated inert historical assignments without dispatch.                                                                       |
 | `bindChild(parentRef)`                                | Produce an authority-bound child port, never an unrestricted root source.                                                             |
-| `parentCheckpoint(ref, signal?)`                      | Capture a parent conversation for filtered child context.                                                                             |
+| `parentCheckpoint(ref, caller)`                       | Capture a parent conversation for filtered child context.                                                                             |
 | `scheduleTick()`                                      | Evaluate the injected scheduling clock; ordinary hosts own the timer.                                                                 |
 | `deliverNotifications(caller)`                        | Deliver pending durable assignment notices through the host hook.                                                                     |
 | `recordNotificationConsumption(id, artifact, caller)` | Record exact notice consumption with a retained parent checkpoint.                                                                    |

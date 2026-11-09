@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { chmod, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
+import { promisify } from "node:util";
 import { applicationFixture, FixtureGit } from "./rewrite-application-fixture.ts";
 import { openCheckoutGate } from "../../engine/workspace/gate.ts";
 import {
@@ -15,6 +16,36 @@ const after = (content: string) => [
   { path: "file.txt", content },
   { path: "unrelated.txt", content: "untouched\n" },
 ];
+
+test(
+  "application refuses FIFO destinations without waiting for a writer",
+  { skip: process.platform === "win32", timeout: 10_000 },
+  async (t) => {
+    const fixture = await applicationFixture();
+    t.after(async () => {
+      await fixture.store.close();
+      await rm(fixture.directory, { recursive: true, force: true });
+    });
+    await rm(join(fixture.root, "file.txt"));
+    await promisify(execFile)("mkfifo", [join(fixture.root, "file.txt")]);
+    const source = new URL("../../engine/application/files.ts", import.meta.url).href;
+    // A separate process bounds a regressed blocking open, which cannot be
+    // interrupted by an AbortSignal or the Node test timeout.
+    await promisify(execFile)(
+      process.execPath,
+      [
+        "--input-type=module",
+        "-e",
+        `import assert from 'node:assert/strict';
+         import { readApplicationFile } from ${JSON.stringify(source)};
+         await assert.rejects(readApplicationFile(process.argv[1], 'file.txt'), /not a regular file/);`,
+        fixture.root,
+      ],
+      { timeout: 5000, env: { ...process.env, NODE_TEST_CONTEXT: undefined } },
+    );
+    assert.equal((await fixture.store.inspect()).operations.length, 0);
+  },
+);
 
 test(
   "application preserves index and unrelated edits, rolls back and incrementally reapplies immutable snapshots",

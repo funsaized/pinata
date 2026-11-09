@@ -1,6 +1,6 @@
 # Replacement preservation coverage
 
-This index maps the preservation contracts in [the rewrite plan](rewrite-plan.md)
+This index maps the preservation contracts in [the rewrite plan](https://github.com/funsaized/pinata/blob/c426753291351c9b3b79a44c902cd5db17244c2a/docs/maintainers/rewrite-plan.md)
 to executable replacement tests. Test names identify observable behavior, rather
 than assuming that a similarly named module preserves a contract. The tests use
 scripted providers, real local storage and supervised subprocesses; they do not

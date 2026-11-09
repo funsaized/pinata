@@ -39,7 +39,8 @@ and fsync operations. Actual machine power loss and network filesystems are outs
 the demonstrated evidence. A corrupt/torn record, stale claim or ambiguous effect is
 an inspection/reconciliation case; it is not silently retried or deleted.
 
-Historical runs, reports and source archives remain unchanged. Explicit migration
+Historical runs, reports and source archives remain at their recorded Git revisions
+or artifact paths. Explicit migration
 creates new identities and provenance, preserves old grants and assignment numbers,
 and requires continuation for uncertain work. An upgrade never takes over a live old
 owner or implicitly kills its processes. See [migration](../reference/migration.md).

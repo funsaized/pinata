@@ -1718,6 +1718,16 @@ for (const failure of ["checkpoint", "capture"] as const) {
       assert(result.finalizationErrors?.some((error) => error.includes(`${failure} unavailable`)));
       assert.deepEqual((await fixture.status()).attempts[run.launch.attemptId].outcome, outcome);
       if (failure === "capture") {
+        const history = await fixture.runtime.query({ kind: "events", since: 0 }, caller);
+        assert.equal(history.kind, "events");
+        if (history.kind === "events")
+          assert.equal(
+            history.events.filter(
+              (event) =>
+                event.kind === "committed" && event.transition.kind === "session_checkpoint",
+            ).length,
+            1,
+          );
         await fixture.runtime.close();
         assert.equal(fixture.workspace.leases.size, 0);
       }

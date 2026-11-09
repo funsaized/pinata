@@ -444,7 +444,7 @@ export class WorkspaceLayer implements WorkspacePort {
             signal,
             env: { GIT_INDEX_FILE: privateIndex },
           });
-          const indexFile = await open(privateIndex, "r");
+          const indexFile = await open(privateIndex, process.platform === "win32" ? "r+" : "r");
           try {
             await indexFile.sync();
           } finally {

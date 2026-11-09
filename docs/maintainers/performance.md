@@ -22,7 +22,10 @@ advisory until matching platform baselines exist. Unavailable backends are recor
 as unavailable, not silently replaced.
 
 The CI wrapper measures in `os.tmpdir()` unless `PINATA_BENCH_ROOT` explicitly
-selects another root. It copies the entire successful or failed batch back to
+selects another root. The runtime workflow selects `/dev/shm` on Linux to match
+the accepted tmpfs baseline, and the runner's temporary directory on macOS for
+the APFS profile. A missing measurement root fails the run. The wrapper copies
+the entire successful or failed batch back to
 `bench/results/`, with original-path mapping, and retains the source files. This
 keeps report retention independent of measurement storage without a filesystem
 fallback. Direct `bench/run.ts` invocation measures beside its `--out` path;
