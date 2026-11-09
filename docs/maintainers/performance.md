@@ -24,7 +24,9 @@ as unavailable, not silently replaced.
 The CI wrapper measures in `os.tmpdir()` unless `PINATA_BENCH_ROOT` explicitly
 selects another root. The runtime workflow selects `/dev/shm` on Linux to match
 the accepted tmpfs baseline, and the runner's temporary directory on macOS for
-the APFS profile. A missing measurement root fails the run. The wrapper copies
+the APFS profile. Benchmarks use native Pi 1.5.0, matching the retained Linux
+baseline; native Pi 1.1.0 remains a separate compatibility smoke. A missing
+measurement root or benchmark executable fails the run. The wrapper copies
 the entire successful or failed batch back to
 `bench/results/`, with original-path mapping, and retains the source files. This
 keeps report retention independent of measurement storage without a filesystem

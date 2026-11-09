@@ -49,15 +49,23 @@ jobs:
         run: node test/engine/pi-smoke.ts
       - name: Install and exercise the actual package
         run: node test/engine/package-smoke.ts
-      - name: Accepted in-process benchmark gates
+      - name: Download the native Pi runtime used by the benchmark baseline
+        id: benchmark_pi
         if: ${{ !cancelled() && steps.dependencies.outcome == 'success' && steps.pi.outcome == 'success' }}
+        shell: bash
+        run: |
+          pi_binary=$(node scripts/pi-binary.mjs 1.5.0 "$RUNNER_TEMP/pi-benchmark" | tail -n 1)
+          test -n "$pi_binary"
+          echo "PINATA_PI=$pi_binary" >> "$GITHUB_ENV"
+      - name: Accepted in-process benchmark gates
+        if: ${{ !cancelled() && steps.benchmark_pi.outcome == 'success' }}
         run: node scripts/bench-ci.mjs engine --expose-gc bench/run.ts --ci --host pi
       - name: Process measurements with advisory timing
-        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' && steps.pi.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.benchmark_pi.outcome == 'success' }}
         timeout-minutes: 12
         run: node scripts/bench-ci.mjs process --expose-gc bench/process.ts --repeat 5 --timeout 60000 --scenario fanout-1 --scenario fanout-8
       - name: Interactive Pi and attached viewer
-        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' && steps.pi.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.benchmark_pi.outcome == 'success' }}
         run: node scripts/bench-ci.mjs ux --expose-gc bench/run.ts --host tui --scenario ux-8 --mode observe --viewer attached
       - name: Retain all benchmark attempts and diagnostics
         if: always()
