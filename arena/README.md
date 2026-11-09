@@ -1,10 +1,10 @@
 # Arena version 2
 
-The replacement harness runs independently scored coding trials. Its default
+The harness runs independently scored coding trials. Its default
 controls copy corpus reference files and make no model calls. They test the harness,
 not model coding ability.
 
-From the checkout during implementation:
+From the checkout:
 
 ```sh
 node arena/run.ts --offline
@@ -12,9 +12,9 @@ node arena/run.ts --offline --task team-board@2 --workflow parallel-review
 node arena/report.ts COMPLETE_BATCH_OR_MATRIX_DIRECTORY
 ```
 
-At package cutover these entry points move to `arena/`; the npm arena commands use
-them. The corpus prompts, starters, reference solutions and literal oracle cases
-are unchanged. The new oracle runner evaluates candidate modules in a separate
+The npm arena commands use these entry points. Corpus prompts, starters, reference
+solutions and literal oracle cases retain their recorded versions. The oracle
+runner evaluates candidate modules in a separate
 Node process with filesystem permission flags, fresh IPC pipes and no credentials.
 A dedicated pipe carries trusted oracle scores; candidate output cannot supply a
 score. This is a process/resource guardrail, not an operating-system sandbox.
@@ -38,7 +38,7 @@ estimates are not invoices.
 Native Pinata, Pi and Codex configurations can be generated with
 `arena:bootstrap`, checked without model calls using `arena:doctor`, and inspected
 with `arena:local -- --preview`. Native and external runs require the explicit
-`--allow-external` flag. The native Pinata adapter loads the new extension with its
+`--allow-external` flag. The native Pinata adapter loads the Pinata extension with its
 ordinary coding tools and command API. Requested settings and runtime claims are
 retained separately from independent observations. Native workflow comparison
 eligibility remains false: an outer process supervisor does not attest inner
