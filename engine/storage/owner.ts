@@ -130,8 +130,7 @@ export async function claimOwner(directory: string, fault?: FaultHook): Promise<
 }
 
 export async function assertOwner(directory: string, owner: OwnerClaim): Promise<void> {
-  await assertNoReconciliation(directory);
-  const current = await readOwner(directory);
+  const [, current] = await Promise.all([assertNoReconciliation(directory), readOwner(directory)]);
   if (
     !current ||
     current.token !== owner.token ||

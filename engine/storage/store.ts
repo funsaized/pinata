@@ -1,4 +1,4 @@
-import type { BigIntStats } from "node:fs";
+import { constants, type BigIntStats } from "node:fs";
 import { mkdir, open, realpath, stat } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 import {
@@ -185,8 +185,31 @@ export class DurableStore {
       if (sameArtifactVersion(published, await stat(path, { bigint: true }))) return artifact;
     }
     await publishImmutable(path, bytes, "artifact", this.fault);
-    this.publishedArtifacts.set(artifact.digest, await stat(path, { bigint: true }));
+    this.publishedArtifacts.set(artifact.digest, await this.verifyPublication(artifact));
     return artifact;
+  }
+
+  private async verifyPublication(artifact: ArtifactRef): Promise<ArtifactVersion> {
+    const file = await open(
+      join(this.directory, "artifacts", artifact.digest),
+      constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0),
+    );
+    try {
+      const before = await file.stat({ bigint: true });
+      if (!before.isFile())
+        throw new StorageError("conflict", `Published artifact is not a file: ${artifact.digest}`);
+      const bytes = await file.readFile();
+      const after = await file.stat({ bigint: true });
+      if (
+        !sameArtifactVersion(before, after) ||
+        bytes.length !== artifact.size ||
+        digestBytes(bytes) !== artifact.digest
+      )
+        throw new StorageError("conflict", `Published artifact changed: ${artifact.digest}`);
+      return after;
+    } finally {
+      await file.close();
+    }
   }
 
   putArtifact(bytes: Uint8Array): Promise<ArtifactRef> {
@@ -208,6 +231,19 @@ export class DurableStore {
 
   readArtifact(artifact: ArtifactRef): Promise<Buffer> {
     return verifyArtifact(this.directory, artifact);
+  }
+
+  private async verifyReference(artifact: ArtifactRef): Promise<void> {
+    const published = this.publishedArtifacts.get(artifact.digest);
+    if (published && published.size === BigInt(artifact.size)) {
+      // Reuse only this owner's completed publication while its file identity,
+      // size and change timestamps still match. Otherwise verify the bytes.
+      const current = await stat(join(this.directory, "artifacts", artifact.digest), {
+        bigint: true,
+      }).catch(() => undefined);
+      if (current && sameArtifactVersion(published, current)) return;
+    }
+    await verifyArtifact(this.directory, artifact);
   }
 
   append(request: AppendRequest): Promise<JournalFrame> {
@@ -232,7 +268,7 @@ export class DurableStore {
         transition: input.transition,
         artifacts: input.artifacts ?? [],
       });
-      for (const artifact of record.artifacts) await verifyArtifact(this.directory, artifact);
+      for (const artifact of record.artifacts) await this.verifyReference(artifact);
       const frame: JournalFrame = {
         record,
         digest: digestValue(record),

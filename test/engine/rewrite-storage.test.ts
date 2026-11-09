@@ -16,6 +16,7 @@ import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 import { digestValue } from "../../engine/contracts/digest.ts";
+import { digestBytes } from "../../engine/storage/io.ts";
 import { DurableStore, inspectStore, reconcileStore } from "../../engine/storage/index.ts";
 
 async function temporaryStore(t: TestContext): Promise<string> {
@@ -580,7 +581,7 @@ test("rewrite store: invalid checkpoint projections cannot overwrite journal aut
   }
 });
 
-test("rewrite store: unavailable referenced artifacts reject before committing a frame", async (t) => {
+test("rewrite store: unavailable or mismatched artifact references reject before committing a frame", async (t) => {
   const directory = await temporaryStore(t);
   const store = await DurableStore.open({ directory, manifest: manifest(directory) });
   try {
@@ -588,6 +589,13 @@ test("rewrite store: unavailable referenced artifacts reject before committing a
       store.append({ ...entry(), artifacts: [{ digest: "0".repeat(64), size: 20 }] }),
       { code: "conflict" },
     );
+    const artifact = await store.putArtifact(Buffer.from("published artifact"));
+    await assert.rejects(
+      store.append({ ...entry(), artifacts: [{ ...artifact, size: artifact.size + 1 }] }),
+      { code: "conflict" },
+    );
+    await rm(join(directory, "artifacts", artifact.digest));
+    await assert.rejects(store.append({ ...entry(), artifacts: [artifact] }), { code: "conflict" });
     assert.equal((await inspectStore(directory)).frames.length, 0);
     await store.append(entry());
     assert.equal((await inspectStore(directory)).frames.length, 1);
@@ -668,6 +676,25 @@ test("rewrite store: repeated durable bytes detect same-size artifact edits and 
     assert.equal((await inspectStore(directory)).frames.length, 0);
     await assert.rejects(store.close(), { code: "commit_unknown" });
   }
+});
+
+test("rewrite store: an artifact edit before publication returns cannot seed the durable cache", async (t) => {
+  const directory = await temporaryStore(t);
+  const bytes = Buffer.from("publication boundary edit");
+  const path = join(directory, "artifacts", digestBytes(bytes));
+  const store = await DurableStore.open({
+    directory,
+    manifest: manifest(directory),
+    fault: async (point) => {
+      if (point === "artifact.directory-sync.after")
+        await writeFile(path, Buffer.alloc(bytes.length));
+    },
+  });
+  await assert.rejects(store.putArtifact(bytes), { code: "commit_unknown" });
+  await assert.rejects(store.putArtifact(bytes), { code: "commit_unknown" });
+  assert.deepEqual(await readFile(path), Buffer.alloc(bytes.length));
+  assert.equal((await inspectStore(directory)).frames.length, 0);
+  await assert.rejects(store.close(), { code: "commit_unknown" });
 });
 
 test("rewrite store: same-byte artifact replacement requires a new durability sync", async (t) => {
