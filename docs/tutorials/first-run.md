@@ -9,8 +9,8 @@ from the read-only scout definition and reports its exact assignment. A leading
 mention is a user-input action; embedded email addresses and model text are not
 commands. A bare `@scout` opens the available worker/definition view.
 
-Press Shift+Up to see the fleet tree. Enter opens the selected conversation;
-Shift+Left/Right moves between workers; Shift+Down returns to the parent screen.
+Press Shift+Down to see the fleet tree. Enter opens the selected conversation;
+Shift+Left/Right moves between workers; Shift+Up returns to the parent screen.
 The same actions are available through `/pinata`, `/pinata-fleet` and
 `/pinata-conversation`. Browsing does not start a coordinator model turn. Observe
 the last activity, execution phase and context observation; unknown context remains

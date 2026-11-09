@@ -14,8 +14,8 @@ pi install npm:pi-pinata
 ```
 
 Restart Pi, then ask it to use Pinata for a task. `@scout Map the parser and its tests`
-addresses a definition directly. Shift+Up opens the fleet tree; Enter opens a worker
-conversation; Shift+Left/Right changes workers; Shift+Down returns. Drafts stay with
+addresses a definition directly. Shift+Down opens the fleet tree; Enter opens a worker
+conversation; Shift+Left/Right changes workers; Shift+Up returns. Drafts stay with
 their conversations. `/pinata` and screen commands provide keyboard fallbacks.
 
 For a finite headless job:

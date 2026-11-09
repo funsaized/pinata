@@ -139,7 +139,7 @@ try:
                             stages[visit] = 1.5
                             send(b"\t")
                         else:
-                            send(b"\x1b[1;2B")
+                            send(b"\x1b[1;2A")
                     elif stage == 1.5 and visit == 1 and any("TRANSCRIPT" in line for line in event["output"]):
                         frames.append(event)
                         assert any("\x1b[1;7m TRANSCRIPT " in line for line in event["output"]), "Transcript focus must be visibly highlighted"
@@ -162,7 +162,7 @@ try:
                         send(b"\x1b[1;2A")
                     elif screen == "fleet" and ((visit == 1 and stage == 6) or (visit > 1 and stage == 2)):
                         stages[visit] = 7
-                        send(b"\x1b[1;2B")
+                        send(b"\x1b[1;2A")
                 if phase == "finished":
                     send(b"\x03")
                     time.sleep(0.08)
@@ -185,7 +185,7 @@ try:
     text = "\n".join(plain(line) for frame in frames for line in frame["output"])
     assert "Pinata" in text and "Full retained conversation line 100" in text
     assert "following latest" in text
-    print(json.dumps({"ok": True, "visits": opens, "disposals": 3, "parentDraftPreserved": True, "workerDraftsPreserved": True, "providerCalls": 0, "overlay": True, "widths": [120, 60, 30], "palettes": ["pinata", "one-light", "terminal-default"], "terminalBytes": len(terminal)}))
+    print(json.dumps({"ok": True, "visits": opens, "disposals": 3, "parentDraftPreserved": True, "workerDraftsPreserved": True, "providerCalls": 0, "overlay": True, "widths": [120, 60, 30], "palettes": ["inherit", "one-light", "terminal-default"], "terminalBytes": len(terminal)}))
 finally:
     if process.poll() is None:
         os.killpg(process.pid, signal.SIGKILL)

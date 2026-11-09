@@ -704,6 +704,7 @@ test("Pi screens use a full-viewport overlay and preserve parent and worker draf
   const ui = installCoordinatorUi(pi, async () => source);
   const router = await ui.bind(context);
   await events.get("session_start")?.({}, context);
+  assert.equal(terminalInput?.("\u001b[1;2A"), undefined, "Shift+Up in Pi must not open the fleet");
   assert.deepEqual(terminalInput?.("\u001b[1;2B"), { consume: true });
   await tick();
   assert.equal(
@@ -712,8 +713,9 @@ test("Pi screens use a full-viewport overlay and preserve parent and worker draf
     "The default main-screen Shift+Down opens the fleet",
   );
   assert.equal(widget, undefined, "interactive fleet replaces the compact list");
-  ui.navigate("main");
+  component?.handleInput("\u001b[1;2A");
   await tick();
+  assert.equal(router.screen, "main", "Shift+Up exits the fleet to Pi");
   assert(widget, "compact widget returns after closing the fleet");
   const first = ui.open(context, "conversation", ref());
   await tick();
@@ -879,7 +881,7 @@ test(
       assert(Date.now() < deadline);
       await tick();
     }
-    terminal.input("\u001b[1;2B");
+    terminal.input("\u001b[1;2A");
     assert.equal(await viewing, 0, errors.join("\n"));
     assert.equal(terminal.stops, 1);
     assert.equal(terminal.input, undefined);

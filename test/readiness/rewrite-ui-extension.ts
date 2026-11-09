@@ -58,7 +58,7 @@ export default function rewriteUiCapture(pi: ExtensionAPI): void {
     );
   };
   const ui = installCoordinatorUi(pi, async () => source, {
-    settings: () => ({ palette: "pinata", motion: "reduced" }),
+    settings: () => ({ palette: "inherit", motion: "reduced" }),
     mode: () => "observe",
   });
   const parentDraft = "Retained parent draft 👩🏽‍💻 漢字";
@@ -106,7 +106,7 @@ export default function rewriteUiCapture(pi: ExtensionAPI): void {
       active = true;
       visits++;
       const router = await ui.bind(context);
-      router.setPalette(visits === 1 ? "pinata" : visits === 2 ? "one-light" : "terminal-default");
+      router.setPalette(visits === 1 ? "inherit" : visits === 2 ? "one-light" : "terminal-default");
       const instrumented: ExtensionContext = {
         ...context,
         ui: {

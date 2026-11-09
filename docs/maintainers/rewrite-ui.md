@@ -12,8 +12,8 @@ editor margin. Idle fleets remain accessible through /pinata.
 
 | Input                                   | Action                                                                    |
 | --------------------------------------- | ------------------------------------------------------------------------- |
-| Shift+Up                                | Open the fleet from the coordinator, or return to the fleet from a worker |
-| Shift+Down or Escape                    | Return to the parent screen: conversation → fleet → coordinator           |
+| Shift+Down                              | Open the fleet from the coordinator, or return to the fleet from a worker |
+| Shift+Up or Escape                      | Return to the parent screen: conversation → fleet → coordinator           |
 | Shift+Left / Shift+Right                | Select the previous / next worker                                         |
 | Enter in the fleet                      | Open the selected assignment                                              |
 | Mouse wheel / Alt+PageUp / Alt+PageDown | Scroll the fleet or retained conversation                                 |
@@ -99,7 +99,10 @@ read separately through paginated queries.
 ## Palettes and motion
 
 The initial palette is `inherit`, using Pi's theme. The standalone viewer has a
-dark semantic fallback when there is no Pi theme. Available palettes are:
+dark semantic fallback when there is no Pi theme. Inherited accents use Pi's
+public theme tokens for distinct agent, workspace, context and status colors.
+Headers and controls separate muted labels from colored values; run identifiers
+remain available in details. Available palettes are:
 
 - `pinata`
 - `catppuccin-mocha`, `catppuccin-latte`
@@ -148,7 +151,7 @@ python3 test/readiness/rewrite-ui-pty.py --root "$PWD" \
 The driver rejects provider requests, uses an empty agent directory, and checks
 three visits at 120, 60 and 30 columns, three palettes, streaming updates,
 modifier-arrow worker navigation, parent/worker drafts and disposal. Its F12
-shortcut is test instrumentation; normal users open the fleet with Shift+Up.
+shortcut is test instrumentation; normal users open the fleet with Shift+Down.
 
 Linux pinned Pi 1.1.0 and native Pi 1.5.0 passed the final navigation capture in
 `bench/results/rewrite-ui-linux-sdk-tree-1/` and
@@ -202,8 +205,8 @@ presentation nor animation changes execution, acceptance, or recovery authority.
 
 ## Retained conversation rendering
 
-Shift+Down opens the fleet from the Pi editor (Shift+Up remains available).
-Inside Pinata, Shift+Down still goes back one screen.
+Shift+Down opens the fleet from the Pi editor or a worker conversation.
+Shift+Up returns from a worker to the fleet, and from the fleet to Pi.
 
 The panel fills the terminal, including after resize, with controls and the composer
 anchored at the bottom. Pi conversations use its native user-message cards, Markdown

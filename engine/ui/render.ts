@@ -260,7 +260,10 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
   options.hitRows?.clear();
   const header =
     paint("accent.pink", options.ascii ? "[P] Pinata" : "✦ Pinata") +
-    ` · ${router.screen} · ${router.source.capabilities.live ? "live" : "saved"} · ${router.mode} · ${displayText(router.state.run)}`;
+    paint("border", " › ") +
+    paint("strong", paint("accent.blue", router.screen)) +
+    paint("muted", ` · ${router.source.capabilities.live ? "live" : "saved"} · ${router.mode}`) +
+    (router.details ? paint("muted", ` · ${displayText(router.state.run)}`) : "");
   const output = [fit(header, width)];
   if (router.screen === "main")
     return fleetWidget(router.state, {
@@ -272,10 +275,16 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
     }).slice(0, height);
   if (router.screen === "fleet") {
     output[0] =
-      paint("accent.cyan", `${options.ascii ? "*" : "●"} Agents`) +
+      paint("strong", paint("accent.blue", `${options.ascii ? "*" : "●"} Agents`)) +
+      paint("border", " › ") +
       paint(
-        "muted",
-        ` · ${router.source.capabilities.live ? "live" : "saved"} · ${router.mode} · ${router.source.capabilities.control ? "control connected" : "read-only"}`,
+        router.source.capabilities.live ? "success" : "muted",
+        router.source.capabilities.live ? "live" : "saved",
+      ) +
+      paint("muted", ` · ${router.mode} · `) +
+      paint(
+        "accent.purple",
+        router.source.capabilities.control ? "control connected" : "read-only",
       );
     const schedules = Object.values(router.state.schedules);
     if (schedules.length)
@@ -301,7 +310,14 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
     });
     output.push(
       fit(
-        `${router.filter} · ${router.history ? "history" : "latest"}${router.search || router.searching ? ` · search: ${displayText(router.search)}${router.searching ? "_" : ""}` : ""}`,
+        paint("muted", "View ") +
+          paint("accent.cyan", router.filter) +
+          paint("border", " · ") +
+          paint("accent.purple", router.history ? "history" : "latest") +
+          (router.search || router.searching
+            ? paint("muted", " · search: ") +
+              paint("text", `${displayText(router.search)}${router.searching ? "_" : ""}`)
+            : ""),
         width,
       ),
     );
@@ -369,8 +385,37 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
     else {
       const view = router.conversation();
       const details = assignmentDetails(router.state, assignment);
+      const worker = router.state.workers[assignment.ref.worker];
+      const context = router.state.contextUsage[assignmentKey(assignment.ref)];
       output.push(
-        fit(paint(statusToken(executionLabel(assignment)), displayText(details[0])), width),
+        fit(
+          paint(
+            "strong",
+            paint(
+              "accent.blue",
+              displayText(`${assignment.ref.worker}/${assignment.ref.assignment}`),
+            ),
+          ) +
+            paint("border", " › ") +
+            paint(
+              statusToken(executionLabel(assignment)),
+              displayText(details[0].split(" · ").slice(1).join(" · ")),
+            ),
+          width,
+        ),
+      );
+      output.push(
+        fit(
+          paint("muted", "Workspace ") +
+            paint("accent.purple", worker.workspace) +
+            paint("muted", " · Access ") +
+            paint("accent.yellow", worker.access) +
+            (context?.percent != null
+              ? paint("muted", " · Context ") +
+                paint("accent.cyan", `${context.percent.toFixed(1)}%`)
+              : ""),
+          width,
+        ),
       );
       if (router.details) {
         output.push(fit(displayText(`${details[1]} · ${details[2]}`), width));
@@ -430,25 +475,54 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
       output.push(
         fit(
           paint("focus", router.transcriptFocus ? " TRANSCRIPT " : " AGENT MESSAGE ") +
-            ` ${displayText(assignment.ref.worker)} · ${router.transcriptFocus ? "↑↓ scroll · Tab to message" : `${action} · Enter sends · Tab to transcript`} · ${view.follow ? "following latest" : view.newOutput ? "new output · f follows" : "reading history"}`,
+            paint("accent.blue", ` ${displayText(assignment.ref.worker)}`) +
+            paint(
+              "muted",
+              ` · ${router.transcriptFocus ? "↑↓ scroll · Tab to message" : `${action} · Enter sends · Tab to transcript`} · `,
+            ) +
+            paint(
+              view.follow ? "success" : view.newOutput ? "warning" : "accent.cyan",
+              view.follow
+                ? "following latest"
+                : view.newOutput
+                  ? "new output · f follows"
+                  : "reading history",
+            ),
           width,
         ),
       );
     }
   }
   if (router.notice) output.push(fit(paint("warning", displayText(router.notice)), width));
+  const controls =
+    router.screen === "fleet"
+      ? [
+          ["↑↓", "select"],
+          ["Enter", "open"],
+          ...(width < 70
+            ? []
+            : [
+                ["←→", "branches"],
+                ["/", "search"],
+                ["f", "filter"],
+                ["h", "history"],
+                ["a", "actions"],
+              ]),
+          ["?", "help"],
+        ]
+      : [
+          ["Tab", "focus"],
+          ["f", "follow"],
+          ["d", "details"],
+          ["m", "older"],
+          ["/help", "help"],
+        ];
+  controls.push([resolveKeys(router.keys).parentScreen, "back"]);
   output.push(
     fit(
-      paint(
-        "muted",
-        displayText(
-          router.screen === "fleet"
-            ? width < 70
-              ? "↑↓ select · Enter open · ? help · Esc back"
-              : "↑↓ select · Enter open · ←→ branches · / search · f filter · h history · a actions · ? help · Esc back"
-            : "Tab focus · f follow / d details / m older (transcript) · /help · Esc back",
-        ),
-      ),
+      controls
+        .map(([key, label]) => paint("accent.cyan", key) + paint("muted", ` ${label}`))
+        .join(paint("border", " · ")),
       width,
     ),
   );

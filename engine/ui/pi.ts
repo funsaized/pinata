@@ -29,6 +29,22 @@ export type CoordinatorUiOptions = {
 
 function inherit(theme: Theme, token: SemanticToken, text: string): string {
   switch (token) {
+    case "accent.blue":
+      return theme.fg("syntaxFunction", text);
+    case "accent.cyan":
+      return theme.fg("syntaxType", text);
+    case "accent.green":
+      return theme.fg("success", text);
+    case "accent.yellow":
+      return theme.fg("syntaxString", text);
+    case "accent.orange":
+      return theme.fg("warning", text);
+    case "accent.red":
+      return theme.fg("error", text);
+    case "accent.pink":
+      return theme.fg("syntaxKeyword", text);
+    case "accent.purple":
+      return theme.fg("syntaxNumber", text);
     case "text":
       return theme.fg("text", text);
     case "muted":
@@ -275,7 +291,7 @@ export function installCoordinatorUi(
     terminalInput = context.ui.onTerminalInput((data) => {
       if (opening) return undefined;
       const keys = resolveKeys(selected?.router.keys ?? {});
-      const fleet = matchesKey(data, keys.openFleet) || matchesKey(data, keys.parentScreen);
+      const fleet = matchesKey(data, keys.openFleet);
       const next = matchesKey(data, keys.nextScreen);
       const previous = matchesKey(data, keys.previousScreen);
       if (!fleet && !next && !previous) return undefined;

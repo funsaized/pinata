@@ -5,7 +5,7 @@ activity line; actual children branch beneath their parent; queued work has a to
 and can be expanded. Enter the fleet to select an exact worker/assignment and browse
 its conversation. Execution, cleanup, delivery and assessment stay distinct.
 
-Default keys are Shift+Up for fleet, Shift+Down for parent screen, Shift+Left/Right
+Default keys are Shift+Down for fleet, Shift+Up for parent screen, Shift+Left/Right
 for workers, Alt+Left/Right for assignments, Ctrl+X to stop, Ctrl+B to release a
 foreground wait, Ctrl+R to recover and Ctrl+L to refresh. Mouse wheel and
 Alt+PageUp/PageDown scroll the selected view. Commands offer the same navigation
