@@ -31,8 +31,8 @@ export const windowsHelperSelection = Object.freeze({
   implementation: "source-packaged C# with explicit Win32 interop",
   enrollment: "STARTUPINFOEX PROC_THREAD_ATTRIBUTE_JOB_LIST",
   minimumWindows: "Windows 10 / Windows Server 2016",
-  verification: "deferred" as const,
-  available: false as const,
+  verification: "native-job-contract" as const,
+  available: true as const,
 });
 
 export type WindowsSupervisorPort = {

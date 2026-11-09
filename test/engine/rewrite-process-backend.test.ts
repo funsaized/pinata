@@ -133,7 +133,7 @@ async function fixture(
     start,
   };
 }
-const supported = process.platform === "linux" || process.platform === "darwin";
+const supported = ["linux", "darwin", "win32"].includes(process.platform);
 
 test(
   "replacement process backend retains consumed inputs, usage, transcript and continuation",

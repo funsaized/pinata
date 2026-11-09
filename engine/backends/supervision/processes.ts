@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import { processIdentitySchema, processKey, type ProcessIdentity } from "./contracts.ts";
+import { observeWindowsProcess } from "./windows-helper.ts";
 
 const executeFile = promisify(execFile);
 
@@ -31,6 +32,7 @@ export async function observeProcesses(): Promise<ProcessIdentity[]> {
 }
 
 export async function observeProcess(pid: number): Promise<ProcessIdentity | undefined> {
+  if (process.platform === "win32") return observeWindowsProcess(pid);
   const observed = (await observeProcesses()).find((identity) => identity.pid === pid);
   if (!observed) return undefined;
   if (process.platform === "linux") {

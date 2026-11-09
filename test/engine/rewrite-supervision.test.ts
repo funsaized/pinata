@@ -32,6 +32,7 @@ const fixtureFile = fileURLToPath(
   new URL("./fixtures/rewrite-supervision-child.ts", import.meta.url),
 );
 const posix = process.platform === "linux" || process.platform === "darwin";
+const supported = posix || process.platform === "win32";
 const executeFile = promisify(execFile);
 
 async function temporaryDirectory(t: TestContext): Promise<string> {
@@ -114,12 +115,10 @@ function output(events: SupervisorEvent[], stream: "stdout" | "stderr" = "stdout
     .join("");
 }
 
-test("rewrite supervisor: Windows capability is explicitly unverified without unchecked termination fallback", () => {
+test("rewrite supervisor: Windows selects creation-time Job Object enrollment", () => {
   assert.deepEqual(supervisionCapability("linux"), { available: true, cleanup: "confirmed" });
-  assert.equal(supervisionCapability("win32").available, false);
-  assert.equal(supervisionCapability("win32").cleanup, "unverified");
-  assert.match(supervisionCapability("win32").reason ?? "", /Job Object/);
-  assert.equal(windowsHelperSelection.available, false);
+  assert.deepEqual(supervisionCapability("win32"), { available: true, cleanup: "confirmed" });
+  assert.equal(windowsHelperSelection.available, true);
   assert.equal(windowsHelperSelection.enrollment, "STARTUPINFOEX PROC_THREAD_ATTRIBUTE_JOB_LIST");
   assert.throws(() => windowsJobEnrollmentSchema.parse({ membership: "spawn-then-assign" }));
 });
@@ -184,7 +183,7 @@ try {
 
 test(
   "rewrite supervisor: explicit input EOF completes a supervised command",
-  { skip: !posix, timeout: 15_000 },
+  { skip: !supported, timeout: 15_000 },
   async (t) => {
     const { handle, events } = await launch(t, "stdin-eof");
     await handle.writeInput("one\0two\n");
@@ -197,7 +196,7 @@ test(
 
 test(
   "rewrite supervisor: enrollment precedes effects and byte-indexed output survives leader completion",
-  { skip: !posix, timeout: 15_000 },
+  { skip: !supported, timeout: 15_000 },
   async (t) => {
     const { handle, events } = await launch(t, "stdio");
     await until(() => output(events, "stderr").includes("stderr-ready"), "stderr stream");
@@ -229,8 +228,8 @@ test(
 );
 
 test(
-  "rewrite supervisor: a resident group leader stops TERM-resistant descendants after payload-first exit",
-  { skip: !posix, timeout: 15_000 },
+  "rewrite supervisor: a supervisor stops resistant descendants after payload-first exit",
+  { skip: !supported, timeout: 15_000 },
   async (t) => {
     const { handle, events } = await launch(t, "payload-first");
     await until(() => output(events).includes("leaf"), "descendant readiness");
@@ -246,8 +245,8 @@ test(
 );
 
 test(
-  "rewrite supervisor: wrong nonce, host and process generation cannot signal a live group",
-  { skip: !posix, timeout: 15_000 },
+  "rewrite supervisor: wrong nonce, host and process generation cannot signal a live scope",
+  { skip: !supported, timeout: 15_000 },
   async (t) => {
     const { handle, events } = await launch(t, "hold");
     await until(() => output(events).includes("payload"), "payload readiness");
@@ -322,7 +321,7 @@ test(
 
 test(
   "rewrite supervisor: rejected enrollment, aborted authorization and failed spawn clean their owned setup",
-  { skip: !posix, timeout: 15_000 },
+  { skip: !supported, timeout: 15_000 },
   async (t) => {
     for (const failure of ["enrollment", "abort", "spawn"]) {
       const directory = await temporaryDirectory(t);
@@ -362,7 +361,7 @@ test(
 
 test(
   "rewrite supervisor: pre-aborted launch starts no guardian or payload",
-  { skip: !posix },
+  { skip: !supported },
   async (t) => {
     const directory = await temporaryDirectory(t);
     const controller = new AbortController();
@@ -394,7 +393,7 @@ test(
 
 test(
   "rewrite supervisor: surviving lifetime reconnects to the same guardian and retained output",
-  { skip: !posix, timeout: 15_000 },
+  { skip: !supported, timeout: 15_000 },
   async (t) => {
     const { handle, events } = await launch(t, "hold", { lifetime: "surviving" });
     await until(() => output(events).includes("payload"), "surviving readiness");
@@ -412,8 +411,8 @@ test(
 );
 
 test(
-  "rewrite supervisor: attached host loss stops its group while surviving host loss preserves reconnectable activity",
-  { skip: !posix, timeout: 25_000 },
+  "rewrite supervisor: attached host loss stops its scope while surviving host loss preserves reconnectable activity",
+  { skip: !supported, timeout: 25_000 },
   async (t) => {
     for (const lifetime of ["attached", "surviving"] as const) {
       const directory = await temporaryDirectory(t);
@@ -488,7 +487,7 @@ test(
 
 test(
   "rewrite supervisor: large output remains bounded in events and complete in its durable file",
-  { skip: !posix, timeout: 15_000 },
+  { skip: !supported, timeout: 15_000 },
   async (t) => {
     const { handle, events } = await launch(t, "flood");
     await handle.exit;
@@ -550,7 +549,7 @@ test(
 
 test(
   "rewrite supervisor: active cancellation is idempotent and prevents another payload start",
-  { skip: !posix, timeout: 15_000 },
+  { skip: !supported, timeout: 15_000 },
   async (t) => {
     const controller = new AbortController();
     const { handle } = await launch(t, "hold", { signal: controller.signal });
@@ -572,7 +571,7 @@ test(
 
 test(
   "rewrite supervisor: a missing Node launcher confirms that no payload was authorized",
-  { skip: !posix, timeout: 15_000 },
+  { skip: !supported, timeout: 15_000 },
   async (t) => {
     const directory = await temporaryDirectory(t);
     let enrolled = false;

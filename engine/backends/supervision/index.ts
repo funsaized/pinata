@@ -24,7 +24,8 @@ import {
   type SupervisorStatus,
 } from "./contracts.ts";
 import { readEvidence, retainEvidence, writeProjection } from "./evidence.ts";
-import { observeProcesses, remainingActivity } from "./processes.ts";
+import { observeProcess, observeProcesses, remainingActivity } from "./processes.ts";
+import { windowsHelperExecutable } from "./windows-helper.ts";
 
 export type { SupervisorEvent, SupervisorIdentity, SupervisorStatus } from "./contracts.ts";
 export { publicSupervisorId } from "./contracts.ts";
@@ -59,15 +60,12 @@ export function supervisionCapability(platform: NodeJS.Platform = process.platfo
   cleanup: "confirmed" | "unverified";
   reason?: string;
 } {
-  if (platform === "linux" || platform === "darwin")
+  if (platform === "linux" || platform === "darwin" || platform === "win32")
     return { available: true, cleanup: "confirmed" };
   return {
     available: false,
     cleanup: "unverified",
-    reason:
-      platform === "win32"
-        ? "Windows requires the selected Job Object launcher; its runtime contract is not yet verified"
-        : `No supervisor is available for ${platform}`,
+    reason: `No supervisor is available for ${platform}`,
   };
 }
 
@@ -207,9 +205,11 @@ export class SupervisedProcess {
     const identity = supervisorIdentitySchema.parse(input);
     await validateLocalIdentity(identity);
     if (
-      identity.scope.kind !== "posix-group" ||
-      identity.scope.group !== identity.process.pid ||
-      identity.process.group !== identity.process.pid
+      identity.platform === "win32"
+        ? identity.scope.kind !== "windows-job" || identity.process.group !== 0
+        : identity.scope.kind !== "posix-group" ||
+          identity.scope.group !== identity.process.pid ||
+          identity.process.group !== identity.process.pid
     )
       throw new Error("Supervisor does not describe a resident owned group");
     const handle = new SupervisedProcess(identity, options);
@@ -411,7 +411,15 @@ export class SupervisedProcess {
     let last: unknown;
     try {
       for (;;) {
-        const observations = await observeProcesses();
+        const windows = this.identity.scope.kind === "windows-job";
+        const observedGuardian = windows
+          ? await observeProcess(this.identity.process.pid)
+          : undefined;
+        const observations = windows
+          ? observedGuardian
+            ? [observedGuardian]
+            : []
+          : await observeProcesses();
         const activeGuardian = observations.some(
           (process) => process.pid === this.identity.process.pid && !process.state.startsWith("Z"),
         );
@@ -429,11 +437,17 @@ export class SupervisedProcess {
             stop.record.phase !== "armed"
           )
             throw new Error("Guardian disappeared without its matching final stop evidence");
-          const remaining = remainingActivity(
-            observations,
-            this.identity.process.pid,
-            stop.record.enrolled,
-          );
+          if (
+            windows &&
+            (this.identity.scope.kind !== "windows-job" ||
+              !stop.record.windows ||
+              stop.record.windows.jobName !== this.identity.scope.name ||
+              stop.record.windows.launcherId !== this.identity.scope.launcherId)
+          )
+            throw new Error("Guardian has no matching native empty-and-closed Job Object receipt");
+          const remaining = windows
+            ? observations
+            : remainingActivity(observations, this.identity.process.pid, stop.record.enrolled);
           last = { stop: stop.record, remaining };
           if (!remaining.length) {
             const reasons = [...stop.record.observationErrors];
@@ -542,11 +556,27 @@ export async function reconcileSupervisor(
       )
     )
       throw new Error("Armed stop evidence does not include its resident guardian");
-    const remaining = remainingActivity(await observeProcesses(), identity.process.pid, [
-      identity.process,
-      ...stop.record.enrolled,
-      ...stop.record.escaped,
-    ]);
+    if (
+      identity.scope.kind === "windows-job" &&
+      (!stop.record.windows ||
+        stop.record.windows.jobName !== identity.scope.name ||
+        stop.record.windows.launcherId !== identity.scope.launcherId)
+    )
+      throw new Error("No matching native empty-and-closed Job Object receipt is retained");
+    const guardian =
+      identity.scope.kind === "windows-job"
+        ? await observeProcess(identity.process.pid)
+        : undefined;
+    const remaining =
+      identity.scope.kind === "windows-job"
+        ? guardian
+          ? [guardian]
+          : []
+        : remainingActivity(await observeProcesses(), identity.process.pid, [
+            identity.process,
+            ...stop.record.enrolled,
+            ...stop.record.escaped,
+          ]);
     observations = {
       kind: "offline-reconciliation",
       reason: options.reason,
@@ -593,6 +623,9 @@ export async function launchSupervised(options: LaunchOptions): Promise<Supervis
       reasons: [capability.reason ?? "Supervisor unavailable"],
     });
   await mkdir(options.directory, { recursive: true, mode: 0o700 });
+  if (process.platform === "win32") await windowsHelperExecutable();
+  if (options.signal?.aborted)
+    throw new SupervisorLaunchError("Launch cancelled before guardian creation", emptyCleanup);
   const directory = await realpath(options.directory);
   const bootstrap = bootstrapSchema.parse({
     schemaVersion: 1,

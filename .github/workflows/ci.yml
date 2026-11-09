@@ -77,13 +77,14 @@ jobs:
           retention-days: 30
           if-no-files-found: warn
 
-  windows-portability:
-    name: Windows portable contracts (runtime verification deferred)
-    runs-on: windows-latest
-    timeout-minutes: 15
+  windows-runtime:
+    name: Windows Job Object runtime (${{ matrix.os }}, Node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
+        os: [windows-latest, windows-11-arm]
         node: ["22.19.0", "24"]
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -97,5 +98,20 @@ jobs:
       - run: npm run check
       - name: Portable schemas, reducers, journal and fake-backend authority
         run: node --test test/engine/rewrite-contracts.test.ts test/engine/rewrite-lifecycle.test.ts test/engine/rewrite-storage.test.ts test/engine/rewrite-runtime.test.ts
-      - name: Assert the explicit deferred supervisor capability
-        run: node --input-type=module -e "import {supervisionCapability} from './engine/backends/supervision/index.ts'; const c=supervisionCapability(); if(c.available || c.cleanup!=='unverified') throw new Error('Windows runtime requires verified Job Object supervision'); console.log(c.reason)"
+      - name: Build the source-packaged Windows launcher
+        run: node --input-type=module -e "import {windowsHelperExecutable} from './engine/backends/supervision/windows-helper.ts'; const start=performance.now(); const helper=await windowsHelperExecutable(); console.log(JSON.stringify({helper,arch:process.arch,coldBuildMs:performance.now()-start}));"
+      - name: Real supervisor, Job Object failures and Pi process backends
+        run: node --test --test-concurrency=1 test/engine/rewrite-supervision.test.ts test/engine/windows-supervision.test.ts test/engine/rewrite-process-backend.test.ts
+      - name: Download native Windows Pi
+        shell: bash
+        run: |
+          pi_binary=$(node scripts/pi-binary.mjs 1.5.0 "$RUNNER_TEMP/pi-binary" | tail -n 1)
+          test -n "$pi_binary"
+          echo "PINATA_PI=$pi_binary" >> "$GITHUB_ENV"
+      - name: Real Windows Pi RPC and installed package
+        run: |
+          node test/engine/pi-smoke.ts
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node test/engine/package-smoke.ts
+      - name: Native Pi launches and stops its default Node workers
+        run: node test/engine/native-backend-smoke.ts

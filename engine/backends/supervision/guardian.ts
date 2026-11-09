@@ -1,10 +1,10 @@
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawn } from "node:child_process";
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { open, readFile, realpath, type FileHandle } from "node:fs/promises";
 import { createServer, type Socket } from "node:net";
 import { hostname } from "node:os";
 import { join } from "node:path";
-import type { Readable } from "node:stream";
+import type { Readable, Writable } from "node:stream";
 import {
   bootstrapSchema,
   controlRequestSchema,
@@ -20,13 +20,14 @@ import {
 } from "./contracts.ts";
 import { retainEvidence, writeProjection } from "./evidence.ts";
 import { observeProcess, observeProcesses, observeScope } from "./processes.ts";
+import { WindowsJob } from "./windows-job.ts";
 
 const MAX_PACKET_BYTES = 2 * 1024 * 1024;
 const MAX_CLIENT_BACKLOG = 1024 * 1024;
 const directoryArgument = process.argv[2];
 if (!directoryArgument) throw new Error("Supervisor requires its private directory");
-if (process.platform !== "linux" && process.platform !== "darwin")
-  throw new Error("POSIX guardian is unavailable on this platform");
+if (!["linux", "darwin", "win32"].includes(process.platform))
+  throw new Error("Guardian is unavailable on this platform");
 const [nodeMajor, nodeMinor] = process.versions.node.split(".").map(Number);
 if (process.versions.bun || nodeMajor < 22 || (nodeMajor === 22 && nodeMinor < 19))
   throw new Error("Guardian requires Node 22.19 or newer");
@@ -38,7 +39,15 @@ const bootstrap = bootstrapSchema.parse(
 if (bootstrap.directory !== directory)
   throw new Error("Supervisor directory identity differs from its bootstrap");
 let identity: SupervisorIdentity | undefined;
-let payload: ChildProcessWithoutNullStreams | undefined;
+type PayloadProcess = {
+  stdin: Writable;
+  stdout: Readable;
+  stderr: Readable;
+  once(event: "exit", listener: (code: number | null, signal: string | null) => void): unknown;
+};
+let payload: PayloadProcess | undefined;
+const windowsJob = process.platform === "win32" ? await WindowsJob.open(bootstrap.id) : undefined;
+let windowsProof: StopEvidence["windows"];
 let status: SupervisorStatus = {
   supervisor: bootstrap.id,
   phase: "ready",
@@ -60,6 +69,11 @@ const outputFiles = new Map<"stdout" | "stderr", FileHandle>();
 const eventFile = await open(join(directory, "events.jsonl"), "a", 0o600);
 for (const stream of ["stdout", "stderr"] as const)
   outputFiles.set(stream, await open(join(directory, `${stream}.bin`), "a", 0o600));
+windowsJob?.on("failure", (error: Error) => {
+  observationErrors.push(error.message);
+  status.phase = "failed";
+  void recordFailure(error).finally(() => process.exit(1));
+});
 
 function broadcast(event: SupervisorEvent): void {
   const packet = JSON.stringify({ kind: "event", event }) + "\n";
@@ -128,8 +142,18 @@ async function consumeOutput(stream: "stdout" | "stderr", source: Readable): Pro
 }
 
 async function refreshEnrollment(): Promise<void> {
-  const observed = observeScope(await observeProcesses(), process.pid, status.enrolled);
-  status = { ...status, ...observed };
+  if (windowsJob) {
+    if (!windowsProof) {
+      const snapshot = await windowsJob.inspect();
+      const enrolled = new Map(status.enrolled.map((entry) => [processKey(entry), entry]));
+      for (const entry of [windowsJob.process, ...snapshot.processes])
+        enrolled.set(processKey(entry), entry);
+      status.enrolled = [...enrolled.values()];
+    }
+  } else {
+    const observed = observeScope(await observeProcesses(), process.pid, status.enrolled);
+    status = { ...status, ...observed };
+  }
   await writeProjection(directory, "enrollment.json", {
     ...enrollmentSchema.parse({
       schemaVersion: 1,
@@ -154,17 +178,21 @@ async function startPayload(spec: Payload): Promise<SupervisorStatus> {
     argumentCount: spec.args.length,
     cwd: spec.cwd,
   });
-  const child = spawn(spec.command, spec.args, {
-    cwd: spec.cwd,
-    env: spec.env ?? process.env,
-    stdio: ["pipe", "pipe", "pipe"],
-    detached: false,
-  });
+  const child =
+    windowsJob ??
+    spawn(spec.command, spec.args, {
+      cwd: spec.cwd,
+      env: spec.env ?? process.env,
+      stdio: ["pipe", "pipe", "pipe"],
+      detached: false,
+    });
   payload = child;
-  const spawned = new Promise<void>((resolve, reject) => {
-    child.once("spawn", resolve);
-    child.once("error", reject);
-  });
+  const spawned = windowsJob
+    ? windowsJob.start(spec)
+    : new Promise<void>((resolve, reject) => {
+        child.once("spawn", resolve);
+        child.once("error", reject);
+      });
   const readers = (
     [
       ["stdout", child.stdout],
@@ -189,7 +217,7 @@ async function startPayload(spec: Payload): Promise<SupervisorStatus> {
       });
     })
     .catch((error: unknown) => recordFailure(error));
-  child.once("exit", (code, signal) => {
+  child.once("exit", (code: number | null, signal: string | null) => {
     void enqueueOutput(async () => {
       status.exit = { code, signal };
       if (!stopping) status.phase = "exited";
@@ -258,6 +286,7 @@ async function stopRecord(
     enrolled: status.enrolled,
     escaped: status.escaped,
     observationErrors: [...observationErrors],
+    ...(windowsProof ? { windows: windowsProof } : {}),
   };
   const evidence = await retainEvidence(directory, record);
   await writeProjection(directory, "stop.json", { record, artifact: evidence });
@@ -278,6 +307,12 @@ async function terminateGroup(reason: string, graceMs: number): Promise<void> {
   if (terminationStarted) return;
   terminationStarted = true;
   const request = await beginStop(reason);
+  if (windowsJob) {
+    windowsProof = await windowsJob.stop();
+    await outputDrain;
+    await stopRecord("armed", request.stopId, reason);
+    process.exit(0);
+  }
   // Only this live group leader sends group signals. No stored PID or PGID is
   // ever used by a later host as authority to signal a potentially reused group.
   process.kill(-process.pid, "SIGTERM");
@@ -354,6 +389,12 @@ async function handleRequest(socket: Socket, input: unknown): Promise<void> {
         value = { accepted: true };
         break;
       case "enroll": {
+        if (windowsJob) {
+          await windowsJob.enroll(request.command.pid);
+          await refreshEnrollment();
+          value = status;
+          break;
+        }
         const enrolled = await observeProcess(request.command.pid);
         if (!enrolled) throw new Error("Requested process is not live for enrollment");
         const existing = new Map(status.enrolled.map((process) => [processKey(process), process]));
@@ -430,7 +471,7 @@ const address = server.address();
 if (!address || typeof address === "string")
   throw new Error("Guardian has no TCP control endpoint");
 const ownProcess = await observeProcess(process.pid);
-if (!ownProcess || ownProcess.group !== process.pid)
+if (!ownProcess || (!windowsJob && ownProcess.group !== process.pid))
   throw new Error("Guardian is not its resident process group leader");
 identity = supervisorIdentitySchema.parse({
   schemaVersion: 1,
@@ -439,7 +480,14 @@ identity = supervisorIdentitySchema.parse({
   host: hostname(),
   platform: process.platform,
   process: ownProcess,
-  scope: { kind: "posix-group", group: process.pid },
+  scope: windowsJob
+    ? {
+        kind: "windows-job",
+        name: windowsJob.name,
+        launcherId: windowsJob.launcherId,
+        launcher: windowsJob.process,
+      }
+    : { kind: "posix-group", group: process.pid },
   endpoint: { host: "127.0.0.1", port: address.port },
   nonce: bootstrap.nonce,
   directory,

@@ -25,7 +25,12 @@ export const supervisorIdentitySchema = z.strictObject({
   process: processIdentitySchema,
   scope: z.discriminatedUnion("kind", [
     z.strictObject({ kind: z.literal("posix-group"), group: revisionSchema.positive() }),
-    z.strictObject({ kind: z.literal("windows-job"), name: textSchema }),
+    z.strictObject({
+      kind: z.literal("windows-job"),
+      name: textSchema,
+      launcherId: z.uuid(),
+      launcher: processIdentitySchema,
+    }),
   ]),
   endpoint: z.strictObject({
     host: z.literal("127.0.0.1"),
@@ -112,6 +117,14 @@ export const stopEvidenceSchema = z.strictObject({
   enrolled: z.array(processIdentitySchema),
   escaped: z.array(processIdentitySchema),
   observationErrors: z.array(textSchema),
+  windows: z
+    .strictObject({
+      jobName: textSchema,
+      launcherId: z.uuid(),
+      activeProcesses: z.literal(0),
+      closed: z.literal(true),
+    })
+    .optional(),
 });
 export type StopEvidence = z.infer<typeof stopEvidenceSchema>;
 export const stopFileSchema = z.strictObject({
