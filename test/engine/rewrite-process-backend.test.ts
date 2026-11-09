@@ -458,7 +458,11 @@ test(
       ),
       (error: unknown) => {
         assert(error instanceof Error && "cleanup" in error);
-        assert.equal((error.cleanup as { status: string }).status, "stopped");
+        assert.equal(
+          (error.cleanup as { status: string }).status,
+          "stopped",
+          JSON.stringify(error.cleanup),
+        );
         return true;
       },
     );
@@ -622,7 +626,11 @@ test(
       ),
       (error: unknown) => {
         assert(error instanceof Error && "cleanup" in error);
-        assert.equal((error.cleanup as { status: string }).status, "stopped");
+        assert.equal(
+          (error.cleanup as { status: string }).status,
+          "stopped",
+          JSON.stringify(error.cleanup),
+        );
         return true;
       },
     );
