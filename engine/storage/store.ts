@@ -233,11 +233,11 @@ export class DurableStore {
         artifacts: input.artifacts ?? [],
       });
       for (const artifact of record.artifacts) await verifyArtifact(this.directory, artifact);
-      const frame = journalFrameSchema.parse({
+      const frame: JournalFrame = {
         record,
         digest: digestValue(record),
         commit: "pinata.commit.v1",
-      });
+      };
       try {
         const journal = await open(join(this.directory, "journal.jsonl"), "a", 0o600);
         try {

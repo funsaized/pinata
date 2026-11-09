@@ -1,5 +1,14 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  access,
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test, { type TestContext } from "node:test";
@@ -291,6 +300,9 @@ test("explicit web provider compatibility freezes one source and refuses ambiguo
 
 test("explicit skill snapshots retain resource bytes without broadening tools or read access", async (t) => {
   const f = await fixture(t);
+  const unused = join(f.directory, "unused-resources");
+  assert.deepEqual(await materializeSkills([], f.artifacts, unused), []);
+  await assert.rejects(access(unused), { code: "ENOENT" });
   const skill = join(f.project, "skills", "example");
   await mkdir(join(skill, "scripts"), { recursive: true });
   await writeFile(

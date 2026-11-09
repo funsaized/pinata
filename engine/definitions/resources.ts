@@ -168,6 +168,7 @@ export async function materializeSkills(
   artifacts: ArtifactPort,
   root: string,
 ): Promise<string[]> {
+  if (!skills.length) return [];
   await mkdir(root, { recursive: true, mode: 0o700 });
   await directory(root);
   const paths: string[] = [];
