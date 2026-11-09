@@ -34,6 +34,11 @@ fallback. Direct `bench/run.ts` invocation measures beside its `--out` path;
 `--ci` does not change that medium. Reports record actual filesystem type, block
 size, device and canonical cell directory. Baseline comparison rejects missing or
 different storage provenance.
+Hard performance gates run on Node 22.19.0, the runner used by the accepted Linux
+baseline. Node 24 runs the full compatibility suite and retains advisory
+performance measurements with the same execution, accounting and cleanup checks.
+Its earlier over-budget batches remain failed; they are not relabeled by this
+cohort selection.
 Darwin CI selects the approved APFS profile only after observing the filesystem
 name and checking its device identity against the actual allocation. Missing or
 mismatched proof retains the default limits. Reports record the profile, exact

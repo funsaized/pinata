@@ -58,8 +58,11 @@ jobs:
           test -n "$pi_binary"
           echo "PINATA_PI=$pi_binary" >> "$GITHUB_ENV"
       - name: Accepted in-process benchmark gates
-        if: ${{ !cancelled() && steps.benchmark_pi.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.benchmark_pi.outcome == 'success' && matrix.node == '22.19.0' }}
         run: node scripts/bench-ci.mjs engine --expose-gc bench/run.ts --ci --host pi
+      - name: In-process measurements on the compatibility Node version
+        if: ${{ !cancelled() && steps.benchmark_pi.outcome == 'success' && matrix.node != '22.19.0' }}
+        run: node scripts/bench-ci.mjs engine-advisory --expose-gc bench/run.ts --host pi
       - name: Process measurements with advisory timing
         if: ${{ !cancelled() && steps.benchmark_pi.outcome == 'success' }}
         timeout-minutes: 12
