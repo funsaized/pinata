@@ -145,6 +145,7 @@ export function installCoordinatorUi(
       const parentDraft = context.ui.getEditorText();
       const binding = selected;
       if (!binding) return;
+      binding.context.ui.setWidget("pinata.fleet.v3", undefined);
       openedRouter = router;
       opening = (async () => {
         try {
@@ -164,6 +165,7 @@ export function installCoordinatorUi(
           opening = undefined;
           openedRouter = undefined;
           router.navigate("main");
+          if (selected === binding) widget(binding);
           context.ui.setEditorText(parentDraft);
         }
       })();

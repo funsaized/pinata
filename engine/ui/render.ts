@@ -147,6 +147,7 @@ export function fleetWidget(state: CoreState, options: TreeOptions): string[] {
     (assignment) => !["queued", "ended"].includes(assignment.execution.phase),
   ).length;
   const queued = all.filter((assignment) => assignment.execution.phase === "queued").length;
+  if (!active && !queued) return [];
   const nodes = assignmentTree(state, {
     ascii: options.ascii,
     activeOnly: true,
@@ -161,7 +162,7 @@ export function fleetWidget(state: CoreState, options: TreeOptions): string[] {
     );
   if (queued)
     output.push(options.paint("muted", `${options.ascii ? "`- o" : "└─ ○"} ${queued} queued`));
-  if (!all.length) output.push(options.paint("muted", "No workers yet · /pinata opens the fleet"));
+  output.push("");
   return output.map((line) => options.paint("background", padded(line, options.width)));
 }
 

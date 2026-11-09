@@ -130,11 +130,12 @@ export class PinataScreen implements Component, Focusable {
         : [];
     const rows = renderScreen(this.router, {
       width,
-      height: Math.max(1, this.options.tui.terminal.rows - editor.length),
+      height: Math.max(1, this.options.tui.terminal.rows - editor.length - 1),
       paint: this.paint(),
       ascii: this.options.ascii,
       hitRows: this.hitRows,
     });
+    rows.push("");
     this.editorTop = rows.length;
     return [...rows, ...editor].map((line) => this.paint()("background", padded(line, width)));
   }

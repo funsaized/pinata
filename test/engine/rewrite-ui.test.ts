@@ -16,6 +16,7 @@ import { ScreenRouter } from "../../engine/ui/router.ts";
 import { PinataScreen, resolveKeys } from "../../engine/ui/screen.ts";
 import { createPaint, palettes } from "../../engine/ui/palette.ts";
 import { displayText, lines } from "../../engine/ui/text.ts";
+import { invokeCoordinatorTool } from "../../engine/pi/tools.ts";
 import { fleetWidget, renderScreen } from "../../engine/ui/render.ts";
 import { openViewer } from "../../engine/viewer/main.ts";
 import { installCoordinatorUi } from "../../engine/ui/pi.ts";
@@ -708,8 +709,10 @@ test("Pi screens use the non-overlay API and preserve parent and worker drafts a
     "fleet",
     "The default main-screen Shift+Up opens the fleet",
   );
+  assert.equal(widget, undefined, "interactive fleet replaces the compact list");
   ui.navigate("main");
   await tick();
+  assert(widget, "compact widget returns after closing the fleet");
   const first = ui.open(context, "conversation", ref());
   await tick();
   assert(component);
@@ -874,3 +877,28 @@ test(
     );
   },
 );
+
+test("idle fleets stay hidden and active widgets leave an editor margin", () => {
+  const options = { width: 100, paint: createPaint("inherit") };
+  assert.deepEqual(fleetWidget(uiState(0), options), []);
+  const state = uiState();
+  assert.equal(fleetWidget(state, options).at(-1)?.trim(), "");
+  for (const assignment of Object.values(state.assignments))
+    assignment.execution = { phase: "ended", reason: "completed", cleanup: "confirmed" };
+  assert.deepEqual(fleetWidget(state, options), []);
+});
+
+test("tool-name schema discovery returns only the requested input schema", async () => {
+  const source = new UiSource();
+  const reply = await invokeCoordinatorTool(
+    "pinata_status",
+    { query: { kind: "schemas", name: "pinata_run" } },
+    "schema",
+    source,
+  );
+  assert.equal(reply.status, "ok");
+  if (reply.status !== "ok" || reply.response.method !== "query") throw new Error("Expected query");
+  const result = reply.response.result;
+  assert(result && "kind" in result && result.kind === "schemas");
+  assert.deepEqual(Object.keys(result.schemas), ["pinata_run"]);
+});

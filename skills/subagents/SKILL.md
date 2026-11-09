@@ -9,8 +9,12 @@ compatibility: Pi 1.1+ and Node 22.19+. Git is needed for optional worktrees. Se
 
 The coordinator chooses workflow, tests, review, acceptance and delivery. Pinata
 supplies execution, communication, workspaces and lifecycle. Discover definitions
-with `pinata_agents`; inspect canonical input schemas rather than guessing retired
-fields. [reference.md](reference.md) explains the current tool vocabulary.
+with `pinata_agents`. Tool input schemas are already available; ordinary startup
+does not require schema discovery. Start with `pinata_run` and
+`command: {kind: "create", workers: [{id: "worker", agent: "builder", task: "..."}]}`.
+Omit `inheritContext` unless parent import is explicitly granted; put necessary
+context in the task. For additional schema details request only the relevant
+name, such as `pinata.command.v1` or `pinata_run`, rather than the entire registry. [reference.md](reference.md) explains the current tool vocabulary.
 
 Write concrete assignments with useful context, file responsibilities and observable
 goals. Honor user authorization and project instructions. Shared checkout is the
