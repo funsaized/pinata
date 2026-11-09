@@ -1298,3 +1298,35 @@ test("reading history preserves its transcript until following the newer checkpo
   assert.equal(router.conversation().newOutput, false);
   router.dispose();
 });
+
+test("reentering a worker follows the latest output while retaining its draft", async () => {
+  const source = new UiSource();
+  const router = new ScreenRouter(source);
+  await router.start();
+  let ending = "Original ending";
+  source.respond = async () =>
+    conversationReply(router.selected ?? ref(), "History line\n".repeat(100) + ending);
+  router.navigate("conversation", ref());
+  await tick();
+  router.setDraft("Keep my draft");
+  const options = { width: 100, height: 20, paint: createPaint("terminal-default") };
+  renderScreen(router, options);
+  router.scroll(-10);
+  assert.equal(router.conversation().follow, false);
+  router.navigate("fleet");
+  ending = "Latest ending";
+  router.navigate("conversation", ref());
+  await tick();
+  assert.equal(router.conversation().follow, true);
+  assert.equal(router.conversation().newOutput, false);
+  assert.equal(router.draft, "Keep my draft");
+  assert.match(renderScreen(router, options).join("\n"), /Latest ending/);
+  router.scroll(-10);
+  router.cycleWorker(1);
+  await tick();
+  router.cycleWorker(-1);
+  await tick();
+  assert.equal(router.conversation().follow, true);
+  assert.match(renderScreen(router, options).join("\n"), /Latest ending/);
+  router.dispose();
+});

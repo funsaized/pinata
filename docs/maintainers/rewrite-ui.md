@@ -91,7 +91,8 @@ does not change accepted configuration or restart workers.
 
 Conversation pages distinguish saved assignment transcripts, session checkpoints,
 and unavailable content. Asynchronous results cannot overwrite a newer selection.
-Worker drafts and assignment scroll positions survive navigation and resize; the
+Worker drafts survive navigation and resize; reopening a conversation follows its
+latest output. Scroll positions stay fixed while reading within that view; the
 coordinator draft is restored when the custom screen closes. Transient activity is
 bounded to 64 assignment tails of 4,096 characters; full retained conversations are
 read separately through paginated queries.
@@ -218,7 +219,7 @@ show up to eight lines. The details toggle expands complete payloads. Recorded
 `submit_result` reports are displayed as worker reports, including findings, even
 when other tools show only previews. These are worker claims, not coordinator acceptance.
 
-New conversation views follow the latest output and read subsequent immutable
+Opening or reentering a conversation follows the latest output and read subsequent immutable
 pages until they reach the end; scrolling switches to history mode and stops
 automatic paging. Refreshes collect pages before replacing the displayed transcript,
 so loading does not flash the first page or shift content. History stays fixed until

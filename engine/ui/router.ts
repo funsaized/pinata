@@ -211,6 +211,11 @@ export class ScreenRouter {
       this.definition = undefined;
     }
     this.screen = screen;
+    if (screen === "conversation" && this.selected) {
+      const view = this.conversation();
+      view.follow = true;
+      view.newOutput = false;
+    }
     this.generation++;
     this.changed();
     if (screen === "conversation" && this.selected)
