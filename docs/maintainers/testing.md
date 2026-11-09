@@ -85,16 +85,18 @@ no model calls. A render request is measured separately from terminal output.
 
 ## Platforms
 
-Linux and macOS run the full offline suite, Pi/package smokes and benchmark gates
+Linux and macOS run the full offline suite, Pi/package smokes and advisory measurements
 in CI on Node 22.19 and 24. Herdr cases run only when Herdr is available; an
 unavailable Herdr case is a skip, never a process-backend substitute. See the
 [backend record](rewrite-backends.md) for the selected supervisor protocol.
 
-The owner deferred Windows runtime verification. Windows retains typechecking,
-portable contract/storage tests and the explicit supervisor capability result.
-The Job Object launcher must be supplied and verified before claiming Windows
-execution support. A passing portability job does not establish process cleanup,
-workspace execution or installed Pi integration on Windows. The
+Windows runs the portable contracts and storage suite plus the shared supervisor
+and process-backend contracts on Node 22.19/24, x64 and ARM64. The native helper
+suite covers creation-time Job Object enrollment, launcher crashes, argument and
+environment handling, descendant-held pipes and nested jobs. Real Pi RPC,
+installed-package and native-host/default-worker smokes run there too. The
+native-worker report and run files are retained as CI artifacts. These targeted
+checks do not replace the full Linux/macOS workspace and terminal suites. The
 [implementation record](rewrite-progress.md) lists actual local versions and
 results; planned CI is not a recorded pass.
 

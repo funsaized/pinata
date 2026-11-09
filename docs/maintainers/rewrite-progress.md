@@ -7,6 +7,8 @@ The local M8 cutover selects the replacement at `engine/`; the temporary
 `rewrite/` tree and old execution paths are removed. The frozen runtime at `c426753`
 and the complete pre-cutover archive remain available for historical inspection.
 Milestone entries below describe the source and gates at each point in development.
+Windows Job Object support was added after these milestones; the
+[platform guide](../how-to/platforms.md) describes its current implementation and CI scope.
 No paid model calls, publication, or push are part of these implementation gates.
 
 ## M1 — contracts and command authority

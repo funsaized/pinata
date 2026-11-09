@@ -64,9 +64,10 @@ absence of enrolled, escaped and group activity. It sends no signals, refuses
 conflicting or missing evidence, and retains its reason and observations. Ordinary
 `stopSupervisor` does not infer a successful stop merely from a missing PID.
 
-Windows has a separate Job Object protocol and a documented helper selection, but
-its runtime remains unavailable/unverified until implemented and exercised. There is
-no unchecked `taskkill` or alternative-backend fallback. See
+Windows uses the source-packaged C# Job Object launcher, built with the system
+.NET Framework compiler. Payloads enter the job during process creation. Cleanup
+requires a matching native empty-and-closed job receipt; losing the launcher
+retains uncertainty. There is no `taskkill` or alternative-backend fallback. See
 [`windows-selection.md`](../../engine/backends/supervision/windows-selection.md).
 
 ## Herdr monitor panes
@@ -87,5 +88,5 @@ Without a configured or inherited Herdr session the adapter reports unavailable.
 The tests include fake pane reuse and setup failures, plus an installed-Herdr smoke
 when a local session is available. The local smoke uses a new unfocused test pane,
 reads its rendered worker output, reattaches the same saved pane and closes only
-that pane. Windows runtime verification and paid model evaluations are separate
-from these scripted tests.
+that pane. Windows Job Object tests run separately; paid model evaluations require
+their own authorization.

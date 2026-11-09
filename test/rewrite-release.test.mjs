@@ -11,6 +11,9 @@ const required = [
   "LICENSE",
   "engine/index.ts",
   "engine/pi/extension.ts",
+  "engine/backends/supervision/PinataJobLauncher.cs",
+  "engine/backends/supervision/windows-helper.ts",
+  "engine/backends/supervision/windows-job.ts",
   "bin/pinata.mjs",
   "skills/subagents/SKILL.md",
   "agents/scout.md",
@@ -31,6 +34,7 @@ test("replacement release validates the new public surface without retired examp
   validateRelease(tag, manifest, lock, packed);
   for (const path of [
     "engine/index.ts",
+    "engine/backends/supervision/PinataJobLauncher.cs",
     "examples/agents/delegator.md",
     "docs/reference/catalog.json",
   ])

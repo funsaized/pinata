@@ -44,6 +44,9 @@ export function validateRelease(tag, manifest, lock, packed) {
   for (const required of [
     "engine/index.ts",
     "engine/pi/extension.ts",
+    "engine/backends/supervision/PinataJobLauncher.cs",
+    "engine/backends/supervision/windows-helper.ts",
+    "engine/backends/supervision/windows-job.ts",
     "bin/pinata.mjs",
     "skills/subagents/SKILL.md",
     "agents/scout.md",

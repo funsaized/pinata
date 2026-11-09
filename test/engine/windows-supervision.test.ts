@@ -14,9 +14,19 @@ import {
   type SupervisorEvent,
 } from "../../engine/backends/supervision/index.ts";
 import { windowsHelperExecutable } from "../../engine/backends/supervision/windows-helper.ts";
+import { windowsPacketSchema } from "../../engine/backends/supervision/windows-job.ts";
 
 const windows = process.platform === "win32";
 const fixture = fileURLToPath(new URL("./fixtures/rewrite-supervision-child.ts", import.meta.url));
+test("Windows native protocol distinguishes successful responses, failed responses and output events", () => {
+  for (const packet of [
+    { kind: "response", id: 1, ok: true, value: { empty: true } },
+    { kind: "response", id: 2, ok: false, error: "CreateProcessW failed" },
+    { kind: "output", stream: "stdout", data: "eA==" },
+  ])
+    assert.deepEqual(windowsPacketSchema.parse(packet), packet);
+  assert.throws(() => windowsPacketSchema.parse({ kind: "response", id: 1, ok: false, value: {} }));
+});
 async function directory(t: TestContext): Promise<string> {
   const path = await realpath(await mkdtemp(join(tmpdir(), "pinata Windows 雪 ")));
   t.after(() => rm(path, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));

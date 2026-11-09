@@ -114,4 +114,15 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node test/engine/package-smoke.ts
       - name: Native Pi launches and stops its default Node workers
+        env:
+          PINATA_NATIVE_BACKEND_DIRECTORY: ${{ runner.temp }}/pinata-native-backend
         run: node test/engine/native-backend-smoke.ts
+      - name: Retain Windows native-worker evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: windows-runtime-${{ github.sha }}-${{ matrix.os }}-node-${{ matrix.node }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/pinata-native-backend/
+          include-hidden-files: true
+          retention-days: 30
+          if-no-files-found: warn

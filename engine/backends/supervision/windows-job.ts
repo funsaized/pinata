@@ -16,7 +16,7 @@ const snapshotSchema = z.strictObject({
   activeProcesses: z.number().int().nonnegative(),
   processes: z.array(processIdentitySchema),
 });
-const packetSchema = z.discriminatedUnion("kind", [
+export const windowsPacketSchema = z.union([
   z.strictObject({
     kind: z.literal("ready"),
     jobName: z.string(),
@@ -123,7 +123,7 @@ export class WindowsJob extends EventEmitter {
         const line = buffered.slice(0, end);
         buffered = buffered.slice(end + 1);
         try {
-          job.receive(packetSchema.parse(JSON.parse(line)));
+          job.receive(windowsPacketSchema.parse(JSON.parse(line)));
         } catch (error) {
           job.fail(error instanceof Error ? error : new Error(String(error)));
         }
@@ -164,7 +164,7 @@ export class WindowsJob extends EventEmitter {
     if (this.child?.exitCode === null && this.child.signalCode === null) this.child.kill();
   }
 
-  private receive(packet: z.infer<typeof packetSchema>): void {
+  private receive(packet: z.infer<typeof windowsPacketSchema>): void {
     switch (packet.kind) {
       case "ready":
         if (packet.jobName !== this.name || packet.launcherId !== this.launcherId)

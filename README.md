@@ -40,9 +40,9 @@ has no automatic review policy or production token/time budget.
 
 The Pi extension, headless CLI, authenticated IPC and saved-run viewer use one
 runtime and event model. Available backends are in-process, supervised process and
-optional Herdr. Node 22.19+ is required. Linux/macOS have scripted validation;
-Windows runtime verification is deferred and its process supervisor helper is not
-yet available. See [platform support](docs/how-to/platforms.md).
+optional Herdr. Node 22.19+ is required. Windows uses a source-built .NET Framework
+Job Object launcher for supervised workers. See [platform support](docs/how-to/platforms.md)
+for prerequisites and the scripted CI coverage on each platform.
 
 ```sh
 npm ci --ignore-scripts
