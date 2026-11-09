@@ -14,7 +14,7 @@ import {
   type SupervisorEvent,
 } from "../../engine/backends/supervision/index.ts";
 import { windowsHelperExecutable } from "../../engine/backends/supervision/windows-helper.ts";
-import { windowsPacketSchema } from "../../engine/backends/supervision/windows-job.ts";
+import { WindowsJob, windowsPacketSchema } from "../../engine/backends/supervision/windows-job.ts";
 
 const windows = process.platform === "win32";
 const fixture = fileURLToPath(new URL("./fixtures/rewrite-supervision-child.ts", import.meta.url));
@@ -128,6 +128,7 @@ test(
   async (t) => {
     const world = await launch(t, "inherited-pipes");
     await world.handle.exit;
+    await until(() => text(world.events).endsWith("\n"));
     const tree = JSON.parse(text(world.events));
     assert(await observeProcess(tree.leaf));
     assert.equal((await world.handle.inspect()).outputDrained, false);
@@ -247,6 +248,39 @@ test(
         await until(async () => !(await observeProcess(Number(fault?.pid))));
       } else assert.equal(fault?.pid, 0);
     }
+  },
+);
+
+test(
+  "Windows job-name collisions leave the original owned payload running",
+  { skip: !windows, timeout: 30_000 },
+  async (t) => {
+    const executable = await windowsHelperExecutable();
+    const job = await WindowsJob.open(randomUUID());
+    t.after(async () => {
+      await job.stop();
+    });
+    await job.start({
+      command: process.execPath,
+      args: [fixture, "hold"],
+      cwd: await directory(t),
+    });
+    const before = await job.inspect();
+    assert.equal(before.activeProcesses, 1);
+    const collision = spawn(executable, [job.name, randomUUID()], {
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
+    });
+    let errors = "";
+    collision.stdout.resume();
+    collision.stderr.setEncoding("utf8").on("data", (chunk: string) => {
+      errors += chunk;
+    });
+    const [code] = await once(collision, "close");
+    assert.equal(code, 1);
+    assert.match(errors, /already exists/);
+    assert.equal((await job.inspect()).activeProcesses, 1);
+    assert.equal((await job.stop()).closed, true);
   },
 );
 

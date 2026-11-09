@@ -1,53 +1,55 @@
-# Windows supervisor selection
+# Windows Job Object launcher
 
-The selected implementation target is a project-owned, source-packaged C#
-`PinataJobLauncher` using explicit Win32 interop. The portable supervisor contract
-already distinguishes a Windows Job Object from a POSIX process group. Windows
-launch and cleanup currently report **unavailable / unverified**. There is no
-`taskkill`, POSIX emulation, or process-backend fallback presented as confirmed
-cleanup. The owner deferred Windows runtime verification; this record does not
-claim that an executable helper has been built or tested.
+Pinata ships `PinataJobLauncher.cs` and builds it with the system .NET Framework
+C# compiler. The executable has no Node/Bun ABI dependency and needs no downloaded
+runtime. The source, compiler and architecture select its cache directory under
+`%LOCALAPPDATA%\\Pinata\\job-launcher`. A build receipt records the executable's
+SHA-256; a changed cache fails verification rather than running unchecked bytes.
+CI logs cold build time and tests x64 and ARM64 with Node 22.19 and 24.
 
-## Packaging and maintenance comparison
+## Enrollment and lifetime
 
-| Candidate                            | Packaging and maintenance cost                                                                                                                                                    | Decision                                                                                                              |
-| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| Native Node addon                    | Per-architecture native artifacts, Node/Bun ABI compatibility or an N-API dependency, compiler support and ongoing upstream ownership                                             | Not selected; supervision should survive independently of either model host runtime.                                  |
-| Prebuilt Rust/C++ launcher           | Small native process with direct Windows APIs, but requires a new compiler toolchain, x64/arm64 release artifacts and a verified artifact supply path                             | Feasible alternative if the selected source route proves too costly; no unchecked download at runtime.                |
-| Project-owned C# launcher            | Reviewable source in the package, built with the Windows .NET toolchain; no Node ABI dependency; can initially use Windows PowerShell `Add-Type` for explicit, cached compilation | Selected implementation target. Compilation/build provenance and cold-start cost must be measured before enabling it. |
-| PID-tree enumeration plus `taskkill` | No controlled enrollment and cannot prove cleanup when the leader has already disappeared or identifiers were reused                                                              | Rejected as a cleanup authority.                                                                                      |
+The shared Node guardian owns the authenticated control channel, durable output
+and recovery evidence. Its C# sidecar creates a named Job Object, enables
+`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, and retains the only job handle. Neither
+breakaway flag is enabled. The guardian publishes its identity and waits for the
+host's durable enrollment acknowledgment before authorizing a payload.
 
-PowerShell documents compilation of source and calls to unmanaged functions through
-P/Invoke; this supports the packaging option, not its runtime correctness.
-[Microsoft Add-Type documentation](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.utility/add-type).
+The sidecar passes the job handle in `PROC_THREAD_ATTRIBUTE_JOB_LIST` to
+`CreateProcessW`. Membership is established during creation, with no separate
+suspend-and-assign gap. `PROC_THREAD_ATTRIBUTE_HANDLE_LIST` restricts inherited
+handles to the three payload pipes; the job handle is not inherited. See
+[Microsoft's process attribute contract](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute).
 
-## Required native protocol
+An explicit Unicode environment block and CRT argument quoting preserve executable
+argument data. `.cmd` and `.bat` use a separate `cmd.exe` path with delayed
+expansion disabled; shell metacharacters in those arguments are rejected. Direct
+executable invocation supports arbitrary ordinary argument data, including quotes,
+Unicode, spaces and empty strings.
 
-Create a Job Object and set `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` before creating
-the payload. Pass its handle through `PROC_THREAD_ATTRIBUTE_JOB_LIST` in
-`STARTUPINFOEX` to `CreateProcessW`, so membership is established during creation.
-This attribute is supported on Windows 10 / Windows Server 2016 and later.
-[Microsoft process attribute documentation](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute).
+Attached host loss requests cleanup. A surviving guardian remains reconnectable
+after its original host exits. If the guardian dies, the sidecar sees pipe EOF and
+terminates the job; if the sidecar dies, Windows closes its job handle and kills
+the associated processes. These mechanisms cover ordinary job-inheriting process
+creation, not a permission sandbox or every possible external process service.
 
-Creating a suspended child and then calling `AssignProcessToJobObject` is not the
-selected enrollment algorithm: launcher death between those calls can leave an
-unowned suspended process. The job-list attribute removes that user-space gap.
-The guardian must retain the job handle, disable breakaway, bind control to its
-live nonce and launcher identity, and confirm zero active job processes before
-returning `stopped`. Closing the final job handle is a cleanup mechanism, while a
-lost launcher receipt still requires explicit uncertainty and retained exclusion.
-Job membership, descendant inheritance and job termination are documented by
+## Cleanup evidence
+
+Stop requests use the live authenticated guardian. The sidecar terminates its job,
+queries the native active-process count until zero, drains the pipes, closes the
+job handle and exits. The guardian then retains an armed stop record binding the
+job name and launcher UUID to that empty-and-closed proof. The host also confirms
+the original guardian has ended before issuing a stopped receipt.
+
+A missing acknowledgment, failed observation or lost launcher produces
+`unconfirmed`, even when kill-on-close has stopped the payload. Reconciliation
+requires the matching immutable stop evidence and current guardian absence. It
+never uses a saved PID, job name or `taskkill` command as termination authority.
+The kernel's job membership and termination behavior are documented in
 [Microsoft Job Objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects).
 
-The launcher must handle executable argument quoting separately from explicit
-`.cmd`/`.bat` invocation. It must pass an explicit Unicode environment block,
-restrict inherited handles to the intended pipes, and preserve output plus launch
-and cleanup evidence. The host acknowledges durable enrollment before writable
-execution is exposed. Attached host loss closes owned activity; surviving lifetime
-keeps the independent guardian and authenticated reconnect channel.
-
-The contract suite must exercise creation failures at every handle/setup boundary,
-launcher death before and after child creation, descendants, nested job restrictions,
-quoting, paths with spaces, cancellation, reconnect and x64/arm64 packaging. No
-Windows capability becomes `confirmed` from typechecking this port or from POSIX
-results. Actual Windows verification remains deferred and is a release limitation.
+The shared tests exercise input/output, cancellation, descendants after root exit,
+authentication, reconnect and host loss. Windows-specific tests cover native
+creation-boundary crashes, Unicode/environment/argument handling, inherited pipes,+nested jobs, explicit command-script invocation and lost-launcher uncertainty.
+CI also exercises real Pi process sessions, the installed package and native Pi's
+default Node worker. Native-worker reports and run files are retained as artifacts.

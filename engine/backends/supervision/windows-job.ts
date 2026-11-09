@@ -64,6 +64,7 @@ export class WindowsJob extends EventEmitter {
   private closed = false;
   private drained = false;
   private failure: Error | undefined;
+  private stopping: Promise<z.infer<typeof windowsCloseProofSchema>> | undefined;
   private launcher: ProcessIdentity | undefined;
   private readonly exited: Promise<number | null>;
   private resolveExit: (code: number | null) => void = () => {};
@@ -243,7 +244,12 @@ export class WindowsJob extends EventEmitter {
     snapshotSchema.parse(await this.request({ action: "enroll", pid }));
   }
 
-  async stop(): Promise<z.infer<typeof windowsCloseProofSchema>> {
+  stop(): Promise<z.infer<typeof windowsCloseProofSchema>> {
+    this.stopping ??= this.closeJob();
+    return this.stopping;
+  }
+
+  private async closeJob(): Promise<z.infer<typeof windowsCloseProofSchema>> {
     z.strictObject({ empty: z.literal(true) }).parse(await this.request({ action: "stop" }));
     const proof = windowsCloseProofSchema.parse(await this.request({ action: "close" }));
     if (proof.jobName !== this.name || proof.launcherId !== this.launcherId)

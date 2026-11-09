@@ -244,7 +244,10 @@ async function startPayload(spec: Payload): Promise<SupervisorStatus> {
   } catch (error) {
     status.phase = "failed";
     await recordFailure(error);
-    throw new Error("Payload launch failed", { cause: error });
+    throw new Error(
+      `Payload launch failed: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
+    );
   }
 }
 

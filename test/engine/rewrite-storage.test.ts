@@ -646,8 +646,12 @@ test("rewrite store: repeated bytes reuse only this owner's completed durable pu
     const first = artifacts[0];
     assert(first);
     for (const artifact of artifacts) assert.deepEqual(artifact, first);
-    assert.equal(phases.filter((point) => point === "artifact.sync.after").length, 1);
-    assert.equal(phases.filter((point) => point === "artifact.directory-sync.after").length, 1);
+    const publications = process.platform === "win32" ? artifacts.length : 1;
+    assert.equal(phases.filter((point) => point === "artifact.sync.after").length, publications);
+    assert.equal(
+      phases.filter((point) => point === "artifact.directory-sync.after").length,
+      publications,
+    );
     first.size = 0;
     const repeated = await store.putArtifact(bytes);
     assert.equal(repeated.size, bytes.length);

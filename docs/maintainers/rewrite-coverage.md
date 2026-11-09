@@ -75,7 +75,7 @@ result through the actual worker page tool on both backends at capacity two.
 | R9: worktrees and completion checkpoints               | C9 provisioning, setup, include and workspace suites.                                                                                                                                                                                                                      |
 | R10/R11: nesting and session schedules                 | C6 child-backend, transport, execution and schedule suites.                                                                                                                                                                                                                |
 | R13a/R13b/R16: common API and schema reference         | Contracts, direct/tool/IPC conformance, headless and generated reference/export checks in [examples](../../test/engine/rewrite-examples.test.ts); installed public API smoke covers Node 22 package loading, `defineAgent` exports and query-qualified TypeScript imports. |
-| R14: observation/backend/lifetime independence         | Lifecycle, backend, process, Pi accounting and UI suites. Unavailable Herdr is explicitly unavailable; Windows cleanup runtime verification remains owner-deferred.                                                                                                        |
+| R14: observation/backend/lifetime independence         | Lifecycle, backend, process, Pi accounting and UI suites. Unavailable Herdr is explicitly unavailable; Windows Job Object suites cover native creation, cancellation, host loss, descendants and x64/ARM64 Pi workers.                                                     |
 | R15: small usable documentation/example set            | Schema-validated recipes and real scripted six-worker Relay flows in `rewrite-examples.test.ts`, plus documentation relative-link checks.                                                                                                                                  |
 | R17: independent replacement arena                     | `rewrite-arena.test.ts`, retained complete offline batches, byte-identical original corpus/oracle inputs and read-only historical report codecs. Native adapters remain unverified pilots until separately authorized live evidence exists.                                |
 | R18: independent implementation and measured choices   | Frozen M0 evidence, milestone source closures and the replacement suites above; no reference performance or live coding-quality claim follows from scripted gates.                                                                                                         |
@@ -93,5 +93,5 @@ were explicitly omitted. The owner accepted separate Mac/APFS latency limits;
 the required fresh Mac run passed all eight scenarios on their first attempts,
 as did the final Linux run with unchanged default limits. The
 [benchmark record](rewrite-benchmarks.md) records the
-criteria, measured failures and final scope. Windows runtime verification remains
-deferred; platform skips are never counted as successful execution.
+criteria, measured failures and final scope. Windows was deferred in that cutover cohort; the current platform guide records
+the later Job Object coverage. Platform skips are never counted as successful execution.

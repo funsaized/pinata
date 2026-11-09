@@ -14,7 +14,9 @@ if (mode === "leaf") {
   process.send?.({ ready: true, pid: process.pid });
 } else if (mode === "payload-first" || mode === "escaped" || mode === "inherited-pipes") {
   const child = spawn(process.execPath, [file, "leaf"], {
-    detached: mode === "escaped",
+    // libuv's Windows parent job otherwise kills the leaf as the fixture root exits.
+    // Detached children still inherit Pinata's non-breakaway Job Object.
+    detached: mode === "escaped" || process.platform === "win32",
     stdio:
       mode === "inherited-pipes"
         ? ["ignore", "inherit", "inherit", "ipc"]

@@ -185,7 +185,10 @@ export class DurableStore {
       if (sameArtifactVersion(published, await stat(path, { bigint: true }))) return artifact;
     }
     await publishImmutable(path, bytes, "artifact", this.fault);
-    this.publishedArtifacts.set(artifact.digest, await this.verifyPublication(artifact));
+    const version = await this.verifyPublication(artifact);
+    // Windows filesystem timestamps can alias same-size edits, including on CI's
+    // ARM64 volume. Reverify and flush bytes there rather than trusting metadata.
+    if (process.platform !== "win32") this.publishedArtifacts.set(artifact.digest, version);
     return artifact;
   }
 

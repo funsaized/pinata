@@ -20,7 +20,7 @@ public static class PinataJobLauncher
     static FileStream input;
     static Thread stdoutReader, stderrReader, exitReader;
     static string jobName, launcherId, fault;
-    static bool started, stopped;
+    static bool started, stopped, ownsJob;
 
     static void Send(object value)
     {
@@ -76,6 +76,7 @@ public static class PinataJobLauncher
             Check(job != IntPtr.Zero, "CreateJobObjectW");
             if (Marshal.GetLastWin32Error() == 183)
                 throw new InvalidOperationException("Job name already exists");
+            ownsJob = true;
             Boundary("job-created");
             var limits = new ExtendedLimits();
             limits.BasicLimitInformation.LimitFlags = 0x2000; // KILL_ON_JOB_CLOSE; neither breakaway flag is enabled.
@@ -166,7 +167,8 @@ public static class PinataJobLauncher
         {
             if (job != IntPtr.Zero)
             {
-                TerminateJobObject(job, 1);
+                if (ownsJob)
+                    TerminateJobObject(job, 1);
                 CloseHandle(job);
             }
             if (root != IntPtr.Zero)

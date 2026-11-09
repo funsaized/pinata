@@ -189,6 +189,7 @@ test(
     await handle.writeInput("one\0two\n");
     await handle.closeInput();
     assert.deepEqual(await handle.exit, { code: 0, signal: null });
+    await handle.outputDrained;
     assert.equal(output(events), "one\0two\n");
     assert.equal((await handle.stop({ graceMs: 10 })).status, "stopped");
   },
@@ -204,6 +205,7 @@ test(
     await until(() => output(events).includes("hello"), "stdin reaches payload");
     await handle.writeInput("finish\n");
     assert.deepEqual(await handle.exit, { code: 0, signal: null });
+    await handle.outputDrained;
     const bytes = await handle.readOutput({ stream: "stdout", offset: 0 });
     assert.equal(bytes.bytes.toString("utf8"), "hello\nfinish\n");
     const streams = new Map<string, number>();
