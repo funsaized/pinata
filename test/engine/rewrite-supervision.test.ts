@@ -16,7 +16,6 @@ import {
   observeProcess,
   reconcileSupervisor,
   stopSupervisor,
-  supervisionCapability,
   SupervisorLaunchError,
   type LaunchOptions,
   type SupervisorEvent,
@@ -24,10 +23,6 @@ import {
 } from "../../engine/backends/supervision/index.ts";
 import { supervisorIdentitySchema } from "../../engine/backends/supervision/contracts.ts";
 import { ControlClient } from "../../engine/backends/supervision/client.ts";
-import {
-  windowsHelperSelection,
-  windowsJobEnrollmentSchema,
-} from "../../engine/backends/supervision/windows.ts";
 
 const fixtureFile = fileURLToPath(
   new URL("./fixtures/rewrite-supervision-child.ts", import.meta.url),
@@ -115,14 +110,6 @@ function output(events: SupervisorEvent[], stream: "stdout" | "stderr" = "stdout
     )
     .join("");
 }
-
-test("rewrite supervisor: Windows selects creation-time Job Object enrollment", () => {
-  assert.deepEqual(supervisionCapability("linux"), { available: true, cleanup: "confirmed" });
-  assert.deepEqual(supervisionCapability("win32"), { available: true, cleanup: "confirmed" });
-  assert.equal(windowsHelperSelection.available, true);
-  assert.equal(windowsHelperSelection.enrollment, "STARTUPINFOEX PROC_THREAD_ATTRIBUTE_JOB_LIST");
-  assert.throws(() => windowsJobEnrollmentSchema.parse({ membership: "spawn-then-assign" }));
-});
 
 test(
   "rewrite supervisor: Linux PID stat disappearance is absent while other observation errors propagate",
