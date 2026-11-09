@@ -12,10 +12,6 @@ permissions:
 jobs:
   runtime:
     runs-on: ${{ matrix.os }}
-    env:
-      # The accepted Linux latency baseline uses tmpfs. Retain batches on disk
-      # after measurement, as on macOS; never silently substitute storage media.
-      PINATA_BENCH_ROOT: ${{ matrix.os == 'ubuntu-latest' && '/dev/shm' || runner.temp }}
     timeout-minutes: 35
     strategy:
       fail-fast: false
@@ -32,6 +28,14 @@ jobs:
           package-manager-cache: false
       - id: dependencies
         run: npm ci --ignore-scripts
+      - name: Select the accepted benchmark storage medium
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then
+            echo "PINATA_BENCH_ROOT=/dev/shm" >> "$GITHUB_ENV"
+          else
+            echo "PINATA_BENCH_ROOT=$RUNNER_TEMP" >> "$GITHUB_ENV"
+          fi
       - run: npm run check
       - run: npm test
       - name: Download the pinned native Pi runtime
