@@ -102,6 +102,41 @@ results; planned CI is not a recorded pass.
 
 ## Model-backed evaluation
 
+### Live OpenAI integration
+
+The `Live OpenAI integration` workflow uses the repository's `OPENAI_API_KEY`
+secret on same-repository PRs, pushes to `master` and manual runs. Fork and
+Dependabot PRs skip this job because GitHub does not provide the secret. A missing
+key on a trusted run fails the check.
+
+Linux, macOS and Windows each exercise the in-process and supervised process
+backends on Node 22.19. Each worker reads a random value from a fixture file,
+writes it and submits a typed report. A follow-up replaces the file and requires
+the worker to recall the original value from its conversation. Independent
+assertions check the file, report, actual tool calls, immutable earlier transcript,
+complete usage and confirmed cleanup. These runs check live integration, not coding
+quality or framework superiority.
+
+The fixture pins [`gpt-5.4-mini-2026-03-17`](https://developers.openai.com/api/docs/models/gpt-5.4-mini), with thinking off, at most 256 output
+tokens and 64 KiB of serialized input per request. Each model runtime permits at
+most 12 HTTP attempts; four assignments per platform give an upper bound of 48.
+HTTP retries are disabled, and Pi-level retries count toward that allowance.
+The key's account limit remains separate. Request IDs, observed tokens/cost,
+run journals and transcripts are retained for successful and failed checks.
+Credential directories are outside the uploaded tree. Superseded workflow runs
+cancel to avoid duplicating paid work.
+
+With API spend authorized and `OPENAI_API_KEY` set in the environment:
+
+```sh
+node test/engine/live-openai-smoke.ts
+```
+
+The command prints its evidence directory. `npm test` exercises the request guard
+with a fake transport and makes no model calls.
+
+### Coding arena
+
 The [arena](coding-arena.md) runs model-backed coding evaluations separately.
 It records task versions, independent oracle results, every requested trial,
 execution outcomes and incomplete usage. Bootstrap, doctor and preview make no
