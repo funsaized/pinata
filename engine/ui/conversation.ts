@@ -2,6 +2,20 @@ import { Markdown, type MarkdownTheme } from "@earendil-works/pi-tui";
 import type { Paint } from "./palette.ts";
 import { displayText, fit, lines } from "./text.ts";
 
+export type ConversationPresentation = {
+  markdown: MarkdownTheme;
+  cacheKey: string;
+  user(text: string, width: number): string[];
+  code(text: string, language: string, width: number): string[];
+  file(text: string, path: string, width: number): string[];
+};
+type ConversationOptions = {
+  width: number;
+  paint: Paint;
+  expanded: boolean;
+  presentation?: ConversationPresentation;
+};
+
 function object(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -38,13 +52,11 @@ function theme(paint: Paint): MarkdownTheme {
 
 // Render retained data using Pi's public Markdown component. Tool bursts are
 // grouped without treating a tool result as a separate assistant response.
-function renderEntries(
-  entries: unknown[],
-  options: { width: number; paint: Paint; expanded: boolean },
-): string[] {
+function renderEntries(entries: unknown[], options: ConversationOptions): string[] {
   const { width, paint, expanded } = options;
   const output: string[] = [];
   const calls = new Map<string, string>();
+  const paths = new Map<string, string>();
   let tools: string[] = [];
   const flush = () => {
     if (!tools.length) return;
@@ -61,7 +73,9 @@ function renderEntries(
     tools = [];
   };
   const markdown = (value: string) =>
-    new Markdown(displayText(value), 0, 0, theme(paint)).render(width);
+    new Markdown(displayText(value), 1, 0, options.presentation?.markdown ?? theme(paint)).render(
+      width,
+    );
   for (const value of entries) {
     const entry = object(value);
     const message = entry && object(entry.message);
@@ -117,7 +131,11 @@ function renderEntries(
           fit(`${message.isError ? "Tool error" : "Tool result"} · ${label}`, width),
         ),
       );
-      const body = markdown(text(message.content));
+      const path = paths.get(String(message.toolCallId));
+      const body =
+        expanded && path && message.toolName === "read" && options.presentation
+          ? options.presentation.file(text(message.content), path, width)
+          : markdown(text(message.content));
       output.push(...(expanded ? body : body.slice(0, 8)), "");
       continue;
     }
@@ -141,10 +159,15 @@ function renderEntries(
     }
     if (body) {
       flush();
-      output.push(
-        paint("strong", role === "assistant" ? "Assistant" : role === "user" ? "You" : role),
-      );
-      output.push(...markdown(body), "");
+      if (role === "user" && options.presentation) {
+        output.push(...options.presentation.user(body, width), "");
+      } else {
+        if (!options.presentation || role !== "assistant")
+          output.push(
+            paint("strong", role === "assistant" ? "Assistant" : role === "user" ? "You" : role),
+          );
+        output.push(...markdown(body), "");
+      }
     }
     if (Array.isArray(message.content))
       for (const part of message.content) {
@@ -156,10 +179,15 @@ function renderEntries(
             `${String(item.name)} ${typeof target === "string" ? target.split("\n")[0] : ""}`,
           ).trim();
           calls.set(String(item.id), label);
+          if (typeof args?.path === "string") paths.set(String(item.id), args.path);
           if (expanded) {
             flush();
             output.push(paint("muted", fit(`Tool call · ${label}`, width)));
-            output.push(...lines(JSON.stringify(item.arguments, null, 2), width), "");
+            const argsText = JSON.stringify(item.arguments, null, 2);
+            output.push(
+              ...(options.presentation?.code(argsText, "json", width) ?? lines(argsText, width)),
+              "",
+            );
           } else if (item.name !== "submit_result") tools.push(label);
         } else if (expanded && item?.type === "thinking") {
           flush();
@@ -172,14 +200,12 @@ function renderEntries(
 }
 
 const rendered = new WeakMap<unknown[], Map<string, string[]>>();
-export function renderConversation(
-  entries: unknown[],
-  options: { width: number; paint: Paint; expanded: boolean },
-): string[] {
+export function renderConversation(entries: unknown[], options: ConversationOptions): string[] {
   const colors = ["text", "muted", "strong", "accent", "accent.cyan", "border", "error"] as const;
   const key = JSON.stringify([
     options.width,
     options.expanded,
+    options.presentation?.cacheKey,
     colors.map((token) => options.paint(token, "probe")),
   ]);
   let cache = rendered.get(entries);

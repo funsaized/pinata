@@ -1,5 +1,6 @@
 import {
   Editor,
+  CURSOR_MARKER,
   matchesKey,
   type Component,
   type Focusable,
@@ -13,6 +14,7 @@ import { assignmentKey, type AssignmentRef, type SurfaceReply } from "../contrac
 import { createPaint, type Paint } from "./palette.ts";
 import { renderScreen } from "./render.ts";
 import { ScreenRouter, type MessageAction } from "./router.ts";
+import type { ConversationPresentation } from "./conversation.ts";
 import { padded } from "./text.ts";
 
 import { resolveKeys, type UiKeys } from "./keys.ts";
@@ -22,6 +24,7 @@ export type ScreenOptions = {
   router: ScreenRouter;
   main(): void;
   paint?(): Paint;
+  presentation?(): ConversationPresentation | undefined;
   ascii?: boolean;
   error?(error: unknown): void;
 };
@@ -29,6 +32,7 @@ export type ScreenOptions = {
 export class PinataScreen implements Component, Focusable {
   readonly router: ScreenRouter;
   readonly editor: Editor;
+  readonly capturesViewportInput = true;
   private readonly options: ScreenOptions;
   private keys: UiKeys;
   private readonly unsubscribe: () => void;
@@ -39,6 +43,7 @@ export class PinataScreen implements Component, Focusable {
   private sending = false;
   private focus = true;
   private editorTop = 0;
+  private editorOffset = 0;
   private readonly hitRows = new Map<number, AssignmentRef>();
 
   constructor(options: ScreenOptions) {
@@ -66,7 +71,8 @@ export class PinataScreen implements Component, Focusable {
   }
   set focused(value: boolean) {
     this.focus = value;
-    this.editor.focused = value && this.router.screen === "conversation";
+    this.editor.focused =
+      value && this.router.screen === "conversation" && !this.router.transcriptFocus;
   }
   private paint(): Paint {
     return this.options.paint?.() ?? createPaint(this.router.palette);
@@ -94,17 +100,36 @@ export class PinataScreen implements Component, Focusable {
   }
   render(width: number): string[] {
     this.syncEditor();
-    const editor =
+    const height = Math.max(1, this.options.tui.terminal.rows);
+    const renderedEditor =
       this.router.screen === "conversation" && this.router.selected
         ? this.editor.render(Math.max(1, width))
         : [];
-    const rows = renderScreen(this.router, {
-      width: Math.max(1, width - 2),
-      height: Math.max(1, this.options.tui.terminal.rows - editor.length - 1),
-      paint: this.paint(),
-      ascii: this.options.ascii,
-      hitRows: this.hitRows,
-    });
+    const editorBudget = Math.max(0, height - 3);
+    const cursor = renderedEditor.findIndex((line) => line.includes(CURSOR_MARKER));
+    this.editorOffset = Math.max(
+      0,
+      Math.min(renderedEditor.length - editorBudget, cursor - editorBudget + 1),
+    );
+    const editor = renderedEditor.slice(this.editorOffset, this.editorOffset + editorBudget);
+    const available = Math.max(0, height - editor.length - 1);
+    const rows = available
+      ? renderScreen(this.router, {
+          width: Math.max(1, width - 2),
+          height: available,
+          presentation: this.options.presentation?.(),
+          paint: this.paint(),
+          ascii: this.options.ascii,
+          hitRows: this.hitRows,
+        })
+      : [];
+    // Fill the viewport even for short reports and anchor controls above the composer.
+    const footerRows = this.router.screen === "conversation" ? 2 : 1;
+    rows.splice(
+      Math.max(0, rows.length - footerRows),
+      0,
+      ...Array.from({ length: Math.max(0, available - rows.length) }, () => ""),
+    );
     for (let index = 0; index < rows.length; index++) rows[index] = " " + rows[index];
     rows.push("");
     this.editorTop = rows.length;
@@ -305,7 +330,7 @@ export class PinataScreen implements Component, Focusable {
     if (this.router.screen === "conversation" && event.y >= this.editorTop)
       return this.editor.handleMouse({
         ...event,
-        y: event.y - this.editorTop,
+        y: event.y - this.editorTop + this.editorOffset,
         height: event.height - this.editorTop,
       });
     return undefined;

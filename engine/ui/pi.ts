@@ -1,3 +1,4 @@
+import { piConversationPresentation } from "../pi/conversation.ts";
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { matchesKey, type Component } from "@earendil-works/pi-tui";
 import { canonicalJson, type AssignmentRef, type Config } from "../contracts/index.ts";
@@ -156,17 +157,40 @@ export function installCoordinatorUi(
       openedRouter = router;
       opening = (async () => {
         try {
-          await context.ui.custom<void>((tui, _theme, _keys, done) => {
-            closeScreen = () => done();
-            return new PinataScreen({
-              tui,
-              router,
-              main: () => done(),
-              paint: () => paint(binding),
-              ascii: process.env.TERM === "dumb" || process.env.PINATA_ASCII === "1",
-              error: (error) => errors(context, error),
-            });
-          });
+          await context.ui.custom<void>(
+            (tui, _theme, _keys, done) => {
+              closeScreen = () => done();
+              return new PinataScreen({
+                tui,
+                router,
+                main: () => done(),
+                paint: () => paint(binding),
+                presentation: () => {
+                  if (
+                    !binding.context.ui.theme ||
+                    router.palette === "terminal-default" ||
+                    process.env.TERM === "dumb" ||
+                    Object.hasOwn(process.env, "NO_COLOR")
+                  )
+                    return undefined;
+                  return piConversationPresentation(binding.context.ui.theme);
+                },
+                ascii: process.env.TERM === "dumb" || process.env.PINATA_ASCII === "1",
+                error: (error) => errors(context, error),
+              });
+            },
+            {
+              overlay: true,
+              overlayOptions: {
+                width: "100%",
+                maxHeight: "100%",
+                anchor: "top-left",
+                row: 0,
+                col: 0,
+                margin: 0,
+              },
+            },
+          );
         } finally {
           closeScreen = undefined;
           opening = undefined;

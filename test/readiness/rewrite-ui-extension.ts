@@ -53,7 +53,8 @@ export default function rewriteUiCapture(pi: ExtensionAPI): void {
       Array.from(
         { length: 100 },
         (_, index) => `Full retained conversation line ${index + 1}`,
-      ).join("\n"),
+      ).join("\n") +
+        "\n\n## Highlighted result\n\n**Worker response** with code:\n\n```typescript\nconst answer: number = 42;\nconsole.log(answer);\n```",
     );
   };
   const ui = installCoordinatorUi(pi, async () => source, {

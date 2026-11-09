@@ -2,7 +2,7 @@
 
 The Pi extension and standalone viewer share the same screen router, projections,
 conversation reader and command receipts. Opening a screen never requests a model
-turn. Pi uses its public non-overlay custom-component API and keeps a compact fleet
+turn. Pi uses its public full-viewport overlay API and keeps a compact fleet
 widget in the coordinator conversation only while assignments are active or queued.
 Unresolved failed/interrupted assignments remain visible in the compact widget,
 even if only dependents are queued. Opening a screen replaces that widget; returning restores it. Both views leave an
@@ -202,7 +202,11 @@ presentation nor animation changes execution, acceptance, or recovery authority.
 Shift+Down opens the fleet from the Pi editor (Shift+Up remains available).
 Inside Pinata, Shift+Down still goes back one screen.
 
-Messages use the public Pi Markdown renderer. Consecutive tool calls are grouped
+The panel fills the terminal, including after resize, with controls and the composer
+anchored at the bottom. Pi conversations use its native user-message cards, Markdown
+theme and syntax highlighter. Expanded tool arguments and read results also receive
+syntax highlighting; terminal-default and no-color modes retain plain rendering.
+Backend and context metadata remain available through the details toggle. Consecutive tool calls are grouped
 with tool/path labels; errors remain visible. Recorded `submit_result` reports
 are displayed as worker reports, including findings, even when other tools are
 collapsed. These are worker claims, not coordinator acceptance.

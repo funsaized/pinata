@@ -631,7 +631,7 @@ test(
   },
 );
 
-test("Pi screens use the non-overlay API and preserve parent and worker drafts across source switches", async () => {
+test("Pi screens use a full-viewport overlay and preserve parent and worker drafts across source switches", async () => {
   const source = new UiSource();
   const other = new UiSource({
     ...uiState(),
@@ -733,7 +733,18 @@ test("Pi screens use the non-overlay API and preserve parent and worker drafts a
   ui.navigate("main");
   await switched;
   assert.equal(draft, "parent draft 👩🏽‍💻");
-  assert(customOptions.every((options) => options === undefined));
+  for (const options of customOptions)
+    assert.deepEqual(options, {
+      overlay: true,
+      overlayOptions: {
+        width: "100%",
+        maxHeight: "100%",
+        anchor: "top-left",
+        row: 0,
+        col: 0,
+        margin: 0,
+      },
+    });
   assert.equal(sent.length, 0, "Opening and navigation never request a coordinator turn");
   assert(registered.has("pinata-main") && registered.has("pinata-palette"));
   ui.dispose();
@@ -1141,5 +1152,41 @@ test("following a conversation loads remaining retained pages to reach the final
   assert.equal(pages, 2);
   assert.equal(router.conversation().page?.complete, true);
   assert.match(JSON.stringify(router.conversation().page?.entries), /Final answer/);
+  router.dispose();
+});
+
+test("worker detail fills the viewport and anchors the composer through resize", async () => {
+  const source = new UiSource();
+  const router = new ScreenRouter(source);
+  await router.start();
+  router.navigate("conversation", ref());
+  await tick();
+  const terminal = new MemoryTerminal();
+  const tui = new TuiAltScreen(terminal);
+  tui.requestRender = () => {};
+  const screen = new PinataScreen({ tui, router, main() {} });
+  for (const [width, height] of [
+    [120, 40],
+    [60, 24],
+    [30, 12],
+    [80, 40],
+  ]) {
+    terminal.columns = width;
+    terminal.rows = height;
+    const output = screen.render(width);
+    assert.equal(output.length, height);
+    assert(output.every((line) => visibleWidth(line) === width));
+    assert(
+      output.slice(-4).some((line) => line.includes("\u001b_pi:c")),
+      "Composer cursor stays at the bottom",
+    );
+    assert(screen.capturesViewportInput);
+  }
+  router.setDraft(Array.from({ length: 30 }, (_, index) => `line ${index}`).join("\n"));
+  for (const height of [8, 4, 2, 1]) {
+    terminal.rows = height;
+    assert.equal(screen.render(30).length, height);
+  }
+  screen.dispose();
   router.dispose();
 });

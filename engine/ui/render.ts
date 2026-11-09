@@ -1,4 +1,4 @@
-import { renderConversation } from "./conversation.ts";
+import { renderConversation, type ConversationPresentation } from "./conversation.ts";
 import { resolveKeys } from "./keys.ts";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { assignmentKey, type AssignmentRef, type CoreState } from "../contracts/index.ts";
@@ -21,6 +21,7 @@ export type RenderOptions = {
   paint: Paint;
   ascii?: boolean;
   hitRows?: Map<number, AssignmentRef>;
+  presentation?: ConversationPresentation;
 };
 function record(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -371,8 +372,10 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
       output.push(
         fit(paint(statusToken(executionLabel(assignment)), displayText(details[0])), width),
       );
-      output.push(fit(displayText(`${details[1]} · ${details[2]}`), width));
-      output.push(fit(displayText(details[7]), width));
+      if (router.details) {
+        output.push(fit(displayText(`${details[1]} · ${details[2]}`), width));
+        output.push(fit(displayText(details[7]), width));
+      }
       const result = router.state.results[assignmentKey(assignment.ref)]?.result;
       const body = [
         ...(result &&
@@ -391,7 +394,14 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
             ]
           : []),
         ...(view.page
-          ? [renderConversation(view.page.entries, { width, paint, expanded: router.details })]
+          ? [
+              renderConversation(view.page.entries, {
+                width,
+                paint,
+                expanded: router.details,
+                presentation: options.presentation,
+              }),
+            ]
           : []),
         ...(view.page && !view.page.complete ? ["More retained entries: /more"] : []),
         ...(router.mode === "observe" && router.activity.get(assignmentKey(assignment.ref))

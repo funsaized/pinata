@@ -171,14 +171,15 @@ try:
     assert finished and finished[-1]["parentUnchanged"] and finished[-1]["workerDrafts"], events[-10:]
     assert finished[-1]["disposals"] == 3
     assert not [event for event in events if event["phase"] in ("provider-request", "error")]
-    assert all(not event["overlay"] for event in events if event["phase"] == "custom")
+    assert all(event["overlay"] for event in events if event["phase"] == "custom")
     assert all(event["parentUnchanged"] for event in events if event["phase"] == "restored")
     assert all(stage == 7 for stage in stages.values())
     assert any(event.get("scroll", 0) > 0 for event in events if event["phase"] == "render"), "Mouse wheel did not scroll the worker conversation"
+    assert all(len(event["output"]) == 40 for event in events if event["phase"] == "render"), "Panel must fill the viewport"
     text = "\n".join(plain(line) for frame in frames for line in frame["output"])
     assert "Pinata" in text and "Full retained conversation line 100" in text
     assert "following latest" in text
-    print(json.dumps({"ok": True, "visits": opens, "disposals": 3, "parentDraftPreserved": True, "workerDraftsPreserved": True, "providerCalls": 0, "overlay": False, "widths": [120, 60, 30], "palettes": ["pinata", "one-light", "terminal-default"], "terminalBytes": len(terminal)}))
+    print(json.dumps({"ok": True, "visits": opens, "disposals": 3, "parentDraftPreserved": True, "workerDraftsPreserved": True, "providerCalls": 0, "overlay": True, "widths": [120, 60, 30], "palettes": ["pinata", "one-light", "terminal-default"], "terminalBytes": len(terminal)}))
 finally:
     if process.poll() is None:
         os.killpg(process.pid, signal.SIGKILL)
