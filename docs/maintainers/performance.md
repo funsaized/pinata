@@ -37,7 +37,7 @@ different storage provenance.
 Shared GitHub runners gate execution, accounting and cleanup; their performance
 measurements use the advisory profile. The accepted Linux latency baseline used
 Node 22.19.0 on a Ryzen 5900XT. Both Node 22 and 24 exceeded its limits on shared
-Intel runners, and Mac dependency dispatch varied between passing and failing
+runners, and Mac dependency dispatch varied between passing and failing
 runs. Those failed batches remain failed. Run the explicit `--ci` command above
 on controlled hardware to enforce the unchanged performance limits.
 Darwin CI selects the approved APFS profile only after observing the filesystem
