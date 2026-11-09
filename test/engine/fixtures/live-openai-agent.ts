@@ -13,16 +13,16 @@ export const liveReportSchema = z.strictObject({ first: z.string(), current: z.s
 export const agents = [
   defineAgent({
     name: "live-check",
-    handoffDescription: "Read a fixture value, write it and report it.",
+    handoffDescription: "Report a fixture value across Pinata assignments.",
     instructions: [
       "Follow the assignment literally. Work only in the current directory.",
-      "Use read to read challenge.txt. Use write to write its exact contents to result.txt.",
+      "Use read to read challenge.txt.",
       "Call submit_result with summary 'Live check complete' and data {first, current}.",
       "On your first assignment both fields are the value you read, without trailing whitespace.",
       "On follow-up, first is the original value from your conversation and current is the new value.",
     ].join("\n"),
-    tools: ["read", "write"],
-    pinata: { access: "write", workspace: "shared" },
+    tools: ["read"],
+    pinata: { access: "read", workspace: "shared" },
     outputType: liveReportSchema,
   }),
 ];

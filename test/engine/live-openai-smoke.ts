@@ -1,13 +1,19 @@
-// Paid integration smoke. Ordinary npm test never invokes this entry point.
+// Paid Pinata/Pi contract check. Ordinary npm test never invokes this entry point.
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { appendFile, mkdir, mkdtemp, readFile, readdir, unlink, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { z } from "zod";
+import {
+  assignmentKey,
+  type AssignmentResult,
+  type QueryResult,
+  type RuntimeQuery,
+} from "../../engine/contracts/index.ts";
 import { openHost } from "../../engine/host/index.ts";
 import { processArtifacts } from "../../engine/backends/process-transport.ts";
+import { openSavedSource } from "../../engine/sources/saved.ts";
 import { liveLimits, liveModel, liveReportSchema } from "./fixtures/live-openai-agent.ts";
 
 if (!process.env.OPENAI_API_KEY)
@@ -19,138 +25,165 @@ await mkdir(output, { recursive: true });
 const requests = join(output, "requests");
 await mkdir(requests);
 process.env.PINATA_LIVE_REQUESTS = requests;
-// Pi credentials and personal settings never enter the uploaded evidence directory.
-const privateAgent = await mkdtemp(join(tmpdir(), "pinata-live-agent-"));
-const bootstrapModule = fileURLToPath(new URL("./fixtures/live-openai-agent.ts", import.meta.url));
-const reports: unknown[] = [];
+// Pi credentials and personal settings stay outside the uploaded evidence tree.
+const agentDir = await mkdtemp(join(tmpdir(), "pinata-live-agent-"));
+const workspace = join(output, "workspace");
+const directory = join(output, "run");
+const definitions = join(output, "definitions");
+const assignments: AssignmentResult[] = [];
+const queries: { query: RuntimeQuery; expected: QueryResult }[] = [];
 const observedUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 };
+const responseIds = new Set<string>();
+const attemptIds = new Set<string>();
 const errors: string[] = [];
-let ok = false;
+let replayVerified = false;
 
-function toolNames(entries: unknown[]): string[] {
-  const entrySchema = z.looseObject({
-    message: z.looseObject({ role: z.literal("assistant"), content: z.array(z.unknown()) }),
-  });
-  const callSchema = z.looseObject({ type: z.literal("toolCall"), name: z.string() });
-  return entries.flatMap((entry) => {
-    const parsed = entrySchema.safeParse(entry);
-    if (!parsed.success) return [];
-    return parsed.data.message.content.flatMap((content) => {
-      const call = callSchema.safeParse(content);
-      return call.success ? [call.data.name] : [];
-    });
-  });
+function recordUsage(result: AssignmentResult): void {
+  assert.equal(result.usage.complete, true, JSON.stringify(result.usage));
+  assert.equal(result.usage.expectedAttempts.length, 1);
+  const attempt = result.usage.expectedAttempts[0];
+  assert(attempt.startsWith(`${assignmentKey(result.ref)}/attempt/`));
+  assert(!attemptIds.has(attempt), "Follow-up reused an earlier attempt's usage");
+  attemptIds.add(attempt);
+  assert(result.usage.observations.every((observation) => observation.attempt === attempt));
+  const responses = result.usage.observations.filter(
+    (observation) => observation.kind === "response",
+  );
+  assert(responses.length > 0);
+  for (const response of responses) {
+    assert(response.responseId && !responseIds.has(response.responseId));
+    responseIds.add(response.responseId);
+  }
+  const total = result.usage.total;
+  assert(total && total.input > 0 && total.output > 0);
+  // Pinata receives both per-response usage and a final attempt total. Count each response once.
+  for (const key of ["input", "output", "cacheRead", "cacheWrite", "cost"] as const) {
+    const value = total[key];
+    assert(typeof value === "number" && Number.isFinite(value));
+    const summed = responses.reduce((sum, response) => {
+      const measured = response.usage[key];
+      assert(typeof measured === "number");
+      return sum + measured;
+    }, 0);
+    assert(Math.abs(value - summed) < 1e-9, `${key} was lost or counted twice`);
+    observedUsage[key] += value;
+  }
 }
 
 try {
-  for (const backend of ["in-process", "process"] as const) {
-    const directory = join(output, backend);
-    const workspace = join(directory, "workspace");
-    const agentDir = join(privateAgent, backend);
-    const definitions = join(directory, "definitions");
-    await Promise.all([
-      mkdir(workspace, { recursive: true }),
-      mkdir(agentDir),
-      mkdir(definitions, { recursive: true }),
-    ]);
-    const first = randomUUID();
-    await writeFile(join(workspace, "challenge.txt"), first + "\n");
-    const host = await openHost({
-      directory: join(directory, "run"),
-      workspace,
-      agentDir,
-      definitionDirectories: [definitions],
-      bootstrapModule,
-      parentModel: { provider: "openai", id: liveModel, thinking: "off" },
-      config: { run: { backend, codemode: false, setup: false } },
-    });
-    try {
-      const created = await host.runtime.execute(
-        {
-          requestId: "live-create",
-          command: {
-            kind: "create",
-            workers: [
-              {
-                id: "worker",
-                agent: "live-check",
-                task: "Read challenge.txt, write result.txt and submit the initial report.",
-              },
-            ],
-          },
-        },
-        host.caller,
-      );
-      assert.equal(created.status, "accepted", JSON.stringify(created));
-      let previousConversation: unknown;
-      for (const assignment of [1, 2]) {
-        let current = first;
-        if (assignment === 2) {
-          current = randomUUID();
-          await writeFile(join(workspace, "challenge.txt"), current + "\n");
-          await unlink(join(workspace, "result.txt"));
-          const followed = await host.runtime.execute(
+  await Promise.all([mkdir(workspace), mkdir(definitions)]);
+  const first = randomUUID();
+  await writeFile(join(workspace, "challenge.txt"), first + "\n");
+  const host = await openHost({
+    directory,
+    workspace,
+    agentDir,
+    definitionDirectories: [definitions],
+    bootstrapModule: fileURLToPath(new URL("./fixtures/live-openai-agent.ts", import.meta.url)),
+    parentModel: { provider: "openai", id: liveModel, thinking: "off" },
+    config: { run: { backend: "process", codemode: false, setup: false } },
+  });
+  try {
+    const created = await host.runtime.execute(
+      {
+        requestId: "live-create",
+        command: {
+          kind: "create",
+          workers: [
             {
-              requestId: "live-follow-up",
-              command: {
-                kind: "follow_up",
-                worker: "worker",
-                messageId: "live-follow-up",
-                text: "Follow up: read the updated challenge.txt and write result.txt. Report first from your original conversation, and current from the updated file.",
-              },
+              id: "worker",
+              agent: "live-check",
+              task: "Read challenge.txt and submit the initial typed report.",
             },
-            host.caller,
-          );
-          assert.equal(followed.status, "accepted", JSON.stringify(followed));
-        }
-        const ended = await host.runtime.wait({}, host.caller, AbortSignal.timeout(120_000));
-        assert.equal(ended.status, "settled", JSON.stringify(ended));
-        const result = ended.results.find((entry) => entry.ref.assignment === assignment);
-        assert(result, JSON.stringify(ended));
-        assert.equal(result.execution.phase, "ended");
-        if (result.execution.phase !== "ended") throw new Error("Live assignment did not end");
-        assert.equal(result.execution.reason, "completed", JSON.stringify(result));
-        assert.equal(result.execution.cleanup, "confirmed", JSON.stringify(result));
-        assert.equal(result.usage.complete, true, JSON.stringify(result));
-        const usage = result.usage.total;
-        assert(usage && usage.input > 0 && usage.output > 0);
-        for (const key of ["input", "output", "cacheRead", "cacheWrite", "cost"] as const) {
-          const value = usage[key];
-          assert(typeof value === "number" && Number.isFinite(value));
-          observedUsage[key] += value;
-        }
-        assert(result.report, JSON.stringify(result));
-        const report = JSON.parse(
-          Buffer.from(await processArtifacts(host.directory).read(result.report)).toString("utf8"),
-        );
-        assert.deepEqual(liveReportSchema.parse(report.data), { first, current });
-        assert.equal((await readFile(join(workspace, "result.txt"), "utf8")).trim(), current);
-        const conversation = await host.runtime.query(
-          { kind: "conversation", ref: result.ref },
+          ],
+        },
+      },
+      host.caller,
+    );
+    assert.equal(created.status, "accepted", JSON.stringify(created));
+    const status = await host.runtime.query({ kind: "status" }, host.caller);
+    assert.equal(status.kind, "status");
+    if (status.kind !== "status") throw new Error("Missing accepted worker");
+    const worker = status.state.workers.worker;
+    assert.equal(worker.backend, "process");
+    assert.deepEqual(worker.model, { provider: "openai", id: liveModel, thinking: "off" });
+    assert.equal(worker.grants.access, "read");
+    assert.deepEqual(worker.tools, ["read"]);
+
+    for (const assignment of [1, 2]) {
+      let current = first;
+      if (assignment === 2) {
+        current = randomUUID();
+        await writeFile(join(workspace, "challenge.txt"), current + "\n");
+        const followed = await host.runtime.execute(
+          {
+            requestId: "live-follow-up",
+            command: {
+              kind: "follow_up",
+              worker: "worker",
+              messageId: "live-follow-up",
+              text: "Follow up: read the updated challenge.txt. Report first from your original conversation, and current from the updated file.",
+            },
+          },
           host.caller,
         );
-        assert.equal(conversation.kind, "conversation");
-        if (conversation.kind !== "conversation") throw new Error("Missing live conversation");
-        const tools = toolNames(conversation.entries);
-        for (const tool of ["read", "write", "submit_result"])
-          assert(tools.includes(tool), JSON.stringify(tools));
-        if (assignment === 1) previousConversation = conversation;
-        else
-          assert.deepEqual(
-            await host.runtime.query(
-              { kind: "conversation", ref: { ...result.ref, assignment: 1 } },
-              host.caller,
-            ),
-            previousConversation,
-          );
-        reports.push({ backend, assignment, tools, result });
+        assert.equal(followed.status, "accepted", JSON.stringify(followed));
       }
-    } finally {
-      const shutdown = await host.close("Live OpenAI check finished");
+      const ended = await host.runtime.wait({}, host.caller, AbortSignal.timeout(120_000));
+      assert.equal(ended.status, "settled", JSON.stringify(ended));
+      const result = ended.results.find((entry) => entry.ref.assignment === assignment);
+      assert(result && result.ref.worker === "worker", JSON.stringify(ended));
+      assert.deepEqual(
+        result.execution,
+        { phase: "ended", reason: "completed", cleanup: "confirmed" },
+        JSON.stringify(result),
+      );
+      assert(
+        result.report && !result.reportingError && !result.finalizationErrors?.length,
+        JSON.stringify(result),
+      );
+      const report = JSON.parse(
+        Buffer.from(await processArtifacts(host.directory).read(result.report)).toString("utf8"),
+      );
+      assert.deepEqual(liveReportSchema.parse(report.data), { first, current });
+      recordUsage(result);
+      // The later assignment must not replace earlier result or conversation artifacts.
+      for (const { query, expected } of queries)
+        assert.deepEqual(await host.runtime.query(query, host.caller), expected);
+      for (const kind of ["result", "conversation"] as const) {
+        const query = { kind, ref: result.ref };
+        const expected = await host.runtime.query(query, host.caller);
+        assert.equal(expected.kind, kind);
+        if (expected.kind === "result") assert.deepEqual(expected.result, result);
+        else if (expected.kind === "conversation") {
+          assert.deepEqual(expected.ref, result.ref);
+          assert.equal(expected.source, "assignment");
+          assert.equal(expected.complete, true);
+          assert(expected.entries.length > 0);
+          assert(JSON.stringify(expected.entries).includes(current));
+        }
+        queries.push({ query, expected: structuredClone(expected) });
+      }
+      assignments.push(result);
+    }
+  } finally {
+    try {
+      const shutdown = await host.close("Live Pinata/Pi contract check finished");
       assert.equal(shutdown.status, "closed", JSON.stringify(shutdown));
+    } catch (error) {
+      errors.push(`Shutdown: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
-  ok = true;
+  assert.equal(errors.length, 0, errors.join("\n"));
+  const saved = await openSavedSource(directory);
+  for (const { query, expected } of queries) {
+    const reply = await saved.request({ method: "query", input: query });
+    assert.equal(reply.status, "ok", JSON.stringify(reply));
+    if (reply.status !== "ok" || reply.response.method !== "query")
+      throw new Error("Saved query failed");
+    assert.deepEqual(reply.response.result, expected);
+  }
+  replayVerified = true;
 } catch (error) {
   errors.push(error instanceof Error ? (error.stack ?? error.message) : String(error));
 } finally {
@@ -166,42 +199,42 @@ try {
     )
   ).flat();
   if (
-    ok &&
-    (!requestRecords.length ||
-      requestRecords.some((entry) => !entry.requestId || entry.status !== 200))
-  ) {
-    ok = false;
+    !requestRecords.length ||
+    requestRecords.some((entry) => !entry.requestId || entry.status !== 200)
+  )
     errors.push("Live provider responses lack successful OpenAI request identities");
-  }
+  if (requestRecords.length !== responseIds.size)
+    errors.push("HTTP attempts and assignment-attributed response usage do not match");
+  const ok = errors.length === 0 && assignments.length === 2 && replayVerified;
   const report = {
     ok,
     provider: "openai",
     model: liveModel,
+    backend: "process",
     platform: process.platform,
-    arch: process.arch,
     node: process.version,
     limits: liveLimits,
     observedUsage,
     usageComplete: ok,
+    replayVerified,
     requests: requestRecords,
-    assignments: reports,
+    assignments,
     errors,
   };
-  const serialized = JSON.stringify(report, null, 2);
-  await writeFile(join(output, "report.json"), serialized + "\n");
+  await writeFile(join(output, "report.json"), JSON.stringify(report, null, 2) + "\n");
   console.log(
     JSON.stringify({
       ok,
-      model: liveModel,
-      assignments: reports.length,
+      assignments: assignments.length,
       requests: requestRecords.length,
+      replayVerified,
       output,
     }),
   );
   if (process.env.GITHUB_STEP_SUMMARY)
     await appendFile(
       process.env.GITHUB_STEP_SUMMARY,
-      `OpenAI live check: **${ok ? "passed" : "failed"}**. Model: \`${liveModel}\`. ${reports.length}/4 assignments, ${requestRecords.length} HTTP attempts. Observed usage: ${observedUsage.input} input, ${observedUsage.output} output tokens; $${observedUsage.cost.toFixed(4)}${ok ? "" : " (incomplete)"}.\n`,
+      `Pinata/Pi live contract: **${ok ? "passed" : "failed"}**. Process backend; \`${liveModel}\`. ${assignments.length}/2 assignments; ${requestRecords.length} HTTP attempts. Typed reports, usage attribution, cleanup and saved replay: ${ok ? "verified" : "incomplete"}. Observed cost: $${observedUsage.cost.toFixed(4)}${ok ? "" : " (incomplete)"}.\n`,
     );
   if (!ok) {
     console.error(errors.join("\n"));

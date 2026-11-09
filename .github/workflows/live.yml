@@ -1,4 +1,4 @@
-name: Live OpenAI integration
+name: Live Pinata/Pi contract
 
 on:
   push:
@@ -15,16 +15,12 @@ concurrency:
 
 jobs:
   live-openai:
-    name: Live OpenAI (${{ matrix.os }})
+    name: Live Pinata/Pi contract
     if: >-
       github.actor != 'dependabot[bot]' &&
       (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 12
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -34,7 +30,7 @@ jobs:
           node-version: "22.19.0"
           package-manager-cache: false
       - run: npm ci --ignore-scripts
-      - name: Exercise live tool use, typed reports, continuation and cleanup
+      - name: Verify Pinata reports, continuation, usage attribution and saved replay
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           PINATA_LIVE_OUTPUT: ${{ runner.temp }}/pinata-live-openai
@@ -43,7 +39,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: live-openai-${{ github.sha }}-${{ matrix.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          name: live-pinata-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/pinata-live-openai/
           include-hidden-files: true
           retention-days: 30
