@@ -339,6 +339,5 @@ matching runtime, hardware, platform, configuration, workload, lockfile and Pi
 launcher identity. Source closures are retained before and after each batch;
 changes mark the cohort unstable. Timing comparisons require a quiet host.
 
-Windows builds retain the explicit unavailable supervisor result until the
-selected Job Object launcher is verified. This is a recorded platform limitation,
-not a successful Windows runtime measurement.
+Windows CI verifies the Job Object runtime but does not run this benchmark cohort.
+No Windows latency baseline has been accepted.

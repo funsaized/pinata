@@ -21,7 +21,7 @@ include `rewrite/`; package contents and entry points still exclude it.
 The storage contract uses local filesystems with atomic exclusive directory creation,
 atomic hard-link publication, file fsync and (on POSIX) directory fsync. Windows
 file flushes are supported, but Node does not provide equivalent directory fsync;
-Windows runtime verification remains deferred. Network filesystems, actual machine
+Windows runtime verification was deferred at this milestone. Network filesystems, actual machine
 power loss and hostile same-user mutation are outside the demonstrated guarantees.
 
 A complete journal frame carries a typed transition, revision, payload digest,
