@@ -51,27 +51,12 @@ function theme(paint: Paint): MarkdownTheme {
 }
 
 // Render retained data using Pi's public Markdown component. Tool bursts are
-// grouped without treating a tool result as a separate assistant response.
+// shown with bounded output previews without hiding the agent's progress.
 function renderEntries(entries: unknown[], options: ConversationOptions): string[] {
   const { width, paint, expanded } = options;
   const output: string[] = [];
   const calls = new Map<string, string>();
   const paths = new Map<string, string>();
-  let tools: string[] = [];
-  const flush = () => {
-    if (!tools.length) return;
-    output.push(
-      paint(
-        "muted",
-        fit(
-          `Tools · ${tools.length} calls · ${tools.slice(0, 4).join(" · ")}${tools.length > 4 ? " …" : ""} · Tab, d expands`,
-          width,
-        ),
-      ),
-      "",
-    );
-    tools = [];
-  };
   const markdown = (value: string) =>
     new Markdown(displayText(value), 1, 0, options.presentation?.markdown ?? theme(paint)).render(
       width,
@@ -81,7 +66,6 @@ function renderEntries(entries: unknown[], options: ConversationOptions): string
     const message = entry && object(entry.message);
     if (!message) {
       if (expanded) {
-        flush();
         output.push(...markdown(JSON.stringify(value, null, 2)), "");
       }
       continue;
@@ -90,7 +74,6 @@ function renderEntries(entries: unknown[], options: ConversationOptions): string
     if (role === "toolResult") {
       const report = object(object(message.details)?.report);
       if (message.toolName === "submit_result" && report && !message.isError) {
-        flush();
         output.push(paint("strong", paint("accent", "Worker report")));
         if (typeof report.summary === "string") output.push(...markdown(report.summary), "");
         const assessment = object(report.assessment);
@@ -120,11 +103,6 @@ function renderEntries(entries: unknown[], options: ConversationOptions): string
         continue;
       }
       const label = calls.get(String(message.toolCallId)) ?? String(message.toolName ?? "tool");
-      if (!expanded && !message.isError) {
-        if (!calls.has(String(message.toolCallId))) tools.push(label);
-        continue;
-      }
-      flush();
       output.push(
         paint(
           message.isError ? "error" : "muted",
@@ -133,10 +111,16 @@ function renderEntries(entries: unknown[], options: ConversationOptions): string
       );
       const path = paths.get(String(message.toolCallId));
       const body =
-        expanded && path && message.toolName === "read" && options.presentation
+        path && message.toolName === "read" && options.presentation
           ? options.presentation.file(text(message.content), path, width)
           : markdown(text(message.content));
-      output.push(...(expanded ? body : body.slice(0, 8)), "");
+      const previewRows = message.isError ? 8 : 4;
+      output.push(...(expanded ? body : body.slice(0, previewRows)));
+      if (!expanded && body.length > previewRows)
+        output.push(
+          paint("muted", fit(`… ${body.length - previewRows} more lines · Tab, d expands`, width)),
+        );
+      output.push("");
       continue;
     }
     let body = text(message.content);
@@ -158,7 +142,6 @@ function renderEntries(entries: unknown[], options: ConversationOptions): string
       }
     }
     if (body) {
-      flush();
       if (role === "user" && options.presentation) {
         output.push(...options.presentation.user(body, width), "");
       } else {
@@ -181,21 +164,20 @@ function renderEntries(entries: unknown[], options: ConversationOptions): string
           calls.set(String(item.id), label);
           if (typeof args?.path === "string") paths.set(String(item.id), args.path);
           if (expanded) {
-            flush();
             output.push(paint("muted", fit(`Tool call · ${label}`, width)));
             const argsText = JSON.stringify(item.arguments, null, 2);
             output.push(
               ...(options.presentation?.code(argsText, "json", width) ?? lines(argsText, width)),
               "",
             );
-          } else if (item.name !== "submit_result") tools.push(label);
+          } else if (item.name !== "submit_result") {
+            output.push(paint("accent", fit(`Tool call · ${label}`, width)));
+          }
         } else if (expanded && item?.type === "thinking") {
-          flush();
           output.push(paint("muted", "Thinking"), ...markdown(String(item.thinking ?? "")), "");
         }
       }
   }
-  flush();
   return output;
 }
 

@@ -179,7 +179,10 @@ its text clears it. `f` cycles all/active/failed, `h` includes older assignments
 to a visible match. `?` opens scrollable help with configured bindings. `a` opens an
 action list whose labels distinguish assignment, worker, and run scopes.
 
-In conversations, Tab switches composer/transcript focus. The composer retains
+In conversations, Tab switches composer/transcript focus. A reverse-video badge
+names the active focus (AGENT MESSAGE or TRANSCRIPT) and the selected worker;
+the composer border is accented while typing to the agent. Plain terminals retain
+the explicit labels. The composer retains
 Ctrl+Left/Right, Ctrl+B and Ctrl+R for editing. Transcript focus enables `f` to follow
 latest output, `d` to expand metadata and tool payloads, and `m` to load older pages.
 Scrolling disables follow mode without changing the draft. The composer identifies
@@ -206,11 +209,15 @@ The panel fills the terminal, including after resize, with controls and the comp
 anchored at the bottom. Pi conversations use its native user-message cards, Markdown
 theme and syntax highlighter. Expanded tool arguments and read results also receive
 syntax highlighting; terminal-default and no-color modes retain plain rendering.
-Backend and context metadata remain available through the details toggle. Consecutive tool calls are grouped
-with tool/path labels; errors remain visible. Recorded `submit_result` reports
-are displayed as worker reports, including findings, even when other tools are
-collapsed. These are worker claims, not coordinator acceptance.
+Backend and context metadata remain available through the details toggle. Tool
+calls retain individual tool/path labels and four-line output previews; errors
+show up to eight lines. The details toggle expands complete payloads. Recorded
+`submit_result` reports are displayed as worker reports, including findings, even
+when other tools show only previews. These are worker claims, not coordinator acceptance.
 
 New conversation views follow the latest output and read subsequent immutable
 pages until they reach the end; scrolling switches to history mode and stops
-automatic paging. Full tool details remain available through Tab then d.
+automatic paging. Refreshes collect pages before replacing the displayed transcript,
+so loading does not flash the first page or shift content. History stays fixed until
+the user follows new output; scrolling a transcript that already fits does not
+disable following. Full tool details remain available through Tab then d.

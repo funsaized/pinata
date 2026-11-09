@@ -25,6 +25,8 @@ export type ConversationView = {
   loading: boolean;
   error?: string;
   scroll: number;
+  maxScroll?: number;
+  refreshPending?: boolean;
   inspection?: QueryResult;
   follow?: boolean;
   newOutput?: boolean;
@@ -307,7 +309,10 @@ export class ScreenRouter {
   toggleFollow(): void {
     const view = this.conversation();
     view.follow = !view.follow;
-    if (view.follow) view.newOutput = false;
+    if (view.follow) {
+      view.newOutput = false;
+      void this.loadConversation().catch((error: unknown) => this.fail(error));
+    }
     this.changed();
   }
   toggleQueued(): void {
@@ -419,67 +424,76 @@ export class ScreenRouter {
       return;
     }
     const view = this.conversation();
+    const next = Math.min(view.maxScroll ?? Infinity, Math.max(0, view.scroll + lines));
+    if (next === view.scroll) return;
     view.follow = false;
-    view.scroll = Math.max(0, view.scroll + lines);
+    view.scroll = next;
     this.changed();
   }
   async loadConversation(more = false): Promise<void> {
     const ref = this.selected;
     if (!ref || !this.alive) return;
     const view = this.conversation(ref);
-    if (view.loading) return;
+    if (view.loading) {
+      if (!more) view.refreshPending = true;
+      return;
+    }
     if (more && (!view.page?.cursor || view.page.complete)) return;
     const generation = this.generation;
     const key = assignmentKey(ref);
     view.loading = true;
+    view.refreshPending = false;
     this.changed();
     try {
-      const reply = await this.source.request({
-        method: "query",
-        input: { kind: "conversation", ref, ...(more ? { cursor: view.page?.cursor } : {}) },
-      });
-      if (
-        !this.alive ||
-        this.generation !== generation ||
-        !this.selected ||
-        assignmentKey(this.selected) !== key
-      )
-        return;
-      if (reply.status === "error") {
-        view.error = reply.error.message;
-        return;
-      }
-      if (reply.response.method !== "query" || reply.response.result.kind !== "conversation") {
-        view.error = "Source returned an incompatible conversation";
-        return;
-      }
-      const page = reply.response.result;
-      if (assignmentKey(page.ref) !== key) {
-        view.error = "Source returned a conversation for a different assignment";
-        return;
-      }
-      if (view.page && !view.follow && page.artifact?.digest !== view.page.artifact?.digest)
-        view.newOutput = true;
-      view.page = {
-        ...page,
-        entries: more ? [...(view.page?.entries ?? []), ...page.entries] : page.entries,
-      };
+      // Keep the displayed transcript stable while collecting immutable pages.
+      let cursor = more ? view.page?.cursor : undefined;
+      let entries = more ? [...(view.page?.entries ?? [])] : [];
+      let page: ConversationQueryResult;
+      do {
+        const reply = await this.source.request({
+          method: "query",
+          input: { kind: "conversation", ref, ...(cursor ? { cursor } : {}) },
+        });
+        if (
+          !this.alive ||
+          this.generation !== generation ||
+          !this.selected ||
+          assignmentKey(this.selected) !== key
+        )
+          return;
+        if (reply.status === "error") {
+          view.error = reply.error.message;
+          return;
+        }
+        if (reply.response.method !== "query" || reply.response.result.kind !== "conversation") {
+          view.error = "Source returned an incompatible conversation";
+          return;
+        }
+        page = reply.response.result;
+        if (assignmentKey(page.ref) !== key) {
+          view.error = "Source returned a conversation for a different assignment";
+          return;
+        }
+        if (!more && view.page && !view.follow) {
+          view.error = undefined;
+          if (page.artifact?.digest !== view.page.artifact?.digest) view.newOutput = true;
+          return;
+        }
+        entries = [...entries, ...page.entries];
+        cursor = page.cursor;
+      } while (view.follow && !page.complete && cursor);
+      view.page = { ...page, entries };
+      if (view.follow) view.newOutput = false;
       view.error = undefined;
     } catch (error) {
       if (this.generation === generation) view.error = surfaceError(error).message;
     } finally {
       view.loading = false;
       this.changed();
-      if (
-        this.alive &&
-        this.generation === generation &&
-        view.follow &&
-        !view.error &&
-        view.page?.cursor &&
-        !view.page.complete &&
-        this.screen === "conversation"
-      )
-        void this.loadConversation(true).catch((error: unknown) => this.fail(error));
+      if (view.refreshPending && this.alive && this.generation === generation) {
+        view.refreshPending = false;
+        void this.loadConversation().catch((error: unknown) => this.fail(error));
+      }
       if (
         this.alive &&
         this.generation !== generation &&

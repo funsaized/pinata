@@ -298,6 +298,7 @@ export function createPaint(
   )
     return (_token, text) => text;
   return (token, text) => {
+    if (token === "focus") return `\u001b[1;7m${text}\u001b[27;22m`;
     if (token === "strong") return `\u001b[1m${text}\u001b[22m`;
     if (token === "background") {
       if (name === "inherit") return text;

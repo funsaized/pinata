@@ -136,11 +136,17 @@ try:
                         frames.append(event)
                         stages[visit] = 2
                         if visit == 1:
-                            send(b"\td\t")
-                            send(b"\x1b[<65;10;20M")
-                            send(b"worker-one draft")
+                            stages[visit] = 1.5
+                            send(b"\t")
                         else:
                             send(b"\x1b[1;2B")
+                    elif stage == 1.5 and visit == 1 and any("TRANSCRIPT" in line for line in event["output"]):
+                        frames.append(event)
+                        assert any("\x1b[1;7m TRANSCRIPT " in line for line in event["output"]), "Transcript focus must be visibly highlighted"
+                        stages[visit] = 2
+                        send(b"d\t")
+                        send(b"\x1b[<65;10;20M")
+                        send(b"worker-one draft")
                     elif stage == 2 and visit == 1 and draft == "worker-one draft":
                         stages[visit] = 3
                         send(b"\x1b[1;2C")

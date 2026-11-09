@@ -384,11 +384,10 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
           ? [`Result · ${result.execution.reason}`, result.summary, ""]
           : []),
         ...(router.details ? [...details.slice(3, 7), ...details.slice(8)] : []),
-        `Task: ${assignment.task}`,
-        "",
-        ...(view.loading ? ["Loading retained conversation…"] : []),
+        ...(router.details || !view.page?.entries.length ? [`Task: ${assignment.task}`, ""] : []),
+        ...(view.loading && !view.page ? ["Loading retained conversation…"] : []),
         ...(view.error ? [`Conversation unavailable: ${view.error}`] : []),
-        ...(view.page
+        ...(view.page && router.details
           ? [
               `${view.page.source === "assignment" ? "Saved assignment transcript" : view.page.source === "checkpoint" ? "Live or saved session checkpoint" : "Conversation unavailable"}${view.page.artifact ? ` · ${view.page.artifact.digest.slice(0, 12)}` : ""}`,
             ]
@@ -418,8 +417,9 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
         ...(view.inspection ? ["Retained result", JSON.stringify(view.inspection, null, 2)] : []),
       ].flatMap((line) => (Array.isArray(line) ? line : conversationLines(view, line, width)));
       const available = Math.max(1, height - output.length - 3 - (router.notice ? 1 : 0));
-      if (view.follow) view.scroll = Math.max(0, body.length - available);
-      view.scroll = Math.min(view.scroll, Math.max(0, body.length - available));
+      view.maxScroll = Math.max(0, body.length - available);
+      if (view.follow) view.scroll = view.maxScroll;
+      view.scroll = Math.min(view.scroll, view.maxScroll);
       output.push(...body.slice(view.scroll, view.scroll + available));
       const action =
         assignment.execution.phase !== "ended"
@@ -429,10 +429,8 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
             : "Continue";
       output.push(
         fit(
-          paint(
-            "accent",
-            `${router.transcriptFocus ? "Transcript" : action} · Tab switch focus · ${view.follow ? "following latest" : view.newOutput ? "new output · f follows" : "reading history"}`,
-          ),
+          paint("focus", router.transcriptFocus ? " TRANSCRIPT " : " AGENT MESSAGE ") +
+            ` ${displayText(assignment.ref.worker)} · ${router.transcriptFocus ? "↑↓ scroll · Tab to message" : `${action} · Enter sends · Tab to transcript`} · ${view.follow ? "following latest" : view.newOutput ? "new output · f follows" : "reading history"}`,
           width,
         ),
       );

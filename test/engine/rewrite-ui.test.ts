@@ -952,6 +952,7 @@ test("fleet help, search, filtering and actions are usable without a composer", 
 
 test("composer editing keys preserve focus and transcript controls are explicit", async () => {
   const source = new UiSource();
+  source.respond = async () => conversationReply(ref(), "Transcript line\n".repeat(100));
   const router = new ScreenRouter(source);
   await router.start();
   router.navigate("conversation", ref());
@@ -973,6 +974,7 @@ test("composer editing keys preserve focus and transcript controls are explicit"
   assert.equal(router.conversation().follow, true);
   screen.handleInput("d");
   assert.equal(router.details, true);
+  screen.render(100);
   screen.handleInput("\u001b[A");
   assert.equal(router.conversation().follow, false);
   assert.equal(router.draft, "hello world");
@@ -1012,7 +1014,7 @@ test("collapsed branches preserve real ancestry and expansion restores children"
   router.dispose();
 });
 
-test("conversation renders Markdown messages and groups tool activity without hiding errors", () => {
+test("conversation renders Markdown messages and tool previews without hiding errors", () => {
   const entries = [
     { type: "message", message: { role: "user", content: "Inspect **the parser**." } },
     {
@@ -1054,13 +1056,13 @@ test("conversation renders Markdown messages and groups tool activity without hi
   ];
   const options = { width: 100, paint: createPaint("terminal-default"), expanded: false };
   const compact = stripTerminalSequences(renderConversation(entries, options).join("\n"));
-  assert.match(compact, /Tools · 2 calls/);
+  assert.match(compact, /Tool call · read parser.ts/);
   assert.match(compact, /read parser.ts/);
   assert.match(compact, /Tool error · read test.ts/);
   assert.match(compact, /File missing/);
   assert.match(compact, /Findings/);
   assert(!compact.includes("**One issue**"));
-  assert(!compact.includes("private tool output"));
+  assert(compact.includes("private tool output"));
   assert.match(
     renderConversation(entries, { ...options, expanded: true }).join("\n"),
     /private tool output/,
@@ -1188,5 +1190,109 @@ test("worker detail fills the viewport and anchors the composer through resize",
     assert.equal(screen.render(30).length, height);
   }
   screen.dispose();
+  router.dispose();
+});
+
+test("transcript refresh keeps the previous complete page visible until all new pages arrive", async () => {
+  const source = new UiSource();
+  const router = new ScreenRouter(source);
+  await router.start();
+  source.respond = async () => conversationReply(ref(), "Original final answer");
+  router.navigate("conversation", ref());
+  await tick();
+  const original = router.conversation().page;
+  let finish!: (reply: SurfaceReply) => void;
+  let requests = 0;
+  source.respond = async () => {
+    requests++;
+    if (requests > 1)
+      return new Promise<SurfaceReply>((resolve) => {
+        finish = resolve;
+      });
+    const reply = conversationReply(ref(), "New first page");
+    if (
+      reply.status === "ok" &&
+      reply.response.method === "query" &&
+      reply.response.result.kind === "conversation"
+    ) {
+      reply.response.result.complete = false;
+      reply.response.result.cursor = "next";
+    }
+    return reply;
+  };
+  const refresh = router.loadConversation();
+  await tick();
+  assert.equal(router.conversation().page, original);
+  const output = renderScreen(router, {
+    width: 100,
+    height: 30,
+    paint: createPaint("terminal-default"),
+  }).join("\n");
+  assert.match(output, /Original final answer/);
+  assert(!output.includes("Loading retained"));
+  assert(!output.includes("New first page"));
+  finish(conversationReply(ref(), "New final answer"));
+  await refresh;
+  assert.match(JSON.stringify(router.conversation().page?.entries), /New first page/);
+  assert.match(JSON.stringify(router.conversation().page?.entries), /New final answer/);
+  router.dispose();
+});
+
+test("Tab visibly identifies the agent message target and transcript focus", async () => {
+  const source = new UiSource();
+  const router = new ScreenRouter(source);
+  await router.start();
+  router.navigate("conversation", ref());
+  await tick();
+  const terminal = new MemoryTerminal();
+  const tui = new TuiAltScreen(terminal);
+  tui.requestRender = () => {};
+  const screen = new PinataScreen({ tui, router, main() {}, paint: () => createPaint("pinata") });
+  let output = screen.render(100).join("\n");
+  assert(output.includes("\u001b[1;7m AGENT MESSAGE "));
+  assert.match(stripTerminalSequences(output), /AGENT MESSAGE.*worker-1/);
+  assert(screen.editor.focused);
+  screen.handleInput("\t");
+  output = screen.render(100).join("\n");
+  assert(output.includes("\u001b[1;7m TRANSCRIPT "));
+  assert(!screen.editor.focused);
+  router.scroll(-1);
+  assert(
+    router.conversation().follow,
+    "Scrolling a short transcript must not silently disable following",
+  );
+  screen.handleInput("\t");
+  assert.match(screen.render(100).join("\n"), /AGENT MESSAGE/);
+  screen.dispose();
+  router.dispose();
+});
+
+test("reading history preserves its transcript until following the newer checkpoint", async () => {
+  const source = new UiSource();
+  const router = new ScreenRouter(source);
+  await router.start();
+  let version = 1;
+  source.respond = async () => {
+    const reply = conversationReply(ref(), `Checkpoint ${version}`);
+    if (
+      reply.status === "ok" &&
+      reply.response.method === "query" &&
+      reply.response.result.kind === "conversation"
+    )
+      reply.response.result.artifact = { digest: String(version).repeat(64), size: 100 };
+    return reply;
+  };
+  router.navigate("conversation", ref());
+  await tick();
+  const original = router.conversation().page;
+  router.toggleFollow();
+  version = 2;
+  await router.loadConversation();
+  assert.equal(router.conversation().page, original);
+  assert(router.conversation().newOutput);
+  router.toggleFollow();
+  await tick();
+  assert.match(JSON.stringify(router.conversation().page?.entries), /Checkpoint 2/);
+  assert.equal(router.conversation().newOutput, false);
   router.dispose();
 });

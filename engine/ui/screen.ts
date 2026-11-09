@@ -52,7 +52,7 @@ export class PinataScreen implements Component, Focusable {
     this.keys = resolveKeys(this.router.keys);
     const paint = (token: Parameters<Paint>[0], text: string) => this.paint()(token, text);
     this.editor = new Editor(options.tui, {
-      borderColor: (text) => paint("border", text),
+      borderColor: (text) => paint(this.router.transcriptFocus ? "border" : "accent", text),
       selectList: {
         selectedPrefix: (text) => paint("accent", text),
         selectedText: (text) => paint("text", text),
