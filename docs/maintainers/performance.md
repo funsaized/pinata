@@ -34,11 +34,12 @@ fallback. Direct `bench/run.ts` invocation measures beside its `--out` path;
 `--ci` does not change that medium. Reports record actual filesystem type, block
 size, device and canonical cell directory. Baseline comparison rejects missing or
 different storage provenance.
-Hard performance gates run on Node 22.19.0, the runner used by the accepted Linux
-baseline. Node 24 runs the full compatibility suite and retains advisory
-performance measurements with the same execution, accounting and cleanup checks.
-Its earlier over-budget batches remain failed; they are not relabeled by this
-cohort selection.
+Shared GitHub runners gate execution, accounting and cleanup; their performance
+measurements use the advisory profile. The accepted Linux latency baseline used
+Node 22.19.0 on a Ryzen 5900XT. Both Node 22 and 24 exceeded its limits on shared
+Intel runners, and Mac dependency dispatch varied between passing and failing
+runs. Those failed batches remain failed. Run the explicit `--ci` command above
+on controlled hardware to enforce the unchanged performance limits.
 Darwin CI selects the approved APFS profile only after observing the filesystem
 name and checking its device identity against the actual allocation. Missing or
 mismatched proof retains the default limits. Reports record the profile, exact
