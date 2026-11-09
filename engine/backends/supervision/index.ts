@@ -645,7 +645,7 @@ export async function launchSupervised(options: LaunchOptions): Promise<Supervis
     nodeCommand,
     [
       "--import",
-      fileURLToPath(new URL("../../typescript.mjs", import.meta.url)),
+      new URL("../../typescript.mjs", import.meta.url).href,
       fileURLToPath(new URL("./guardian.ts", import.meta.url)),
       directory,
     ],

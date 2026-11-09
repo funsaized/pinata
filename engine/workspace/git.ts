@@ -76,7 +76,7 @@ export class GitCommands {
         command: this.nodeCommand ?? (process.versions.bun ? "node" : process.execPath),
         args: [
           "--import",
-          fileURLToPath(new URL("../typescript.mjs", import.meta.url)),
+          new URL("../typescript.mjs", import.meta.url).href,
           fileURLToPath(new URL("./git-worker.ts", import.meta.url)),
           this.directory,
         ],

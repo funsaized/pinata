@@ -461,7 +461,7 @@ export class ProcessBackend implements BackendPort {
         command: this.options.nodeCommand ?? (process.versions.bun ? "node" : process.execPath),
         args: [
           "--import",
-          fileURLToPath(new URL("../typescript.mjs", import.meta.url)),
+          new URL("../typescript.mjs", import.meta.url).href,
           fileURLToPath(new URL("./process-worker.ts", import.meta.url)),
           directory,
         ],
