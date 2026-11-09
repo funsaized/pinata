@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { link, mkdir, open, readFile, rename, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 
 export type FaultHook = (point: string) => void | Promise<void>;
 
@@ -121,7 +122,23 @@ export async function replaceProjection(
   const staged = join(dirname(path), `.projection-${randomUUID()}`);
   await writeSynced(staged, bytes, phase, fault);
   await fault?.(`${phase}.publish.before`);
-  await rename(staged, path);
+  // Windows can reject replacement while another handle or rename is closing.
+  // Retry the same atomic operation, retaining the staged file if it still fails.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await rename(staged, path);
+      break;
+    } catch (error) {
+      if (
+        process.platform !== "win32" ||
+        attempt === 5 ||
+        !(error instanceof Error && "code" in error) ||
+        !["EPERM", "EACCES", "EBUSY"].includes(String(error.code))
+      )
+        throw error;
+      await delay(10 * 2 ** attempt);
+    }
+  }
   await fault?.(`${phase}.publish.after`);
   await fault?.(`${phase}.directory-sync.before`);
   await syncDirectory(dirname(path));

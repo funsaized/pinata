@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
   appendFile,
@@ -15,9 +15,19 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { digestValue } from "../../engine/contracts/digest.ts";
 import { digestBytes } from "../../engine/storage/io.ts";
 import { DurableStore, inspectStore, reconcileStore } from "../../engine/storage/index.ts";
+
+test("rewrite store: projection replacement retries Windows sharing errors and retains permanent failures", async (t) => {
+  const directory = await temporaryStore(t);
+  await promisify(execFile)(
+    process.execPath,
+    [fileURLToPath(new URL("./fixtures/rewrite-projection-retry.ts", import.meta.url)), directory],
+    { timeout: 10_000 },
+  );
+});
 
 async function temporaryStore(t: TestContext): Promise<string> {
   const directory = await realpath(await mkdtemp(join(tmpdir(), "pinata-rewrite-storage-")));
