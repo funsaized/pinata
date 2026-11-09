@@ -277,7 +277,10 @@ export class ScreenRouter {
       if (this.filter === "active" && assignment.execution.phase === "ended") return false;
       if (
         this.filter === "failed" &&
-        !(assignment.execution.phase === "ended" && assignment.execution.reason === "failed")
+        !(
+          assignment.execution.phase === "ended" &&
+          ["failed", "interrupted"].includes(assignment.execution.reason)
+        )
       )
         return false;
       return `${worker.id} ${worker.agent} ${assignment.task}`
@@ -404,7 +407,7 @@ export class ScreenRouter {
     const key = assignmentKey(ref);
     let view = this.conversations.get(key);
     if (!view) {
-      view = { loading: false, scroll: 0 };
+      view = { loading: false, scroll: 0, follow: true };
       this.conversations.set(key, view);
     }
     return view;
@@ -467,6 +470,16 @@ export class ScreenRouter {
     } finally {
       view.loading = false;
       this.changed();
+      if (
+        this.alive &&
+        this.generation === generation &&
+        view.follow &&
+        !view.error &&
+        view.page?.cursor &&
+        !view.page.complete &&
+        this.screen === "conversation"
+      )
+        void this.loadConversation(true).catch((error: unknown) => this.fail(error));
       if (
         this.alive &&
         this.generation !== generation &&

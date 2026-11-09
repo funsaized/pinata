@@ -4,7 +4,7 @@ import {
   type AssignmentRef,
   type CoreState,
 } from "../contracts/index.ts";
-import { assignments } from "./projection.ts";
+import { assignments, needsAttention } from "./projection.ts";
 
 export type TreeNode = {
   assignment: Assignment;
@@ -22,6 +22,7 @@ export function assignmentTree(
     selected?: AssignmentRef;
     queued?: boolean;
     activeOnly?: boolean;
+    attention?: boolean;
     limit?: number;
     trailing?: boolean;
   } = {},
@@ -31,7 +32,11 @@ export function assignmentTree(
   let chosen = all.filter((assignment) => {
     const phase = assignment.execution.phase;
     if (assignmentKey(assignment.ref) === selected) return true;
-    if (options.activeOnly) return phase !== "queued" && phase !== "ended";
+    if (options.activeOnly)
+      return (
+        (phase !== "queued" && phase !== "ended") ||
+        Boolean(options.attention && needsAttention(state, assignment))
+      );
     return options.queued || phase !== "queued";
   });
 

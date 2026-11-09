@@ -4,7 +4,8 @@ The Pi extension and standalone viewer share the same screen router, projections
 conversation reader and command receipts. Opening a screen never requests a model
 turn. Pi uses its public non-overlay custom-component API and keeps a compact fleet
 widget in the coordinator conversation only while assignments are active or queued.
-Opening a screen replaces that widget; returning restores it. Both views leave an
+Unresolved failed/interrupted assignments remain visible in the compact widget,
+even if only dependents are queued. Opening a screen replaces that widget; returning restores it. Both views leave an
 editor margin. Idle fleets remain accessible through /pinata.
 
 ## Navigation and controls
@@ -195,3 +196,17 @@ details. Model-facing agent discovery is compact and includes effective grants,
 model defaults and backend capabilities. Unnamed schema queries return an index
 to the model; canonical query details retain the complete schemas. Neither compact
 presentation nor animation changes execution, acceptance, or recovery authority.
+
+## Retained conversation rendering
+
+Shift+Down opens the fleet from the Pi editor (Shift+Up remains available).
+Inside Pinata, Shift+Down still goes back one screen.
+
+Messages use the public Pi Markdown renderer. Consecutive tool calls are grouped
+with tool/path labels; errors remain visible. Recorded `submit_result` reports
+are displayed as worker reports, including findings, even when other tools are
+collapsed. These are worker claims, not coordinator acceptance.
+
+New conversation views follow the latest output and read subsequent immutable
+pages until they reach the end; scrolling switches to history mode and stops
+automatic paging. Full tool details remain available through Tab then d.

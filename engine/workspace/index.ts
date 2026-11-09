@@ -259,7 +259,7 @@ export class WorkspaceLayer implements WorkspacePort {
       if (!input.result.snapshot)
         throw new DomainError(
           "dependency_missing",
-          `Requested snapshot input is unavailable: ${canonicalJson(input.ref)}`,
+          `Workspace snapshot input is unavailable: ${input.ref.worker}/${input.ref.assignment}. inputs composes file snapshots, not reports. Query the upstream result/conversation and pass report text in context; use after only for ordering.`,
         );
     const operations = this.operations(request.ref, request.ownerEpoch, request.artifacts);
     const retained: ArtifactRef[] = [artifact, await operations.initialize(artifact)];
@@ -520,7 +520,7 @@ export class WorkspaceLayer implements WorkspacePort {
             if (!input.result.snapshot)
               throw new DomainError(
                 "dependency_missing",
-                `Requested snapshot input is unavailable: ${canonicalJson(input.ref)}`,
+                `Workspace snapshot input is unavailable: ${input.ref.worker}/${input.ref.assignment}. inputs composes file snapshots, not reports. Query the upstream result/conversation and pass report text in context; use after only for ordering.`,
               );
             const operationId = `input-${digestValue({ target: request.ref, source: input.ref })}`;
             await operations.intendInput(operationId);

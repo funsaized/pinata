@@ -50,3 +50,10 @@ Workers with delegated authority use `pinata_children`, `pinata_child_status` an
 `pinata_child_wait`; they never receive a root source or token. Optional memory
 tools use a bound scope and CAS revision. The complete generated inventory is in
 [the API reference](../../docs/reference/generated.md).
+
+For report synthesis, `inputs` is the wrong field: it composes workspace snapshots.
+Read upstream `result` or `conversation` queries, then supply the report text in
+`context` (or the task). Use `after` for ordering. Shared read-only scouts normally
+produce no workspace snapshot. An upstream assignment with unconfirmed cleanup
+keeps its exact dependents queued until explicit reconciliation; a later follow-up
+does not retarget those dependencies.

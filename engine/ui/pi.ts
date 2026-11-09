@@ -251,7 +251,7 @@ export function installCoordinatorUi(
     terminalInput = context.ui.onTerminalInput((data) => {
       if (opening) return undefined;
       const keys = resolveKeys(selected?.router.keys ?? {});
-      const fleet = matchesKey(data, keys.openFleet);
+      const fleet = matchesKey(data, keys.openFleet) || matchesKey(data, keys.parentScreen);
       const next = matchesKey(data, keys.nextScreen);
       const previous = matchesKey(data, keys.previousScreen);
       if (!fleet && !next && !previous) return undefined;

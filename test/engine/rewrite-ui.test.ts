@@ -1,3 +1,4 @@
+import { renderConversation } from "../../engine/ui/conversation.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -703,12 +704,12 @@ test("Pi screens use the non-overlay API and preserve parent and worker drafts a
   const ui = installCoordinatorUi(pi, async () => source);
   const router = await ui.bind(context);
   await events.get("session_start")?.({}, context);
-  assert.deepEqual(terminalInput?.("\u001b[1;2A"), { consume: true });
+  assert.deepEqual(terminalInput?.("\u001b[1;2B"), { consume: true });
   await tick();
   assert.equal(
     component?.router.screen,
     "fleet",
-    "The default main-screen Shift+Up opens the fleet",
+    "The default main-screen Shift+Down opens the fleet",
   );
   assert.equal(widget, undefined, "interactive fleet replaces the compact list");
   ui.navigate("main");
@@ -954,6 +955,9 @@ test("composer editing keys preserve focus and transcript controls are explicit"
   assert.equal(router.screen, "conversation");
   assert.equal(source.calls.length, before);
   screen.handleInput("\t");
+  assert.equal(router.conversation().follow, true);
+  screen.handleInput("f");
+  assert.equal(router.conversation().follow, false);
   screen.handleInput("f");
   assert.equal(router.conversation().follow, true);
   screen.handleInput("d");
@@ -994,5 +998,148 @@ test("collapsed branches preserve real ancestry and expansion restores children"
   assert.equal(router.fleetNodes().length, 1);
   router.collapse(false);
   assert.equal(router.fleetNodes().length, 2);
+  router.dispose();
+});
+
+test("conversation renders Markdown messages and groups tool activity without hiding errors", () => {
+  const entries = [
+    { type: "message", message: { role: "user", content: "Inspect **the parser**." } },
+    {
+      type: "message",
+      message: {
+        role: "assistant",
+        content: [
+          { type: "toolCall", id: "a", name: "read", arguments: { path: "parser.ts" } },
+          { type: "toolCall", id: "b", name: "read", arguments: { path: "test.ts" } },
+        ],
+      },
+    },
+    {
+      type: "message",
+      message: {
+        role: "toolResult",
+        toolCallId: "a",
+        toolName: "read",
+        content: [{ type: "text", text: "private tool output" }],
+      },
+    },
+    {
+      type: "message",
+      message: {
+        role: "toolResult",
+        toolCallId: "b",
+        toolName: "read",
+        isError: true,
+        content: [{ type: "text", text: "File missing" }],
+      },
+    },
+    {
+      type: "message",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "## Findings\n\n**One issue** in the parser." }],
+      },
+    },
+  ];
+  const options = { width: 100, paint: createPaint("terminal-default"), expanded: false };
+  const compact = stripTerminalSequences(renderConversation(entries, options).join("\n"));
+  assert.match(compact, /Tools · 2 calls/);
+  assert.match(compact, /read parser.ts/);
+  assert.match(compact, /Tool error · read test.ts/);
+  assert.match(compact, /File missing/);
+  assert.match(compact, /Findings/);
+  assert(!compact.includes("**One issue**"));
+  assert(!compact.includes("private tool output"));
+  assert.match(
+    renderConversation(entries, { ...options, expanded: true }).join("\n"),
+    /private tool output/,
+  );
+});
+
+test("compact status keeps interrupted work visible alongside queued dependents", () => {
+  const state = uiState(2);
+  state.assignments[assignmentKey(ref())].execution = {
+    phase: "ended",
+    reason: "interrupted",
+    cleanup: "unconfirmed",
+  };
+  state.assignments[assignmentKey(ref(2))].after = [ref()];
+  const output = fleetWidget(state, { width: 120, paint: createPaint("terminal-default") }).join(
+    "\n",
+  );
+  assert.match(output, /worker-1/);
+  assert.match(output, /interrupted/);
+  assert.match(output, /1 need attention/);
+  assert.match(output, /1 queued/);
+});
+
+test("recorded submit_result reports stay visible when routine tools are collapsed", () => {
+  const entries = [
+    {
+      type: "message",
+      message: {
+        role: "assistant",
+        content: [
+          {
+            type: "toolCall",
+            id: "report",
+            name: "submit_result",
+            arguments: { summary: "Summary" },
+          },
+        ],
+      },
+    },
+    {
+      type: "message",
+      message: {
+        role: "toolResult",
+        toolName: "submit_result",
+        toolCallId: "report",
+        content: [{ type: "text", text: "Your report was recorded." }],
+        details: {
+          report: {
+            summary: "**Actual final answer**",
+            assessment: { findings: ["Concrete finding"] },
+          },
+        },
+      },
+    },
+  ];
+  const output = stripTerminalSequences(
+    renderConversation(entries, {
+      width: 80,
+      paint: createPaint("terminal-default"),
+      expanded: false,
+    }).join("\n"),
+  );
+  assert.match(output, /Worker report/);
+  assert.match(output, /Actual final answer/);
+  assert.match(output, /Concrete finding/);
+  assert(!output.includes("Tools ·"));
+});
+
+test("following a conversation loads remaining retained pages to reach the final answer", async () => {
+  const source = new UiSource();
+  const router = new ScreenRouter(source);
+  await router.start();
+  let pages = 0;
+  source.respond = async () => {
+    pages++;
+    const reply = conversationReply(ref(), pages === 1 ? "Earlier tools" : "Final answer");
+    if (
+      reply.status === "ok" &&
+      reply.response.method === "query" &&
+      reply.response.result.kind === "conversation"
+    ) {
+      reply.response.result.complete = pages > 1;
+      if (pages === 1) reply.response.result.cursor = "next-page";
+    }
+    return reply;
+  };
+  router.navigate("conversation", ref());
+  await tick();
+  assert.equal(pages, 2);
+  assert.equal(router.conversation().page?.complete, true);
+  assert.match(JSON.stringify(router.conversation().page?.entries), /Final answer/);
   router.dispose();
 });

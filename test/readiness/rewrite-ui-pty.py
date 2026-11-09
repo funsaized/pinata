@@ -176,7 +176,8 @@ try:
     assert all(stage == 7 for stage in stages.values())
     assert any(event.get("scroll", 0) > 0 for event in events if event["phase"] == "render"), "Mouse wheel did not scroll the worker conversation"
     text = "\n".join(plain(line) for frame in frames for line in frame["output"])
-    assert "Pinata" in text and "correctness: unknown" in text
+    assert "Pinata" in text and "Full retained conversation line 100" in text
+    assert "following latest" in text
     print(json.dumps({"ok": True, "visits": opens, "disposals": 3, "parentDraftPreserved": True, "workerDraftsPreserved": True, "providerCalls": 0, "overlay": False, "widths": [120, 60, 30], "palettes": ["pinata", "one-light", "terminal-default"], "terminalBytes": len(terminal)}))
 finally:
     if process.poll() is None:

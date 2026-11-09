@@ -69,3 +69,34 @@ export function assignmentDetails(state: CoreState, assignment: Assignment): str
     ...(result?.finalizationErrors ?? []),
   ];
 }
+
+export function needsAttention(state: CoreState, assignment: Assignment): boolean {
+  if (assignment.execution.phase !== "ended") return false;
+  if (
+    !["failed", "interrupted"].includes(assignment.execution.reason) &&
+    assignment.execution.cleanup !== "unconfirmed"
+  )
+    return false;
+  return (
+    state.latest[assignment.ref.worker] === assignment.ref.assignment ||
+    Object.values(state.assignments).some(
+      (pending) =>
+        pending.execution.phase === "queued" &&
+        pending.after.some((ref) => assignmentKey(ref) === assignmentKey(assignment.ref)),
+    )
+  );
+}
+
+export function queueLabel(state: CoreState, assignment: Assignment): string {
+  const reason = readiness(state)[assignmentKey(assignment.ref)];
+  if (reason !== "dependency") return reason;
+  const blocked = assignment.after.flatMap((ref) => {
+    const dependency = state.assignments[assignmentKey(ref)];
+    if (dependency?.execution.phase === "ended" && dependency.execution.cleanup === "confirmed")
+      return [];
+    return [
+      `${ref.worker}/${ref.assignment} (${dependency ? executionLabel(dependency) : "unavailable"}${dependency?.execution.phase === "ended" ? "; cleanup unconfirmed" : ""})`,
+    ];
+  });
+  return `dependency · ${blocked.join(", ")}`;
+}

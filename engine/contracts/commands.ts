@@ -25,13 +25,23 @@ export const workerRequestSchema = z.strictObject({
   origin: assignmentRefSchema.optional(),
   messageId: identitySchema.optional(),
   after: z.array(z.union([idSchema, assignmentRefSchema])).default([]),
-  inputs: z.array(assignmentRefSchema).default([]),
+  inputs: z
+    .array(assignmentRefSchema)
+    .default([])
+    .describe(
+      "Workspace snapshots to compose, NOT reports or conversation. For report synthesis use after for ordering, query result/conversation, and supply report text in context.",
+    ),
   workspace: workspaceSchema.optional(),
   observeWorkspace: z.boolean().optional(),
   model: modelSchema.optional(),
   backend: backendSchema.optional(),
   lifetime: lifetimeSchema.optional(),
-  context: z.array(z.string()).default([]),
+  context: z
+    .array(z.string())
+    .default([])
+    .describe(
+      "Quoted context text, such as upstream report contents. Assignment references in inputs do not import reports.",
+    ),
   inheritContext: z.enum(["none", "parent"]).optional(),
   memory: memorySchema.optional(),
   delegation: z.strictObject({ maxDepth: revisionSchema }).optional(),
@@ -106,7 +116,12 @@ export const runtimeCommandSchema = z.discriminatedUnion("kind", [
     messageId: identitySchema,
     text: textSchema,
     after: z.array(z.union([idSchema, assignmentRefSchema])).default([]),
-    inputs: z.array(assignmentRefSchema).default([]),
+    inputs: z
+      .array(assignmentRefSchema)
+      .default([])
+      .describe(
+        "Workspace snapshots to compose, NOT reports or conversation. For report synthesis use after for ordering, query result/conversation, and supply report text in context.",
+      ),
   }),
   z.strictObject({
     kind: z.literal("steer"),

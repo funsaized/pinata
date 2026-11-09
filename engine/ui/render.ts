@@ -1,8 +1,15 @@
+import { renderConversation } from "./conversation.ts";
 import { resolveKeys } from "./keys.ts";
-import { readiness } from "../core/readiness.ts";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { assignmentKey, type AssignmentRef, type CoreState } from "../contracts/index.ts";
-import { assignmentDetails, assignments, executionLabel, contextLabel } from "./projection.ts";
+import {
+  assignmentDetails,
+  assignments,
+  executionLabel,
+  contextLabel,
+  needsAttention,
+  queueLabel,
+} from "./projection.ts";
 import { agentAccent, type Paint } from "./palette.ts";
 import { displayText, fit, lines, padded } from "./text.ts";
 import type { ConversationView, ScreenRouter } from "./router.ts";
@@ -145,7 +152,7 @@ function treeLines(state: CoreState, nodes: TreeNode[], options: TreeOptions): T
       output.push({
         text: options.paint(
           "muted",
-          `${node.continuation}waiting: ${readiness(state)[assignmentKey(assignment.ref)]}`,
+          `${node.continuation}waiting: ${queueLabel(state, assignment)}`,
         ),
         ref: assignment.ref,
         worker: false,
@@ -185,18 +192,25 @@ export function fleetWidget(state: CoreState, options: TreeOptions): string[] {
     (assignment) => !["queued", "ended"].includes(assignment.execution.phase),
   ).length;
   const queued = all.filter((assignment) => assignment.execution.phase === "queued").length;
-  if (!active && !queued) return [];
+  const attention = all.filter((assignment) => needsAttention(state, assignment)).length;
+  if (!active && !queued && !attention) return [];
   const nodes = assignmentTree(state, {
     ascii: options.ascii,
     activeOnly: true,
+    attention: true,
     limit: 4,
     trailing: queued > 0 || active > 4,
   }).slice(0, 8);
   const output = [options.paint("accent.cyan", `${options.ascii ? "*" : "●"} Agents`)];
   output.push(...treeLines(state, nodes, options).map((row) => row.text));
-  if (active > 4)
+  if (attention)
+    output.push(options.paint("error", `${attention} need attention · Shift+Down opens fleet`));
+  if (active + attention > 4)
     output.push(
-      options.paint("muted", `${options.ascii ? "|-" : "├─"} ${active - 4} more active · /pinata`),
+      options.paint(
+        "muted",
+        `${options.ascii ? "|-" : "├─"} ${active + attention - 4} more assignments · /pinata`,
+      ),
     );
   if (queued)
     output.push(options.paint("muted", `${options.ascii ? "`- o" : "└─ ○"} ${queued} queued`));
@@ -359,7 +373,13 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
       );
       output.push(fit(displayText(`${details[1]} · ${details[2]}`), width));
       output.push(fit(displayText(details[7]), width));
+      const result = router.state.results[assignmentKey(assignment.ref)]?.result;
       const body = [
+        ...(result &&
+        result.execution.phase === "ended" &&
+        (result.execution.reason !== "completed" || !view.page?.entries.length)
+          ? [`Result · ${result.execution.reason}`, result.summary, ""]
+          : []),
         ...(router.details ? [...details.slice(3, 7), ...details.slice(8)] : []),
         `Task: ${assignment.task}`,
         "",
@@ -370,10 +390,9 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
               `${view.page.source === "assignment" ? "Saved assignment transcript" : view.page.source === "checkpoint" ? "Live or saved session checkpoint" : "Conversation unavailable"}${view.page.artifact ? ` · ${view.page.artifact.digest.slice(0, 12)}` : ""}`,
             ]
           : []),
-        ...(view.page?.entries.flatMap((entry) => [
-          router.details ? conversationEntry(entry) : compactEntry(entry),
-          "",
-        ]) ?? []),
+        ...(view.page
+          ? [renderConversation(view.page.entries, { width, paint, expanded: router.details })]
+          : []),
         ...(view.page && !view.page.complete ? ["More retained entries: /more"] : []),
         ...(router.mode === "observe" && router.activity.get(assignmentKey(assignment.ref))
           ? [
@@ -387,7 +406,7 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
             ]
           : []),
         ...(view.inspection ? ["Retained result", JSON.stringify(view.inspection, null, 2)] : []),
-      ].flatMap((line) => conversationLines(view, line, width));
+      ].flatMap((line) => (Array.isArray(line) ? line : conversationLines(view, line, width)));
       const available = Math.max(1, height - output.length - 3 - (router.notice ? 1 : 0));
       if (view.follow) view.scroll = Math.max(0, body.length - available);
       view.scroll = Math.min(view.scroll, Math.max(0, body.length - available));
@@ -426,28 +445,6 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
     ),
   );
   return output.slice(0, height).map((line) => paint("background", padded(line, width)));
-}
-
-function compactEntry(value: unknown): string {
-  const entry = record(value);
-  const message = entry && record(entry.message);
-  if (message?.role === "toolResult")
-    return `tool result ${displayText(String(message.toolName ?? ""))}${message.isError ? " (error)" : ""} · d expands`;
-  if (Array.isArray(message?.content)) {
-    return conversationEntry({
-      ...entry,
-      message: {
-        ...message,
-        content: message.content.map((part: unknown) => {
-          const item = record(part);
-          return item?.type === "toolCall"
-            ? { type: "text", text: `[tool call: ${String(item.name)} · d expands]` }
-            : part;
-        }),
-      },
-    });
-  }
-  return conversationEntry(value);
 }
 
 // Cache wrapping per view, not globally across sessions. Eviction bounds retained text.
