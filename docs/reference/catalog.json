@@ -34252,7 +34252,7 @@
       "output": "pinata.tool-page-reply.v1"
     },
     "pinata_run": {
-      "description": "Create or extend a run, queue a follow-up, explicitly continue stopped work, change optional capacity, or release a foreground wait. Workers use frozen definitions and grants; the coordinator decides testing and acceptance.",
+      "description": "Create or extend a run, queue a follow-up, explicitly continue stopped work, change optional capacity, or release a foreground wait. Start with command: {kind: \"create\", workers: [{id: \"worker\", agent: \"builder\", task: \"Your assignment\"}]}. Omit inheritContext unless parent conversation import is explicitly granted; include needed context in task. Workers use frozen definitions and grants; the coordinator decides testing and acceptance.",
       "input": {
         "$schema": "http://json-schema.org/draft-07/schema#",
         "type": "object",
@@ -35346,7 +35346,7 @@
       "output": "pinata.surface-reply.v1"
     },
     "pinata_status": {
-      "description": "Inspect state, exact results, immutable conversation pages, schema discovery, receipts or an application outcome. Results are execution observations, not acceptance decisions.",
+      "description": "Inspect state, exact results, immutable conversation pages, schema discovery, receipts or an application outcome. Tool input schemas are already supplied: no schema query is needed before launching. For discovery use name: pinata.command.v1, or a tool name such as pinata_run; avoid fetching the entire registry. Results are execution observations, not acceptance decisions.",
       "input": {
         "$schema": "http://json-schema.org/draft-07/schema#",
         "type": "object",

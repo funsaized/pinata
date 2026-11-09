@@ -97,7 +97,7 @@ Output: `pinata.tool-page-reply.v1`. Input is generated in the catalog.
 
 ### pinata_run
 
-Create or extend a run, queue a follow-up, explicitly continue stopped work, change optional capacity, or release a foreground wait. Workers use frozen definitions and grants; the coordinator decides testing and acceptance.
+Create or extend a run, queue a follow-up, explicitly continue stopped work, change optional capacity, or release a foreground wait. Start with command: {kind: "create", workers: [{id: "worker", agent: "builder", task: "Your assignment"}]}. Omit inheritContext unless parent conversation import is explicitly granted; include needed context in task. Workers use frozen definitions and grants; the coordinator decides testing and acceptance.
 
 Output: `pinata.surface-reply.v1`. Input is generated in the catalog.
 
@@ -139,7 +139,7 @@ Output: `pinata.surface-reply.v1`. Input is generated in the catalog.
 
 ### pinata_status
 
-Inspect state, exact results, immutable conversation pages, schema discovery, receipts or an application outcome. Results are execution observations, not acceptance decisions.
+Inspect state, exact results, immutable conversation pages, schema discovery, receipts or an application outcome. Tool input schemas are already supplied: no schema query is needed before launching. For discovery use name: pinata.command.v1, or a tool name such as pinata_run; avoid fetching the entire registry. Results are execution observations, not acceptance decisions.
 
 Output: `pinata.surface-reply.v1`. Input is generated in the catalog.
 
