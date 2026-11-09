@@ -1,12 +1,17 @@
-# Why use Pinata?
+# When delegation helps
 
-Pinata supplies lightweight worker execution and communication while the coordinator
-keeps workflow decisions. Use it for complementary investigations, parallel implementation,
-independent review or isolated experiments. A small well-understood task may need only one
-worker or ordinary coordinator tools.
+Use workers for concrete investigations or changes that can progress independently.
+Keep interface decisions and final integration with a coordinator who can inspect
+the whole task. A small request with an appropriate definition is enough to start;
+you do not need a complete workflow graph before doing useful work.
 
-Shared checkout is the default; worktrees are optional patch isolation. Finished sessions
-are disposed and restored from disk for follow-ups. Usage, wall time and memory telemetry
-are observations, not production execution quotas. Scripted benchmarks measure runtime
-overhead; model-backed coding outcomes require separate retained evidence. See
-[architecture](architecture.md) and [performance](../maintainers/performance.md).
+Shared checkout makes completed edits immediately available. Choose a worktree when
+you need an isolated experiment or explicit patch selection. A worktree adds setup,
+capture and application work; it is not a security boundary. Send follow-ups when
+the same context is useful, and add workers when the task develops.
+
+More workers do not inherently improve coding quality or speed. Provider latency,
+task shape, instructions and coordination can dominate runtime overhead. Benchmarks
+measure the runtime with scripted providers. Coding comparisons require separately
+authorized matched trials and complete failure/usage evidence. Pinata's local test
+results establish behavior, not superiority over another coding agent.

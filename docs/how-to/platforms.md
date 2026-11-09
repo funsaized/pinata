@@ -1,26 +1,31 @@
-# Set up on Windows and macOS
+# Platform support
 
-Pinata supports Linux, macOS, and Windows. CI tests all three.
+Pinata targets Linux, macOS and Windows with Node 22.19 or later. Direct development
+dependencies are pinned and the lockfile is retained. Pi peer ranges remain broad,
+while actual compatibility evidence is recorded for the tested versions.
 
-## Windows
+Linux and macOS have actual scripted runs for journals, workspaces, application,
+sessions, process cleanup, CLI/IPC and terminal navigation. The implementation
+record names exact Node/Pi versions and retained failures. Node 22.19/24 cells are
+part of release validation where those runtimes are available. Native Pi and Node
+SDK observations are reported separately.
 
-Install [Git for Windows](https://git-scm.com/download/win), Node 22.19+, and Pi 1.1.0+.
+The current compiled Pi/Bun evidence is from Linux. macOS used the pinned SDK and
+installed Pi 1.5 Node CLI; a compiled Pi executable was unavailable there. Older
+macOS artifacts named `native` refer to that installed Node CLI.
 
-- Builder `setup` commands run with `cmd.exe /d /s /c`. Use cmd syntax or call a
-  script. For example, `"setup": "npm ci"` works on all three platforms.
-- `checks` run as argument arrays without a shell. For `.cmd` launchers such as
-  `npm`, Pinata uses `cmd.exe` and quotes each argument.
-- Pinata stops agents in separate processes with `taskkill /T /F`.
-- Pinata uses PowerShell's `Get-Process` to identify processes. The first process
-  check after Pi starts takes a moment; Pinata measures that delay once.
+Native Pi launches supervised workers and Herdr monitors through `node` on `PATH`;
+make Node 22.19 or later available there. Trusted host integrations can select a
+specific Node executable with `HostOptions.nodeCommand`. A Node-hosted Pi session
+uses its current Node executable by default.
 
-## macOS
+The owner deferred Windows runtime verification. Path/wire contracts and CI remain
+portable, but the required Windows Job Object launcher helper has no verified
+packaged binary. Supervised process cleanup and shell-dependent functionality on
+Windows must report unavailable rather than claim success. File fsync is supported;
+POSIX directory fsync has no demonstrated equivalent through Node on Windows.
 
-Install Git through the Xcode command line tools, Node 22.19+, and Pi 1.1.0+.
-
-Temporary paths resolve through `/private`. Pinata compares the real paths of
-builder write roots, so no extra setup is needed.
-
-## Linux
-
-Make sure `git` and `pi` are on `PATH`. No extra setup is needed.
+Herdr requires its own available session and is conditionally exercised. Network
+filesystems, power-loss durability and universal escaped-process containment are
+outside the demonstrated results. See [implementation evidence](../maintainers/rewrite-progress.md)
+for the current gate status; a declared support target is not a test pass.

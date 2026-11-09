@@ -6,9 +6,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
-import { digestValue } from "../../rewrite/engine/contracts/digest.ts";
-import { type CleanupReceipt } from "../../rewrite/engine/contracts/backend.ts";
-import { openCheckoutGate } from "../../rewrite/engine/workspace/gate.ts";
+import { digestValue } from "../../engine/contracts/digest.ts";
+import { type CleanupReceipt } from "../../engine/contracts/backend.ts";
+import { openCheckoutGate } from "../../engine/workspace/gate.ts";
 
 const childPath = fileURLToPath(new URL("./fixtures/rewrite-gate-child.ts", import.meta.url));
 const cleanup = (ownerEpoch = "epoch"): CleanupReceipt => ({

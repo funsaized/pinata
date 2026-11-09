@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 4,
+  "workers": [
+    {
+      "id": "experiment",
+      "agent": "builder",
+      "workspace": "worktree",
+      "task": "Implement the coordinator's alternative parser design in this isolated worktree. Preserve the public interface and report actual changes, checks and limitations."
+    }
+  ],
+  "config": { "setup": false }
+}

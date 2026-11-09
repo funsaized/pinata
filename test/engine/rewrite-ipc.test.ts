@@ -1,17 +1,18 @@
 import assert from "node:assert/strict";
 import { appendFile, readFile, stat, writeFile } from "node:fs/promises";
-import { createConnection } from "node:net";
+import { createConnection, createServer, type Socket } from "node:net";
 import { join } from "node:path";
 import test from "node:test";
 import { surfaceFixture, createRequest } from "./rewrite-surface-fixture.ts";
-import { IpcClient } from "../../rewrite/engine/ipc/client.ts";
-import { readIpcCredentials } from "../../rewrite/engine/ipc/credentials.ts";
-import { LineDecoder } from "../../rewrite/engine/ipc/framing.ts";
-import { SurfaceFailure } from "../../rewrite/engine/sources/runtime.ts";
-import { openSavedSource } from "../../rewrite/engine/sources/saved.ts";
-import { processArtifacts } from "../../rewrite/engine/backends/process-transport.ts";
-import { digestValue, type RuntimeEvent } from "../../rewrite/engine/contracts/index.ts";
-import { publishImmutable } from "../../rewrite/engine/storage/io.ts";
+import { IpcClient } from "../../engine/ipc/client.ts";
+import { readIpcCredentials } from "../../engine/ipc/credentials.ts";
+import { encodeFrame, LineDecoder } from "../../engine/ipc/framing.ts";
+import { clientFrameSchema, DEFAULT_LIMITS } from "../../engine/ipc/protocol.ts";
+import { SurfaceFailure } from "../../engine/sources/runtime.ts";
+import { openSavedSource } from "../../engine/sources/saved.ts";
+import { processArtifacts } from "../../engine/backends/process-transport.ts";
+import { digestValue, type RuntimeEvent } from "../../engine/contracts/index.ts";
+import { publishImmutable } from "../../engine/storage/io.ts";
 
 function deferred<T>() {
   let resolve: (value: T) => void = () => {};
@@ -136,6 +137,70 @@ test(
         (await stat(join(world.directory, "ipc", world.server.link.credentialFile))).mode & 0o077,
         0,
       );
+  },
+);
+
+test(
+  "IPC negotiation retains a partial frame coalesced with welcome",
+  { timeout: 10_000 },
+  async (t) => {
+    const world = await surfaceFixture(t);
+    const limits = { ...DEFAULT_LIMITS, frameBytes: 1024 };
+    const failure = { code: "context_unavailable", message: "Snapshot unavailable after welcome" };
+    const errorFrame = encodeFrame({ type: "error", error: failure }, limits.frameBytes);
+    let connection: Socket | undefined;
+    const server = createServer((socket) => {
+      connection = socket;
+      const decoder = new LineDecoder(DEFAULT_LIMITS.frameBytes);
+      socket.on("data", (bytes) => {
+        for (const input of decoder.push(bytes)) {
+          const frame = clientFrameSchema.parse(input);
+          if (frame.type === "hello")
+            socket.write(
+              Buffer.concat([
+                encodeFrame(
+                  {
+                    type: "welcome",
+                    version: 2,
+                    run: world.run,
+                    serverId: world.server.link.serverId,
+                    ownerEpoch: world.server.link.ownerEpoch,
+                    role: "viewer",
+                    capabilities: world.readonly.capabilities,
+                    limits,
+                  },
+                  limits.frameBytes,
+                ),
+                errorFrame.subarray(0, 17),
+              ]),
+            );
+          if (frame.type === "subscribe") socket.end(errorFrame.subarray(17));
+        }
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    t.after(async () => {
+      connection?.destroy();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    });
+    const address = server.address();
+    assert(address && typeof address !== "string");
+    await assert.rejects(
+      IpcClient.connect({
+        credentials: {
+          link: { ...world.server.link, endpoint: { host: "127.0.0.1", port: address.port } },
+          token: "0".repeat(64),
+        },
+      }),
+      (error: unknown) => {
+        assert(error instanceof SurfaceFailure);
+        assert.deepEqual(error.detail, failure);
+        return true;
+      },
+    );
+    const oversized = new LineDecoder(64);
+    oversized.push(Buffer.from('"unfinished'));
+    assert.throws(() => oversized.setLimit(8), /byte limit/);
   },
 );
 

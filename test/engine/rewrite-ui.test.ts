@@ -1,0 +1,876 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { TuiAltScreen, stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
+import {
+  assignmentKey,
+  commandEnvelopeSchema,
+  paletteSchema,
+  surfaceCallSchema,
+  type AssignmentRef,
+  type BackendPort,
+  type BackendOutcome,
+  type SurfaceReply,
+} from "../../engine/contracts/index.ts";
+import { ScreenRouter } from "../../engine/ui/router.ts";
+import { PinataScreen, resolveKeys } from "../../engine/ui/screen.ts";
+import { createPaint, palettes } from "../../engine/ui/palette.ts";
+import { displayText, lines } from "../../engine/ui/text.ts";
+import { fleetWidget, renderScreen } from "../../engine/ui/render.ts";
+import { openViewer } from "../../engine/viewer/main.ts";
+import { installCoordinatorUi } from "../../engine/ui/pi.ts";
+import { AttachedSource } from "../../engine/sources/attached.ts";
+import { openSavedSource } from "../../engine/sources/saved.ts";
+import { runCli } from "../../engine/headless/main.ts";
+import { startIpcServer } from "../../engine/ipc/server.ts";
+import { surfaceFixture } from "./rewrite-surface-fixture.ts";
+import {
+  MemoryTerminal,
+  UiSource,
+  conversationReply,
+  tick,
+  uiState,
+} from "./rewrite-ui-fixture.ts";
+
+const ref = (worker = 1, assignment = 1): AssignmentRef => ({
+  run: "ui-run",
+  worker: `worker-${worker}`,
+  assignment,
+});
+function accepted(input: unknown): SurfaceReply {
+  const call = surfaceCallSchema.parse(input);
+  assert.equal(call.method, "execute");
+  if (call.method !== "execute") throw new Error("Expected execute");
+  const envelope = commandEnvelopeSchema.parse(call.input);
+  return {
+    status: "ok",
+    response: {
+      method: "execute",
+      result: {
+        status: "accepted",
+        requestId: envelope.requestId,
+        revision: 1,
+        assignments: [ref()],
+        resolved: [],
+      },
+    },
+  };
+}
+function luminance(hex: string): number {
+  const value = Number.parseInt(hex.slice(1), 16);
+  return [value >> 16, (value >> 8) & 255, value & 255]
+    .map((channel) => channel / 255)
+    .map((channel) => (channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4))
+    .reduce((sum, channel, index) => sum + channel * [0.2126, 0.7152, 0.0722][index], 0);
+}
+
+test("every palette has readable text, semantic accents and explicit terminal fallbacks", () => {
+  assert.deepEqual(Object.keys(palettes).sort(), [...paletteSchema.options].sort());
+  for (const palette of Object.values(palettes)) {
+    const background = luminance(palette.colors.background);
+    for (const [token, color] of Object.entries(palette.colors)) {
+      if (token === "background") continue;
+      const foreground = luminance(color);
+      const contrast =
+        (Math.max(background, foreground) + 0.05) / (Math.min(background, foreground) + 0.05);
+      assert(
+        contrast >= (token === "text" || token === "muted" || token === "border" ? 4.5 : 3),
+        `${palette.name}/${token}: ${contrast}`,
+      );
+    }
+    for (const options of [{ noColor: true }, { terminal: "dumb" }, { enabled: false }])
+      assert.equal(createPaint(palette.name, options)("error", "plain"), "plain");
+    assert.equal(
+      stripTerminalSequences(createPaint(palette.name, { mode: "256color" })("accent", "worker")),
+      "worker",
+    );
+  }
+  assert.equal(createPaint("terminal-default")("accent.pink", "plain"), "plain");
+  assert.equal(
+    createPaint("inherit", { inherit: (token, text) => `${token}:${text}` })("warning", "care"),
+    "warning:care",
+  );
+  assert(createPaint("one-light")("background", "light surface").includes("\u001b[48;"));
+  assert.throws(() => resolveKeys({ nextScreen: "ctrl+left" }), /distinct/);
+  assert.throws(() => resolveKeys({ unknown: "ctrl+a" }), /Unknown/);
+});
+
+test("compact trees retain actual ancestry, queued totals and only witnessed elapsed time", async () => {
+  const source = new UiSource(uiState(4));
+  source.state.workers["worker-2"].parentAssignment = ref();
+  source.state.workers["worker-2"].depth = 1;
+  let now = 100;
+  const router = new ScreenRouter(source, { mode: "observe", now: () => now });
+  await router.start();
+  for (const target of [ref(), ref(2)]) {
+    source.state.assignments[assignmentKey(target)].execution = { phase: "running" };
+    source.state.revision++;
+    await source.emit({
+      schemaVersion: 3,
+      kind: "committed",
+      id: `start/${target.worker}`,
+      ownerEpoch: source.epoch,
+      revision: source.state.revision,
+      transition: { kind: "assignment_state", ref: target, execution: { phase: "running" } },
+    });
+  }
+  now = 1800;
+  await source.activity(1, 1, "Reading retained fixture output");
+  const render = (ascii = false) =>
+    fleetWidget(router.state, {
+      width: 150,
+      paint: createPaint("terminal-default"),
+      mode: "observe",
+      ascii,
+      activity: router.activity,
+      elapsed: (target) => router.observedElapsed(target),
+    }).join("\n");
+  assert.match(render(), /● Agents/);
+  assert.match(render(), /│  └─ • fixture worker-2\/1/);
+  assert.match(render(), /observed 1.7s/);
+  assert.match(render(), /└─ ○ 2 queued/);
+  assert.match(render(), /Reading retained fixture output/);
+  assert(!render().includes("thinking"));
+  assert(render(true).includes("|  `- * fixture worker-2/1"));
+  source.epoch = "reconnected-epoch";
+  await source.emit(source.snapshot());
+  assert.equal(
+    router.observedElapsed(ref()),
+    undefined,
+    "An unknown start after reattachment has no invented elapsed time",
+  );
+  router.dispose();
+});
+
+test("rendering sanitizes terminal controls, preserves graphemes and fits narrow terminals", async () => {
+  const source = new UiSource();
+  const router = new ScreenRouter(source, { ui: { motion: "reduced" } });
+  await router.start();
+  router.navigate("conversation", ref());
+  await tick();
+  const hostile =
+    "👩🏽‍💻 家族 e\u0301\u001b]0;fake title\u0007\u001b[2J\u202eend\u001b_ignored\u001b\\";
+  source.state.assignments[assignmentKey(ref())].task = hostile;
+  await source.emit(source.snapshot());
+  source.state.contextUsage[assignmentKey(ref())] = {
+    tokens: 50,
+    window: 100,
+    percent: 50,
+    source: hostile,
+    timestamp: 0,
+  };
+  await source.emit(source.snapshot());
+  assert.equal(displayText(hostile), "👩🏽‍💻 家族 e\u0301end");
+  for (const width of [1, 2, 5, 12, 80]) {
+    for (const line of lines(hostile, width)) assert(visibleWidth(line) <= width);
+    for (const line of renderScreen(router, { width, height: 24, paint: createPaint("pinata") })) {
+      assert(visibleWidth(line) <= width, `${width}: ${line}`);
+      assert(
+        !line.includes("fake title") && !line.includes("\u001b[2J") && !line.includes("\u202e"),
+      );
+    }
+  }
+  const widget = fleetWidget(router.state, {
+    width: 180,
+    paint: createPaint("terminal-default"),
+    ascii: true,
+  }).join("\n");
+  assert.match(widget, /\* Agents/);
+  assert(!widget.includes("\u001b") && !widget.includes("fake title"));
+  router.dispose();
+});
+
+test("stale conversation reads cannot replace a newer selection or its draft and scroll", async () => {
+  const source = new UiSource();
+  const pending = new Map<string, (reply: SurfaceReply) => void>();
+  source.respond = async (input) => {
+    const call = surfaceCallSchema.parse(input);
+    assert.equal(call.method, "query");
+    const request = call.input as { ref: AssignmentRef };
+    return new Promise((resolve) => pending.set(request.ref.worker, resolve));
+  };
+  const router = new ScreenRouter(source);
+  await router.start();
+  router.navigate("conversation", ref());
+  router.setDraft("first draft");
+  router.scroll(7);
+  router.navigate("conversation", ref(2));
+  router.setDraft("second draft");
+  pending.get("worker-2")?.(conversationReply(ref(2), "NEW SELECTION"));
+  await tick();
+  pending.get("worker-1")?.(conversationReply(ref(), "STALE SELECTION"));
+  await tick();
+  assert.equal(router.draft, "second draft");
+  assert.match(JSON.stringify(router.conversation().page), /NEW SELECTION/);
+  assert.equal(router.conversation(ref()).page, undefined);
+  router.navigate("conversation", ref());
+  pending.get("worker-1")?.(conversationReply(ref(), "fresh first"));
+  await tick();
+  assert.equal(router.draft, "first draft");
+  assert.equal(router.conversation().scroll, 7);
+  router.dispose();
+});
+
+test("UI replacement retains the selected exact assignment as origin in the accepted runtime", async (t) => {
+  const f = await surfaceFixture(t);
+  assert.equal(
+    (
+      await f.runtime.execute(
+        {
+          requestId: "create",
+          command: {
+            kind: "create",
+            workers: [{ id: "original", agent: "fixture", task: "first" }],
+          },
+        },
+        f.caller,
+      )
+    ).status,
+    "accepted",
+  );
+  assert.equal(
+    (
+      await f.runtime.execute(
+        {
+          requestId: "follow",
+          command: { kind: "follow_up", worker: "original", messageId: "second", text: "second" },
+        },
+        f.caller,
+      )
+    ).status,
+    "accepted",
+  );
+  const router = new ScreenRouter(f.control);
+  t.after(() => router.dispose());
+  await router.start();
+  const origin = { run: f.run, worker: "original", assignment: 1 };
+  router.navigate("conversation", origin);
+  const reply = await router.replace("replacement", "Use the available retained evidence");
+  assert(reply.status === "ok" && reply.response.method === "execute");
+  assert.equal(reply.response.result.status, "accepted", JSON.stringify(reply));
+  const status = await f.runtime.query({ kind: "status" }, f.caller);
+  assert(status.kind === "status");
+  assert.deepEqual(status.state.workers.replacement.origin, origin);
+  assert.equal(status.state.latest.original, 2);
+  assert.deepEqual(router.selected, { ...origin, worker: "replacement" });
+});
+
+test("wheel and click act on the visible fleet or conversation, and mismatched conversations are refused", async () => {
+  const source = new UiSource(uiState(40));
+  source.respond = async () => conversationReply(ref(2), "wrong assignment");
+  const router = new ScreenRouter(source);
+  await router.start();
+  const terminal = new MemoryTerminal();
+  terminal.rows = 12;
+  const tui = new TuiAltScreen(terminal);
+  tui.requestRender = () => {};
+  const screen = new PinataScreen({ tui, router, main() {} });
+  router.navigate("fleet", ref());
+  router.showQueued = true;
+  screen.render(80);
+  const mouse = {
+    button: "none" as const,
+    x: 5,
+    y: 2,
+    screenX: 5,
+    screenY: 2,
+    width: 80,
+    height: 12,
+    shift: false,
+    alt: false,
+    ctrl: false,
+  };
+  assert.equal(screen.handleMouse({ ...mouse, type: "wheel", wheelDelta: 4 })?.handled, true);
+  assert.equal(router.fleetScroll, 4);
+  screen.render(80);
+  assert.equal(router.fleetScroll, 4, "Rendering does not snap scrolling back to the selected row");
+  screen.handleMouse({ ...mouse, type: "click", button: "left", clickCount: 2 });
+  await tick();
+  assert.equal(router.selected?.worker, "worker-6");
+  assert.equal(router.screen, "conversation");
+  assert.match(router.conversation().error ?? "", /different assignment/);
+  assert.equal(router.conversation().page, undefined);
+  router.conversation().scroll = 0;
+  screen.handleInput("\u001b[6;3~");
+  assert(
+    router.conversation().scroll > 0,
+    "Alt+PageDown reaches the component without Pi viewport interception",
+  );
+  screen.dispose();
+  router.dispose();
+});
+
+test("uncertain receipts retain exact message IDs and drafts; accepted receipts clear only unchanged text", async () => {
+  const source = new UiSource();
+  const router = new ScreenRouter(source);
+  await router.start();
+  router.navigate("fleet", ref());
+  router.setDraft("message one");
+  source.respond = async () => ({
+    status: "error",
+    error: { code: "commit_unknown", message: "receipt unknown" },
+  });
+  await router.submit();
+  assert.equal(router.draft, "message one");
+  const first = source.calls.at(-1);
+  source.respond = async (input) => accepted(input);
+  await router.submit();
+  assert.deepEqual(source.calls.at(-1), first);
+  assert.equal(router.draft, "");
+  router.setDraft("message two");
+  let finish: ((reply: SurfaceReply) => void) | undefined;
+  source.respond = async () =>
+    new Promise((resolve) => {
+      finish = resolve;
+    });
+  const sending = router.submit();
+  const sent = source.calls.at(-1);
+  router.setDraft("newer user edit");
+  finish?.(accepted(sent));
+  await sending;
+  assert.equal(router.draft, "newer user edit");
+  source.respond = async () => ({
+    status: "error",
+    error: { code: "conflict", message: "state changed" },
+  });
+  await router.submit();
+  assert.equal(router.draft, "newer user edit");
+  const rejected = source.calls.at(-1);
+  source.respond = async (input) => accepted(input);
+  await router.submit();
+  assert.notDeepEqual(source.calls.at(-1), rejected);
+  router.dispose();
+});
+
+test("steering requires the visible active assignment; factual labels distinguish cleanup and acceptance", async () => {
+  const source = new UiSource();
+  source.state.assignments[assignmentKey(ref())].execution = { phase: "running" };
+  source.state.assignments[assignmentKey(ref(1, 2))] = {
+    ...source.state.assignments[assignmentKey(ref())],
+    ref: ref(1, 2),
+    sequence: 3,
+    execution: { phase: "queued" },
+  };
+  source.state.latest["worker-1"] = 2;
+  const router = new ScreenRouter(source);
+  await router.start();
+  router.navigate("fleet", ref(1, 2));
+  router.setDraft("cannot accidentally steer assignment 1");
+  const reply = await router.submit();
+  assert.equal(reply.status, "error");
+  assert.equal(source.calls.length, 0);
+  assert.match(router.notice, /visible assignment/);
+  router.navigate("conversation", ref());
+  await tick();
+  const rendered = renderScreen(router, {
+    width: 200,
+    height: 50,
+    paint: createPaint("terminal-default"),
+  }).join("\n");
+  assert.match(rendered, /cleanup pending/);
+  assert.match(rendered, /acceptance: no decision recorded · correctness: unknown/);
+  assert.match(rendered, /context unknown/);
+  source.capabilities.control = false;
+  assert.equal((await router.control("cancel")).status, "error");
+  assert.equal(router.draft, "cannot accidentally steer assignment 1");
+  router.dispose();
+});
+
+test("100 screen and viewer lifetimes release subscriptions, input handlers and scheduled rendering", async (t) => {
+  const source = new UiSource(uiState(8));
+  const router = new ScreenRouter(source, { mode: "observe" });
+  await router.start();
+  const terminal = new MemoryTerminal();
+  const tui = new TuiAltScreen(terminal);
+  let renders = 0;
+  tui.requestRender = () => {
+    renders++;
+  };
+  router.navigate("conversation", ref());
+  await tick();
+  for (let cycle = 0; cycle < 100; cycle++) {
+    const screen = new PinataScreen({ tui, router, main() {} });
+    screen.render(80);
+    screen.handleInput(`draft-${cycle}`);
+    await tick();
+    screen.dispose();
+    const before = renders;
+    await source.activity(1, cycle, "stream");
+    await tick();
+    assert.equal(renders, before, "Disposed screen does not request rendering");
+  }
+  assert.equal(source.listeners.size, 1);
+  router.dispose();
+  assert.equal(source.listeners.size, 0);
+  assert.equal(source.connections.size, 0);
+  const resources = process.getActiveResourcesInfo().filter((name) => name === "Timeout").length;
+  for (let cycle = 0; cycle < 100; cycle++) {
+    const controller = new AbortController();
+    const view = openViewer({ source, terminal, signal: controller.signal });
+    await tick();
+    controller.abort();
+    await view;
+  }
+  await tick();
+  assert.equal(terminal.starts, 100);
+  assert.equal(terminal.stops, 100);
+  assert.equal(terminal.input, undefined);
+  assert.equal(source.listeners.size, 0);
+  assert.equal(source.connections.size, 0);
+  assert(process.getActiveResourcesInfo().filter((name) => name === "Timeout").length <= resources);
+  t.diagnostic(
+    `100 viewer cycles: no retained subscriptions/input handlers; ${resources} baseline timers`,
+  );
+});
+
+test("eight streaming workers meet local event and key render-request targets separately from terminal paint", async (t) => {
+  const source = new UiSource(uiState(8));
+  const router = new ScreenRouter(source, { mode: "observe" });
+  await router.start();
+  const terminal = new MemoryTerminal();
+  const tui = new TuiAltScreen(terminal);
+  const samples: number[] = [];
+  let started = 0;
+  tui.requestRender = () => samples.push(performance.now() - started);
+  const screen = new PinataScreen({ tui, router, main() {} });
+  router.navigate("conversation", ref());
+  await tick();
+  samples.length = 0;
+  const events: number[] = [];
+  const keys: number[] = [];
+  for (let round = 0; round < 40; round++) {
+    for (let worker = 1; worker <= 8; worker++) {
+      started = performance.now();
+      await source.activity(worker, round, `stream ${round}\n`);
+      await tick();
+      events.push(samples.at(-1) ?? Infinity);
+    }
+    started = performance.now();
+    screen.handleInput("x");
+    await tick();
+    keys.push(samples.at(-1) ?? Infinity);
+  }
+  const p95 = (values: number[]) =>
+    values.sort((a, b) => a - b)[Math.ceil(values.length * 0.95) - 1];
+  assert(p95(events) <= 100);
+  assert(p95(keys) <= 100);
+  t.diagnostic(
+    JSON.stringify({
+      workers: 8,
+      eventSamples: events.length,
+      keySamples: keys.length,
+      eventToRenderRequestP95Ms: p95(events),
+      keyToRenderRequestP95Ms: p95(keys),
+      screenPaint: "not measured by these samples",
+    }),
+  );
+  screen.dispose();
+  router.dispose();
+});
+
+test(
+  "a scripted runtime journey navigates, steers, stops, continues and backgrounds exact assignments",
+  { timeout: 15_000 },
+  async (t) => {
+    const started: number[] = [];
+    const input: string[] = [];
+    let observeBeforeControl: (() => Promise<void>) | undefined;
+    let controlObservations = 0;
+    const backend: BackendPort = {
+      kind: "in-process",
+      capabilities: {
+        available: true,
+        steer: true,
+        continuation: true,
+        conversationSeed: false,
+        surviving: false,
+        cleanup: "confirmed",
+      },
+      async start(launch, observe) {
+        const identity = {
+          id: `ui/${launch.attemptId}`,
+          kind: "in-process" as const,
+          ownerEpoch: launch.ownerEpoch,
+        };
+        await observe({ kind: "enrolled", identity, evidence: [] });
+        const artifact = await launch.artifacts.put(Buffer.from("scripted UI checkpoint"));
+        for (const message of launch.initialMessages)
+          await observe({ kind: "input_consumed", messageId: message.id, checkpoint: artifact });
+        const checkpoint = {
+          format: "scripted" as const,
+          worker: launch.ref.worker,
+          id: "ui-session",
+          branch: "ui-branch",
+          artifact,
+        };
+        let complete: (outcome: BackendOutcome) => void = () => {};
+        const done = new Promise<BackendOutcome>((resolve) => {
+          complete = resolve;
+        });
+        observeBeforeControl = () =>
+          observe({
+            kind: "context",
+            attemptId: launch.attemptId,
+            context: {
+              tokens: ++controlObservations,
+              window: 1000,
+              percent: null,
+              source: "scripted UI observation race",
+              timestamp: Date.now(),
+            },
+          });
+        started.push(launch.ref.assignment);
+        return {
+          identity,
+          done,
+          checkpoint: async () => checkpoint,
+          async input(message) {
+            input.push(message.text);
+            await observe({ kind: "input_consumed", messageId: message.id, checkpoint: artifact });
+            return { status: "transport_handled" };
+          },
+          async stop() {
+            complete({
+              reason: "cancelled",
+              summary: "Scripted work stopped",
+              artifacts: [],
+              session: checkpoint,
+              usage: { expectedAttempts: [launch.attemptId], observations: [], complete: false },
+            });
+            return {
+              cleanup: {
+                status: "stopped",
+                ownerEpoch: launch.ownerEpoch,
+                identities: [identity.id],
+                evidence: [artifact],
+              },
+              checkpoint,
+            };
+          },
+        };
+      },
+    };
+    const f = await surfaceFixture(t, { execution: true, backend });
+    await f.runtime.execute(
+      {
+        requestId: "ui-create",
+        command: { kind: "create", workers: [{ id: "worker", agent: "fixture", task: "initial" }] },
+      },
+      f.caller,
+    );
+    const router = new ScreenRouter({
+      ...f.control,
+      async request(input, signal) {
+        const call = surfaceCallSchema.parse(input);
+        if (call.method === "execute") {
+          const { command } = commandEnvelopeSchema.parse(call.input);
+          if (command.kind === "cancel" || command.kind === "background") {
+            assert(observeBeforeControl);
+            await observeBeforeControl();
+          }
+        }
+        return f.control.request(input, signal);
+      },
+    });
+    t.after(() => router.dispose());
+    await router.start();
+    const first = { run: f.run, worker: "worker", assignment: 1 };
+    router.navigate("conversation", first);
+    const until = async (predicate: () => boolean) => {
+      const deadline = Date.now() + 5000;
+      while (!predicate()) {
+        assert(Date.now() < deadline, "Scripted UI state did not settle");
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+    };
+    const assertAccepted = (reply: SurfaceReply) =>
+      assert(
+        reply.status === "ok" &&
+          reply.response.method === "execute" &&
+          reply.response.result.status === "accepted",
+        JSON.stringify(reply),
+      );
+    await until(
+      () =>
+        started.length === 1 &&
+        router.state.assignments[assignmentKey(first)].execution.phase === "running",
+    );
+    router.setDraft("live steering text");
+    assertAccepted(await router.submit());
+    await until(
+      () =>
+        input.includes("live steering text") &&
+        Object.values(router.state.inbox).some(
+          (message) => message.text === "live steering text" && message.state === "consumed",
+        ),
+    );
+    assert.equal(router.draft, "");
+    assertAccepted(await router.control("cancel"));
+    assert.equal((await f.runtime.wait({}, f.caller, AbortSignal.timeout(5000))).status, "settled");
+    await until(() => router.state.assignments[assignmentKey(first)].execution.phase === "ended");
+    router.setDraft("continue stopped worker");
+    const continued = await router.submit("continue");
+    assertAccepted(continued);
+    assert.equal(router.selected?.assignment, 2);
+    const second = { ...first, assignment: 2 };
+    await until(
+      () =>
+        started.length === 2 &&
+        router.state.assignments[assignmentKey(second)].execution.phase === "running",
+    );
+    assertAccepted(await router.control("background"));
+    await until(() => router.state.attachment === "background");
+    assertAccepted(await router.control("cancel", "run"));
+    assert.equal((await f.runtime.wait({}, f.caller, AbortSignal.timeout(5000))).status, "settled");
+    await until(() => router.state.assignments[assignmentKey(second)].execution.phase === "ended");
+    assert.deepEqual(started, [1, 2]);
+    assert.equal(controlObservations, 3);
+  },
+);
+
+test("Pi screens use the non-overlay API and preserve parent and worker drafts across source switches", async () => {
+  const source = new UiSource();
+  const other = new UiSource({
+    ...uiState(),
+    run: "other-run",
+    workers: {},
+    assignments: {},
+    latest: {},
+  });
+  const terminal = new MemoryTerminal();
+  const tui = new TuiAltScreen(terminal);
+  tui.requestRender = () => {};
+  let draft = "parent draft 👩🏽‍💻";
+  let component: PinataScreen | undefined;
+  let widget: { dispose?(): void } | undefined;
+  const registered = new Map<string, unknown>();
+  const sent: unknown[] = [];
+  const customOptions: unknown[] = [];
+  const events = new Map<string, (event: unknown, context: ExtensionContext) => unknown>();
+  let terminalInput: ((text: string) => unknown) | undefined;
+  const pi = {
+    registerCommand(name: string, value: unknown) {
+      registered.set(name, value);
+    },
+    on(name: string, handler: (event: unknown, context: ExtensionContext) => unknown) {
+      events.set(name, handler);
+      return () => {};
+    },
+    sendMessage(message: unknown) {
+      sent.push(message);
+    },
+  } as unknown as ExtensionAPI;
+  const context = {
+    mode: "tui",
+    sessionManager: { getSessionId: () => "parent-session" },
+    ui: {
+      getEditorText: () => draft,
+      setEditorText: (text: string) => {
+        draft = text;
+      },
+      notify() {},
+      onTerminalInput(handler: (text: string) => unknown) {
+        terminalInput = handler;
+        return () => {
+          terminalInput = undefined;
+        };
+      },
+      setWidget(_name: string, factory: undefined | ((tui: TuiAltScreen) => { dispose?(): void })) {
+        widget?.dispose?.();
+        widget = factory?.(tui);
+      },
+      custom(
+        factory: (
+          tui: TuiAltScreen,
+          theme: unknown,
+          keys: unknown,
+          done: () => void,
+        ) => PinataScreen,
+        options: unknown,
+      ) {
+        customOptions.push(options);
+        return new Promise<void>((resolve) => {
+          component = factory(tui, undefined, undefined, () => {
+            component?.dispose();
+            resolve();
+          });
+        });
+      },
+    },
+  } as unknown as ExtensionContext;
+  const ui = installCoordinatorUi(pi, async () => source);
+  const router = await ui.bind(context);
+  await events.get("session_start")?.({}, context);
+  assert.deepEqual(terminalInput?.("\u001b[1;2A"), { consume: true });
+  await tick();
+  assert.equal(
+    component?.router.screen,
+    "fleet",
+    "The default main-screen Shift+Up opens the fleet",
+  );
+  ui.navigate("main");
+  await tick();
+  const first = ui.open(context, "conversation", ref());
+  await tick();
+  assert(component);
+  component.render(80);
+  component.handleInput("worker draft");
+  ui.navigate("main");
+  await first;
+  assert.equal(draft, "parent draft 👩🏽‍💻");
+  assert.equal(router.draft, "worker draft");
+  const reopened = ui.open(context, "conversation", ref());
+  await tick();
+  const switched = ui.open(context, "fleet", undefined, other);
+  await tick();
+  await reopened;
+  assert.equal(component?.router.source.run, "other-run");
+  ui.navigate("main");
+  await switched;
+  assert.equal(draft, "parent draft 👩🏽‍💻");
+  assert(customOptions.every((options) => options === undefined));
+  assert.equal(sent.length, 0, "Opening and navigation never request a coordinator turn");
+  assert(registered.has("pinata-main") && registered.has("pinata-palette"));
+  ui.dispose();
+  assert.equal(source.listeners.size, 0);
+  assert.equal(other.listeners.size, 0);
+  assert.equal(terminalInput, undefined);
+});
+
+test(
+  "a disconnected IPC viewer disables control and reconnects without losing drafts or selection",
+  { timeout: 15_000 },
+  async (t) => {
+    const f = await surfaceFixture(t);
+    await f.runtime.execute(
+      {
+        requestId: "create",
+        command: { kind: "create", workers: [{ id: "worker", agent: "fixture", task: "pending" }] },
+      },
+      f.caller,
+    );
+    const source = await AttachedSource.connect({ directory: f.directory, role: "control" });
+    t.after(() => source.close());
+    const router = new ScreenRouter(source);
+    t.after(() => router.dispose());
+    await router.start();
+    const selected = { run: f.run, worker: "worker", assignment: 1 };
+    router.navigate("conversation", selected);
+    router.setDraft("unsent draft");
+    await f.server.close();
+    await new Promise<void>((done) => {
+      if (!source.capabilities.live) return done();
+      const unsubscribe = source.onConnectionChange((connected) => {
+        if (!connected) {
+          unsubscribe();
+          done();
+        }
+      });
+    });
+    assert.equal(source.capabilities.control, false);
+    assert.match(router.notice, /Connection unavailable/);
+    assert.equal((await router.submit()).status, "error");
+    const server = await startIpcServer({
+      directory: f.directory,
+      viewer: f.readonly,
+      control: f.control,
+    });
+    t.after(() => server.close());
+    await router.reconnect();
+    assert.equal(source.capabilities.live, true);
+    assert.equal(source.capabilities.control, true);
+    assert.deepEqual(router.selected, selected);
+    assert.equal(router.draft, "unsent draft");
+  },
+);
+
+test("accepted visual intent is identical across runtime, IPC and saved views; lean only hides transient observations", async (t) => {
+  const f = await surfaceFixture(t);
+  await f.runtime.execute(
+    {
+      requestId: "create",
+      command: {
+        kind: "create",
+        config: { mode: "observe", ui: { palette: "one-light" } },
+        workers: [{ id: "worker", agent: "fixture", task: "pending" }],
+      },
+    },
+    f.caller,
+  );
+  const client = await f.connect();
+  const saved = await openSavedSource(f.directory);
+  const call = { method: "query", input: { kind: "config" } };
+  const direct = await f.control.request(call);
+  assert.deepEqual(await client.request(call), direct);
+  assert.deepEqual(await saved.request(call), direct);
+  const router = new ScreenRouter(saved);
+  await router.start();
+  assert.equal(router.mode, "observe");
+  assert.equal(router.palette, "one-light");
+  router.setPalette("nord");
+  router.navigate("fleet");
+  assert.equal(router.palette, "nord");
+  router.dispose();
+  const source = new UiSource();
+  const lean = new ScreenRouter(source, { mode: "lean" });
+  for (const assignment of Object.values(source.state.assignments))
+    assignment.execution = { phase: "running" };
+  const observe = new ScreenRouter(source, { mode: "observe" });
+  await Promise.all([lean.start(), observe.start()]);
+  await source.activity(1, 1, "transient worker output");
+  assert.equal(lean.activity.size, 0);
+  assert.equal(observe.activity.size, 1);
+  assert.deepEqual(
+    lean.state,
+    observe.state,
+    "Visibility mode does not alter execution or durable records",
+  );
+  const leanLines = fleetWidget(lean.state, {
+    width: 120,
+    paint: createPaint("terminal-default"),
+    mode: lean.mode,
+  });
+  assert(
+    fleetWidget(observe.state, {
+      width: 120,
+      paint: createPaint("terminal-default"),
+      mode: observe.mode,
+    }).length > leanLines.length,
+  );
+  lean.dispose();
+  observe.dispose();
+});
+
+test(
+  "terminal CLI attach opens the shared viewer and exits through the parent-screen key",
+  { timeout: 10_000 },
+  async (t) => {
+    const f = await surfaceFixture(t);
+    const terminal = new MemoryTerminal();
+    const controller = new AbortController();
+    const errors: string[] = [];
+    const viewing = runCli(["attach", f.directory, "--control"], {
+      terminal,
+      signal: controller.signal,
+      out() {},
+      error(text) {
+        errors.push(text);
+      },
+      input: async () => "",
+    });
+    const deadline = Date.now() + 5000;
+    while (!terminal.input) {
+      assert(Date.now() < deadline);
+      await tick();
+    }
+    terminal.input("\u001b[1;2B");
+    assert.equal(await viewing, 0, errors.join("\n"));
+    assert.equal(terminal.stops, 1);
+    assert.equal(terminal.input, undefined);
+    assert.equal(
+      (await f.runtime.query({ kind: "status" }, f.caller)).kind,
+      "status",
+      "Closing a viewer leaves the owning runtime available",
+    );
+  },
+);

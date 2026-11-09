@@ -1,7 +1,17 @@
-# Extensibility
+# Extension points
 
-Keep orchestration in Pinata and workflow decisions with the coordinator. Agent definitions,
-configuration, prompts, tool providers and external CI express project workflows without
-built-in roles or acceptance policy. Definitions separate capabilities from workspace mode;
-all surfaces use one engine and event model. See [agents](../how-to/agents.md),
-[configuration](../reference/config.md) and [architecture](architecture.md).
+Prefer Markdown definitions, explicit skills, configuration and host adapters over
+new built-in workflow roles. A definition chooses instructions and requested tools;
+the host supplies authority. The coordinator chooses decomposition, review and
+acceptance.
+
+The [API guide](../reference/api.md) documents Runtime, worker resolution,
+execution/workspace/application ports, notification delivery and source adapters.
+Public ports report observations and capabilities; they cannot bypass canonical
+acceptance or overwrite journal authority. Custom tool extensions are trusted host
+code and must declare actual tool access before a worker can use them.
+
+Use the generated schemas for external integrations. Keep pure contracts and core
+independent of Pi, and route new surfaces through RuntimeSource rather than adding
+another scheduler or mutable run model. Add conformance tests for cancellation,
+lost replies, context preservation and cleanup when implementing an adapter.

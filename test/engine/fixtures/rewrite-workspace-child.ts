@@ -6,8 +6,8 @@ import {
   frozenWorkerSchema,
   artifactRefSchema,
   resultSchema,
-} from "../../../rewrite/engine/contracts/index.ts";
-import { WorkspaceLayer } from "../../../rewrite/engine/workspace/index.ts";
+} from "../../../engine/contracts/index.ts";
+import { WorkspaceLayer } from "../../../engine/workspace/index.ts";
 import { FixtureArtifacts } from "../rewrite-application-fixture.ts";
 
 const input = z

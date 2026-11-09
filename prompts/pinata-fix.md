@@ -1,13 +1,12 @@
 ---
-description: Delegate a focused implementation and review it when useful.
+description: Delegate a concrete fix and finish with coordinator checks.
 ---
 
 Use Pinata for this requested fix: ${@:-the requested change}.
 
-Discover relevant definitions. Start a builder with clear responsibility and preserve
-unrelated user edits. Shared checkout is the default; choose a worktree when the user
-requires isolation. Continue your own inspection and run ordinary project checks.
-Request a reviewer when useful. Read findings and actual changes, then send follow-ups
-with pinata_steer as:followUp or add workers to the existing run. Completion is not a
-quality certificate. The coordinator owns acceptance and final delivery. Yield when
-waiting for background assignment notifications; use pinata_wait when needed.
+Discover relevant definitions and start useful workers with concrete responsibilities.
+Shared checkout is the default; use a worktree when isolation is requested. Continue
+your own inspection, run ordinary checks and read actual changes. Request review if
+useful. Send follow-ups with pinata_run command kind follow_up, or add workers as the
+plan develops. Yield when waiting for completion notices. Decide acceptance and final
+delivery from the evidence, not the fact that an assignment ended.

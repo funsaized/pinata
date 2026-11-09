@@ -8,23 +8,29 @@ import {
   type CallerAuthority,
   type Grants,
   type WorkspacePort,
-} from "../../rewrite/engine/contracts/index.ts";
-import { Runtime } from "../../rewrite/engine/runtime/index.ts";
-import { bindRuntime } from "../../rewrite/engine/sources/runtime.ts";
-import { IpcClient } from "../../rewrite/engine/ipc/client.ts";
-import { startIpcServer } from "../../rewrite/engine/ipc/server.ts";
-import { IpcNotificationChannel } from "../../rewrite/engine/ipc/notifications.ts";
-import type { IpcLimits } from "../../rewrite/engine/ipc/protocol.ts";
+} from "../../engine/contracts/index.ts";
+import { Runtime } from "../../engine/runtime/index.ts";
+import { bindRuntime } from "../../engine/sources/runtime.ts";
+import { IpcClient } from "../../engine/ipc/client.ts";
+import { startIpcServer } from "../../engine/ipc/server.ts";
+import { IpcNotificationChannel } from "../../engine/ipc/notifications.ts";
+import type { IpcLimits } from "../../engine/ipc/protocol.ts";
 
 export async function surfaceFixture(
   t: TestContext,
-  options: { execution?: boolean; notifications?: boolean; limits?: Partial<IpcLimits> } = {},
+  options: {
+    execution?: boolean;
+    backend?: BackendPort;
+    notifications?: boolean;
+    limits?: Partial<IpcLimits>;
+    grants?: Grants;
+  } = {},
 ) {
   const directory = await realpath(await mkdtemp(join(tmpdir(), "pinata-surfaces-")));
   const workspace = join(directory, "workspace");
   await mkdir(workspace);
   const run = randomUUID();
-  const grants: Grants = {
+  const grants: Grants = options.grants ?? {
     access: "write",
     tools: ["read", "write"],
     workspaces: ["shared", "worktree"],
@@ -109,7 +115,12 @@ export async function surfaceFixture(
       createdAt: new Date().toISOString(),
     },
     ...(options.execution
-      ? { execution: { backends: { "in-process": backend }, workspace: workspaces } }
+      ? {
+          execution: {
+            backends: { "in-process": options.backend ?? backend },
+            workspace: workspaces,
+          },
+        }
       : {}),
     ...(options.notifications ? { notifications: channel } : {}),
     resolveWorkers: async (requests, _caller, artifacts) => {
@@ -119,15 +130,16 @@ export async function surfaceFixture(
       return requests.map((request) => ({
         id: request.id,
         agent: request.agent,
+        ...(request.origin ? { origin: request.origin } : {}),
         definition,
         fallbacks: [],
-        tools: ["read", "write"],
-        access: "write",
+        tools: [..._caller.grants.tools],
+        access: _caller.grants.access,
         workspace: "shared",
         backend: "in-process",
         lifetime: "attached",
         depth: 0,
-        grants,
+        grants: _caller.grants,
       }));
     },
   });

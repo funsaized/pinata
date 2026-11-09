@@ -9,13 +9,13 @@ import {
   openConversation,
   checkpointConversation,
   validateConversation,
-} from "../../rewrite/engine/agent/conversation.ts";
+} from "../../engine/agent/conversation.ts";
 import {
   frozenWorkerSchema,
   type ArtifactPort,
   type BackendLaunch,
-} from "../../rewrite/engine/contracts/index.ts";
-import { digestBytes } from "../../rewrite/engine/storage/io.ts";
+} from "../../engine/contracts/index.ts";
+import { digestBytes } from "../../engine/storage/io.ts";
 
 function artifactPort(): ArtifactPort {
   const bytesByDigest = new Map<string, Buffer>();

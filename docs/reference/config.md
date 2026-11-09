@@ -1,50 +1,46 @@
 # Configuration
 
-Layers are `<Pi agent directory>/pinata.json`, `<workspace>/.pi/pinata.json`, then
-run `config`. Models, fallbacks and tool providers merge by entry. Other settings replace.
-The default Pi agent directory is `~/.pi/agent` (or `PI_CODING_AGENT_DIR`).
+The exact fields and defaults are generated in `pinata.config.v4` and
+`pinata.config-layer.v4`; inspect them with `pinata schema <name> --json` or the
+[catalog](catalog.json). Layers preserve omitted values and resolve from personal
+`<Pi agent directory>/pinata.json`, project `.pi/pinata.json`, then run config.
+Worker overrides and explicit definition settings resolve into frozen launch data.
 
 ```json
 {
+  "schemaVersion": 4,
   "workspace": "shared",
-  "models": { "builder": { "provider": "openai", "id": "gpt-6-luna", "thinking": "medium" } },
   "backend": "in-process",
-  "mode": "lean",
-  "setup": false
+  "mode": "observe",
+  "execution": { "maxConcurrent": 4 },
+  "ui": { "palette": "catppuccin-mocha", "motion": "reduced", "keys": {} }
 }
 ```
 
-## Models
+| Field                     | Meaning                                                                                                                                                                        |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `workspace`               | Shared checkout default or optional worktree. Explicit user constraints remain authoritative.                                                                                  |
+| `models`                  | Per-agent provider, model ID and thinking setting; otherwise use the definition or parent model.                                                                               |
+| `fallbacks`               | Ordered available-model selection candidates per agent. Selected model/provenance is frozen; failures do not silently rerun the assignment under another model.                |
+| `backend`                 | `in-process`, `process` or optional `herdr-pi`; availability is checked.                                                                                                       |
+| `mode`                    | `lean` compact observation or `observe` activity excerpts; execution semantics and retained conversation remain the same.                                                      |
+| `execution.maxConcurrent` | Positive active assignment capacity including descendants; omitted/null means unbounded.                                                                                       |
+| `toolProviders`           | Explicit extension path and provided tool names. The host classifies tools; skills cannot grant them.                                                                          |
+| `webExtension`            | Explicit provider for the known read-oriented web tools; unavailable providers fail actionably.                                                                                |
+| `passEnv`                 | Explicit safe environment names for setup. Values are not stored in command/config evidence. Control and loader-injection variables are refused.                               |
+| `setup`                   | `false` disables setup; a string selects a command. Omission can detect a root locked package manager. Setup is only for writable isolated work and requires shell capability. |
+| `worktreeRoot`            | Optional host worktree location; accepted workspace identity is frozen.                                                                                                        |
+| `codemode`                | Expose the supported Pi coding tool wrapper while preserving underlying capability checks.                                                                                     |
+| `includeUncommitted`      | Include current dirty content in a new isolated base; defaults true.                                                                                                           |
+| `ui`                      | Semantic palette, motion preference and named key overrides.                                                                                                                   |
 
-Precedence: task model, configured agent model, definition model, configured default,
-then parent session. Explicit configured/definition fallbacks are tried in order.
-Models must exist in the installed Pi registry with authentication and supported thinking.
+No config field enables retired cost/turn/tool/time budgets, mandatory ownership,
+automatic checks or review acceptance. Migrate old policy fields explicitly.
+Host authority is separate: `--grants <json>` for headless, `/pinata-grants <json>`
+followed by `/pinata-new` in Pi, or `HostOptions.grants` for integration code.
+Changing a host grant does not mutate accepted worker grants.
 
-## Workspace selection
-
-Honor explicit user requirements first. Then select task workspace, definition isolation
-preference, run workspace, config workspace, and finally shared. The coordinator passes
-user intent; Pinata does not classify tasks with another planner. Resolved mode and path
-are saved and never silently changed on continuation. New worktree workers freeze their
-base when created. Shared work needs no Git repository.
-
-## Worktree location
-
-`worktreeRoot` controls new isolated checkout locations. Otherwise use the persistent
-platform user-data directory (`XDG_DATA_HOME`/Linux data directory, macOS Application
-Support, or Windows LOCALAPPDATA). Paths are frozen in the run record. Existing paths
-are not moved when configuration changes. `includeUncommitted` defaults to true.
-`setup` is a shell command or false; `.worktreeinclude` can supply ignored dependencies.
-`passEnv` adds approved environment variable names for setup. Setup has cancellation and
-process cleanup, without an automatic Pinata deadline.
-
-## Other settings
-
-`backend` is `in-process`, `process` or `herdr-pi`; tasks can override it.
-`codemode` enables restricted scripts. `mode` is `lean` or `observe`.
-`toolProviders` map names to `{extension, tools}`; entry hashes are checked before launch.
-`webExtension` can provide web tools for an installed researcher definition.
-`survive: true` with background work switches in-process workers to detached processes.
-
-There are no budget or strict-review settings. Old `limits`, `reviewPolicy`, deadlines,
-check fields and ownership fields require [explicit conversion](migration.md).
+Setup success is retained per relevant worker input identity. Setup failures retain
+partial files and diagnostics; ambiguous interrupted setup is not automatically
+replayed. Detected setup without a shell grant is skipped with a reason; an explicit
+command without that grant is rejected. See [dependencies](../how-to/dependencies.md).

@@ -1,17 +1,38 @@
 # First run
 
-Install and reload Pinata, then ask Pi:
+Install with `pi install npm:pi-pinata` and restart Pi. Open a project and choose
+an available provider/model in Pi. This tutorial launches real workers and spends
+provider tokens. For offline validation, use `npm test` in the Pinata repository.
 
-```text
-Start two scouts: map the API and inspect its tests. Continue your own investigation
-while they work, and bring back concrete files and open questions.
+Type `@scout Map this project's entry points and tests`. Pinata creates a worker
+from the read-only scout definition and reports its exact assignment. A leading
+mention is a user-input action; embedded email addresses and model text are not
+commands. A bare `@scout` opens the available worker/definition view.
+
+Press Shift+Up to see the fleet tree. Enter opens the selected conversation;
+Shift+Left/Right moves between workers; Shift+Down returns to the parent screen.
+The same actions are available through `/pinata`, `/pinata-fleet` and
+`/pinata-conversation`. Browsing does not start a coordinator model turn. Observe
+the last activity, execution phase and context observation; unknown context remains
+unknown rather than being inferred from cumulative tokens.
+
+After the scout finishes, send `@scout Follow the parser's error path and identify
+missing tests`. This creates the next assignment in the same conversation. The
+earlier result remains inspectable. During active work, addressed input steers the
+current assignment. Pinata records a durable receipt before clearing your draft.
+
+Ask the coordinator to implement a small change with a builder. Builders use the
+shared checkout unless you select a worktree. Review the actual diff and run the
+project's tests as appropriate. Worker completion does not certify the implementation.
+You can add workers, send follow-ups or finish directly without rebuilding a job.
+
+For JSON execution, copy [the first-run job](../../examples/job.json):
+
+```sh
+pinata run examples/job.json --workspace /path/to/project --model provider/model --json
 ```
 
-Discover definitions with `pinata_agents`. Use `pinata_run` for small assignments and
-`background: true` when the coordinator has other work. Yield when waiting; completions
-resume the coordinator. Use `pinata_status` for inspection or `pinata_wait` to wait for
-selected work. Follow-ups reuse context and workspace; add more workers as needed.
-
-Builders write directly to the shared checkout by default. Preserve unrelated edits and
-run ordinary project checks. Select a worktree for experiments that should remain separate.
-[Tools](../reference/tools.md) and [configuration](../reference/config.md) describe the API.
+The output reports the run directory, exact assignments and execution outcomes.
+`pinata status <run-directory> --saved --json` reads retained work. For later live
+control, explicitly own the run with `pinata serve --directory <run-directory>` in
+one terminal and attach from another. See [headless operation](../how-to/headless.md).

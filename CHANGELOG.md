@@ -1,15 +1,26 @@
 # Changelog
 
-## Unreleased
+## Unreleased — 3.0.0
 
-- Default new runs to optional independent review; add strict `reviewPolicy: "required"`.
-  Assigned reviews remain binding and legacy saved runs retain required review.
-- Persist shared public instructions and one absolute deadline across preparation,
-  workers, checks, repair, resume and destination operations.
-- Report actionable background failures early and support nonblocking repair.
-- Run the native arena coordinator in a managed Pi RPC session, validated with scripted
-  responses; preserve public assignment delivery and arena-owned trial timeout cleanup.
-- Explain check dependencies and retain actionable workspace/check diagnostics.
+- Replace the core, stores, backends, workspaces, UI and measurement harness with
+  one runtime shared by Pi, the headless CLI and viewers. Versioned schemas and
+  public APIs describe commands, receipts, events and recovery.
+- Default to shared workspaces, with optional isolated worktrees and explicit,
+  conflict-checked application. Keep partial work and user edits through failure
+  and cancellation. Testing, review and acceptance belong to the coordinator;
+  production token, time and repair budgets are removed.
+- Retain exact assignment and message identities, immutable dependencies and
+  durable retry evidence. Supervised process workers support explicit recovery
+  and host survival without silently replaying uncertain effects.
+- Add selected skills and parent context, opt-in scoped memory, authorized nested
+  delegation, optional concurrency and session-owned schedules.
+- Add the compact fleet tree, selectable palettes, conversation drafts, direct
+  user mentions and exact addressed-input retry without a coordinator model turn.
+- Replace the arena and benchmarks while preserving historical evidence. Scripted
+  results establish behavior and runtime overhead, not live coding quality.
+- Provide explicit input conversion and historical inspection for the breaking
+  data transition. Linux/macOS have scripted validation; Windows runtime
+  verification and its process supervisor remain deferred.
 
 ## 2.1.1 (2026-11-06)
 

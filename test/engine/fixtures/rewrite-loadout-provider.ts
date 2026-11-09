@@ -2,7 +2,7 @@ import { appendFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
-import type { ProcessManifest } from "../../../rewrite/engine/backends/process-transport.ts";
+import type { ProcessManifest } from "../../../engine/backends/process-transport.ts";
 
 export function installLoadoutProvider(runtime: ModelRuntime, agentDir?: string): void {
   const faux = fauxProvider({

@@ -16,11 +16,11 @@ import {
   PreparationFailure,
   type CleanupReceipt,
   type WorkspaceRequest,
-} from "../../rewrite/engine/contracts/index.ts";
-import { WorkspaceLayer } from "../../rewrite/engine/workspace/index.ts";
-import { openCheckoutGate } from "../../rewrite/engine/workspace/gate.ts";
-import { resolveSetup } from "../../rewrite/engine/workspace/setup.ts";
-import { setupEnvironment, setupShell } from "../../rewrite/engine/workspace/setup-environment.ts";
+} from "../../engine/contracts/index.ts";
+import { WorkspaceLayer } from "../../engine/workspace/index.ts";
+import { openCheckoutGate } from "../../engine/workspace/gate.ts";
+import { resolveSetup } from "../../engine/workspace/setup.ts";
+import { setupEnvironment, setupShell } from "../../engine/workspace/setup-environment.ts";
 import { FixtureArtifacts } from "./rewrite-application-fixture.ts";
 
 const execute = promisify(execFile);

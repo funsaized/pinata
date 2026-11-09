@@ -12,12 +12,12 @@ import {
   type ArtifactPort,
   type AssignmentRef,
   type CallerAuthority,
-} from "../../rewrite/engine/contracts/index.ts";
-import { Runtime } from "../../rewrite/engine/runtime/index.ts";
-import { ConversationQueries } from "../../rewrite/engine/runtime/queries.ts";
-import { bindRuntime } from "../../rewrite/engine/sources/runtime.ts";
-import { openSavedSource } from "../../rewrite/engine/sources/saved.ts";
-import { digestBytes } from "../../rewrite/engine/storage/io.ts";
+} from "../../engine/contracts/index.ts";
+import { Runtime } from "../../engine/runtime/index.ts";
+import { ConversationQueries } from "../../engine/runtime/queries.ts";
+import { bindRuntime } from "../../engine/sources/runtime.ts";
+import { openSavedSource } from "../../engine/sources/saved.ts";
+import { digestBytes } from "../../engine/storage/io.ts";
 import { piFixture } from "./rewrite-pi-fixture.ts";
 
 function deferred() {

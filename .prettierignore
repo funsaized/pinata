@@ -3,3 +3,5 @@ examples/relay/starter/**
 test/engine/fixtures/relay/**
 # Exact CLI stdout, including Markdown table spacing, is part of the exercise.
 examples/relay/expected-report.md
+# Preserve machine-specific adapter configurations.
+arena/local/

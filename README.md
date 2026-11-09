@@ -1,87 +1,57 @@
-# piñata
+# Pinata
 
-**Pi stays small. Your subagent system should too.**
+An extensible subagent runtime for [Pi](https://github.com/badlogic/pi-mono).
+Start workers, watch their conversations, steer them and continue their work as
+the task develops. The coordinator decides what to delegate, test, review and accept.
 
-Pinata is a small, extensible worker runtime for [Pi](https://github.com/earendil-works/pi).
-The coordinator chooses the work, testing, review, follow-ups and integration.
-Pinata supplies execution, communication, workspaces, persistence and visibility.
+Workers share the current checkout by default. Choose an isolated Git worktree when
+you want a separate patch; inspect and apply it explicitly with conflict checks.
+Completed, failed and cancelled work stays available. A completion report describes
+execution, not correctness.
 
 ```sh
 pi install npm:pi-pinata
 ```
 
-Reload Pi. Use Pi 1.1.0+, Node 22.19+, and Linux, macOS or Windows. Git is needed
-for isolated worktrees and patch operations; ordinary shared work also runs outside Git.
-[Herdr](https://herdr.dev/) is optional.
+Restart Pi, then ask it to use Pinata for a task. `@scout Map the parser and its tests`
+addresses a definition directly. Shift+Up opens the fleet tree; Enter opens a worker
+conversation; Shift+Left/Right changes workers; Shift+Down returns. Drafts stay with
+their conversations. `/pinata` and screen commands provide keyboard fallbacks.
 
-## Delegate ordinary work
+For a finite headless job:
 
-Ask Pi to send two scouts, split an implementation between builders, or review a change.
-Workers use the current shared checkout by default. Their edits are immediately visible.
-Assign file responsibilities in the task; the coordinator handles overlapping edits.
-
-```json
-{
-  "background": true,
-  "tasks": [
-    {
-      "id": "api",
-      "agent": "builder",
-      "task": "Implement the API in src/api.ts; preserve unrelated edits."
-    },
-    {
-      "id": "ui",
-      "agent": "builder",
-      "task": "Implement the UI in src/ui.ts; coordinate API assumptions with the parent."
-    },
-    {
-      "id": "experiment",
-      "agent": "builder",
-      "workspace": "worktree",
-      "task": "Explore an alternative parser in isolation."
-    }
-  ]
-}
+```sh
+pinata run examples/job.json --workspace /path/to/project --model provider/model --json
 ```
 
-Use `pinata_run` with `run` to add workers. Send `pinata_steer` with `as: "followUp"`
-to queue another assignment or continue a finished worker in its original context and
-workspace. Each assignment has its own ID and saved result. Background assignment
-completions resume the coordinator; yield when waiting, or use `pinata_wait`.
+Choose an available model and credentials in Pi. Running workers spends provider
+tokens; schema discovery, example validation and the default test suite do not.
 
-A finished assignment returns control. It does not certify correctness. Ordinary final
-responses, failed checks, negative review findings and optional structured reports remain
-available. The coordinator runs project checks and decides what to do next. There are no
-production spend, turn, tool-call, repair, concurrency or worker/run time limits.
-Usage and elapsed time are observations. Explicit cancellation stops owned activity and
-preserves edits.
+- [First run](docs/tutorials/first-run.md): one worker, a follow-up and inspection.
+- [Relay](docs/tutorials/relay.md): build a small multi-module CLI in a disposable checkout.
+- [Recipes](examples/README.md): dynamic shared work, isolated follow-ups, and authorized nested/scheduled work.
+- [API and schemas](docs/reference/api.md): tools, CLI, events, hooks and versioned contracts.
+- [Migration](docs/reference/migration.md): preserve old runs and convert inputs explicitly.
 
-## Optional isolation
+Custom agents are Markdown files with validated model settings, tools, skills and
+colors. Parent context, scoped memory, nested delegation and capacity are explicit
+options. Schedules belong to a live session and resume paused after a crash. Pinata
+has no automatic review policy or production token/time budget.
 
-Set `workspace: "worktree"` on a worker or run for Git patch isolation. Follow-ups reuse
-the same frozen workspace. `pinata_changes` exposes saved snapshots independently of run
-success. `pinata_integrate` applies selected snapshots with conflict checks and a journal,
-without staging or committing. Subsequent applications use the delta since the previously
-applied snapshot. Shared edits need no application step.
+The Pi extension, headless CLI, authenticated IPC and saved-run viewer use one
+runtime and event model. Available backends are in-process, supervised process and
+optional Herdr. Node 22.19+ is required. Linux/macOS have scripted validation;
+Windows runtime verification is deferred and its process supervisor helper is not
+yet available. See [platform support](docs/how-to/platforms.md).
 
-Application requires a quiescent destination. Pinata writers and application share a
-cross-process checkout gate. External editors and escaped processes must also be quiet;
-worktrees and tool guards are not an operating-system sandbox.
+```sh
+npm ci --ignore-scripts
+npm run check
+npm test
+npm run arena -- --offline
+```
 
-## Customize and inspect
-
-Shipped definitions are scout, builder and reviewer. Add ordinary Markdown definitions
-with separate tool/access capabilities and workspace preferences. Models default to the
-current Pi model. Personal, project and run configuration layers can override them.
-`lean` and `observe` select visibility, independently of workspace or quality workflow.
-In-process, process, detached and Herdr workers use one engine and event model.
-
-- [First run](docs/tutorials/first-run.md) · [Tools](docs/reference/tools.md)
-- [Configuration](docs/reference/config.md) · [Agent definitions](docs/how-to/agents.md)
-- [Headless jobs](docs/how-to/headless.md) · [Recovery](docs/how-to/recover.md)
-- [Architecture](docs/explanation/architecture.md) · [Trust](docs/explanation/trust.md)
-- [Version 3 migration](docs/reference/migration.md) · [Testing](docs/maintainers/testing.md)
-
-Version 3 changes the worker contract. Convert older jobs, configs and definitions with
-`pinata migrate <input> --output <new-file>` before executing them. Historical logs and
-saved patches remain readable; old verification claims remain historical.
+Tests and benchmarks use scripted or loopback providers. They establish behavior
+and coordination overhead; they do not establish improved model coding performance.
+See [testing](docs/maintainers/testing.md), [architecture](docs/explanation/architecture.md)
+and [the implementation record](docs/maintainers/rewrite-progress.md).

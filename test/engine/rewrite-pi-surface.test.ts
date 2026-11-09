@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, realpath, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
@@ -10,18 +10,32 @@ import {
   ModelRuntime,
   SessionManager,
   SettingsManager,
+  type InputEvent,
 } from "@earendil-works/pi-coding-agent";
-import { createPinataExtension } from "../../rewrite/engine/pi/extension.ts";
-import { invokeCoordinatorTool } from "../../rewrite/engine/pi/tools.ts";
-import { completionMessageType, noticeId } from "../../rewrite/engine/pi/notifications.ts";
-import { parseMention, routeMention } from "../../rewrite/engine/pi/mentions.ts";
-import { openHost, type Host } from "../../rewrite/engine/host/index.ts";
-import { surfaceReplySchema, type AssignmentRef } from "../../rewrite/engine/contracts/index.ts";
+import { createPinataExtension } from "../../engine/pi/extension.ts";
+import { invokeCoordinatorTool } from "../../engine/pi/tools.ts";
+import { completionMessageType, noticeId } from "../../engine/pi/notifications.ts";
+import { parseMention, routeMention } from "../../engine/pi/mentions.ts";
+import { readMentionIntent } from "../../engine/pi/mention-input.ts";
+import { openHost, type Host } from "../../engine/host/index.ts";
+import {
+  surfaceReplySchema,
+  toolPageSchema,
+  type AssignmentRef,
+  type Grants,
+} from "../../engine/contracts/index.ts";
+import { toolContentBytes } from "../../engine/sources/pages.ts";
+import { MemoryStore } from "../../engine/memory/index.ts";
 import { surfaceFixture } from "./rewrite-surface-fixture.ts";
 
 async function fixture(
   t: TestContext,
-  options: { recorded?: boolean; dropCompletion?: () => boolean | "marker" } = {},
+  options: {
+    recorded?: boolean;
+    dropCompletion?: () => boolean | "marker";
+    grants?: Grants;
+    run?: string;
+  } = {},
 ) {
   const directory = await realpath(await mkdtemp(join(tmpdir(), "pinata-pi-surface-")));
   const workspace = join(directory, "workspace");
@@ -72,6 +86,8 @@ async function fixture(
           modelRuntime,
           config: { run: { codemode: false } },
           parentModel: { provider: "coordinator-fixture", id: "script", thinking: "off" },
+          grants: options.grants,
+          run: options.run,
         },
         open: async (options) => {
           const host = await openHost(options);
@@ -149,7 +165,21 @@ async function fixture(
     for (const host of hosts) await host.close("Fixture teardown");
     await rm(directory, { recursive: true, force: true });
   });
-  return { session, manager, faux, hosts, navigation, notices, errors, draft: () => draft };
+  const inputHandler = loader
+    .getExtensions()
+    .extensions.flatMap((extension) => extension.handlers.get("input") ?? [])[0];
+  assert(inputHandler);
+  return {
+    session,
+    manager,
+    faux,
+    hosts,
+    navigation,
+    notices,
+    errors,
+    inputHandler,
+    draft: () => draft,
+  };
 }
 
 test("mention grammar ignores embedded handles, quoted text, emails and path fragments", () => {
@@ -163,14 +193,326 @@ test("mention grammar ignores embedded handles, quoted text, emails and path fra
     "    @scout code",
     "@scout!",
     "@UPPER task",
+    "@run-one/scout task",
+    "@scout.md task",
   ])
     assert.equal(parseMention(input), undefined, input);
   assert.deepEqual(parseMention("@scout task\ncontinued"), {
     handle: "scout",
     text: "task\ncontinued",
   });
-  assert.deepEqual(parseMention("@run-one/scout"), { run: "run-one", handle: "scout", text: "" });
+  assert.deepEqual(parseMention("@run-one:scout"), { run: "run-one", handle: "scout", text: "" });
 });
+
+test(
+  "addressed input callback repeats and explicit uncertain retries preserve the exact durable command",
+  { timeout: 30_000 },
+  async (t) => {
+    const f = await fixture(t, { recorded: false, run: " team: one " });
+    const context = f.session.extensionRunner.createContext();
+    const event: InputEvent = {
+      type: "input",
+      text: "@scout repeated text",
+      source: "interactive",
+    };
+    const outcomes = await Promise.all([
+      f.inputHandler(event, context),
+      f.inputHandler(event, context),
+    ]);
+    assert.deepEqual(outcomes, [{ action: "handled" }, { action: "handled" }]);
+    const host = f.hosts[0];
+    assert(host);
+    await host.runtime.wait({}, host.caller, AbortSignal.timeout(15_000));
+    await f.inputHandler(event, context);
+    assert.equal(host.source.snapshot().snapshot.latest.scout, 1);
+    const entries = () =>
+      f.manager
+        .getEntries()
+        .filter((entry) => entry.type === "custom" && entry.customType === "pinata.input.v3");
+    assert.equal(entries().length, 1);
+    const firstFiles = await readdir(join(host.directory, "mention-inputs"));
+    assert.equal(firstFiles.length, 1);
+    const token = firstFiles[0].replace(/\.json$/, "");
+    const first = await readMentionIntent(host.directory, token, {
+      run: host.caller.run,
+      session: f.manager.getSessionId(),
+    });
+    assert.equal(first.entry, entries()[0].id);
+    assert.equal(first.envelope.command.kind, "create");
+    await assert.rejects(
+      readMentionIntent(host.directory, token, {
+        run: host.caller.run,
+        session: "different-session",
+      }),
+      /another session or run/,
+    );
+    // Pi has not persisted a custom-only first session, but its addressed intent is durable.
+    const sessionFile = f.manager.getSessionFile();
+    assert(sessionFile);
+    await assert.rejects(readFile(sessionFile), { code: "ENOENT" });
+    await f.session.prompt(`/pinata-retry ${token}`);
+    assert.equal(host.source.snapshot().snapshot.latest.scout, 1);
+
+    // A new event carrying identical text is a new intentional input.
+    await f.inputHandler({ ...event }, context);
+    await host.runtime.wait({}, host.caller, AbortSignal.timeout(15_000));
+    assert.equal(host.source.snapshot().snapshot.latest.scout, 2);
+    assert.equal(entries().length, 2);
+
+    const request = host.source.request.bind(host.source);
+    let lost = false;
+    host.source.request = async (call, signal) => {
+      const response = await request(call, signal);
+      if (!lost && response.status === "ok" && response.response.method === "execute") {
+        lost = true;
+        throw new Error("Simulated lost receipt after durable acceptance");
+      }
+      return response;
+    };
+    f.session.extensionRunner.getUIContext().setEditorText("a newer user draft");
+    await f.inputHandler({ ...event, text: "@scout uncertain follow-up" }, context);
+    host.source.request = request;
+    assert(lost);
+    assert.equal(f.draft(), "a newer user draft");
+    const retry = f.errors
+      .find((message) => message.includes("/pinata-retry"))
+      ?.match(/\/pinata-retry (?:"(?:\\.|[^"])*"|[A-Za-z0-9._-]+):[a-f0-9]{64}/)?.[0];
+    assert(retry, JSON.stringify(f.errors));
+    f.errors.length = 0;
+    await host.runtime.wait({}, host.caller, AbortSignal.timeout(15_000));
+    await f.session.prompt(retry);
+    assert.equal(host.source.snapshot().snapshot.latest.scout, 3);
+    assert.equal(f.draft(), "a newer user draft");
+    assert.equal(Object.keys(host.source.snapshot().snapshot.inbox).length, 3);
+    assert.equal(
+      f.faux.state.callCount,
+      3,
+      "Only the three workers' assignments call the provider",
+    );
+    assert.equal(f.errors.length, 0);
+
+    let commitUnknown = false;
+    host.source.request = async (call, signal) => {
+      const response = await request(call, signal);
+      if (!commitUnknown && response.status === "ok" && response.response.method === "execute") {
+        commitUnknown = true;
+        const receipt = response.response.result;
+        return {
+          status: "ok",
+          response: {
+            method: "execute",
+            result: {
+              status: "rejected",
+              requestId: receipt.requestId,
+              revision: receipt.revision,
+              error: { code: "commit_unknown", message: "Commit acknowledgment is uncertain" },
+            },
+          },
+        };
+      }
+      return response;
+    };
+    await f.inputHandler({ ...event, text: "@scout uncertain commit" }, context);
+    host.source.request = request;
+    assert(commitUnknown);
+    const commitRetry = f.errors
+      .find((message) => message.includes("/pinata-retry"))
+      ?.match(/\/pinata-retry (?:"(?:\\.|[^"])*"|[A-Za-z0-9._-]+):[a-f0-9]{64}/)?.[0];
+    assert(commitRetry, JSON.stringify(f.errors));
+    f.errors.length = 0;
+    await host.runtime.wait({}, host.caller, AbortSignal.timeout(15_000));
+    await f.session.prompt(commitRetry);
+    assert.equal(host.source.snapshot().snapshot.latest.scout, 4);
+    assert.equal(Object.keys(host.source.snapshot().snapshot.inbox).length, 4);
+    assert.equal(f.faux.state.callCount, 4);
+    assert.deepEqual(f.errors, []);
+
+    const path = join(host.directory, "mention-inputs", `${token}.json`);
+    await writeFile(path, `${await readFile(path, "utf8")} `);
+    await f.session.prompt(`/pinata-retry ${token}`);
+    assert.match(f.errors.pop() ?? "", /integrity check/);
+    assert.equal(host.source.snapshot().snapshot.latest.scout, 4);
+  },
+);
+
+test(
+  "Pi memory commands inspect, edit and clear frozen scopes with CAS and no model turn",
+  { timeout: 30_000 },
+  async (t) => {
+    const grants: Grants = {
+      access: "read",
+      tools: ["read", "grep", "find", "ls"],
+      workspaces: ["shared"],
+      inheritContext: false,
+      memory: { scope: "project-agent", access: "write" },
+      delegation: { maxDepth: 0, agents: [], tools: [], workspaces: [] },
+    };
+    const f = await fixture(t, { grants });
+    await f.session.prompt("/pinata-memory inspect missing");
+    assert.match(f.errors.pop() ?? "", /No worker missing/);
+    const host = f.hosts[0];
+    assert(host);
+    const created = await host.runtime.execute(
+      {
+        requestId: "memory-workers",
+        command: {
+          kind: "create",
+          workers: [
+            {
+              id: "writer",
+              agent: "scout",
+              task: "memory writer",
+              memory: { scope: "project-agent", access: "write" },
+            },
+            {
+              id: "reader",
+              agent: "scout",
+              task: "memory reader",
+              memory: { scope: "project-agent", access: "read" },
+            },
+            { id: "absent", agent: "scout", task: "no memory" },
+          ],
+        },
+      },
+      host.caller,
+    );
+    assert.equal(created.status, "accepted", JSON.stringify(created));
+    assert.equal(
+      (await host.runtime.wait({}, host.caller, AbortSignal.timeout(20_000))).status,
+      "settled",
+    );
+    const workers = structuredClone(host.source.snapshot().snapshot.workers);
+    const store = await MemoryStore.open({
+      project: host.workspace,
+      run: host.caller.run,
+      worker: workers.writer,
+    });
+    const calls = f.faux.state.callCount;
+    const displayed = () =>
+      f.manager.getEntries().flatMap((entry) => {
+        if (entry.type !== "custom_message" || entry.customType !== "pinata.memory.v3") return [];
+        assert.equal(typeof entry.content, "string");
+        return [JSON.parse(String(entry.content))];
+      });
+    f.session.extensionRunner.getUIContext().setEditorText("");
+    await f.session.prompt("/pinata-memory inspect writer");
+    assert.equal(
+      displayed().at(-1)?.revision,
+      0,
+      JSON.stringify({ errors: f.errors, entries: displayed() }),
+    );
+    assert.equal(displayed().at(-1)?.value, null);
+    await assert.rejects(readFile(join(store.directory, "head.json")), { code: "ENOENT" });
+
+    const input = { expectedRevision: 0, text: "retained\nUnicode 🪅", data: { checked: true } };
+    await f.session.prompt(`/pinata-memory edit writer ${JSON.stringify(input)}`);
+    assert.equal(displayed().at(-1)?.revision, 1);
+    assert.deepEqual((await store.read()).value, { text: input.text, data: input.data });
+    await f.session.prompt("/pinata-memory inspect reader");
+    assert.equal(displayed().at(-1)?.revision, 1);
+
+    const conflict = `/pinata-memory edit writer ${JSON.stringify({ ...input, text: "stale" })}`;
+    await f.session.prompt(conflict);
+    assert.match(f.errors.pop() ?? "", /expected 0, found 1/);
+    assert.equal(f.draft(), conflict);
+    assert.equal((await store.read()).revision, 1);
+    f.session.extensionRunner.getUIContext().setEditorText("a newer user draft");
+    await f.session.prompt("/pinata-memory clear writer 0");
+    assert.match(f.errors.pop() ?? "", /expected 0, found 1/);
+    assert.equal(f.draft(), "a newer user draft");
+
+    await f.session.prompt(`/pinata-grants ${JSON.stringify(grants)}`);
+    await f.session.prompt(
+      `/pinata-memory edit reader ${JSON.stringify({ expectedRevision: 1, text: "ungranted" })}`,
+    );
+    assert.match(f.errors.pop() ?? "", /explicit scoped memory write grant/);
+    await f.session.prompt("/pinata-memory clear reader 1");
+    assert.match(f.errors.pop() ?? "", /explicit scoped memory write grant/);
+    await f.session.prompt("/pinata-memory inspect absent");
+    assert.match(f.errors.pop() ?? "", /no retained-memory grant/);
+    await f.session.prompt("/pinata-memory clear writer 1");
+    assert.equal(displayed().at(-1)?.revision, 2);
+    assert.equal(displayed().at(-1)?.value, null);
+    assert.deepEqual(
+      (await store.history()).map(({ revision, value }) => ({ revision, value })),
+      [
+        { revision: 2, value: null },
+        { revision: 1, value: { text: input.text, data: input.data } },
+      ],
+    );
+    assert.deepEqual(host.source.snapshot().snapshot.workers, workers);
+    assert.equal(f.faux.state.callCount, calls);
+    assert.deepEqual(f.errors, []);
+  },
+);
+
+test(
+  "Pi tools bound model-facing status while retaining exact details and immutable read-only pages",
+  { timeout: 30_000 },
+  async (t) => {
+    const f = await fixture(t);
+    const statusTool = f.session.extensionRunner.getToolDefinition("pinata_status");
+    const pageTool = f.session.extensionRunner.getToolDefinition("pinata_page");
+    assert(statusTool && pageTool);
+    const context = f.session.extensionRunner.createToolContext("paged-status", undefined);
+    await statusTool.execute("open-host", {}, undefined, undefined, context);
+    const host = f.hosts[0];
+    assert(host);
+    const receipt = await host.runtime.execute(
+      {
+        requestId: "large-task",
+        command: {
+          kind: "create",
+          workers: [{ id: "large", agent: "scout", task: "large task context ".repeat(6000) }],
+        },
+      },
+      host.caller,
+    );
+    assert.equal(receipt.status, "accepted");
+    await host.runtime.wait({}, host.caller, AbortSignal.timeout(20_000));
+    const output = await statusTool.execute("paged-status", {}, undefined, undefined, context);
+    const original = surfaceReplySchema.parse(output.details);
+    assert(
+      original.status === "ok" &&
+        original.response.method === "query" &&
+        original.response.result.kind === "status",
+    );
+    const text = output.content.find((part) => part.type === "text");
+    assert(text?.type === "text");
+    assert(Buffer.byteLength(text.text) <= toolContentBytes);
+    let page = toolPageSchema.parse(JSON.parse(text.text));
+    let retained = page.text;
+    // The next read must keep the first immutable reply after live state changes.
+    await host.runtime.execute(
+      {
+        requestId: "later-task",
+        command: {
+          kind: "add",
+          workers: [{ id: "later", agent: "scout", task: "later accepted work" }],
+        },
+      },
+      host.caller,
+    );
+    while (!page.complete) {
+      assert(page.nextCursor);
+      const response = await pageTool.execute(
+        "read-page",
+        { cursor: page.nextCursor },
+        undefined,
+        undefined,
+        context,
+      );
+      const content = response.content.find((part) => part.type === "text");
+      assert(content?.type === "text");
+      assert(Buffer.byteLength(content.text) <= toolContentBytes);
+      page = toolPageSchema.parse(response.details);
+      retained += page.text;
+    }
+    assert.deepEqual(JSON.parse(retained), original);
+    assert.deepEqual(Object.keys(original.response.result.state.workers), ["large"]);
+    assert.equal(Object.keys(host.source.snapshot().snapshot.workers).length, 2);
+  },
+);
 
 test(
   "canonical Pi tool mappings match direct Runtime and authenticated IPC receipts",
@@ -240,6 +582,7 @@ test(
     assert.equal(f.draft(), "@missing keep this draft");
     assert.equal(f.faux.state.callCount, 0);
     f.errors.length = 0;
+    f.session.extensionRunner.getUIContext().setEditorText("");
     await f.session.prompt("@scout first assignment");
     assert.equal(f.draft(), "");
     const first = await host.runtime.wait({}, host.caller, AbortSignal.timeout(15_000));
@@ -411,7 +754,7 @@ test(
 );
 
 test(
-  "cross-run handles require an explicit selector and existing workers win over definitions",
+  "handles prefer the selected run, otherwise require a unique worker or run prefix",
   { timeout: 15_000 },
   async (t) => {
     const left = await surfaceFixture(t);
@@ -424,14 +767,14 @@ test(
         },
         f.caller,
       );
-    const ambiguous = await routeMention(
+    const selected = await routeMention(
       "@scout instruction",
       [left.control, right.control],
       left.control,
     );
-    assert.equal(ambiguous.kind, "error");
+    assert.equal(selected.kind, "receipt");
     const directed = await routeMention(
-      `@${right.run}/scout instruction`,
+      `@${right.run.slice(0, 12)}:scout instruction`,
       [left.control, right.control],
       left.control,
     );
@@ -439,6 +782,38 @@ test(
     if (directed.kind !== "receipt") throw new Error("Missing receipt");
     assert.equal(directed.receipt.status, "accepted");
     assert.equal(Object.values(right.control.snapshot().snapshot.inbox).length, 2);
-    assert.equal(Object.values(left.control.snapshot().snapshot.inbox).length, 1);
+    assert.equal(Object.values(left.control.snapshot().snapshot.inbox).length, 2);
+    const empty = await surfaceFixture(t);
+    const ambiguous = await routeMention(
+      "@scout instruction",
+      [left.control, right.control, empty.control],
+      empty.control,
+    );
+    assert.equal(ambiguous.kind, "error");
+    if (ambiguous.kind !== "error") throw new Error("Missing ambiguity result");
+    assert(ambiguous.message.includes(left.run) && ambiguous.message.includes(right.run));
+    const unique = await routeMention(
+      "@scout instruction",
+      [right.control, empty.control],
+      empty.control,
+    );
+    assert.equal(unique.kind, "receipt");
+    const prefix = left.run.slice(0, 1);
+    const collision = { ...right.control, run: `${prefix}another-run` };
+    const refused = await routeMention(
+      `@${prefix}:scout instruction`,
+      [left.control, collision],
+      empty.control,
+    );
+    assert.equal(refused.kind, "error");
+    const longer = { ...right.control, run: `${left.run}-longer` };
+    const exact = await routeMention(
+      `@${left.run}:scout instruction`,
+      [left.control, longer],
+      empty.control,
+    );
+    assert.equal(exact.kind, "receipt");
+    if (exact.kind !== "receipt") throw new Error("Missing exact-run receipt");
+    assert.equal(exact.source, left.control);
   },
 );

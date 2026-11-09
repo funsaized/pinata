@@ -5,31 +5,27 @@ import { once } from "node:events";
 import { promisify } from "node:util";
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir, hostname } from "node:os";
-import { observeProcess } from "../../rewrite/engine/backends/supervision/processes.ts";
+import { observeProcess } from "../../engine/backends/supervision/processes.ts";
 import { dirname, join } from "node:path";
 import test, { type TestContext } from "node:test";
 import { fauxAssistantMessage } from "@earendil-works/pi-ai";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
-import { importLegacyConversation } from "../../rewrite/engine/migration/session.ts";
+import { importLegacyConversation } from "../../engine/migration/session.ts";
 import {
   canonicalJson,
   type ArtifactPort,
   type CallerAuthority,
   type FrozenWorker,
-} from "../../rewrite/engine/contracts/index.ts";
-import {
-  convertConfig,
-  convertDefinition,
-  convertJob,
-} from "../../rewrite/engine/migration/convert.ts";
-import { inspectLegacyRun } from "../../rewrite/engine/migration/read.ts";
+} from "../../engine/contracts/index.ts";
+import { convertConfig, convertDefinition, convertJob } from "../../engine/migration/convert.ts";
+import { inspectLegacyRun } from "../../engine/migration/read.ts";
 import {
   importLegacyRun,
   migrationManifestSchema,
   planLegacyMigration,
-} from "../../rewrite/engine/migration/index.ts";
-import { Runtime } from "../../rewrite/engine/runtime/index.ts";
-import { digestBytes } from "../../rewrite/engine/storage/io.ts";
+} from "../../engine/migration/index.ts";
+import { Runtime } from "../../engine/runtime/index.ts";
+import { digestBytes } from "../../engine/storage/io.ts";
 
 const zeroUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: 0 };
 const legacyDefinition = {

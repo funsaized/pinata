@@ -1,7 +1,10 @@
 # Relay reference
 
-The exercise contract is in the starter's REQUIREMENTS.md. The example job assigns parser,
-summarizer, renderer and CLI responsibilities, plus optional review assignments. Shared
-workspace is explicit; dependencies order work without requiring approval. Run the
-project's own `node --test` and `node verify.mjs` from the coordinator. No automatic
-engine check or verification policy is implied by execution completion.
+Relay's task contract is [REQUIREMENTS.md](../../examples/relay/starter/REQUIREMENTS.md).
+The [job](../../examples/relay/job.json) selects ordinary shared workers and immutable
+dependency ordering. The exact report oracle is
+[expected-report.md](../../examples/relay/expected-report.md), checked by
+[verify.mjs](../../examples/relay/verify.mjs).
+
+See [the tutorial](../tutorials/relay.md) for setup, model selection, execution and
+coordinator checks. Neither a reviewer assignment nor exit 0 certifies correctness.

@@ -1,13 +1,22 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { appendFile, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
+import {
+  appendFile,
+  mkdtemp,
+  readFile,
+  readdir,
+  realpath,
+  rename,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
-import { digestValue } from "../../rewrite/engine/contracts/digest.ts";
-import { DurableStore, inspectStore, reconcileStore } from "../../rewrite/engine/storage/index.ts";
+import { digestValue } from "../../engine/contracts/digest.ts";
+import { DurableStore, inspectStore, reconcileStore } from "../../engine/storage/index.ts";
 
 async function temporaryStore(t: TestContext): Promise<string> {
   const directory = await realpath(await mkdtemp(join(tmpdir(), "pinata-rewrite-storage-")));
@@ -610,6 +619,77 @@ test("rewrite store: retrying existing artifact bytes resyncs their file and dir
     assert.deepEqual(await readFile(join(directory, "artifacts", reference.digest)), bytes);
     await assert.rejects(retry.close(), { code: "commit_unknown" });
     assert.equal((await inspectStore(directory)).frames.length, 0);
+  }
+});
+
+test("rewrite store: repeated bytes reuse only this owner's completed durable publication", async (t) => {
+  const directory = await temporaryStore(t);
+  const phases: string[] = [];
+  const store = await DurableStore.open({
+    directory,
+    manifest: manifest(directory),
+    fault: (point) => {
+      phases.push(point);
+    },
+  });
+  const bytes = Buffer.from("repeated immutable workspace bytes");
+  try {
+    const artifacts = await Promise.all(Array.from({ length: 8 }, () => store.putArtifact(bytes)));
+    const first = artifacts[0];
+    assert(first);
+    for (const artifact of artifacts) assert.deepEqual(artifact, first);
+    assert.equal(phases.filter((point) => point === "artifact.sync.after").length, 1);
+    assert.equal(phases.filter((point) => point === "artifact.directory-sync.after").length, 1);
+    first.size = 0;
+    const repeated = await store.putArtifact(bytes);
+    assert.equal(repeated.size, bytes.length);
+    assert.deepEqual(await store.readArtifact(repeated), bytes);
+    await store.append({ ...entry(), artifacts: [repeated] });
+    assert.equal((await inspectStore(directory)).frames.length, 1);
+  } finally {
+    await store.close();
+  }
+});
+
+test("rewrite store: repeated durable bytes detect same-size artifact edits and replacements", async (t) => {
+  for (const replace of [false, true]) {
+    const directory = await temporaryStore(t);
+    const store = await DurableStore.open({ directory, manifest: manifest(directory) });
+    const bytes = Buffer.from("immutable workspace bytes");
+    const artifact = await store.putArtifact(bytes);
+    const path = join(directory, "artifacts", artifact.digest);
+    const replacement = join(directory, "same-size-replacement");
+    await writeFile(replace ? replacement : path, Buffer.alloc(bytes.length));
+    if (replace) await rename(replacement, path);
+    await assert.rejects(store.readArtifact(artifact), { code: "conflict" });
+    await assert.rejects(store.append({ ...entry(), artifacts: [artifact] }), { code: "conflict" });
+    await assert.rejects(store.putArtifact(bytes), { code: "commit_unknown" });
+    await assert.rejects(store.append(entry()), { code: "commit_unknown" });
+    assert.equal((await inspectStore(directory)).frames.length, 0);
+    await assert.rejects(store.close(), { code: "commit_unknown" });
+  }
+});
+
+test("rewrite store: same-byte artifact replacement requires a new durability sync", async (t) => {
+  const directory = await temporaryStore(t);
+  let artifactSyncs = 0;
+  const store = await DurableStore.open({
+    directory,
+    manifest: manifest(directory),
+    fault: (point) => {
+      if (point === "artifact.sync.after") artifactSyncs++;
+    },
+  });
+  try {
+    const bytes = Buffer.from("identical replacement bytes");
+    const artifact = await store.putArtifact(bytes);
+    const replacement = join(directory, "same-byte-replacement");
+    await writeFile(replacement, bytes);
+    await rename(replacement, join(directory, "artifacts", artifact.digest));
+    assert.deepEqual(await store.putArtifact(bytes), artifact);
+    assert.equal(artifactSyncs, 2);
+  } finally {
+    await store.close();
   }
 });
 

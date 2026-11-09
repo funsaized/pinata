@@ -1,3 +1,4 @@
+import type { SchedulingOptions } from "../../engine/schedules/index.ts";
 import assert from "node:assert/strict";
 import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -17,22 +18,22 @@ import {
   type SessionCheckpoint,
   type WorkspacePort,
   type WorkspaceRequest,
-} from "../../rewrite/engine/contracts/backend.ts";
+} from "../../engine/contracts/backend.ts";
 import {
   assignmentKey,
   type AssignmentRef,
   type CallerAuthority,
   type Grants,
   type ArtifactRef,
-} from "../../rewrite/engine/contracts/common.ts";
-import type { CommandReceipt, Transition } from "../../rewrite/engine/contracts/lifecycle.ts";
-import { digestValue } from "../../rewrite/engine/contracts/digest.ts";
+} from "../../engine/contracts/common.ts";
 import {
-  Runtime,
-  type NotificationPort,
-  type WorkerResolver,
-} from "../../rewrite/engine/runtime/index.ts";
-import { DurableStore } from "../../rewrite/engine/storage/index.ts";
+  transitionArtifacts,
+  type CommandReceipt,
+  type Transition,
+} from "../../engine/contracts/lifecycle.ts";
+import { digestValue } from "../../engine/contracts/digest.ts";
+import { Runtime, type NotificationPort, type WorkerResolver } from "../../engine/runtime/index.ts";
+import { DurableStore } from "../../engine/storage/index.ts";
 
 const grants: Grants = {
   access: "write",
@@ -85,6 +86,7 @@ class ScriptedBackend implements BackendPort {
     steer: true,
     continuation: true,
     conversationSeed: false,
+    delegation: true,
     surviving: false,
     cleanup: "confirmed" as const,
   };
@@ -327,24 +329,46 @@ class ScriptedWorkspace implements WorkspacePort {
 
 async function world(
   t: TestContext,
-  configuration: { execution?: boolean; notifications?: NotificationPort } = {},
+  configuration: {
+    access?: "read" | "write";
+    execution?: boolean;
+    notifications?: NotificationPort;
+    grants?: Grants;
+    scheduling?: SchedulingOptions;
+  } = {},
 ) {
   const directory = await realpath(await mkdtemp(join(tmpdir(), "pinata-rewrite-execution-")));
   const backend = new ScriptedBackend();
   const workspace = new ScriptedWorkspace(directory);
   const resolveWorkers: WorkerResolver = async (requests, _caller, artifacts) => {
     const definition = await artifacts.putArtifact(Buffer.from("Fixture: no paid provider calls"));
+    const resolvedGrants = configuration.grants ? _caller.grants : grants;
+    const access = configuration.access ?? resolvedGrants.access;
+    const tools = access === "read" ? ["read"] : resolvedGrants.tools;
     return requests.map((request) => ({
       id: request.id,
       agent: request.agent,
       definition,
       fallbacks: [],
-      tools: ["read", "write"],
-      access: "write",
+      tools,
+      access,
       workspace: request.workspace ?? "shared",
+      ...(request.observeWorkspace !== undefined
+        ? { observeWorkspace: request.observeWorkspace }
+        : {}),
       backend: request.backend ?? "in-process",
       lifetime: request.lifetime ?? "attached",
-      grants,
+      grants: {
+        ...resolvedGrants,
+        access,
+        tools,
+        delegation: {
+          ...resolvedGrants.delegation,
+          maxDepth: configuration.grants
+            ? (request.delegation?.maxDepth ?? resolvedGrants.delegation.maxDepth)
+            : resolvedGrants.delegation.maxDepth,
+        },
+      },
       depth: 0,
     }));
   };
@@ -353,6 +377,7 @@ async function world(
     resolveWorkers,
     execution: { backends: { "in-process": backend }, workspace },
     notifications: configuration.notifications,
+    scheduling: configuration.scheduling,
   };
   let runtime = await Runtime.open({
     ...options,
@@ -731,6 +756,7 @@ test(
     );
     const result = await fixture.runtime.wait({}, caller);
     assert.equal(result.results[0].execution.phase, "ended");
+    assert.equal(result.results[0].execution.reason, "cancelled");
     assert.equal(result.results[0].usage.total?.input, 0);
     assert.equal(fixture.backend.launches.length, 0);
   },
@@ -1376,6 +1402,238 @@ test(
   },
 );
 
+for (const [access, workspace] of [
+  ["read", "shared"],
+  ["write", "shared"],
+  ["read", "worktree"],
+  ["write", "worktree"],
+] as const) {
+  test(`automatic workspace capture respects ${access} access in ${workspace} mode`, async (t) => {
+    const fixture = await world(t, { access });
+    accepted(
+      await fixture.runtime.execute(
+        {
+          requestId: "create",
+          command: { kind: "create", workers: [{ ...worker("base"), workspace }] },
+        },
+        caller,
+      ),
+    );
+    const run = await fixture.backend.waitStarted(ref("base"));
+    const transcript = await run.launch.artifacts.put(Buffer.from("Retained reader transcript"));
+    const outcome: BackendOutcome = {
+      reason: "completed",
+      summary: "Completed worker report",
+      artifacts: [transcript],
+      transcript,
+      usage: { expectedAttempts: [run.launch.attemptId], observations: [], complete: false },
+    };
+    run.outcome = outcome;
+    run.done.resolve(outcome);
+    const result = (await fixture.runtime.wait({}, caller)).results[0];
+    const shouldCapture = workspace === "worktree" || access === "write";
+    assert.equal(fixture.workspace.captured.length, shouldCapture ? 1 : 0);
+    assert.equal(result.summary, outcome.summary);
+    assert.deepEqual(result.transcript, transcript);
+    assert(result.session);
+    assert(result.artifacts.some((artifact) => artifact.digest === transcript.digest));
+    assert.deepEqual(result.execution, {
+      phase: "ended",
+      reason: "completed",
+      cleanup: "confirmed",
+    });
+    const state = await fixture.status();
+    assert(state.attempts[run.launch.attemptId].prepared);
+    assert.deepEqual(state.attempts[run.launch.attemptId].outcome, outcome);
+    assert.equal(Object.hasOwn(state.effects, `${run.launch.attemptId}/capture`), shouldCapture);
+    if (!shouldCapture) {
+      assert.equal(result.snapshot, undefined);
+      assert.deepEqual(await fixture.runtime.query({ kind: "changes", ref: ref("base") }, caller), {
+        kind: "changes",
+        ref: ref("base"),
+        source: "unavailable",
+        changes: [],
+      });
+    }
+    await fixture.runtime.close();
+    assert.deepEqual(fixture.workspace.released, [assignmentKey(ref("base"))]);
+    assert.equal(fixture.workspace.leases.size, 0);
+  });
+}
+
+test("an explicit shared reader observation is retained and inherited by follow-ups after reopen", async (t) => {
+  const fixture = await world(t, { access: "read" });
+  fixture.workspace.prepareHook = async (request) => {
+    const manifest = await request.artifacts.put(
+      Buffer.from(
+        JSON.stringify({
+          schemaVersion: 1,
+          entries: [],
+          observation: {
+            startedAt: "2026-11-08T00:00:00.000Z",
+            endedAt: "2026-11-08T00:00:00.000Z",
+            fingerprint: digestValue({ entries: [], repository: null }),
+            status: "stable",
+            scope: ["fixture checkout"],
+          },
+        }),
+      ),
+    );
+    fixture.workspace.captureSnapshot = await request.artifacts.put(
+      Buffer.from(
+        JSON.stringify({
+          schemaVersion: 1,
+          kind: "workspace-snapshot",
+          ref: request.ref,
+          mode: "shared",
+          root: fixture.directory,
+          base: manifest,
+          manifest,
+        }),
+      ),
+    );
+  };
+  accepted(
+    await fixture.runtime.execute(
+      {
+        requestId: "create",
+        command: { kind: "create", workers: [{ ...worker("base"), observeWorkspace: true }] },
+      },
+      caller,
+    ),
+  );
+  for (const assignment of [1, 2]) {
+    if (assignment === 2) {
+      await fixture.reopen();
+      accepted(
+        await fixture.runtime.execute(
+          {
+            requestId: "follow",
+            command: {
+              kind: "follow_up",
+              worker: "base",
+              messageId: "next",
+              text: "Observe again",
+            },
+          },
+          caller,
+        ),
+      );
+    }
+    const target = ref("base", assignment);
+    await fixture.backend.complete(target);
+    await fixture.runtime.wait({ targets: [target] }, caller);
+    const changes = await fixture.runtime.query({ kind: "changes", ref: target }, caller);
+    assert.equal(changes.kind, "changes");
+    if (changes.kind !== "changes") throw new Error("Expected retained changes");
+    assert.equal(changes.source, "snapshot");
+    assert.deepEqual(changes.snapshot, fixture.workspace.captureSnapshot);
+    assert.equal((await fixture.status()).workers.base.observeWorkspace, true);
+  }
+  assert.equal(fixture.workspace.captured.length, 2);
+});
+
+test("cancelling a shared reader preserves its session and cleanup without inventing a checkout observation", async (t) => {
+  const fixture = await world(t, { access: "read" });
+  accepted(
+    await fixture.runtime.execute(
+      { requestId: "create", command: { kind: "create", workers: [worker("base")] } },
+      caller,
+    ),
+  );
+  const run = await fixture.backend.waitStarted(ref("base"));
+  accepted(
+    await fixture.runtime.execute(
+      {
+        requestId: "cancel",
+        command: { kind: "cancel", scope: "worker", worker: "base" },
+      },
+      caller,
+    ),
+  );
+  const result = (await fixture.runtime.wait({}, caller)).results[0];
+  assert.deepEqual(result.execution, { phase: "ended", reason: "cancelled", cleanup: "confirmed" });
+  assert(result.session);
+  assert.equal(result.snapshot, undefined);
+  assert.equal(fixture.workspace.captured.length, 0);
+  assert.equal(
+    Object.hasOwn((await fixture.status()).effects, `${run.launch.attemptId}/capture`),
+    false,
+  );
+  await fixture.runtime.close();
+  assert.equal(fixture.workspace.leases.size, 0);
+});
+
+test("recovery completes a shared reader's previously journaled capture intent", async (t) => {
+  const fixture = await world(t, { access: "read", execution: false });
+  accepted(
+    await fixture.runtime.execute(
+      { requestId: "create", command: { kind: "create", workers: [worker("base")] } },
+      caller,
+    ),
+  );
+  await fixture.runtime.close();
+  const store = await DurableStore.open({ directory: fixture.directory });
+  const attemptId = `${assignmentKey(ref("base"))}/attempt/1`;
+  const ownerEpoch = store.owner.epoch;
+  const identity: BackendIdentity = { id: "stopped-reader", kind: "in-process", ownerEpoch };
+  const evidence = await store.putArtifact(Buffer.from("Retained stopped reader evidence"));
+  const prepared: PreparedWorkspace = {
+    identity: assignmentKey(ref("base")),
+    cwd: fixture.directory,
+    artifacts: [evidence],
+    lease: { id: assignmentKey(ref("base")), workspace: fixture.directory },
+  };
+  fixture.workspace.leases.add(prepared.identity);
+  const outcome: BackendOutcome = {
+    reason: "completed",
+    summary: "Reader completed before capture interruption",
+    artifacts: [evidence],
+    usage: { expectedAttempts: [attemptId], observations: [], complete: false },
+  };
+  const artifact = await store.putArtifact(Buffer.from(JSON.stringify(outcome)));
+  const transitions: Transition[] = [
+    { kind: "assignment_state", ref: ref("base"), execution: { phase: "preparing" } },
+    {
+      kind: "attempt_started",
+      attempt: { id: attemptId, ref: ref("base"), ordinal: 1, backend: "in-process", ownerEpoch },
+    },
+    { kind: "workspace_prepared", attemptId, prepared },
+    {
+      kind: "effect_intent",
+      effect: { id: `${attemptId}/launch`, ref: ref("base"), kind: "launch" },
+    },
+    { kind: "backend_enrolled", attemptId, identity, evidence: [evidence] },
+    { kind: "attempt_outcome", attemptId, outcome, artifact },
+    { kind: "assignment_state", ref: ref("base"), execution: { phase: "finalizing" } },
+    {
+      kind: "cleanup_observed",
+      attemptId,
+      receipt: { status: "stopped", ownerEpoch, identities: [identity.id], evidence: [evidence] },
+    },
+    {
+      kind: "effect_intent",
+      effect: { id: `${attemptId}/capture`, ref: ref("base"), kind: "capture" },
+    },
+  ];
+  for (const [index, transition] of transitions.entries())
+    await store.append({
+      requestId: `reader-capture-${index}`,
+      payloadDigest: digestValue(transition),
+      transition,
+      artifacts: transitionArtifacts(transition),
+    });
+  await store.close();
+  await fixture.reopen();
+  assert.equal((await fixture.runtime.recover({}, caller))[0].status, "finalizing");
+  const result = (await fixture.runtime.wait({}, caller)).results[0];
+  assert.equal(result.summary, outcome.summary);
+  assert.equal(fixture.workspace.captured.length, 1);
+  assert.equal((await fixture.status()).effects[`${attemptId}/capture`].status, "completed");
+  await fixture.runtime.close();
+  assert.equal(fixture.workspace.leases.size, 0);
+});
+
 test(
   "workspace checkpoint diagnostics keep the completed result and usable snapshot visible",
   { timeout: 10_000 },
@@ -1633,5 +1891,279 @@ test(
     await fixture.reopen();
     assert.deepEqual(fixture.workspace.released, [prepared.identity]);
     assert.equal(Object.keys((await fixture.status()).outbox).length, 1);
+  },
+);
+
+test(
+  "capacity changes preserve active work and pump queued workers in acceptance order",
+  { timeout: 10_000 },
+  async (t) => {
+    const fixture = await world(t);
+    accepted(
+      await fixture.runtime.execute(
+        {
+          requestId: "create",
+          command: {
+            kind: "create",
+            workers: [worker("a"), worker("b"), worker("c"), worker("d")],
+            config: { execution: { maxConcurrent: 1 } },
+          },
+        },
+        caller,
+      ),
+    );
+    await fixture.backend.waitStarted(ref("a"));
+    assert.equal(fixture.backend.launches.length, 1);
+    accepted(
+      await fixture.runtime.execute(
+        { requestId: "raise", command: { kind: "capacity", maxConcurrent: 2 } },
+        caller,
+      ),
+    );
+    await fixture.backend.waitStarted(ref("b"));
+    accepted(
+      await fixture.runtime.execute(
+        { requestId: "lower", command: { kind: "capacity", maxConcurrent: 1 } },
+        caller,
+      ),
+    );
+    await fixture.backend.complete(ref("a"));
+    await fixture.runtime.wait({ workers: ["a"] }, caller);
+    assert.equal(fixture.backend.launches.length, 2);
+    assert.equal(fixture.backend.runs.get(assignmentKey(ref("b")))?.stopCount, 0);
+    accepted(
+      await fixture.runtime.execute(
+        { requestId: "unbounded", command: { kind: "capacity", maxConcurrent: null } },
+        caller,
+      ),
+    );
+    await fixture.backend.waitStarted(ref("d"));
+    assert.deepEqual(
+      fixture.backend.launches.map((launch) => launch.ref.worker),
+      ["a", "b", "c", "d"],
+    );
+    for (const id of ["b", "c", "d"]) await fixture.backend.complete(ref(id));
+    await fixture.runtime.wait({}, caller);
+  },
+);
+
+const nestedGrants: Grants = {
+  ...grants,
+  delegation: {
+    maxDepth: 2,
+    agents: ["fixture"],
+    tools: grants.tools,
+    workspaces: grants.workspaces,
+  },
+};
+const nestedCaller: CallerAuthority = { ...caller, grants: nestedGrants };
+
+test(
+  "capacity-one child wait yields and parent completion preserves children and idle notices",
+  { timeout: 10_000 },
+  async (t) => {
+    const fixture = await world(t, { grants: nestedGrants });
+    accepted(
+      await fixture.runtime.execute(
+        {
+          requestId: "create",
+          command: {
+            kind: "create",
+            workers: [worker("parent")],
+            config: { execution: { maxConcurrent: 1 } },
+          },
+        },
+        nestedCaller,
+      ),
+    );
+    await fixture.backend.waitStarted(ref("parent"));
+    const children = fixture.runtime.bindChild(ref("parent"));
+    accepted(
+      await children.execute({
+        requestId: "spawn",
+        command: { kind: "add", workers: [worker("child")] },
+      }),
+    );
+    const blocked = await children.wait({});
+    assert.equal(blocked.status, "capacity_blocked");
+    assert.match(blocked.guidance ?? "", /finish this parent/);
+    assert.equal(fixture.backend.launches.length, 1);
+    await fixture.backend.complete(ref("parent"));
+    await fixture.backend.waitStarted(ref("child"));
+    await fixture.backend.complete(ref("child"));
+    const result = await fixture.runtime.wait({}, caller);
+    assert.equal(result.results.length, 2);
+    assert.equal(
+      result.results.reduce((total, item) => total + (item.usage.total?.input ?? 0), 0),
+      20,
+    );
+    const state = await fixture.status();
+    assert.equal(state.workers.child.depth, 1);
+    assert.deepEqual(state.workers.child.parentAssignment, ref("parent"));
+    const notice = Object.values(state.inbox).find((message) => message.kind === "notice");
+    assert.deepEqual(notice?.target, ref("parent"));
+    assert.equal(notice?.state, "recorded");
+    assert.equal(state.latest.parent, 1);
+  },
+);
+
+test(
+  "nested depth and descendant authority hold and parent cancellation reaches depth two",
+  { timeout: 10_000 },
+  async (t) => {
+    const fixture = await world(t, { grants: nestedGrants });
+    accepted(
+      await fixture.runtime.execute(
+        {
+          requestId: "create",
+          command: { kind: "create", workers: [worker("parent"), worker("sibling")] },
+        },
+        nestedCaller,
+      ),
+    );
+    await fixture.backend.waitStarted(ref("parent"));
+    await fixture.backend.waitStarted(ref("sibling"));
+    const children = fixture.runtime.bindChild(ref("parent"));
+    accepted(
+      await children.execute({
+        requestId: "spawn",
+        command: { kind: "add", workers: [worker("child")] },
+      }),
+    );
+    await fixture.backend.waitStarted(ref("child"));
+    accepted(
+      await fixture.runtime
+        .bindChild(ref("child"))
+        .execute({ requestId: "spawn", command: { kind: "add", workers: [worker("grandchild")] } }),
+    );
+    await fixture.backend.waitStarted(ref("grandchild"));
+    await assert.rejects(
+      fixture.runtime
+        .bindChild(ref("grandchild"))
+        .execute({ requestId: "spawn", command: { kind: "add", workers: [worker("too-deep")] } }),
+      /disabled/,
+    );
+    const denied = await children.execute({
+      requestId: "sibling",
+      command: { kind: "steer", worker: "sibling", messageId: "escape", text: "No" },
+    });
+    assert.equal(denied.status, "rejected");
+    await assert.rejects(
+      children.query({ kind: "result", ref: { worker: "sibling", assignment: 1 } }),
+      /outside/,
+    );
+    accepted(
+      await fixture.runtime.execute(
+        { requestId: "cancel", command: { kind: "cancel", scope: "worker", worker: "parent" } },
+        caller,
+      ),
+    );
+    await fixture.runtime.wait({ workers: ["parent", "child", "grandchild"] }, caller);
+    const state = await fixture.status();
+    for (const id of ["parent", "child", "grandchild"]) {
+      const execution = state.results[assignmentKey(ref(id))].result.execution;
+      assert.equal(execution.phase, "ended");
+      if (execution.phase === "ended") assert.equal(execution.reason, "cancelled");
+    }
+    assert.equal(state.workers.grandchild.depth, 2);
+    assert.equal(state.assignments[assignmentKey(ref("sibling"))].execution.phase, "running");
+    await fixture.backend.complete(ref("sibling"));
+    await fixture.runtime.wait({}, caller);
+  },
+);
+
+test(
+  "a child dependent on its active parent reports dependency blocking separately",
+  { timeout: 10_000 },
+  async (t) => {
+    const fixture = await world(t, { grants: nestedGrants });
+    accepted(
+      await fixture.runtime.execute(
+        { requestId: "create", command: { kind: "create", workers: [worker("parent")] } },
+        nestedCaller,
+      ),
+    );
+    await fixture.backend.waitStarted(ref("parent"));
+    const children = fixture.runtime.bindChild(ref("parent"));
+    accepted(
+      await children.execute({
+        requestId: "spawn",
+        command: { kind: "add", workers: [worker("child", ["parent"])] },
+      }),
+    );
+    assert.equal((await children.wait({})).status, "dependency_blocked");
+    await fixture.backend.complete(ref("parent"));
+    await fixture.backend.waitStarted(ref("child"));
+    await fixture.backend.complete(ref("child"));
+    await fixture.runtime.wait({}, caller);
+  },
+);
+
+test(
+  "scheduled occurrences use ordinary execution cleanup and saved worker continuation",
+  { timeout: 10_000 },
+  async (t) => {
+    let elapsed = 0;
+    const timers = new Set<() => void>();
+    const fixture = await world(t, {
+      scheduling: {
+        sessionId: "execution-session",
+        caller,
+        clock: {
+          wall: () => Date.parse("2026-11-08T00:00:00.000Z") + elapsed,
+          monotonic: () => elapsed,
+          timer: (wake) => {
+            timers.add(wake);
+            return { cancel: () => timers.delete(wake) };
+          },
+        },
+      },
+    });
+    const created = await fixture.runtime.execute(
+      {
+        requestId: "schedule-create",
+        command: {
+          kind: "schedule",
+          schedule: {
+            action: "create",
+            id: "inspection",
+            target: { template: worker("scheduled") },
+            trigger: { kind: "interval", milliseconds: 1000 },
+          },
+        },
+      },
+      caller,
+    );
+    accepted(created);
+    assert.equal(fixture.backend.launches.length, 0);
+    accepted(
+      await fixture.runtime.execute(
+        {
+          requestId: "activate",
+          command: { kind: "schedule", schedule: { action: "resume", id: "inspection" } },
+        },
+        caller,
+      ),
+    );
+    elapsed = 1000;
+    await fixture.runtime.scheduleTick();
+    const first = await fixture.backend.waitStarted(ref("scheduled"));
+    await fixture.backend.complete(ref("scheduled"));
+    await fixture.runtime.wait({}, caller);
+    elapsed = 2000;
+    await fixture.runtime.scheduleTick();
+    const second = await fixture.backend.waitStarted(ref("scheduled", 2));
+    assert(second.launch.continuation);
+    assert(second.messages.includes(first.launch.initialMessages[0].id));
+    assert.equal(fixture.workspace.released.length, 1);
+    await fixture.backend.complete(ref("scheduled", 2));
+    await fixture.runtime.wait({}, caller);
+    assert.equal(
+      Object.values((await fixture.status()).schedules.inspection.occurrences).length,
+      2,
+    );
+    await fixture.runtime.close();
+    assert.equal(fixture.workspace.released.length, 2);
+    assert.equal(timers.size, 0);
   },
 );

@@ -6,15 +6,15 @@ import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import test, { type TestContext } from "node:test";
-import { ProcessBackend } from "../../rewrite/engine/backends/process.ts";
-import { HerdrBackend, herdrCommandLine } from "../../rewrite/engine/backends/herdr.ts";
+import { ProcessBackend } from "../../engine/backends/process.ts";
+import { HerdrBackend, herdrCommandLine } from "../../engine/backends/herdr.ts";
 import {
   HerdrCommandError,
   createHerdrControl,
   insideHerdr,
   type HerdrControl,
-} from "../../rewrite/engine/backends/herdr-control.ts";
-import { processArtifacts, readCommands } from "../../rewrite/engine/backends/process-transport.ts";
+} from "../../engine/backends/herdr-control.ts";
+import { processArtifacts, readCommands } from "../../engine/backends/process-transport.ts";
 import {
   assignmentKey,
   canonicalJson,
@@ -28,9 +28,9 @@ import {
   type ObservationSource,
   type Transition,
   type WorkspacePort,
-} from "../../rewrite/engine/contracts/index.ts";
-import { Runtime } from "../../rewrite/engine/runtime/index.ts";
-import { DurableStore } from "../../rewrite/engine/storage/index.ts";
+} from "../../engine/contracts/index.ts";
+import { Runtime } from "../../engine/runtime/index.ts";
+import { DurableStore } from "../../engine/storage/index.ts";
 
 async function fixture(
   t: TestContext,

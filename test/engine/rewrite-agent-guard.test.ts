@@ -5,12 +5,12 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import test, { type TestContext } from "node:test";
 import { createWriteTool } from "@earendil-works/pi-coding-agent";
-import { frozenWorkerSchema, digestValue } from "../../rewrite/engine/contracts/index.ts";
+import { frozenWorkerSchema, digestValue } from "../../engine/contracts/index.ts";
 import {
   guardToolCall,
   validateWriteTarget,
   writePathSyntaxError,
-} from "../../rewrite/engine/agent/guard.ts";
+} from "../../engine/agent/guard.ts";
 
 async function fixture(t: TestContext) {
   const directory = await mkdtemp(join(tmpdir(), "pinata-rewrite-guard-"));

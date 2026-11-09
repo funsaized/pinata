@@ -1,82 +1,163 @@
-// Working files live outside the repository; journals and dependency caches stay in .git.
-import { createHash } from "node:crypto";
-import { realpath } from "node:fs/promises";
-import { homedir } from "node:os";
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { git, line } from "./git.ts";
+import { lstat, readFile, realpath } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
+import { DomainError, type RepositoryObservation } from "../contracts/index.ts";
+import { digestBytes, isMissing } from "../storage/io.ts";
+import { GitCommands, gitLine } from "./git.ts";
+import { canonicalWorkspace } from "./paths.ts";
 
-export function defaultWorktreeRoot(
-  platform = process.platform,
-  env = process.env,
-  home = homedir(),
-): string {
-  if (platform === "win32")
-    return join(env.LOCALAPPDATA || join(home, "AppData", "Local"), "pinata", "worktrees");
-  if (platform === "darwin")
-    return join(home, "Library", "Application Support", "pinata", "worktrees");
-  const data = env.XDG_DATA_HOME;
-  return join(
-    data && isAbsolute(data) ? data : join(home, ".local", "share"),
-    "pinata",
-    "worktrees",
-  );
-}
+export type WorkspaceStoreLocation = {
+  root: string;
+  store: string;
+  repositoryRoot?: string;
+  gitDirectory?: string;
+  commonDirectory?: string;
+};
 
-// Resolve existing ancestors too, so a symlink cannot hide a location inside .git.
-async function canonical(path: string): Promise<string> {
-  try {
-    return await realpath(path);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    const parent = dirname(path);
-    if (parent === path) throw error;
-    return join(await canonical(parent), basename(path));
+// Bootstrap needs a store before supervised Git can retain its own evidence.
+// Git's on-disk gitdir/commondir pointers provide that location without spawning
+// a process or evaluating repository configuration. Execution revalidates Git.
+export async function discoverWorkspaceStore(path: string): Promise<WorkspaceStoreLocation> {
+  const root = await canonicalWorkspace(path);
+  let current = root;
+  while (true) {
+    const marker = join(current, ".git");
+    let present = false;
+    try {
+      await lstat(marker);
+      present = true;
+    } catch (error) {
+      if (!isMissing(error)) throw error;
+    }
+    if (present) {
+      const canonicalMarker = await realpath(marker);
+      const state = await lstat(canonicalMarker);
+      let gitDirectory: string;
+      if (state.isDirectory()) gitDirectory = canonicalMarker;
+      else {
+        if (!state.isFile())
+          throw new DomainError("invalid_input", "Git marker is not a regular file or directory");
+        const pointer = (await readFile(canonicalMarker, "utf8")).trim();
+        if (!/^gitdir: [^\r\n]+$/.test(pointer) || pointer.includes("\0"))
+          throw new DomainError("invalid_input", "Git marker has an invalid gitdir pointer");
+        gitDirectory = await canonicalWorkspace(resolve(current, pointer.slice(8)));
+      }
+      let commonDirectory = gitDirectory;
+      let commonPointer: string | undefined;
+      try {
+        const commonPath = join(gitDirectory, "commondir");
+        if (!(await lstat(commonPath)).isFile())
+          throw new DomainError("invalid_input", "Git commondir pointer is not a regular file");
+        commonPointer = (await readFile(commonPath, "utf8")).trim();
+      } catch (error) {
+        if (!isMissing(error)) throw error;
+      }
+      if (commonPointer !== undefined) {
+        if (!commonPointer || /[\r\n]/.test(commonPointer) || commonPointer.includes("\0"))
+          throw new DomainError("invalid_input", "Git commondir pointer is invalid");
+        commonDirectory = await canonicalWorkspace(resolve(gitDirectory, commonPointer));
+      }
+      let complete = false;
+      try {
+        complete =
+          (await lstat(join(gitDirectory, "HEAD"))).isFile() &&
+          (await lstat(join(commonDirectory, "objects"))).isDirectory();
+      } catch (error) {
+        if (!isMissing(error)) throw error;
+      }
+      if (!complete && current !== root && state.isDirectory() && commonPointer === undefined) {
+        // Git ignores incomplete directory markers while walking ancestors.
+        // Explicit gitdir/commondir pointers remain strict, including broken ones.
+        const parent = dirname(current);
+        if (parent === current) return { root, store: join(root, ".pinata", "runs") };
+        current = parent;
+        continue;
+      }
+      if (!complete)
+        throw new DomainError(
+          "invalid_input",
+          "Git marker does not identify a complete repository layout",
+        );
+      return {
+        root,
+        store: join(commonDirectory, "pinata", "runs"),
+        repositoryRoot: current,
+        gitDirectory,
+        commonDirectory,
+      };
+    }
+    const parent = dirname(current);
+    if (parent === current) return { root, store: join(root, ".pinata", "runs") };
+    current = parent;
   }
 }
 
-function inside(root: string, path: string): boolean {
-  const rel = relative(root, path);
-  return !rel || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
-}
-
-function hasGitSegment(path: string): boolean {
-  return path.split(sep).some((part) => part.toLowerCase() === ".git");
-}
-
-// Resolve once at run creation and persist the resulting paths. Configuration changes must
-// never relocate an in-flight run. Linked checkouts share the same repository identity.
-export async function worktreeRunRoot(
-  repo: string,
-  runId: string,
-  configured?: string,
-): Promise<string> {
-  if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(runId)) throw new Error("Invalid worktree run id");
-  let root = configured ?? defaultWorktreeRoot();
-  if (root === "~") root = homedir();
-  else if (root.startsWith("~/") || root.startsWith("~\\")) root = join(homedir(), root.slice(2));
-  root = resolve(repo, root);
-  const lexical = root;
-  root = await canonical(root);
-  const common = await realpath(
-    line(await git(repo, ["rev-parse", "--path-format=absolute", "--git-common-dir"])),
-  );
-  // Check every registered checkout, including the main checkout when invoked from a
-  // linked one. External worktrees must not become files of another checkout.
-  const checkouts = (await git(repo, ["worktree", "list", "--porcelain", "-z"]))
-    .split("\0")
-    .filter((entry) => entry.startsWith("worktree "))
-    .map((entry) => entry.slice(9));
-  if (
-    hasGitSegment(lexical) ||
-    hasGitSegment(root) ||
-    inside(common, root) ||
-    (await Promise.all(checkouts.map(async (path) => inside(await canonical(path), root)))).some(
-      Boolean,
-    )
-  )
-    throw new Error(
-      "worktreeRoot must be outside repository checkouts and Git metadata directories",
+export async function repository(
+  cwd: string,
+  git: GitCommands,
+  signal?: AbortSignal,
+): Promise<RepositoryObservation | undefined> {
+  const found = await git.run(cwd, ["rev-parse", "--show-toplevel"], {
+    signal,
+    allowFailure: true,
+  });
+  if (found.code !== 0) {
+    if (/not a git repository/i.test(found.stderr)) return undefined;
+    throw new DomainError(
+      "invalid_input",
+      `Cannot inspect the Git checkout (exit ${found.code}${found.signal ? `, signal ${found.signal}` : ""}): ${found.stderr.trim()}`,
     );
-  const identity = createHash("sha256").update(common).digest("hex").slice(0, 16);
-  return join(root, identity, runId);
+  }
+  const root = await canonicalWorkspace(gitLine(found.stdout));
+  const commonDirectory = await realpath(
+    resolve(
+      cwd,
+      gitLine((await git.run(cwd, ["rev-parse", "--git-common-dir"], { signal })).stdout),
+    ),
+  );
+  const gitDirectory = await realpath(
+    resolve(cwd, gitLine((await git.run(cwd, ["rev-parse", "--git-dir"], { signal })).stdout)),
+  );
+  const objectFormat = gitLine(
+    (await git.run(cwd, ["rev-parse", "--show-object-format"], { signal })).stdout,
+  );
+  if (objectFormat !== "sha1" && objectFormat !== "sha256")
+    throw new DomainError("unsupported", `Unsupported Git object format ${objectFormat}`);
+  const headReply = await git.run(cwd, ["rev-parse", "--verify", "HEAD"], {
+    signal,
+    allowFailure: true,
+  });
+  const branchReply = await git.run(cwd, ["symbolic-ref", "--quiet", "HEAD"], {
+    signal,
+    allowFailure: true,
+  });
+  let indexDigest: string | null;
+  try {
+    indexDigest = digestBytes(await readFile(join(gitDirectory, "index")));
+  } catch (error) {
+    if (!isMissing(error)) throw error;
+    indexDigest = null;
+  }
+  return {
+    root,
+    commonDirectory,
+    gitDirectory,
+    objectFormat,
+    head: headReply.code === 0 ? gitLine(headReply.stdout) : null,
+    branch: branchReply.code === 0 ? gitLine(branchReply.stdout) : null,
+    indexDigest,
+  };
+}
+
+export async function workspaceStore(
+  root: string,
+  git: GitCommands,
+  signal?: AbortSignal,
+): Promise<{ root: string; store: string; repository?: RepositoryObservation }> {
+  const canonical = await canonicalWorkspace(root);
+  const repo = await repository(canonical, git, signal);
+  return {
+    root: canonical,
+    store: repo ? join(repo.commonDirectory, "pinata", "runs") : join(canonical, ".pinata", "runs"),
+    ...(repo ? { repository: repo } : {}),
+  };
 }

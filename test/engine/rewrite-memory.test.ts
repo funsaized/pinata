@@ -3,9 +3,9 @@ import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { MemoryStore } from "../../rewrite/engine/memory/index.ts";
-import type { FrozenWorker } from "../../rewrite/engine/contracts/commands.ts";
-import { digestValue } from "../../rewrite/engine/contracts/digest.ts";
+import { MemoryStore } from "../../engine/memory/index.ts";
+import type { FrozenWorker } from "../../engine/contracts/commands.ts";
+import { digestValue } from "../../engine/contracts/digest.ts";
 
 function worker(
   scope: "none" | "worker" | "project-agent" = "worker",

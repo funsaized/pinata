@@ -2,20 +2,21 @@ import assert from "node:assert/strict";
 import { readFile, readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
-import { createApplicationPort } from "../../rewrite/engine/application/runtime.ts";
-import { type ApplicationReceipt } from "../../rewrite/engine/contracts/application.ts";
+import { createApplicationPort } from "../../engine/application/runtime.ts";
+import { type ApplicationReceipt } from "../../engine/contracts/application.ts";
 import {
   type BackendPort,
   type CleanupReceipt,
   type WorkspacePort,
-} from "../../rewrite/engine/contracts/backend.ts";
-import { type CallerAuthority } from "../../rewrite/engine/contracts/common.ts";
+} from "../../engine/contracts/backend.ts";
+import { type CallerAuthority } from "../../engine/contracts/common.ts";
 import {
   Runtime,
   type RuntimeApplicationPort,
   type WorkerResolver,
-} from "../../rewrite/engine/runtime/index.ts";
+} from "../../engine/runtime/index.ts";
 import { applicationFixture } from "./rewrite-application-fixture.ts";
+import { openSavedSource } from "../../engine/sources/saved.ts";
 
 const caller: CallerAuthority = {
   id: "coordinator",
@@ -160,6 +161,7 @@ async function fixture(t: TestContext, port?: RuntimeApplicationPort) {
   return {
     ...f,
     snapshot,
+    runtimeDirectory: directory,
     get runtime() {
       return runtime;
     },
@@ -196,6 +198,27 @@ test("runtime application and rollback use durable receipts and expose exact imm
   assert.equal(applied.operation?.status, "completed", JSON.stringify(applied));
   assert.equal(applied.operation.receipt?.status, "applied");
   assert.equal(await readFile(join(f.root, "file.txt"), "utf8"), "changed\n");
+  const saved = await openSavedSource(f.runtimeDirectory);
+  assert.deepEqual(await saved.request({ method: "query", input: { kind: "changes", ref } }), {
+    status: "ok",
+    response: { method: "query", result: changes },
+  });
+  assert.deepEqual(
+    await saved.request({
+      method: "query",
+      input: { kind: "application", operationId: receipt.operationId },
+    }),
+    { status: "ok", response: { method: "query", result: applied } },
+  );
+  assert.equal(
+    (
+      await saved.request({
+        method: "query",
+        input: { kind: "changes", ref: { ...ref, worker: "missing" } },
+      })
+    ).status,
+    "error",
+  );
   await f.reopen();
   assert.deepEqual(await f.runtime.execute(request, caller), receipt);
   assert.deepEqual(

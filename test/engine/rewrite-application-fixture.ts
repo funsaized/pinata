@@ -3,18 +3,18 @@ import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, readFile, writeFile, realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ArtifactPort, CleanupReceipt } from "../../rewrite/engine/contracts/backend.ts";
-import { canonicalJson, digestValue } from "../../rewrite/engine/contracts/digest.ts";
-import type { ArtifactRef } from "../../rewrite/engine/contracts/common.ts";
+import type { ArtifactPort, CleanupReceipt } from "../../engine/contracts/backend.ts";
+import { canonicalJson, digestValue } from "../../engine/contracts/digest.ts";
+import type { ArtifactRef } from "../../engine/contracts/common.ts";
 import type {
   RepositoryObservation,
   WorkspaceEntry,
   WorkspaceManifest,
-} from "../../rewrite/engine/contracts/workspace.ts";
-import { ApplicationStore } from "../../rewrite/engine/application/index.ts";
-import { GitCommands, type GitReply } from "../../rewrite/engine/workspace/git.ts";
-import { repository } from "../../rewrite/engine/workspace/location.ts";
-import { digestBytes, type FaultHook } from "../../rewrite/engine/storage/io.ts";
+} from "../../engine/contracts/workspace.ts";
+import { ApplicationStore } from "../../engine/application/index.ts";
+import { GitCommands, type GitReply } from "../../engine/workspace/git.ts";
+import { repository } from "../../engine/workspace/location.ts";
+import { digestBytes, type FaultHook } from "../../engine/storage/io.ts";
 
 export class FixtureArtifacts implements ArtifactPort {
   readonly directory: string;

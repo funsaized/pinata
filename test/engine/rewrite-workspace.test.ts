@@ -14,16 +14,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 import { promisify } from "node:util";
-import { canonicalJson, type ArtifactPort } from "../../rewrite/engine/contracts/index.ts";
-import { digestBytes } from "../../rewrite/engine/storage/io.ts";
-import { GitCommands, gitLine, recoverGitCleanup } from "../../rewrite/engine/workspace/git.ts";
-import {
-  captureManifest,
-  readManifest,
-  writeTree,
-} from "../../rewrite/engine/workspace/capture.ts";
-import { discoverWorkspaceStore, workspaceStore } from "../../rewrite/engine/workspace/location.ts";
-import { validateManifestPath, workspacePath } from "../../rewrite/engine/workspace/paths.ts";
+import { canonicalJson, type ArtifactPort } from "../../engine/contracts/index.ts";
+import { digestBytes } from "../../engine/storage/io.ts";
+import { GitCommands, gitLine, recoverGitCleanup } from "../../engine/workspace/git.ts";
+import { captureManifest, readManifest, writeTree } from "../../engine/workspace/capture.ts";
+import { discoverWorkspaceStore, workspaceStore } from "../../engine/workspace/location.ts";
+import { validateManifestPath, workspacePath } from "../../engine/workspace/paths.ts";
 
 const posix = process.platform !== "win32";
 async function fixture(t: TestContext, gitRepository = true) {

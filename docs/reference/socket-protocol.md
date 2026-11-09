@@ -1,45 +1,27 @@
-# Socket protocol
+# Authenticated IPC
 
-Use this protocol to build a viewer that follows a run and sends steering messages.
-For the existing viewer, see [watching agents](../tutorials/watching-agents.md).
+Protocol 2 exposes the same typed surface calls and receipts as direct Runtime and
+Pi tools. The exact handshake, frame, message, credential/link and limits schemas
+are exported as `pinata.ipc-*.v2` in the [catalog](catalog.json).
 
-The socket starts with an observe-mode run or `/pinata view --external`. It stops
-once the run has finished and the last viewer has left.
+The owner binds a loopback endpoint and writes a run/server/epoch link plus separate
+viewer and control credentials. A client hello selects supported versions, run,
+server, role and token. A version mismatch produces an actionable error, not
+best-effort control. Never copy control credentials into a model prompt or child
+worker transport.
 
-## Finding it
+Requests carry transport IDs and canonical surface calls. Mutation payloads also
+carry durable request IDs, which survive a lost connection. A reply that was not
+received is uncertain; reconnect and query its receipt before retrying the same ID.
+`AttachedSource.reconnect()` resynchronizes observations and never replays mutations.
 
-`<run>/link.json` (mode 0600) holds `{v, run, socket, token, pid}`. The socket is
-`<run>/pinata.sock` (a Unix domain socket in a 0700 directory), or a private temporary
-directory when that path would be too long, or a named pipe `\\.\pipe\pinata-<run>-<random>`
-on Windows.
+Subscriptions carry revision/epoch cursors and receive a snapshot reset when needed.
+Chunked replies preserve full results. Bounded event queues and acknowledgments
+prevent a slow viewer from holding unlimited memory; a lagging subscriber receives
+a fresh authoritative snapshot. Activity can coalesce. These transport bounds do
+not end a worker or truncate its retained output.
 
-## Frames
-
-Frames are JSON objects, one per line. Send a valid `hello` for the run within
-five seconds of connecting; otherwise the server closes the connection.
-
-Client → server:
-
-| Frame                                               | Meaning                         |
-| --------------------------------------------------- | ------------------------------- |
-| `{type: "hello", v: 1, token, role: "viewer", run}` | Authenticate                    |
-| `{type: "ack", seq}`                                | Applied every event up to `seq` |
-| `{type: "messages", agent}`                         | Request an agent's conversation |
-| `{type: "steer", agent, text, as}`                  | Steer or queue a follow-up      |
-| `{type: "abort", agent}`                            | Cancel an agent                 |
-
-Server → client:
-
-| Frame                                             | Meaning                                            |
-| ------------------------------------------------- | -------------------------------------------------- |
-| `{type: "welcome", v: 1, theme, runs}`            | After a valid hello; `theme` is the parent Pi's    |
-| `{type: "snapshot", run, view}`                   | The run's whole view; follow-on events apply to it |
-| `{type: "events", events}`                        | New events, batched at most every 50 ms            |
-| `{type: "messages", agent, messages, streaming?}` | An agent's conversation (Pi messages)              |
-| `{type: "error", message}`                        | A refused frame or command                         |
-
-## Catching up
-
-When a client falls more than 1,000 events behind its last `ack`, the server sends
-a fresh `snapshot` instead of replaying the backlog. The existing `pinata view`
-client is implemented in `engine/ipc/client.ts`.
+`abort_wait` releases only the subscriber's wait. A viewer cannot mutate, recover or
+claim ownership. Saved sources are read-only. Notice delivery receipts are separate
+from model consumption and deduplicated by stable notice ID. Unknown frames,
+malformed chunks, credentials and versions are refused before dispatch.

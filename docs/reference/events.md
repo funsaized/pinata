@@ -1,18 +1,25 @@
-# Events
+# Events and observations
 
-New `events.jsonl` records use schema 2. Schema 1 remains readable as historical evidence.
-Every record has `v`, monotonic `seq`, `run`, timestamp `at`, optional worker `agent`,
-and optional numeric `assignment`. Detached sources add `{id, record}` for replay deduplication.
+`pinata.event.v3` has three variants: durable `committed` transitions, replay
+`snapshot` projections and transient `activity`. Every persisted variant is parsed
+strictly. [The generated catalog](catalog.json) contains every transition, result,
+usage, cleanup and notification field through its canonical enclosing schemas.
 
-Lifecycle events include `run_started`, `agent_queued`, `agent_started`,
-`agent_settled`, `run_resumed`, and `run_settled`. Queued events save resolved dependency
-assignment references and initial message identity. `input_recorded` saves target,
-kind, payload and message ID; `input_dispatched` records queued/handled/uncertain disposition;
-`input_consumed` references a persisted conversation entry by ID. Backend queue acceptance
-alone is never consumption evidence. `steer` provides readable guidance history.
+Revisions order committed run history; owner epochs distinguish ownership
+generations. An activity source and ordinal allow deduplication without interpreting
+text. Reattachment can reset a subscriber to a snapshot. Do not infer a missing
+transition from a gap in coalesced activity.
 
-Detailed activity uses turn, text/thinking, tool, message and retry events. Usage events
-are cumulative per assignment; aggregate usage counts each assignment once. Observe mode
-also records telemetry. Lean mode retains lifecycle, messages, consumption and usage;
-full transcripts remain on disk. Stable completion notification IDs use run/worker/assignment.
-Legacy checks, rejection and budget metadata are displayed without rewriting their claims.
+The lifecycle separately records accepted assignments, effect intent/observation,
+attempt starts, backend enrollment, input transport/consumption, saved conversations,
+usage, output, cleanup, snapshots and settlement. Application and schedule records
+have their own explicit identities. Worker-local assignment numbers never decrease.
+
+Use full assignment references as keys. Results for two assignments of the same
+worker must remain distinct. Completion notices have stable per-assignment IDs;
+transport delivery and model consumption are separate. Historical events keep their
+original version/subject and cannot establish new verification or usage coverage.
+
+Runtime subscribers are observation hooks, not an alternate mutation path. Submit
+commands through the owner and preserve request IDs. See [API hooks](api.md) and
+[IPC delivery](socket-protocol.md).

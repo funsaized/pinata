@@ -8,10 +8,10 @@ import { dirname, join, resolve } from "node:path";
 import test, { type TestContext } from "node:test";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
-import { surfaceReplySchema } from "../../rewrite/engine/contracts/index.ts";
-import { parseArguments } from "../../rewrite/engine/headless/arguments.ts";
+import { surfaceReplySchema } from "../../engine/contracts/index.ts";
+import { parseArguments } from "../../engine/headless/arguments.ts";
 
-const cli = fileURLToPath(new URL("../../rewrite/bin/pinata.mjs", import.meta.url));
+const cli = fileURLToPath(new URL("../../bin/pinata.mjs", import.meta.url));
 const factory = fileURLToPath(new URL("./fixtures/rewrite-cli-factory.ts", import.meta.url));
 const execute = promisify(execFile);
 
@@ -128,6 +128,36 @@ test("replacement CLI discovers canonical schemas, tools and definitions without
   assert.match(agents.stdout, /Read the scripted assignment/);
 });
 
+test("headless optional authority is explicit and validated before accepting a worker", async (t) => {
+  const world = await fixture(t);
+  const job = await world.job();
+  const input = JSON.parse(await readFile(job, "utf8"));
+  input.workers[0].memory = { scope: "worker", access: "write" };
+  await writeFile(job, JSON.stringify(input));
+  const denied = await invoke(["run", job, ...world.hostArgs]);
+  assert.equal(denied.code, 2, denied.stdout + denied.stderr);
+  assert.match(denied.stdout, /capability_denied/);
+  const grants = join(world.directory, "grants.json");
+  await writeFile(
+    grants,
+    JSON.stringify({
+      access: "read",
+      tools: ["read"],
+      workspaces: ["shared"],
+      inheritContext: false,
+      memory: { scope: "worker", access: "write" },
+      delegation: { maxDepth: 0, agents: [], tools: [], workspaces: [] },
+    }),
+  );
+  const allowed = await invoke(["run", job, ...world.hostArgs, "--grants", grants]);
+  assert.equal(allowed.code, 0, allowed.stdout + allowed.stderr);
+  assert.match(allowed.stdout, /Scripted CLI completion/);
+  await writeFile(grants, '{"access":"write"}');
+  const malformed = await invoke(["run", job, ...world.hostArgs, "--grants", grants]);
+  assert.equal(malformed.code, 2);
+  assert.doesNotMatch(malformed.stdout, /"status":"accepted"/);
+});
+
 test(
   "replacement finite CLI preserves canonical receipts, full results and factual exit codes",
   { timeout: 40_000 },
@@ -167,6 +197,102 @@ test(
     const invalid = join(world.directory, "invalid.json");
     await writeFile(invalid, '{"schemaVersion":4,"workers":[]}');
     assert.equal((await invoke(["run", invalid, ...world.hostArgs])).code, 2);
+  },
+);
+
+test(
+  "CLI apply and rollback expose persisted operation outcomes and preserve isolated changes",
+  { timeout: 45_000 },
+  async (t) => {
+    const world = await fixture(t);
+    await writeFile(join(world.workspace, "README.md"), "Original checkout\n");
+    for (const args of [
+      ["init", "-q"],
+      ["add", "README.md"],
+      [
+        "-c",
+        "user.name=Fixture",
+        "-c",
+        "user.email=fixture@example.invalid",
+        "-c",
+        "commit.gpgsign=false",
+        "commit",
+        "-qm",
+        "baseline",
+      ],
+    ])
+      await execute("git", ["-C", world.workspace, ...args]);
+    await writeFile(
+      join(world.definitions, "fixture.md"),
+      "---\nschemaVersion: 3\nname: fixture\nhandoffDescription: Isolated writer\ntools: [read, write]\npinata:\n  access: write\n  workspace: worktree\n---\nMake the scripted change.\n",
+    );
+    const grants = join(world.directory, "writer-grants.json");
+    await writeFile(
+      grants,
+      JSON.stringify({
+        access: "write",
+        tools: ["read", "write"],
+        workspaces: ["shared", "worktree"],
+        inheritContext: false,
+        memory: { scope: "none", access: "read" },
+        delegation: { maxDepth: 0, agents: [], tools: [], workspaces: [] },
+      }),
+    );
+    const directory = join(world.directory, "served-application");
+    const service = launch([
+      "serve",
+      await world.job("write-fixture"),
+      ...world.hostArgs,
+      "--directory",
+      directory,
+      "--grants",
+      grants,
+    ]);
+    t.after(() => stop(service.child, service.exited));
+    await until(
+      () => service.output().includes('"status":"accepted"') || service.child.exitCode !== null,
+    );
+    assert.equal(service.child.exitCode, null, service.output() + service.errors());
+    const waited = await invoke(["wait", directory, "worker"]);
+    assert.equal(waited.code, 0, waited.stdout + waited.stderr);
+    assert.equal(await readFile(join(world.workspace, "README.md"), "utf8"), "Original checkout\n");
+    const changes = await invoke(["changes", directory, "worker", "1"]);
+    assert.equal(changes.code, 0, changes.stdout + changes.stderr);
+    assert.match(changes.stdout, /README.md/);
+    const applied = await invoke([
+      "apply",
+      directory,
+      "worker",
+      "1",
+      "--destination",
+      world.workspace,
+    ]);
+    assert.equal(applied.code, 0, applied.stdout + applied.stderr);
+    const receipt = surfaceReplySchema.parse(applied.values[0]);
+    assert(
+      receipt.status === "ok" &&
+        receipt.response.method === "execute" &&
+        receipt.response.result.status === "accepted",
+    );
+    assert(receipt.response.result.operationId);
+    assert.equal(
+      await readFile(join(world.workspace, "README.md"), "utf8"),
+      "Scripted isolated change\n",
+    );
+    const undone = await invoke([
+      "rollback",
+      directory,
+      receipt.response.result.operationId,
+      "--destination",
+      world.workspace,
+    ]);
+    assert.equal(undone.code, 0, undone.stdout + undone.stderr);
+    assert.match(undone.stdout, /rolled_back/);
+    assert.equal(await readFile(join(world.workspace, "README.md"), "utf8"), "Original checkout\n");
+    await stop(service.child, service.exited);
+    const retained = await invoke(["changes", directory, "worker", "1", "--saved"]);
+    assert.equal(retained.code, 0, retained.stdout + retained.stderr);
+    assert.deepEqual(retained.values, changes.values);
   },
 );
 
@@ -243,16 +369,31 @@ test(
   { timeout: 45_000 },
   async (t) => {
     const world = await fixture(t);
-    let requests = 0;
+    let providerRequests = 0;
+    const requestPaths: Array<{
+      method: string | undefined;
+      url: string | undefined;
+      userAgent: string | undefined;
+    }> = [];
     const server = createServer(async (request, response) => {
       for await (const _bytes of request) {
         /* Drain the fixture request. */
       }
-      requests++;
+      requestPaths.push({
+        method: request.method,
+        url: request.url,
+        userAgent: request.headers["user-agent"],
+      });
+      if (request.method !== "POST" || request.url !== "/v1/chat/completions") {
+        response.writeHead(404, { "content-type": "text/plain" });
+        response.end("No fixture endpoint\n");
+        return;
+      }
+      providerRequests++;
       response.writeHead(200, { "content-type": "text/event-stream" });
       const chunk = (delta: object, finish: string | null, usage?: object) =>
         response.write(
-          `data: ${JSON.stringify({ id: `fixture-${requests}`, object: "chat.completion.chunk", created: 1, model: "fixture", choices: [{ index: 0, delta, finish_reason: finish }], ...(usage ? { usage } : {}) })}\n\n`,
+          `data: ${JSON.stringify({ id: `fixture-${providerRequests}`, object: "chat.completion.chunk", created: 1, model: "fixture", choices: [{ index: 0, delta, finish_reason: finish }], ...(usage ? { usage } : {}) })}\n\n`,
         );
       chunk({ role: "assistant", content: "Local HTTP fixture completed" }, null);
       chunk({}, "stop", { prompt_tokens: 12, completion_tokens: 5, total_tokens: 17 });
@@ -262,6 +403,12 @@ test(
     t.after(() => new Promise<void>((done) => server.close(() => done())));
     const address = server.address();
     assert(address && typeof address !== "string");
+    const probe = await fetch(`http://127.0.0.1:${address.port}/`, {
+      headers: { "user-agent": "pinata-cli-fixture-probe" },
+    });
+    assert.equal(probe.status, 404);
+    assert.equal(await probe.text(), "No fixture endpoint\n");
+    assert.equal(providerRequests, 0, JSON.stringify(requestPaths));
     await writeFile(
       join(world.agentDir, "models.json"),
       JSON.stringify({
@@ -326,7 +473,8 @@ test(
       assert.equal(result.code, 0, result.stdout + result.stderr);
       assert.match(result.stdout, /Local HTTP fixture completed/);
     }
-    assert.equal(requests, 2);
+    t.diagnostic(JSON.stringify(requestPaths));
+    assert.equal(providerRequests, 2, JSON.stringify(requestPaths));
   },
 );
 

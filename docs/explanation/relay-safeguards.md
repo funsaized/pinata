@@ -1,7 +1,10 @@
-# Relay checks
+# Relay's boundaries
 
-Relay is a coding exercise. Its `verify.mjs` and tests are ordinary project checks for
-the coordinator to run. Worker completion does not certify them. Wrong tests, failed
-checks and negative reviews stay visible for ordinary diagnosis and follow-up.
-Shared edits are delivered immediately; optional isolated patches retain conflict checks
-and journaled application. See [Relay](../tutorials/relay.md) and [trust](trust.md).
+The [Relay tutorial](../tutorials/relay.md) uses a new disposable repository and
+refuses to overwrite an existing path. Its independent verifier checks exact CLI
+output, while the coordinator decides when to run checks and accept the work.
+
+Assignments communicate file responsibilities and test intent. Those instructions
+are not an engine ownership policy or automatic review gate. Shared edits remain
+available after failed tests, and the coordinator can send targeted follow-ups.
+Scripted fixture runs validate example behavior; they do not evaluate model quality.

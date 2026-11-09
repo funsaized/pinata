@@ -1,8 +1,8 @@
 # Replacement backend transport and supervision
 
-The replacement adapters under `rewrite/engine/backends/` are disposable-run
-implementations until the package cutover. They do not import the frozen backend
-implementation. Pi sessions use the installed public `ModelRuntime.create` and
+The production adapters under `engine/backends/` use the common runtime and
+supervision contracts. They do not import the archived backend implementation.
+Pi sessions use the installed public `ModelRuntime.create` and
 `createAgentSession` APIs. Scripted provider bootstrap modules are explicit trusted
 host configuration; a model cannot select a module or grant itself capabilities.
 
@@ -15,6 +15,14 @@ second process or resend an uncertain input. The worker's command, response and
 observation files use checksummed frames, exclusive publication and file/directory synchronization.
 An input receipt records transport handling separately from the Pi checkpoint that
 proves consumption. Input retries retain the same logical message identity.
+
+Each process observation, including a text delta, is synchronized separately; the
+final outcome waits for that stream to drain. Large answers emitted in thousands
+of tiny chunks can therefore delay completion after generation ends. The final
+macOS paging-fixture diagnostics reproduced this cost. Those fixtures now use
+larger deterministic chunks while retaining the same complete answers, paging
+assertions and deadlines. This test adjustment does not improve production
+streaming throughput or change transport durability.
 
 The launch manifest retains the exact assignment, attempt and original owner epoch.
 Reattachment validates that manifest, saved guardian enrollment and a live
@@ -59,7 +67,7 @@ conflicting or missing evidence, and retains its reason and observations. Ordina
 Windows has a separate Job Object protocol and a documented helper selection, but
 its runtime remains unavailable/unverified until implemented and exercised. There is
 no unchecked `taskkill` or alternative-backend fallback. See
-[`windows-selection.md`](../../rewrite/engine/backends/supervision/windows-selection.md).
+[`windows-selection.md`](../../engine/backends/supervision/windows-selection.md).
 
 ## Herdr monitor panes
 

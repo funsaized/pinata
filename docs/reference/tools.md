@@ -1,34 +1,32 @@
 # Tools
 
-All tools are reserved for the coordinator. Discover definitions with `pinata_agents`.
+The [generated inventory](generated.md) and `pinata tools --json` enumerate every
+Pinata coordinator and conditional worker tool with canonical input/output schemas.
+The [API guide](api.md) explains receipts, errors, events and authority.
 
-| Tool               | Behavior                                                                                           |
-| ------------------ | -------------------------------------------------------------------------------------------------- |
-| `pinata_run`       | Start tasks; optional `run` adds new workers to an existing run. `background` returns promptly.    |
-| `pinata_steer`     | Record `message`, optional retry `messageId`, `task`, `run`, and `as: "steer"                      | "followUp"`. |
-| `pinata_wait`      | Wait for selected `tasks`, or `next: true` completion. Cancelling the wait leaves workers running. |
-| `pinata_status`    | Paginated worker/assignment state, workspace, usage and saved result/transcript detail.            |
-| `pinata_cancel`    | Cancel one worker or the run, preserving edits and evidence.                                       |
-| `pinata_changes`   | Inspect shared state or saved isolated snapshots. Optional `selected: [{worker, assignment}]`.     |
-| `pinata_integrate` | Apply selected isolated snapshots with destination conflict checks and a journal.                  |
-| `pinata_rollback`  | Restore the latest journal if files still match; requires `confirm: true`.                         |
+Coordinator tools are `pinata_run`, `pinata_steer`, `pinata_cancel`, `pinata_wait`,
+`pinata_status`, `pinata_agents`, `pinata_changes`, `pinata_integrate`,
+`pinata_rollback`, `pinata_schedule`, `pinata_recover` and `pinata_page`.
 
-Task fields: `id`, `agent`, `task`, optional `acceptance`, `instructions`, `context`,
-`after`, `inputs`, `workspace`, `model`, `backend`, and review context
-`reviewOf`, `reviewBase`, `reviewPr`. `role` remains a deprecated selector alias.
-`reviewPr` supplies a saved fetched diff; select `workspace: "worktree"` to also
-inspect files at the fetched head. That isolated review retains its head on follow-up.
-Responsibility and test intent belong in instructions. `ownership`, automatic check
-fields, limits and review policy require [migration](migration.md).
+Workers can optionally report through `submit_result`. Explicit delegation enables
+`pinata_children`, `pinata_child_status` and `pinata_child_wait`. Scoped memory enables
+`pinata_memory_read`; memory write authority additionally enables `pinata_memory_edit`
+and `pinata_memory_clear`. Discovery does not grant any tool. Ordinary Pi file/shell
+tools and custom extensions remain governed by the frozen tool list and host grants.
+Workers with frozen dependencies receive `pinata_dependency` for their retained
+result JSON. Delegating workers also receive `pinata_page` for large child-tool
+replies. Neither tool exposes arbitrary artifacts or filesystem paths.
 
-`after: ["api"]` freezes API's latest accepted assignment. Use
-`after: [{"worker":"api","assignment":1}]` for an earlier result. Failed predecessors
-still release ordering edges and pass their outcome. `inputs` explicitly composes saved
-isolated snapshots; unavailable inputs produce preparation errors.
+`pinata_run` takes a canonical command rather than a separate schema for each
+workflow. `pinata_status` takes a canonical query. Use exact references returned by
+receipts when inspecting/applying an earlier assignment. A stable request ID makes
+acceptance retries idempotent; it does not promise exactly-once arbitrary tool effects.
 
-`steer` addresses active or initial queued work. `followUp` creates the next FIFO
-assignment even for an idle, failed or cancelled worker when context is recoverable.
-Acknowledgment returns the durable request ID and target. Queued/handled transport
-acceptance is not execution. Ambiguous requests stay visible for reconciliation.
-
-`pinata_repair` and `pinata_verify` are retired. Use follow-ups and ordinary project tools.
+Coordinator and child-management tool content is limited to 32 KiB per reply.
+Large replies retain their
+exact full `details` and return an immutable JSON text fragment with `totalBytes`,
+byte offsets, a digest and `nextCursor`. Pass that cursor to `pinata_page` until
+`complete` is true; concatenate each `text` fragment to recover all original data.
+These cursors only read already-exposed output and cannot name a filesystem path.
+They expire with their host. After reconnecting, re-query status, the exact result
+or the original request receipt instead of repeating an accepted mutation.

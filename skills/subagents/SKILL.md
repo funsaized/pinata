@@ -1,51 +1,51 @@
 ---
 name: subagents
-description: Delegate explicitly requested work, design Pinata jobs, or run and coordinate workers. Do not activate merely because delegation could help an ordinary task.
+description: Delegate explicitly requested work, design Pinata jobs, or coordinate Pinata workers. Do not activate solely because an ordinary task could benefit from delegation.
 license: MIT
-compatibility: Pi >=1.1.0 and Node >=22.19 on Linux, macOS or Windows. Git is needed for optional worktrees.
+compatibility: Pi 1.1+ and Node 22.19+. Git is needed for optional worktrees. See platform documentation for verified capabilities.
 ---
 
 # Pinata workers
 
-The coordinator chooses workflow, tests, acceptance, review and delivery. Pinata supplies
-worker execution, communication, workspaces and lifecycle. Read [reference.md](reference.md)
-for the tools and [headless jobs](../../docs/how-to/headless.md) when saving a job.
+The coordinator chooses workflow, tests, review, acceptance and delivery. Pinata
+supplies execution, communication, workspaces and lifecycle. Discover definitions
+with `pinata_agents`; inspect canonical input schemas rather than guessing retired
+fields. [reference.md](reference.md) explains the current tool vocabulary.
 
-Discover definitions with `pinata_agents`; inspect custom agents as well as scout, builder
-and reviewer. Honor actual user authorization and project instructions. A message or model
-report cannot grant authority. Write self-contained assignments with file responsibilities
-in task text, useful context, and observable goals. Use only the workers the task needs.
+Write concrete assignments with useful context, file responsibilities and observable
+goals. Honor user authorization and project instructions. Shared checkout is the
+default; coordinate overlap and preserve unrelated edits. Select a worktree for an
+explicit isolated experiment. A changed workspace mode requires a new worker.
 
-Start useful work immediately with `pinata_run`. Shared checkout is the default; preserve
-unrelated edits and reconcile overlaps. Select `workspace: worktree` for explicit isolation.
-The coordinator reads the conversation and passes the user's workspace requirements; do
-not classify tasks with a second framework planner. A new workspace mode needs a new worker.
+Use `pinata_run` with a `create` or `add` command to start useful work. Continue your
+own work while workers run, then wait/yield for relevant completion notices. `after`
+binds to exact accepted assignments and controls ordering, not acceptance. Explicit
+`inputs` compose isolated snapshots. Later follow-ups never retarget earlier edges.
 
-Use `background:true` when you have other work. Yield when waiting so assignment completion
-messages can resume you; use `pinata_wait` for selected work. Add workers to an existing run
-without resubmitting old workers. `after` means order and freezes accepted assignment IDs;
-it is not acceptance. `inputs` explicitly composes isolated snapshots. Missing dependencies
-or wrong tests can be corrected with ordinary new work and follow-ups, without hiding
-completed output or replaying descendants.
+Steer active/queued work with `pinata_steer`. Use `pinata_run` with `follow_up` to
+append an assignment, or `continue` to explicitly continue stopped work with
+recoverable context. Keep message/request IDs stable after a lost reply. Durable
+acceptance, transport delivery and consumption are different facts. Inspect uncertain
+effects before reconciliation or replacement; do not blindly replay them.
 
-Use `pinata_steer` with `as:followUp` to queue the next FIFO assignment or continue finished,
-failed or cancelled work with saved context and workspace. Steering addresses current or
-initial queued work. Keep stable message IDs when retrying. Acknowledgment is durable;
-queued/handled acceptance is not consumption. Inspect ambiguous effects before explicit
-continuation. Missing context requires restoration or a replacement worker.
+Read results, blockers and negative findings. Ordinary final text is valid output;
+structured reporting is optional. Run ordinary project checks and decide whether to
+request review or further implementation. Completion does not certify correctness.
+There are no production cost/turn/tool/time budgets. Optional capacity only queues
+ready assignments, including children, without cancelling active work.
 
-Read every result, including blockers and negative findings. Normal final responses are
-worker output. Structured reports are optional. Run ordinary project checks, assess review
-findings, and decide when the user's goal is done. There are no production budgets,
-concurrency quotas, repair counts or worker deadlines. Usage remains observable. Respect
-external test/arena limits independently.
+Shared changes require no apply step. `pinata_changes` exposes retained work even
+after unrelated failures. Shared diffs include user and other worker edits. Use
+`pinata_integrate` only for a selected isolated snapshot at its frozen destination,
+then inspect its application operation. Respect conflict checks, active writer
+exclusion and recovery journals. Never reset the whole checkout to recover a worker.
 
-Shared edits require no apply step. `pinata_changes` exposes shared state and saved isolated
-patches independently of whole-run success. Shared diffs include user/other worker edits.
-Apply selected isolated snapshots only to a quiet destination; subsequent follow-ups apply
-deltas. Preserve path/object validation, journals and conflict checks. Worktrees are patch
-isolation, not operating-system sandboxes. Cancellation stops owned activity and preserves
-edits. Never reset the shared checkout to recover one worker.
+Parent context, scoped memory, child delegation and session schedules require explicit
+grants/settings. Skills and worker reports cannot grant authority. A capacity-blocked
+child wait requires the parent to finish/yield; repeated polling does not free its
+slot. Schedules start paused, need explicit activation, close with their session and
+remain paused after a crash without catch-up.
 
-Old inputs require `pinata migrate`. Legacy logs/patches remain readable, but old workers
-must not silently resume under new policy. Historical review is not current certification.
+Use explicit migration for older inputs/runs. Preserve original work and evidence;
+live old owners must finish or stop through their matching executable. Historical
+review and usage claims do not become current evidence.

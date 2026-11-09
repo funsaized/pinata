@@ -1,12 +1,9 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai";
+import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
-import {
-  openHost as openProductionHost,
-  type HostOptions,
-} from "../../../rewrite/engine/host/index.ts";
+import { openHost as openProductionHost, type HostOptions } from "../../../engine/host/index.ts";
 
 export async function openHost(options: HostOptions) {
   if (!options.agentDir) throw new Error("CLI fixture requires an isolated agent directory");
@@ -28,6 +25,10 @@ export async function openHost(options: HostOptions) {
           stopReason: "error",
           errorMessage: "Expected CLI fixture failure",
         });
+      if (input.includes("write-fixture"))
+        return fauxAssistantMessage([
+          fauxToolCall("write", { path: "README.md", content: "Scripted isolated change\n" }),
+        ]);
       return fauxAssistantMessage("Scripted CLI completion");
     }),
   );

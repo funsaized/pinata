@@ -9,18 +9,15 @@ import {
   type TranscriptContext,
 } from "@earendil-works/pi-ai";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
-import {
-  InProcessBackend,
-  type InProcessOptions,
-} from "../../rewrite/engine/backends/in-process.ts";
+import { InProcessBackend, type InProcessOptions } from "../../engine/backends/in-process.ts";
 import {
   canonicalJson,
   definitionSchema,
   type CallerAuthority,
   type Grants,
   type WorkspacePort,
-} from "../../rewrite/engine/contracts/index.ts";
-import { Runtime } from "../../rewrite/engine/runtime/index.ts";
+} from "../../engine/contracts/index.ts";
+import { Runtime } from "../../engine/runtime/index.ts";
 
 export async function piFixture(
   t: TestContext,

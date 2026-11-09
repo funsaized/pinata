@@ -1,7 +1,7 @@
 {
   "name": "pi-pinata",
   "version": "3.0.0",
-  "description": "Pi stays small. Your subagent system should too. Fast, opinionated subagents with sharp defaults and your wiring.",
+  "description": "An extensible subagent runtime for Pi with durable assignments, shared workspaces, and live conversation controls.",
   "keywords": [
     "herdr",
     "pi",
@@ -41,25 +41,49 @@
     "win32"
   ],
   "type": "module",
+  "exports": {
+    ".": {
+      "types": "./engine/index.ts",
+      "default": "./engine/public.mjs"
+    },
+    "./contracts": {
+      "types": "./engine/contracts/public.ts",
+      "default": "./engine/contracts/public.mjs"
+    },
+    "./runtime": {
+      "types": "./engine/runtime/index.ts",
+      "default": "./engine/runtime/public.mjs"
+    },
+    "./host": {
+      "types": "./engine/host/index.ts",
+      "default": "./engine/host/public.mjs"
+    },
+    "./sources": {
+      "types": "./engine/sources/runtime.ts",
+      "default": "./engine/sources/public.mjs"
+    },
+    "./package.json": "./package.json"
+  },
   "scripts": {
     "test": "node scripts/test.mjs",
     "test:engine": "node --test \"test/engine/**/*.test.ts\"",
-    "test:readiness": "node scripts/readiness.mjs",
-    "test:live": "node test/engine/live-smoke.ts",
-    "eval:live": "node test/quality/engine.ts",
     "arena": "node arena/run.ts",
     "bench": "node --expose-gc bench/run.ts",
     "bench:loopback": "node --expose-gc bench/run.ts --provider loopback",
     "bench:process": "node --expose-gc bench/process.ts",
     "check": "npm run format:check && npm run lint && npm run typecheck",
-    "lint": "oxlint test scripts engine bench arena bin examples/relay/setup.mjs examples/relay/verify.mjs rewrite",
+    "lint": "oxlint test scripts engine bench arena bin examples/relay/setup.mjs examples/relay/verify.mjs --ignore-pattern=arena/local/**",
     "typecheck": "tsc -p tsconfig.json",
-    "format:check": "oxfmt --check package.json tsconfig.json test scripts .github examples README.md AGENTS.md STYLE.md docs skills prompts engine bench arena bin agents rewrite",
-    "format": "oxfmt package.json tsconfig.json test scripts .github examples README.md AGENTS.md STYLE.md docs skills prompts engine bench arena bin agents rewrite",
-    "test:herdr": "node --test test/engine/herdr.test.ts",
+    "format:check": "oxfmt --check package.json tsconfig.json test scripts .github examples README.md AGENTS.md STYLE.md docs skills prompts engine bench arena bin agents",
+    "format": "oxfmt package.json tsconfig.json test scripts .github examples README.md AGENTS.md STYLE.md docs skills prompts engine bench arena bin agents",
+    "test:herdr": "node --test test/engine/rewrite-process-backend.test.ts",
     "arena:bootstrap": "node arena/bootstrap.ts",
     "arena:local": "node arena/local-run.ts",
     "arena:doctor": "node arena/doctor.ts"
+  },
+  "dependencies": {
+    "cron-parser": "5.10.4",
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@earendil-works/pi-ai": "1.1.0",
@@ -69,8 +93,7 @@
     "oxfmt": "0.71.0",
     "oxlint": "1.86.0",
     "typebox": "1.3.27",
-    "typescript": "7.0.2",
-    "zod": "4.6.7"
+    "typescript": "7.0.2"
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",

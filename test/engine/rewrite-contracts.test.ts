@@ -20,15 +20,15 @@ import {
   type CommandEnvelope,
   type FrozenWorker,
   type Transition,
-} from "../../rewrite/engine/contracts/index.ts";
-import { prepareCommand } from "../../rewrite/engine/core/accept.ts";
+} from "../../engine/contracts/index.ts";
+import { prepareCommand } from "../../engine/core/accept.ts";
 import {
   dependencyResults,
   initialState,
   reduce,
   type CoreState,
-} from "../../rewrite/engine/core/state.ts";
-import { assignmentUsage } from "../../rewrite/engine/core/usage.ts";
+} from "../../engine/core/state.ts";
+import { assignmentUsage } from "../../engine/core/usage.ts";
 
 const definition = { digest: digestValue("definition"), size: 12 };
 const grants = {
@@ -586,36 +586,42 @@ test("rewrite replay rejects semantically corrupt committed acceptances even wit
   assert.throws(() => reduce(base, follow, 2), /FIFO predecessor/);
 });
 
-test("rewrite import graph excludes old production and keeps core independent of side effects and Pi", async () => {
-  const oldEngine = resolve("engine") + sep;
-  const directories = [
-    "rewrite/engine/core",
-    "rewrite/engine/contracts",
-    "rewrite/engine/runtime",
-    "rewrite/engine/storage",
-  ];
-  for (const directory of directories) {
-    for (const file of await readdir(directory, { recursive: true })) {
-      if (!file.endsWith(".ts")) continue;
-      const path = join(directory, file);
-      const source = await readFile(path, "utf8");
-      const imports = [
-        ...source.matchAll(/\b(?:from\s*|import\s*\(\s*|import\s*)["']([^"']+)["']/g),
-      ].map((match) => match[1]);
-      for (const specifier of imports) {
+test("production import graph has one runtime and keeps core independent of side effects and Pi", async () => {
+  await assert.rejects(readdir("rewrite"), { code: "ENOENT" });
+  for (const retired of [
+    "engine/core/engine.ts",
+    "engine/pi/pipeline.ts",
+    "engine/verify",
+    "engine/migrate",
+  ])
+    await assert.rejects(readFile(retired), { code: "ENOENT" });
+  const stagedRoot = resolve("rewrite") + sep;
+  const pureLayers = ["core", "contracts", "runtime", "storage"];
+  for (const file of await readdir("engine", { recursive: true })) {
+    if (!/\.(ts|mjs)$/.test(file)) continue;
+    const path = join("engine", file);
+    const layer = file.split(sep)[0];
+    const source = await readFile(path, "utf8");
+    const imports = [
+      ...source.matchAll(/\b(?:from\s*|import\s*\(\s*|import\s*)["']([^"']+)["']/g),
+    ].map((match) => match[1]);
+    for (const specifier of imports) {
+      if (pureLayers.includes(layer))
         assert(!specifier.startsWith("@earendil"), `${path} imports Pi: ${specifier}`);
-        if (specifier.startsWith("."))
-          assert(
-            !resolve(dirname(path), specifier).startsWith(oldEngine),
-            `${path} imports old production: ${specifier}`,
-          );
-        if (directory.endsWith("/core")) {
-          assert(!specifier.startsWith("node:"), `${path} imports a platform API: ${specifier}`);
-          assert(
-            specifier.startsWith("./") || specifier.startsWith("../contracts/"),
-            `${path} imports a side-effect layer: ${specifier}`,
-          );
-        }
+      if (specifier.startsWith(".")) {
+        const target = resolve(dirname(path), specifier);
+        assert(
+          !target.startsWith(stagedRoot),
+          `${path} imports removed staging source: ${specifier}`,
+        );
+        await readFile(target);
+      }
+      if (layer === "core") {
+        assert(!specifier.startsWith("node:"), `${path} imports a platform API: ${specifier}`);
+        assert(
+          specifier.startsWith("./") || specifier.startsWith("../contracts/"),
+          `${path} imports a side-effect layer: ${specifier}`,
+        );
       }
     }
   }

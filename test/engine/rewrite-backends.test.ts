@@ -4,8 +4,8 @@ import { join } from "node:path";
 import test from "node:test";
 import { fauxAssistantMessage, fauxText, fauxToolCall } from "@earendil-works/pi-ai";
 import { piFixture } from "./rewrite-pi-fixture.ts";
-import { supervisedSessionProcesses } from "../../rewrite/engine/agent/processes.ts";
-import { verifyArtifact } from "../../rewrite/engine/storage/index.ts";
+import { supervisedSessionProcesses } from "../../engine/agent/processes.ts";
+import { verifyArtifact } from "../../engine/storage/index.ts";
 
 test(
   "typed optional reports validate their data without executing it or changing completion policy",

@@ -1,5 +1,5 @@
 import { once } from "node:events";
-import { openCheckoutGate } from "../../../rewrite/engine/workspace/gate.ts";
+import { openCheckoutGate } from "../../../engine/workspace/gate.ts";
 
 const [root, mode] = process.argv.slice(2);
 if (!root || !mode) throw new Error("Gate fixture needs a root and mode");

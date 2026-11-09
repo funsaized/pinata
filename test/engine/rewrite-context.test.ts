@@ -7,18 +7,18 @@ import test, { type TestContext } from "node:test";
 import { promisify } from "node:util";
 import { fauxAssistantMessage } from "@earendil-works/pi-ai";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
-import { freezeInstructions } from "../../rewrite/engine/context/instructions.ts";
+import { freezeInstructions } from "../../engine/context/instructions.ts";
 import {
   freezeConversationSeed,
   importConversationSeed,
   readConversationSeed,
-} from "../../rewrite/engine/context/conversation.ts";
+} from "../../engine/context/conversation.ts";
 import {
   canonicalJson,
   type ArtifactPort,
   type SessionCheckpoint,
-} from "../../rewrite/engine/contracts/index.ts";
-import { digestBytes } from "../../rewrite/engine/storage/io.ts";
+} from "../../engine/contracts/index.ts";
+import { digestBytes } from "../../engine/storage/io.ts";
 
 async function fixture(t: TestContext) {
   const directory = await realpath(await mkdtemp(join(tmpdir(), "pinata-context-")));

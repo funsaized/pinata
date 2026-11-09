@@ -1,5 +1,8 @@
 {
-  "models": {},
-  "codemode": true,
-  "passEnv": []
+  "schemaVersion": 4,
+  "workspace": "shared",
+  "backend": "in-process",
+  "mode": "lean",
+  "execution": { "maxConcurrent": null },
+  "ui": { "palette": "inherit", "motion": "full", "keys": {} }
 }

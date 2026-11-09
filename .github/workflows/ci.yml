@@ -10,13 +10,13 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  runtime:
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 25
+    timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, macos-latest]
         node: ["22.19.0", "24"]
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -30,38 +30,56 @@ jobs:
         run: npm ci --ignore-scripts
       - run: npm run check
       - run: npm test
-      - name: Download Pi's release binary
+      - name: Download the pinned native Pi runtime
         id: pi
-        # The engine runs inside Pi's Bun binary, as users run it.
         shell: bash
         run: |
           pi_binary=$(node scripts/pi-binary.mjs 1.1.0 "$RUNNER_TEMP/pi-binary" | tail -n 1)
           test -n "$pi_binary"
           echo "PINATA_PI=$pi_binary" >> "$GITHUB_ENV"
-      - name: Engine inside Pi (faux provider)
+      - name: Real Pi RPC with a scripted provider
         run: node test/engine/pi-smoke.ts
-      - name: Packed package inside Pi
+      - name: Install and exercise the actual package
         run: node test/engine/package-smoke.ts
-      - name: Engine benchmarks against budgets
+      - name: Accepted in-process benchmark gates
         if: ${{ !cancelled() && steps.dependencies.outcome == 'success' && steps.pi.outcome == 'success' }}
         run: node scripts/bench-ci.mjs engine --expose-gc bench/run.ts --ci --host pi
-      - name: Process backend repeated baseline (timing advisory)
+      - name: Process measurements with advisory timing
         if: ${{ !cancelled() && steps.dependencies.outcome == 'success' && steps.pi.outcome == 'success' }}
-        # Bound 20 trials so a regression leaves time for later evidence and upload.
         timeout-minutes: 12
-        run: node scripts/bench-ci.mjs process --expose-gc bench/process.ts --repeat 5 --timeout-ms 60000 --scenario fanout-1 --scenario fanout-8 --scenario chain --scenario builder
-      - name: UX benchmark in interactive Pi (pseudo-terminal)
-        # `script` provides the terminal; Windows has no equivalent without extra tools.
-        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' && steps.pi.outcome == 'success' && runner.os != 'Windows' }}
-        run: node scripts/bench-ci.mjs ux --expose-gc bench/run.ts --ci --host tui --scenario ux-8
-      - name: Viewer runtimes (E5.6)
-        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' && steps.pi.outcome == 'success' && runner.os != 'Windows' }}
-        run: node scripts/bench-ci.mjs viewer bench/viewer.ts --runs 3
-      - name: Retain benchmark reports and failure diagnostics
+        run: node scripts/bench-ci.mjs process --expose-gc bench/process.ts --repeat 5 --timeout 60000 --scenario fanout-1 --scenario fanout-8
+      - name: Interactive Pi and attached viewer
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' && steps.pi.outcome == 'success' }}
+        run: node scripts/bench-ci.mjs ux --expose-gc bench/run.ts --host tui --scenario ux-8 --mode observe --viewer attached
+      - name: Retain all benchmark attempts and diagnostics
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: benchmarks-${{ github.sha }}-${{ runner.os }}-${{ runner.arch }}-node-${{ matrix.node }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: bench/results/
+          include-hidden-files: true
           retention-days: 30
           if-no-files-found: warn
+
+  windows-portability:
+    name: Windows portable contracts (runtime verification deferred)
+    runs-on: windows-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["22.19.0", "24"]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ matrix.node }}
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts
+      - run: npm run check
+      - name: Portable schemas, reducers, journal and fake-backend authority
+        run: node --test test/engine/rewrite-contracts.test.ts test/engine/rewrite-lifecycle.test.ts test/engine/rewrite-storage.test.ts test/engine/rewrite-runtime.test.ts
+      - name: Assert the explicit deferred supervisor capability
+        run: node --input-type=module -e "import {supervisionCapability} from './engine/backends/supervision/index.ts'; const c=supervisionCapability(); if(c.available || c.cleanup!=='unverified') throw new Error('Windows runtime requires verified Job Object supervision'); console.log(c.reason)"

@@ -1,11 +1,11 @@
 ---
-description: Request independent review of the current change.
+description: Request independent review of a concrete change.
 ---
 
 Review this scope: ${@:-the current change}.
 
-Discover definitions and assign independent reviewer questions. Give each reviewer the
-actual scope, relevant base or saved snapshot, and requested evidence. Use ordinary
-coding tools for checks you need. Read findings, distinguish confirmed defects from
-uncertainties, and decide whether to request follow-up implementation or review. A
-review describes the code actually inspected and does not transfer to later edits.
+Discover suitable definitions and assign independent review questions with the exact
+target, relevant requirements and requested evidence. Use ordinary coding tools for
+checks you need. Read findings, distinguish confirmed defects from uncertainty and
+decide whether implementation or further review is needed. A review describes only
+the inspected target; it does not transfer to later edits or establish delivery.

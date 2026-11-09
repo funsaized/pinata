@@ -7,7 +7,7 @@ import {
   processArtifacts,
   processBriefSchema,
   type ProcessManifest,
-} from "../../../rewrite/engine/backends/process-transport.ts";
+} from "../../../engine/backends/process-transport.ts";
 
 export async function configureModelRuntime(
   runtime: ModelRuntime,

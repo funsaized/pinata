@@ -16,14 +16,6 @@
     "checkJs": false,
     "forceConsistentCasingInFileNames": true
   },
-  "include": [
-    "engine",
-    "bench",
-    "arena",
-    "test/engine",
-    "test/readiness",
-    "test/quality/engine.ts",
-    "rewrite"
-  ],
-  "exclude": ["arena/results"]
+  "include": ["engine", "bench", "arena", "test/engine", "test/readiness"],
+  "exclude": ["arena/results", "bench/results", "arena/local"]
 }

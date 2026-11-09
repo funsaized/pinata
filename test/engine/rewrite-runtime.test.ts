@@ -5,31 +5,23 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 import { promisify } from "node:util";
-import {
-  assignmentKey,
-  type CallerAuthority,
-  type Grants,
-} from "../../rewrite/engine/contracts/common.ts";
-import { canonicalJson, digestValue } from "../../rewrite/engine/contracts/digest.ts";
+import { assignmentKey, type CallerAuthority, type Grants } from "../../engine/contracts/common.ts";
+import { canonicalJson, digestValue } from "../../engine/contracts/digest.ts";
 import {
   transitionArtifacts,
   type AssignmentResult,
   type CommandReceipt,
   type Transition,
-} from "../../rewrite/engine/contracts/lifecycle.ts";
-import type { BackendOutcome } from "../../rewrite/engine/contracts/backend.ts";
-import type { Manifest } from "../../rewrite/engine/contracts/storage.ts";
-import { dependencyResults, initialState, reduce } from "../../rewrite/engine/core/state.ts";
-import { assignmentUsage } from "../../rewrite/engine/core/usage.ts";
-import {
-  Runtime,
-  type RuntimeOptions,
-  type WorkerResolver,
-} from "../../rewrite/engine/runtime/index.ts";
-import { DurableStore, readOwner, reconcileStore } from "../../rewrite/engine/storage/index.ts";
+} from "../../engine/contracts/lifecycle.ts";
+import type { BackendOutcome } from "../../engine/contracts/backend.ts";
+import type { Manifest } from "../../engine/contracts/storage.ts";
+import { dependencyResults, initialState, reduce } from "../../engine/core/state.ts";
+import { assignmentUsage } from "../../engine/core/usage.ts";
+import { Runtime, type RuntimeOptions, type WorkerResolver } from "../../engine/runtime/index.ts";
+import { DurableStore, readOwner, reconcileStore } from "../../engine/storage/index.ts";
 
 const executeFile = promisify(execFile);
-const runtimeUrl = new URL("../../rewrite/engine/runtime/index.ts", import.meta.url).href;
+const runtimeUrl = new URL("../../engine/runtime/index.ts", import.meta.url).href;
 
 const grants: Grants = {
   access: "write",
@@ -52,6 +44,7 @@ const resolveWorkers: WorkerResolver = async (requests, _caller, artifacts) => {
   return requests.map((request) => ({
     id: request.id,
     agent: request.agent,
+    ...(request.origin ? { origin: request.origin } : {}),
     definition,
     fallbacks: [],
     tools: ["read", "write"],
@@ -104,6 +97,51 @@ function accepted(
 ): asserts receipt is Extract<CommandReceipt, { status: "accepted" }> {
   assert.equal(receipt.status, "accepted", JSON.stringify(receipt));
 }
+
+test("replacement origins require an existing same-run assignment and survive replay without copying context or authority", async (t) => {
+  const world = await fixture(t);
+  accepted(await world.runtime.execute(create, caller));
+  const origin = { run: caller.run, worker: "base", assignment: 1 };
+  for (const invalidOrigin of [
+    { ...origin, assignment: 2 },
+    { ...origin, worker: "missing" },
+    { ...origin, run: "another-run" },
+  ]) {
+    const before = await world.runtime.query({ kind: "status" }, caller);
+    const rejected = await world.runtime.execute(
+      {
+        requestId: `invalid-${JSON.stringify(invalidOrigin)}`,
+        command: { kind: "add", workers: [{ ...worker("replacement"), origin: invalidOrigin }] },
+      },
+      caller,
+    );
+    assert.equal(rejected.status, "rejected");
+    if (rejected.status !== "rejected") throw new Error("Expected invalid origin rejection");
+    assert.equal(rejected.error.field, "origin");
+    assert.deepEqual(await world.runtime.query({ kind: "status" }, caller), before);
+  }
+  const request = {
+    requestId: "replacement",
+    command: {
+      kind: "add",
+      workers: [{ ...worker("replacement"), origin, workspace: "worktree" }],
+    },
+  };
+  const receipt = await world.runtime.execute(request, caller);
+  accepted(receipt);
+  await world.reopen();
+  assert.deepEqual(await world.runtime.execute(request, caller), receipt);
+  const status = await world.runtime.query({ kind: "status" }, caller);
+  assert(status.kind === "status");
+  assert.deepEqual(status.state.workers.replacement.origin, origin);
+  assert.equal(status.state.workers.replacement.workspace, "worktree");
+  assert.equal(status.state.workers.replacement.context, undefined);
+  assert.deepEqual(status.state.workers.replacement.grants, grants);
+  const assignment = status.state.assignments[assignmentKey({ ...origin, worker: "replacement" })];
+  assert.deepEqual(assignment.after, []);
+  assert.deepEqual(assignment.inputs, []);
+  assert.deepEqual(assignment.context, []);
+});
 
 test("replacement acceptance rejects missing exact dependencies without reserving a worker", async (t) => {
   const world = await fixture(t);
@@ -561,7 +599,7 @@ test("runtime freezes resolved config layers without turning omitted fields into
       context,
     );
   };
-  const { configSchema } = await import("../../rewrite/engine/contracts/config.ts");
+  const { configSchema } = await import("../../engine/contracts/config.ts");
   const f = await fixture(t, {
     resolveWorkers: capture,
     resolveConfig: (layer) => {

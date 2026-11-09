@@ -1,7 +1,7 @@
 # Replacement migration adapters
 
-These are development APIs under `rewrite/engine/migration/`; shipping entry points
-remain on the baseline until the package cutover. `planLegacyMigration` is read-only
+Migration APIs under `engine/migration/` preserve the original stores and require
+explicit conversion or import. `planLegacyMigration` is read-only
 and produces a versioned manifest, source inventory, conversion notices and blockers.
 `importLegacyRun` copies immutable evidence into a new Runtime with an explicit origin.
 It rechecks source bytes, owner observations and checkout gates before acceptance.

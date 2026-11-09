@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
@@ -7,7 +7,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
-import { cleanupReceiptSchema } from "../../rewrite/engine/contracts/backend.ts";
+import { promisify } from "node:util";
+import { cleanupReceiptSchema } from "../../engine/contracts/backend.ts";
 import {
   attachSupervisor,
   launchSupervised,
@@ -19,18 +20,19 @@ import {
   type LaunchOptions,
   type SupervisorEvent,
   type SupervisorIdentity,
-} from "../../rewrite/engine/backends/supervision/index.ts";
-import { supervisorIdentitySchema } from "../../rewrite/engine/backends/supervision/contracts.ts";
-import { ControlClient } from "../../rewrite/engine/backends/supervision/client.ts";
+} from "../../engine/backends/supervision/index.ts";
+import { supervisorIdentitySchema } from "../../engine/backends/supervision/contracts.ts";
+import { ControlClient } from "../../engine/backends/supervision/client.ts";
 import {
   windowsHelperSelection,
   windowsJobEnrollmentSchema,
-} from "../../rewrite/engine/backends/supervision/windows.ts";
+} from "../../engine/backends/supervision/windows.ts";
 
 const fixtureFile = fileURLToPath(
   new URL("./fixtures/rewrite-supervision-child.ts", import.meta.url),
 );
 const posix = process.platform === "linux" || process.platform === "darwin";
+const executeFile = promisify(execFile);
 
 async function temporaryDirectory(t: TestContext): Promise<string> {
   const directory = await realpath(await mkdtemp(join(tmpdir(), "pinata-rewrite-supervision-")));
@@ -121,6 +123,64 @@ test("rewrite supervisor: Windows capability is explicitly unverified without un
   assert.equal(windowsHelperSelection.enrollment, "STARTUPINFOEX PROC_THREAD_ATTRIBUTE_JOB_LIST");
   assert.throws(() => windowsJobEnrollmentSchema.parse({ membership: "spawn-then-assign" }));
 });
+
+test(
+  "rewrite supervisor: Linux PID stat disappearance is absent while other observation errors propagate",
+  { skip: process.platform !== "linux", timeout: 15_000 },
+  async () => {
+    const module = new URL("../../engine/backends/supervision/processes.ts", import.meta.url);
+    const script = `
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
+import { observeProcess } from ${JSON.stringify(module.href)};
+const original = fs.promises.readFile;
+const cases = [
+  { stat: "ENOENT" },
+  { stat: "ESRCH" },
+  { stat: "EACCES", fails: "stat" },
+  { stat: "EIO", fails: "stat" },
+  { boot: "ENOENT", fails: "boot" },
+  { boot: "ESRCH", fails: "boot" },
+  { boot: "EACCES", fails: "boot" },
+  { boot: "EIO", fails: "boot" },
+  { stat: "ENOENT", boot: "EIO", fails: "boot" },
+  { stat: "ESRCH", boot: "ENOENT", fails: "boot" },
+];
+try {
+  for (const scenario of cases) {
+    const errors = Object.fromEntries(
+      ["stat", "boot"].map((kind) => [kind, Object.assign(new Error(kind), { code: scenario[kind] })]),
+    );
+    const reads = { stat: 0, boot: 0 };
+    fs.promises.readFile = async (...args) => {
+      const kind = args[0] === "/proc/" + process.pid + "/stat" ? "stat"
+        : args[0] === "/proc/sys/kernel/random/boot_id" ? "boot" : undefined;
+      if (kind) {
+        reads[kind]++;
+        if (scenario[kind]) throw errors[kind];
+      }
+      return original(...args);
+    };
+    syncBuiltinESMExports();
+    // The real ps lookup must find this live child before either injected read.
+    if (scenario.fails) {
+      await assert.rejects(observeProcess(process.pid), (error) => error === errors[scenario.fails]);
+    } else {
+      assert.equal(await observeProcess(process.pid), undefined);
+    }
+    assert.deepEqual(reads, { stat: 1, boot: 1 });
+  }
+} finally {
+  fs.promises.readFile = original;
+  syncBuiltinESMExports();
+}
+`;
+    await executeFile(process.execPath, ["--input-type=module", "--eval", script], {
+      timeout: 10_000,
+    });
+  },
+);
 
 test(
   "rewrite supervisor: explicit input EOF completes a supervised command",
@@ -557,7 +617,7 @@ test(
       { mode: 0o600 },
     );
     const guardianFile = fileURLToPath(
-      new URL("../../rewrite/engine/backends/supervision/guardian.ts", import.meta.url),
+      new URL("../../engine/backends/supervision/guardian.ts", import.meta.url),
     );
     const guardian = spawn(process.execPath, [guardianFile, directory], {
       detached: true,

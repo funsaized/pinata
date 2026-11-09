@@ -1,67 +1,58 @@
 # Architecture
 
-The coordinator owns workflow. Pinata owns workers, assignment ordering, messages,
-workspaces, cancellation, usage observations and recovery evidence.
+One Runtime owns command acceptance, execution state and durable history. Pi,
+headless CLI, IPC clients and viewers translate requests or observe that runtime.
+They do not each schedule workers or maintain a competing run state.
 
-## One engine, multiple surfaces
+```mermaid
+flowchart TD
+  Pi[Pi tools and fleet UI] --> Sources[Runtime source interface]
+  CLI[Headless CLI] --> Sources
+  IPC[Authenticated IPC and viewers] --> Sources
+  Sources --> Runtime[Runtime command authority]
+  Runtime --> Core[Pure acceptance and lifecycle reducer]
+  Runtime --> Storage[Journal, artifacts and owner claim]
+  Runtime --> Backends[In-process, process and Herdr]
+  Runtime --> Workspace[Workspace and application ports]
+```
 
-`engine/core` has no Pi imports. The Pi extension, headless host, detached workers,
-Herdr, IPC clients and viewers share its event model and reducer. Agent definitions
-contain reusable instructions and separate access/tool capabilities from workspace mode.
+`engine/contracts` defines canonical Zod boundaries and inferred domain types.
+`engine/core` contains pure graph, acceptance and transition rules, independent of
+Pi and filesystem effects. `engine/storage` owns immutable artifacts, synced journal
+frames, projections and atomic owner claims. `engine/runtime` serializes acceptance
+and coordinates effect ports; long workspace/application waits stay outside the
+command queue.
 
-A worker has a stable ID, resolved definition/model/backend and frozen workspace.
-Its FIFO assignments have monotonically increasing IDs. An `after` worker name resolves
-to that worker's latest accepted assignment when the dependent is added. Explicit
-`{worker, assignment}` references select earlier work. FIFO and dependency edges are
-validated together. Completion orders execution; negative assessments and process
-failures are passed as information and do not block descendants. Follow-ups never
-retarget edges or replay descendants.
+Each worker freezes a definition, model, tools, grants, loadout and workspace plan.
+Assignments have monotonically increasing worker-local numbers. Dependencies,
+messages, results and notifications refer to the full run/worker/assignment identity.
+Adding a follow-up does not rewrite previous results or retarget existing edges.
 
-## Context and durable messages
+The journal records accepted commands and effect intent before dispatch. Backend
+acceptance and consumption are separate observations. An interrupted effect is not
+blindly replayed. Recovery uses retained session, launch and cleanup evidence to
+reattach the original attempt or report uncertainty. Projections speed reads but
+cannot supersede committed history.
 
-The run store records messages before dispatch and acknowledgment. Each record retains
-ID, target assignment, kind and payload. Dispatch intent, actual disposition and
-conversation consumption are distinct. Pi session custom-message metadata carries the
-message ID; a persisted session entry provides the consumption checkpoint. Text equality
-and queue acceptance do not establish consumption. Retrying an ID identifies the same
-request. Unknown in-flight execution remains uncertain; arbitrary tool effects are never
-promised exactly once or silently replayed.
+Backends use public Pi APIs and advertise actual capabilities. In-process workers
+release idle sessions and restore saved conversations. Process workers use a durable
+transport and live nonce-bound supervisor. Herdr displays an owned monitor of that
+same process protocol. A missing helper/session is a capability error, not permission
+to silently switch backend or discard context.
 
-Persistent Pi sessions restore worker context between assignments. Finished live sessions
-are disposed. Process workers share the same saved conversation file across assignments,
-with separate assignment outboxes. Unsupported or missing context requires an explicit
-replacement or reconciliation.
+Shared checkout is the default, including non-Git projects. Isolated worktrees are
+optional patch isolation. A checkout-level gate allows multiple shared writers and
+excludes explicit application while writable work is active. Worktree preparation,
+capture, checkpoint refs and application preserve user HEAD/index, manual commits,
+dirty initial content and failed work. Application records before/after blobs and
+cursor meaning atomically; uncertainty retains the gate and journal.
 
-## Workspaces and optional application
+Definitions, selected skills, filtered parent context and scoped memory are input
+data. They cannot grant capabilities. Children use a narrow parent-bound adapter and
+share root capacity. Session schedules create ordinary idempotent assignments and
+never revive missed occurrences after a crash.
 
-Shared is the built-in default. A shared worker edits the current authorized checkout;
-its diff is shared state and cannot establish exclusive authorship. Worktree selection
-freezes a Git base and path. Explicit `inputs` compose selected saved isolated snapshots.
-Dependencies alone do not copy workspace content. Worktrees survive failures and
-cancellation. No verification policy controls snapshot visibility.
-
-Application captures stable Git objects, validates paths, modes and destination state,
-and records writes in a recovery journal. Cursors identify the last applied snapshot by
-worker, assignment and destination; follow-ups apply incremental deltas. The destination
-gate excludes application from Pinata-controlled writable assignments across runs and
-processes, through preparation and owned activity teardown. It does not serialize shared
-workers with one another. External editors do not participate.
-
-## Storage and observability
-
-Git runs use `<git common dir>/pinata/<run>`. Non-Git work uses
-`<canonical workspace>/.pinata/runs/<run>`; all surfaces use the same resolver.
-`run.json` schema 3 records workspace/store paths, definitions, models and resume data.
-`events.jsonl` uses schema 2, with a run sequence and assignment identity.
-`assignments/<worker>/<number>.json` and `results/<worker>/<number>.json` preserve history.
-`inbox/`, `sessions/`, `transcripts/` and `integration/` retain transport and recovery data.
-Lifecycle and usage persist in lean mode; observe mode adds detailed activity and telemetry.
-Status uses compact excerpts and pagination, while full results remain on disk.
-
-Background notifications have stable run/worker/assignment IDs. Reattachment deduplicates
-known deliveries without suppressing later assignments. A crash after sending and before
-marking delivery can repeat the same notification ID.
-
-There is no built-in acceptance, review, repair or resource-budget state machine.
-Tests and arena supervisors can bound their own experiments externally. Production
-workers stop on completion, explicit cancellation, host shutdown or backend/provider error.
+The coordinator chooses testing, review and acceptance. There is no production
+budget subsystem, ownership allocation policy, mandatory reviewer or verification
+condition on exposing output. See [trust](trust.md), [API](../reference/api.md) and
+[implementation evidence](../maintainers/rewrite-progress.md).

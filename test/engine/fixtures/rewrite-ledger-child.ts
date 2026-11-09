@@ -1,10 +1,6 @@
 import { once } from "node:events";
-import { digestValue } from "../../../rewrite/engine/contracts/digest.ts";
-import {
-  DurableStore,
-  inspectStore,
-  reconcileStore,
-} from "../../../rewrite/engine/storage/index.ts";
+import { digestValue } from "../../../engine/contracts/digest.ts";
+import { DurableStore, inspectStore, reconcileStore } from "../../../engine/storage/index.ts";
 
 const [mode, directory, crashAt] = process.argv.slice(2);
 if (!mode || !directory) throw new Error("Expected mode and store directory");

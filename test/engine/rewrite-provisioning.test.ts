@@ -17,13 +17,13 @@ import {
   type ArtifactPort,
   type CleanupReceipt,
   type WorkspaceRequest,
-} from "../../rewrite/engine/contracts/index.ts";
-import { type FaultHook } from "../../rewrite/engine/storage/io.ts";
-import { WorkspaceLayer } from "../../rewrite/engine/workspace/index.ts";
-import { readManifest } from "../../rewrite/engine/workspace/capture.ts";
-import { openCheckoutGate } from "../../rewrite/engine/workspace/gate.ts";
-import { ApplicationStore } from "../../rewrite/engine/application/index.ts";
-import { workspaceRefPrefix } from "../../rewrite/engine/workspace/checkpoints.ts";
+} from "../../engine/contracts/index.ts";
+import { type FaultHook } from "../../engine/storage/io.ts";
+import { WorkspaceLayer } from "../../engine/workspace/index.ts";
+import { readManifest } from "../../engine/workspace/capture.ts";
+import { openCheckoutGate } from "../../engine/workspace/gate.ts";
+import { ApplicationStore } from "../../engine/application/index.ts";
+import { workspaceRefPrefix } from "../../engine/workspace/checkpoints.ts";
 import { FixtureArtifacts } from "./rewrite-application-fixture.ts";
 
 async function fixture(t: TestContext, options: { git?: boolean; fault?: FaultHook } = {}) {

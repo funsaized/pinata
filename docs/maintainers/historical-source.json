@@ -1,0 +1,1732 @@
+{
+  "schemaVersion": 1,
+  "revision": "c426753291351c9b3b79a44c902cd5db17244c2a",
+  "documents": {
+    "PLAN.md": "6897bd94962d042beecf879d572462408e70170157bfaee755136dd93dc78326",
+    "docs/maintainers/refactor-validation.md": "7474541d0279d5c43f38bdc15f73609450844d65c186b2d4549308460f4ca17e",
+    "docs/maintainers/p0-p1-validation.md": "55d33ab0731516f1b1bd6ab9f15e5a925dd0264e1c676c4911609f42b12f3f40",
+    "docs/maintainers/v3-review-handoff.md": "a554a7250f59fab9a94e77c85481b82dda42476cef6c0f05d7a0daf782d49c11",
+    "docs/maintainers/v3-adversarial-review-prompt.md": "c4bc44abfe58de1a91dd4da06632728217c3185d2ee9a0d2ad9b696a1c425175",
+    "docs/maintainers/current-state-adversarial-review.md": "5d81854032c0d6405c6f90b130f33cb424706f07900e380531ad50ad0733b00c",
+    "docs/maintainers/rewrite-plan.md": "8510915cbbc633f79862ef00c7cf09a25256e30047eeec1873082c1829e965ec",
+    "docs/maintainers/rewrite-readiness.md": "6f7ba5a0e75dc2e6c993b896b7b5ab568707a29a0d3afcca760a3715df99caf7"
+  },
+  "files": {
+    ".gitattributes": {
+      "blob": "d0d6371de329ffb232ba2fb9b79732165a702be7",
+      "mode": "100644"
+    },
+    ".github/workflows/arena.yml": {
+      "blob": "35f61cbbf287f32e9a27a309a3ec1383f90e84ec",
+      "mode": "100644"
+    },
+    ".github/workflows/ci.yml": {
+      "blob": "88e82ab91be3aaab8e673492b0b0a85a4dbb305f",
+      "mode": "100644"
+    },
+    ".github/workflows/live-smoke.yml": {
+      "blob": "a78e515f5d5bee2818681bc59dca44cbccaa26e3",
+      "mode": "100644"
+    },
+    ".github/workflows/release.yml": {
+      "blob": "c57750ddc476a01758945d1e8dfd48b60026f5e3",
+      "mode": "100644"
+    },
+    ".github/workflows/sync-github-package.yml": {
+      "blob": "de8ef0134724f3ead37305a29b9315bf0262fe79",
+      "mode": "100644"
+    },
+    ".gitignore": {
+      "blob": "72b772f556204533137632e2bdd6a8109a9cd9e0",
+      "mode": "100644"
+    },
+    ".prettierignore": {
+      "blob": "0eb53e374aa33b8e4a674f6a3a505a098782e88e",
+      "mode": "100644"
+    },
+    "AGENTS.md": {
+      "blob": "308129e793296b293c708b92b85b4516e1b20d4f",
+      "mode": "100644"
+    },
+    "CHANGELOG.md": {
+      "blob": "73483c20f4affae635da6676b8d10ce84c15ea69",
+      "mode": "100644"
+    },
+    "HIGH_LEVEL_REQS.md": {
+      "blob": "43a7229ed2e5a96887ca3be0e11935261ec5d7fa",
+      "mode": "100644"
+    },
+    "LICENSE": {
+      "blob": "db4fd88cbbbe85330bcf539add8030b93d3ac44c",
+      "mode": "100644"
+    },
+    "PLAN.md": {
+      "blob": "68a5a617b9f55086d4190f712003b76d47cd6c99",
+      "mode": "100644"
+    },
+    "README.md": {
+      "blob": "c8fa44ca134c04b44ba528fa92ff32a595552135",
+      "mode": "100644"
+    },
+    "STYLE.md": {
+      "blob": "55dc55f6ac91c4c46a72adf9d544aff34a249a46",
+      "mode": "100644"
+    },
+    "agents/builder.md": {
+      "blob": "a54cabf179e62fe8a582e44fa2d6bb2e5dfbd605",
+      "mode": "100644"
+    },
+    "agents/reviewer.md": {
+      "blob": "690807fdcfe80aaa536045336bd469b2aa2beddc",
+      "mode": "100644"
+    },
+    "agents/scout.md": {
+      "blob": "3330bc2d2070bea8a538a00dccbec3dd058775a6",
+      "mode": "100644"
+    },
+    "arena/adapters/README.md": {
+      "blob": "fd1f28b6c202947fe1674f9c19cd3af03d37523d",
+      "mode": "100644"
+    },
+    "arena/adapters/coordinator.ts": {
+      "blob": "7150d91696a2938d74976662d194807d7c8279b4",
+      "mode": "100644"
+    },
+    "arena/adapters/index.ts": {
+      "blob": "37e9b119a733a61168ee5d5c03f38922abfd4b7a",
+      "mode": "100644"
+    },
+    "arena/adapters/native.ts": {
+      "blob": "3b215419cd3ff74cdd863e8b9c026fe26aab0621",
+      "mode": "100644"
+    },
+    "arena/adapters/observe.ts": {
+      "blob": "739e2646f352225ac06dbef51ead78f76c74afc2",
+      "mode": "100644"
+    },
+    "arena/adapters/offline.ts": {
+      "blob": "9150101d646e149c3fe53f098138a6f43e82429d",
+      "mode": "100644"
+    },
+    "arena/adapters/pi.example.json": {
+      "blob": "df8608778416f62c059833013c2b7308c284c6c9",
+      "mode": "100644"
+    },
+    "arena/adapters/pinata.example.json": {
+      "blob": "1145b5c6ccfb453ec51df80b382ab9b75942284f",
+      "mode": "100644"
+    },
+    "arena/adapters/protocol.ts": {
+      "blob": "1f448b6134a04204a18a3389d8ea226254bb1d1c",
+      "mode": "100644"
+    },
+    "arena/bootstrap.ts": {
+      "blob": "be83f60ef8315fea282924451c32d1f8902099c2",
+      "mode": "100644"
+    },
+    "arena/corpus/README.md": {
+      "blob": "39afb9e8fcae163ce37a02d3059341d2b85331f1",
+      "mode": "100644"
+    },
+    "arena/corpus/browser.mjs": {
+      "blob": "6e86c5e105dfeb3d08b62cc51cc0ac03439348a3",
+      "mode": "100644"
+    },
+    "arena/corpus/candidate-worker.mjs": {
+      "blob": "dc0d1ebcbbab89920903f87d8e7ce4011b47c6c1",
+      "mode": "100644"
+    },
+    "arena/corpus/index.ts": {
+      "blob": "49bec6a698a970350d03053ecdff9c1f47f87c33",
+      "mode": "100644"
+    },
+    "arena/corpus/oracle-harness.mjs": {
+      "blob": "c23ea12512c76904e84c618037556433deec0287",
+      "mode": "100644"
+    },
+    "arena/corpus/v1/checkout/oracle.mjs": {
+      "blob": "0e9fcf250c6ac8a5bb8fb7755f1b285cfd0f0bf0",
+      "mode": "100644"
+    },
+    "arena/corpus/v1/checkout/prompt.md": {
+      "blob": "ad1e211638438f084763d96f9c755b45f199eac0",
+      "mode": "100644"
+    },
+    "arena/corpus/v1/checkout/solution/checkout.mjs": {
+      "blob": "72d40a9a231e3f5dc31d3bdb32a87d194777bc53",
+      "mode": "100644"
+    },
+    "arena/corpus/v1/checkout/solution/items.mjs": {
+      "blob": "bcef21c744a31591a8da62872a1c4994fe399e75",
+      "mode": "100644"
+    },
+    "arena/corpus/v1/checkout/solution/promotions.mjs": {
+      "blob": "62309670d5323dbb279d7301b25ccc900bb2835f",
+      "mode": "100644"
+    },
+    "arena/corpus/v1/checkout/starter/checkout.mjs": {
+      "blob": "6a9e7d1651c6fbe50cd3c362054c3502e9be2e71",
+      "mode": "100644"
+    },
+    "arena/corpus/v1/checkout/starter/items.mjs": {
+      "blob": "6a92978c0b2821f43bf29feca31f6f0362cf7df9",
+      "mode": "100644"
+    },
+    "arena/corpus/v1/checkout/starter/promotions.mjs": {
+      "blob": "d28148f6fa2545b4b08f5caaeda03e151cf34b19",
+      "mode": "100644"
+    },
+    "arena/corpus/v1/incidents/oracle.mjs": {
+      "blob": "472a7a20ba78e92f6c7d4946e6973c2b069d12e5",
+      "mode": "100644"
+    },
+    "arena/corpus/v1/incidents/prompt.md": {
+      "blob": "165bed964c155c854ea9006e8944ff1e227cdb14",
+      "mode": "100644"
+    },
+    "arena/corpus/v1/incidents/solution/aggregate.mjs": {
+      "blob": "68a7475fc45ea0bdc05516d6cefe761198452232",
+      "mode": "100644"
+    },
+    "arena/corpus/v1/incidents/solution/parse.mjs": {
+      "blob": "ac7101685bd772d644870cca6f02f66b8b9cb996",
+      "mode": "100644"
+    },
+    "arena/corpus/v1/incidents/solution/report.mjs": {
+      "blob": "0748badaa45b421ba1428f66972f930c2dc924c0",
+      "mode": "100644"
+    },
+    "arena/corpus/v1/incidents/starter/aggregate.mjs": {
+      "blob": "c7819783f61ce86780c66b09da1c7c53746bff1f",
+      "mode": "100644"
+    },
+    "arena/corpus/v1/incidents/starter/parse.mjs": {
+      "blob": "9501f9e47fc7c6d55344a8cf91c3e4c230890927",
+      "mode": "100644"
+    },
+    "arena/corpus/v1/incidents/starter/report.mjs": {
+      "blob": "9014593f79a85a4bc21f876cfd73395365721faf",
+      "mode": "100644"
+    },
+    "arena/corpus/v1/reservations/oracle.mjs": {
+      "blob": "bb1fd64a4691e30100df248d0c071c32d1f6ed43",
+      "mode": "100644"
+    },
+    "arena/corpus/v1/reservations/prompt.md": {
+      "blob": "efa6f85c1cf5d50bed66126718a1a522d466fa14",
+      "mode": "100644"
+    },
+    "arena/corpus/v1/reservations/solution/catalog.mjs": {
+      "blob": "5ed9df1fc789b5d6b5a2acdd9c9ba39aa349224a",
+      "mode": "100644"
+    },
+    "arena/corpus/v1/reservations/solution/replay.mjs": {
+      "blob": "ada09bd55cdce9e5d77dea3b1bbd414da8ad2811",
+      "mode": "100644"
+    },
+    "arena/corpus/v1/reservations/solution/reservation.mjs": {
+      "blob": "ad62a4e3065fb674e553de41055b1c3a2020daf7",
+      "mode": "100644"
+    },
+    "arena/corpus/v1/reservations/starter/catalog.mjs": {
+      "blob": "db3e1b2f7c2c5e83f349f6e7ffa4c2bb6361eb1d",
+      "mode": "100644"
+    },
+    "arena/corpus/v1/reservations/starter/replay.mjs": {
+      "blob": "805f2ab9e3d0a45960c3b9f4d5403b623b1a6164",
+      "mode": "100644"
+    },
+    "arena/corpus/v1/reservations/starter/reservation.mjs": {
+      "blob": "0e42db64cbe4f5f2ced99d7c3dbb2c5e6a310b8a",
+      "mode": "100644"
+    },
+    "arena/corpus/v1/team-board/oracle.mjs": {
+      "blob": "53735b7cc46d88ff5cf62ad8fd6380297c599aaa",
+      "mode": "100644"
+    },
+    "arena/corpus/v1/team-board/prompt.md": {
+      "blob": "8e7a6333f34c32970b11f8d94134704cb9a5aae2",
+      "mode": "100644"
+    },
+    "arena/corpus/v1/team-board/solution/api-client.mjs": {
+      "blob": "3481dc53d87d23c3ecaa64f5524e477f1c3dbaee",
+      "mode": "100644"
+    },
+    "arena/corpus/v1/team-board/solution/api.mjs": {
+      "blob": "84bb1e969e223c1070e4423a0fd39f1204a0c2ff",
+      "mode": "100644"
+    },
+    "arena/corpus/v1/team-board/solution/client.mjs": {
+      "blob": "c0242173cab6e6186943ac405cc75aad7b9bbf0d",
+      "mode": "100644"
+    },
+    "arena/corpus/v1/team-board/solution/html.mjs": {
+      "blob": "8072461521ae198a24be4933597d4faee92edf8f",
+      "mode": "100644"
+    },
+    "arena/corpus/v1/team-board/solution/page.mjs": {
+      "blob": "aa9634a64bdfd93dfcc6554775aabf5e531b29bf",
+      "mode": "100644"
+    },
+    "arena/corpus/v1/team-board/solution/query.mjs": {
+      "blob": "bce73ba036dea5e16de19fa46af554e67381d20c",
+      "mode": "100644"
+    },
+    "arena/corpus/v1/team-board/solution/server.mjs": {
+      "blob": "01af9b50a33b82b3870c4fe8fb0bbfb7d405bbf9",
+      "mode": "100644"
+    },
+    "arena/corpus/v1/team-board/solution/storage.mjs": {
+      "blob": "9ecc1af10cc5b0499cadf52a04eb6d50ca345739",
+      "mode": "100644"
+    },
+    "arena/corpus/v1/team-board/solution/store.mjs": {
+      "blob": "ef51a12ad900afbf749a95598f796cce82cfe57c",
+      "mode": "100644"
+    },
+    "arena/corpus/v1/team-board/solution/styles.mjs": {
+      "blob": "3d7ed9d9ab77ff1aa9f1f8d79eaf07e6b1c43dfb",
+      "mode": "100644"
+    },
+    "arena/corpus/v1/team-board/solution/validation.mjs": {
+      "blob": "52d0e470a89846c65dc8a6e043fcdabc20be9771",
+      "mode": "100644"
+    },
+    "arena/corpus/v1/team-board/solution/view.mjs": {
+      "blob": "2091bbdeddd019cc517066837e7995cea9fdd763",
+      "mode": "100644"
+    },
+    "arena/corpus/v1/team-board/starter/api-client.mjs": {
+      "blob": "496a499e2e43d7de853a7e7c2bb601895b8a163f",
+      "mode": "100644"
+    },
+    "arena/corpus/v1/team-board/starter/api.mjs": {
+      "blob": "b69b141e87d78cfa0dfba9b7370e0a97fbd4518e",
+      "mode": "100644"
+    },
+    "arena/corpus/v1/team-board/starter/client.mjs": {
+      "blob": "4115150981c97658fec1e06c0592f6aca2e097b1",
+      "mode": "100644"
+    },
+    "arena/corpus/v1/team-board/starter/html.mjs": {
+      "blob": "52644e4ce1376d1c83d00a3d90a01434b9b0a80e",
+      "mode": "100644"
+    },
+    "arena/corpus/v1/team-board/starter/page.mjs": {
+      "blob": "ccbaa40be132db08a0caedcb1b356e2830bf4542",
+      "mode": "100644"
+    },
+    "arena/corpus/v1/team-board/starter/query.mjs": {
+      "blob": "18fd6ea9e1a9983828b80c1f9ab4924179aa663b",
+      "mode": "100644"
+    },
+    "arena/corpus/v1/team-board/starter/server.mjs": {
+      "blob": "4e66ea33e610f5bc7ad84792d3dc389ec6adbc70",
+      "mode": "100644"
+    },
+    "arena/corpus/v1/team-board/starter/storage.mjs": {
+      "blob": "39ed5ef55abcc0525e2c8f00b0b3dfb6ed435bb5",
+      "mode": "100644"
+    },
+    "arena/corpus/v1/team-board/starter/store.mjs": {
+      "blob": "ec89e03ed1f98b599f70a88547939c1ebc2cbda3",
+      "mode": "100644"
+    },
+    "arena/corpus/v1/team-board/starter/styles.mjs": {
+      "blob": "72d44a86eda71f7ceda25c758df87b3d485a782b",
+      "mode": "100644"
+    },
+    "arena/corpus/v1/team-board/starter/validation.mjs": {
+      "blob": "f796f569959d41895154e8d785a3efbf29dfc276",
+      "mode": "100644"
+    },
+    "arena/corpus/v1/team-board/starter/view.mjs": {
+      "blob": "6e4d6f13b3205bee0d7879894c553ba29b34a234",
+      "mode": "100644"
+    },
+    "arena/corpus/v1/team-board/units.json": {
+      "blob": "d364fa7ea98101564c8b0ca2ae11b00466e80413",
+      "mode": "100644"
+    },
+    "arena/corpus/v2/team-board/oracle.mjs": {
+      "blob": "ed430baf53f6ac2e4c357f405a4bdbb9db067ee5",
+      "mode": "100644"
+    },
+    "arena/corpus/v2/team-board/prompt.md": {
+      "blob": "8e7a6333f34c32970b11f8d94134704cb9a5aae2",
+      "mode": "100644"
+    },
+    "arena/corpus/v2/team-board/solution/api-client.mjs": {
+      "blob": "3481dc53d87d23c3ecaa64f5524e477f1c3dbaee",
+      "mode": "100644"
+    },
+    "arena/corpus/v2/team-board/solution/api.mjs": {
+      "blob": "84bb1e969e223c1070e4423a0fd39f1204a0c2ff",
+      "mode": "100644"
+    },
+    "arena/corpus/v2/team-board/solution/client.mjs": {
+      "blob": "c0242173cab6e6186943ac405cc75aad7b9bbf0d",
+      "mode": "100644"
+    },
+    "arena/corpus/v2/team-board/solution/html.mjs": {
+      "blob": "8072461521ae198a24be4933597d4faee92edf8f",
+      "mode": "100644"
+    },
+    "arena/corpus/v2/team-board/solution/page.mjs": {
+      "blob": "aa9634a64bdfd93dfcc6554775aabf5e531b29bf",
+      "mode": "100644"
+    },
+    "arena/corpus/v2/team-board/solution/query.mjs": {
+      "blob": "bce73ba036dea5e16de19fa46af554e67381d20c",
+      "mode": "100644"
+    },
+    "arena/corpus/v2/team-board/solution/server.mjs": {
+      "blob": "01af9b50a33b82b3870c4fe8fb0bbfb7d405bbf9",
+      "mode": "100644"
+    },
+    "arena/corpus/v2/team-board/solution/storage.mjs": {
+      "blob": "9ecc1af10cc5b0499cadf52a04eb6d50ca345739",
+      "mode": "100644"
+    },
+    "arena/corpus/v2/team-board/solution/store.mjs": {
+      "blob": "ef51a12ad900afbf749a95598f796cce82cfe57c",
+      "mode": "100644"
+    },
+    "arena/corpus/v2/team-board/solution/styles.mjs": {
+      "blob": "3d7ed9d9ab77ff1aa9f1f8d79eaf07e6b1c43dfb",
+      "mode": "100644"
+    },
+    "arena/corpus/v2/team-board/solution/validation.mjs": {
+      "blob": "52d0e470a89846c65dc8a6e043fcdabc20be9771",
+      "mode": "100644"
+    },
+    "arena/corpus/v2/team-board/solution/view.mjs": {
+      "blob": "2091bbdeddd019cc517066837e7995cea9fdd763",
+      "mode": "100644"
+    },
+    "arena/corpus/v2/team-board/starter/api-client.mjs": {
+      "blob": "496a499e2e43d7de853a7e7c2bb601895b8a163f",
+      "mode": "100644"
+    },
+    "arena/corpus/v2/team-board/starter/api.mjs": {
+      "blob": "b69b141e87d78cfa0dfba9b7370e0a97fbd4518e",
+      "mode": "100644"
+    },
+    "arena/corpus/v2/team-board/starter/client.mjs": {
+      "blob": "4115150981c97658fec1e06c0592f6aca2e097b1",
+      "mode": "100644"
+    },
+    "arena/corpus/v2/team-board/starter/html.mjs": {
+      "blob": "52644e4ce1376d1c83d00a3d90a01434b9b0a80e",
+      "mode": "100644"
+    },
+    "arena/corpus/v2/team-board/starter/page.mjs": {
+      "blob": "ccbaa40be132db08a0caedcb1b356e2830bf4542",
+      "mode": "100644"
+    },
+    "arena/corpus/v2/team-board/starter/query.mjs": {
+      "blob": "18fd6ea9e1a9983828b80c1f9ab4924179aa663b",
+      "mode": "100644"
+    },
+    "arena/corpus/v2/team-board/starter/server.mjs": {
+      "blob": "4e66ea33e610f5bc7ad84792d3dc389ec6adbc70",
+      "mode": "100644"
+    },
+    "arena/corpus/v2/team-board/starter/storage.mjs": {
+      "blob": "39ed5ef55abcc0525e2c8f00b0b3dfb6ed435bb5",
+      "mode": "100644"
+    },
+    "arena/corpus/v2/team-board/starter/store.mjs": {
+      "blob": "ec89e03ed1f98b599f70a88547939c1ebc2cbda3",
+      "mode": "100644"
+    },
+    "arena/corpus/v2/team-board/starter/styles.mjs": {
+      "blob": "72d44a86eda71f7ceda25c758df87b3d485a782b",
+      "mode": "100644"
+    },
+    "arena/corpus/v2/team-board/starter/validation.mjs": {
+      "blob": "f796f569959d41895154e8d785a3efbf29dfc276",
+      "mode": "100644"
+    },
+    "arena/corpus/v2/team-board/starter/view.mjs": {
+      "blob": "6e4d6f13b3205bee0d7879894c553ba29b34a234",
+      "mode": "100644"
+    },
+    "arena/corpus/v2/team-board/units.json": {
+      "blob": "d364fa7ea98101564c8b0ca2ae11b00466e80413",
+      "mode": "100644"
+    },
+    "arena/deadline.ts": {
+      "blob": "697e414fb0b7680942eeb9d043f1fb84367dfd45",
+      "mode": "100644"
+    },
+    "arena/doctor.ts": {
+      "blob": "123350d8cb77aae04052533371f3d43e870ab0e6",
+      "mode": "100644"
+    },
+    "arena/local-run.ts": {
+      "blob": "30f4594b20a14bd45594fa3028e87eb279811ff7",
+      "mode": "100644"
+    },
+    "arena/matrix.ts": {
+      "blob": "66202b526964c07ee5321a0362ac941426f15007",
+      "mode": "100644"
+    },
+    "arena/native-evidence.ts": {
+      "blob": "4f3af6e8e2a602385c04cde5b977580bdb319fcc",
+      "mode": "100644"
+    },
+    "arena/process.ts": {
+      "blob": "d421178a840ce518fc9e15539f1052738e867332",
+      "mode": "100644"
+    },
+    "arena/report.ts": {
+      "blob": "9880a11d1e9c9a321cffaa907bb93f96a9b79b82",
+      "mode": "100644"
+    },
+    "arena/run.ts": {
+      "blob": "8c916fdbdd43342e56180a891c98f8d9df120e08",
+      "mode": "100644"
+    },
+    "arena/runner.ts": {
+      "blob": "c4f632caa1b1b7b63aa103d05868eacc26819c52",
+      "mode": "100644"
+    },
+    "arena/task-graph.ts": {
+      "blob": "1e51318a98664d10b1c438d7b0a3ed3d7d938083",
+      "mode": "100644"
+    },
+    "arena/treatment.ts": {
+      "blob": "64808ceaf4fc2a2387854b329c15a22e899f1c9c",
+      "mode": "100644"
+    },
+    "arena/types.ts": {
+      "blob": "ac11a80942a02a7b2b2fc7b074b61c1a8fd60abd",
+      "mode": "100644"
+    },
+    "bench/baselines/process-linux-x64-node24-pi1.1.0-v2-2026-11-05.json": {
+      "blob": "81da9bc533faa3f1b95c305a922c028134f58eb0",
+      "mode": "100644"
+    },
+    "bench/baselines/process-linux-x64-node24-pi1.1.0-v2-2026-11-05.md": {
+      "blob": "4a5b2a712316df883ccd5bfa65227f9dc0d0d9fd",
+      "mode": "100644"
+    },
+    "bench/budgets.json": {
+      "blob": "17a92c40f9cd6df992b1667faa9da246135d538a",
+      "mode": "100644"
+    },
+    "bench/child-memory.ts": {
+      "blob": "cea625f3fee4c775c4d0692e4704fb132bd43d97",
+      "mode": "100644"
+    },
+    "bench/lib.ts": {
+      "blob": "c66b2a71a9ece0ef9bb8544bf00fc1d9e9efb42e",
+      "mode": "100644"
+    },
+    "bench/pi-host.ts": {
+      "blob": "e17366334fc2bf875d09c9e5502fae076a0ecc1d",
+      "mode": "100644"
+    },
+    "bench/process-tree.ts": {
+      "blob": "fe0ec9c6b10113107d380ff15adaa591b557c6fc",
+      "mode": "100644"
+    },
+    "bench/process.ts": {
+      "blob": "3a58528a958b5bc6fb8721692d2ae9f490a5cddc",
+      "mode": "100644"
+    },
+    "bench/providers/loopback.ts": {
+      "blob": "cafb31ab72c3f1ed1ef61a775baf2133c93ae617",
+      "mode": "100644"
+    },
+    "bench/report.ts": {
+      "blob": "2ed1af377956622022f077731c2fa520bf38b8e0",
+      "mode": "100644"
+    },
+    "bench/rss-reader.ts": {
+      "blob": "57e7a51444eb98135dd70e4743d95c8b7816a89d",
+      "mode": "100644"
+    },
+    "bench/run.ts": {
+      "blob": "d84b310ae85e733b88da422b603e06d54260a790",
+      "mode": "100644"
+    },
+    "bench/scenarios/builder.ts": {
+      "blob": "36da442fe81361c3077b6068b06e0aec6edea199",
+      "mode": "100644"
+    },
+    "bench/scenarios/chain.ts": {
+      "blob": "32aad24f99e47f599c36915603b0724c1e93af52",
+      "mode": "100644"
+    },
+    "bench/scenarios/fanout.ts": {
+      "blob": "959fdafcdb6fa27569b6f890d80385b85205f1d6",
+      "mode": "100644"
+    },
+    "bench/scenarios/scale.ts": {
+      "blob": "497efdfc3ac6be8feb0a37780455f55e74617e8f",
+      "mode": "100644"
+    },
+    "bench/scenarios/stress.ts": {
+      "blob": "545b5158baaa19768a1baaa81a1f6c9e1e031a08",
+      "mode": "100644"
+    },
+    "bench/scenarios/ux.ts": {
+      "blob": "29c6484e54c084dc58cd983d08e2913565ac89ac",
+      "mode": "100644"
+    },
+    "bench/targets/engine-core.ts": {
+      "blob": "c635b6e2fa7a97ecc40f7a69ef16312200940900",
+      "mode": "100644"
+    },
+    "bench/targets/engine.ts": {
+      "blob": "16f957ffcea71b2494c5b250ae1252b15eb3186e",
+      "mode": "100644"
+    },
+    "bench/viewer-runtimes.ts": {
+      "blob": "ff81afec73c6b8d354e19f17c0324dc5cb5ad340",
+      "mode": "100644"
+    },
+    "bench/viewer.ts": {
+      "blob": "ebddf81511037ac09b353d257f7af3bc2a6894f8",
+      "mode": "100644"
+    },
+    "bin/pinata.mjs": {
+      "blob": "1175d78e3793fe7c76e28d715c82350192c3c6d8",
+      "mode": "100755"
+    },
+    "docs/README.md": {
+      "blob": "f2b796985af34eade633d8f3cd5cfcb80b1d597b",
+      "mode": "100644"
+    },
+    "docs/explanation/architecture.md": {
+      "blob": "65bc8348eea3ed378afd84dee35b9fc4a25e46fa",
+      "mode": "100644"
+    },
+    "docs/explanation/extensibility.md": {
+      "blob": "255277dcf3773d0d7344117d9319ffcb644c2201",
+      "mode": "100644"
+    },
+    "docs/explanation/relay-safeguards.md": {
+      "blob": "11b7850bd19e02ccc7e1fbce279dc29a46aac411",
+      "mode": "100644"
+    },
+    "docs/explanation/trust.md": {
+      "blob": "561613ff5e9f965bd9446f3bb1e6d392a871eda7",
+      "mode": "100644"
+    },
+    "docs/explanation/why-pinata.md": {
+      "blob": "3427b03dd3153ad3981779535cbc2a64bbd12209",
+      "mode": "100644"
+    },
+    "docs/how-to/agents.md": {
+      "blob": "dde2aa74caa47ff186fa65151506c9bd6aaf12d6",
+      "mode": "100644"
+    },
+    "docs/how-to/backends.md": {
+      "blob": "9044576743870cc12abe2931cec053f3d8368b57",
+      "mode": "100644"
+    },
+    "docs/how-to/compose-tasks.md": {
+      "blob": "2b6b652e418c70d6a1fbd9458d730cfc58b7104a",
+      "mode": "100644"
+    },
+    "docs/how-to/customize.md": {
+      "blob": "7afd059acfef3a7c8672800d9a12403fe7ff042f",
+      "mode": "100644"
+    },
+    "docs/how-to/dependencies.md": {
+      "blob": "386e0d32d336873e4358fd0c92ce2ca82bd64d21",
+      "mode": "100644"
+    },
+    "docs/how-to/headless.md": {
+      "blob": "035d87515055836dc2b15e942daa8dc86832dd78",
+      "mode": "100644"
+    },
+    "docs/how-to/herdr.md": {
+      "blob": "f3145f3d8194a3e85e9bb93ee165ba6fa8945ecc",
+      "mode": "100644"
+    },
+    "docs/how-to/modes.md": {
+      "blob": "2985b4e9497e5e2b4e6c32c5f6c30dcdf578470c",
+      "mode": "100644"
+    },
+    "docs/how-to/platforms.md": {
+      "blob": "17bc38763aa41cece2c53ce888ab3e7cf6c39633",
+      "mode": "100644"
+    },
+    "docs/how-to/recover.md": {
+      "blob": "e57daa47df2f940b518165ae9132bd32b90c7ea7",
+      "mode": "100644"
+    },
+    "docs/how-to/research.md": {
+      "blob": "12051c68422c60778ee116c119934212e9ae721a",
+      "mode": "100644"
+    },
+    "docs/maintainers/coding-arena.md": {
+      "blob": "7ddb9093c544f2811939544b6d2aba343e812560",
+      "mode": "100644"
+    },
+    "docs/maintainers/current-state-adversarial-review.md": {
+      "blob": "64319f4673d13670139ecf8196c93f13ab29e738",
+      "mode": "100644"
+    },
+    "docs/maintainers/github-packages.md": {
+      "blob": "d71c8bf1f1dc4d10f8be5c089ad6643802cdcf45",
+      "mode": "100644"
+    },
+    "docs/maintainers/p0-p1-validation.md": {
+      "blob": "b3a3e56dc1e797d077cbd27c01576009dbe36e0f",
+      "mode": "100644"
+    },
+    "docs/maintainers/performance.md": {
+      "blob": "f7cc6728059f776939982130db756682f41b2ffc",
+      "mode": "100644"
+    },
+    "docs/maintainers/positioning.md": {
+      "blob": "28b58d6f47f41fde6157cd578938222f8db748b0",
+      "mode": "100644"
+    },
+    "docs/maintainers/publication.md": {
+      "blob": "056cedf46ab27b480b985186144e64e8d183efc1",
+      "mode": "100644"
+    },
+    "docs/maintainers/refactor-validation.md": {
+      "blob": "6f58c06aba91a6659b251335c4bab996c844fc55",
+      "mode": "100644"
+    },
+    "docs/maintainers/rewrite-plan.md": {
+      "blob": "66f8a30791fa121ffed379135f561c8657001801",
+      "mode": "100644"
+    },
+    "docs/maintainers/rewrite-readiness.md": {
+      "blob": "3909dcb5b6809558626dc89f6bb592090ef4f521",
+      "mode": "100644"
+    },
+    "docs/maintainers/testing.md": {
+      "blob": "3ca343dc92d18add46ba4dc3b9e872afa659b534",
+      "mode": "100644"
+    },
+    "docs/maintainers/v3-adversarial-review-prompt.md": {
+      "blob": "dc5714e3fd14e8f7fd398ada2b472254e0f49b74",
+      "mode": "100644"
+    },
+    "docs/maintainers/v3-review-handoff.md": {
+      "blob": "eaeae66588950b6a6a585da0b597084106e40aea",
+      "mode": "100644"
+    },
+    "docs/reference/agents.md": {
+      "blob": "fe6a274eef088930782c8698db10313df638bb64",
+      "mode": "100644"
+    },
+    "docs/reference/commands.md": {
+      "blob": "b72decb09d76bc6f8fcb4cf5fd2d9729ea044d79",
+      "mode": "100644"
+    },
+    "docs/reference/config.md": {
+      "blob": "2c9b6b3304fac8067d41874424f9eb231d712542",
+      "mode": "100644"
+    },
+    "docs/reference/events.md": {
+      "blob": "a27306feaa16587ac2f2e67b42db2c37f52aafd6",
+      "mode": "100644"
+    },
+    "docs/reference/migration.md": {
+      "blob": "7c185c30e0c217b04a1dd28d991d45bc23abc608",
+      "mode": "100644"
+    },
+    "docs/reference/relay.md": {
+      "blob": "36656336987f3614fcc96100afe25c0565abd7bd",
+      "mode": "100644"
+    },
+    "docs/reference/socket-protocol.md": {
+      "blob": "0368aed80c76366267170376c5588fba55ddef62",
+      "mode": "100644"
+    },
+    "docs/reference/tools.md": {
+      "blob": "0835c8d0c34dd1c1f32f61fcd1700784c9d64e91",
+      "mode": "100644"
+    },
+    "docs/tutorials/build-and-review.md": {
+      "blob": "306d808009b6fbc8141273e18e299cdcf583d764",
+      "mode": "100644"
+    },
+    "docs/tutorials/first-run.md": {
+      "blob": "9ed93c7f89e0a0f3af700d72e7360fd4701cffc8",
+      "mode": "100644"
+    },
+    "docs/tutorials/relay.md": {
+      "blob": "089636bbfce54aadb52fbbc4cf5e88dc489675f3",
+      "mode": "100644"
+    },
+    "docs/tutorials/watching-agents.md": {
+      "blob": "c651215e35541494a864e08f10835eaa67b93dd2",
+      "mode": "100644"
+    },
+    "engine/agent/brief.ts": {
+      "blob": "373d7a79649f121a2a5202e8ededfd30ce6f1ffb",
+      "mode": "100644"
+    },
+    "engine/agent/detached.ts": {
+      "blob": "0d3d3519568f13767d3a4fb313afb9c3b345a8b3",
+      "mode": "100644"
+    },
+    "engine/agent/extension.ts": {
+      "blob": "b9616dfa067bd1add4100ed15a2c780e2ea6eb20",
+      "mode": "100644"
+    },
+    "engine/agent/legacy/planner.md": {
+      "blob": "477f2dce27d4ad2ee66fa08305e0a67cb475f02a",
+      "mode": "100644"
+    },
+    "engine/agent/legacy/research.md": {
+      "blob": "185a6492c9e588b55d8b5e6569183c6ba0be1c3a",
+      "mode": "100644"
+    },
+    "engine/agent/personas.ts": {
+      "blob": "e21de83489d51b453b8902ea95c1d3ebd87f53d6",
+      "mode": "100644"
+    },
+    "engine/agent/reporter.ts": {
+      "blob": "d26af04b06f666f0202ad0e764efb654fb85f499",
+      "mode": "100644"
+    },
+    "engine/backends/conversation.ts": {
+      "blob": "1a1375c38059ea3f343bb318a13895ff140381ec",
+      "mode": "100644"
+    },
+    "engine/backends/fake.ts": {
+      "blob": "a32282a0c7b058b89a66fc4000c05e9c1844953e",
+      "mode": "100644"
+    },
+    "engine/backends/herdr-pi.ts": {
+      "blob": "c954f748921e4b0e3db41d7a9103193ff2d6c1a8",
+      "mode": "100644"
+    },
+    "engine/backends/in-process.ts": {
+      "blob": "b2fb6a2db236f553140c7b2f523f5f460c282a80",
+      "mode": "100644"
+    },
+    "engine/backends/pi-command.ts": {
+      "blob": "8e78adc11c9b668256528322110584b3ee517aef",
+      "mode": "100644"
+    },
+    "engine/backends/process.ts": {
+      "blob": "362b07af9ae5031350f2e99f578f6f24954ea08c",
+      "mode": "100644"
+    },
+    "engine/backends/supervise.ts": {
+      "blob": "432fd464e7a638d08e4f9abd41c419d0b30087c5",
+      "mode": "100644"
+    },
+    "engine/backends/types.ts": {
+      "blob": "90e0fb8c9d813fda65cfaf8af3aff65b34d31da3",
+      "mode": "100644"
+    },
+    "engine/core/definitions.ts": {
+      "blob": "214a201653e401b9fd43ac8f01b391bcd9e24b7b",
+      "mode": "100644"
+    },
+    "engine/core/engine.ts": {
+      "blob": "63680a071d77420a7b7d607bdeb95b7814dba76f",
+      "mode": "100644"
+    },
+    "engine/core/events.ts": {
+      "blob": "6382c6f4e2301b4c8cd8bf561438fd82651cabd1",
+      "mode": "100644"
+    },
+    "engine/core/graph.ts": {
+      "blob": "c4503524baa0649e328f25503bdfad407b9c5a76",
+      "mode": "100644"
+    },
+    "engine/core/results.ts": {
+      "blob": "d85b218570c823c97ec0f86f8b2675d781e8f689",
+      "mode": "100644"
+    },
+    "engine/core/scheduler.ts": {
+      "blob": "9569d675f5709c4a0749521ffca1062557b4f75f",
+      "mode": "100644"
+    },
+    "engine/core/store.ts": {
+      "blob": "634654ca3e6ccb2b67cab5847a9447bf25582a61",
+      "mode": "100644"
+    },
+    "engine/core/telemetry.ts": {
+      "blob": "a1db352a7a7bdef3a66be0921fc94154c2eff474",
+      "mode": "100644"
+    },
+    "engine/core/types.ts": {
+      "blob": "bd845494f897157b10eab5a24b748ac0ac7e5841",
+      "mode": "100644"
+    },
+    "engine/core/validate.ts": {
+      "blob": "271a1c82aa15dda8697872270850a6734bb353da",
+      "mode": "100644"
+    },
+    "engine/core/view.ts": {
+      "blob": "f37a6dcc44dbf6b53a8d8c11b2dd8c7f91c0edfa",
+      "mode": "100644"
+    },
+    "engine/headless/integration.ts": {
+      "blob": "9047391bdb96fd845fc2d82a395ae67c3bfa6c5a",
+      "mode": "100644"
+    },
+    "engine/headless/main.ts": {
+      "blob": "7a7e34364d977b1ef16b857db386ada1f815c70f",
+      "mode": "100644"
+    },
+    "engine/headless/reporters.ts": {
+      "blob": "353693da6ff305bdb31a3939de7116a7e678c3bf",
+      "mode": "100644"
+    },
+    "engine/herdr/client.ts": {
+      "blob": "f27ec13771f2eafc06168d3b12cca476d96a239a",
+      "mode": "100644"
+    },
+    "engine/herdr/panes.ts": {
+      "blob": "8724e251cdda4e269de3f80487580c3bb3210200",
+      "mode": "100644"
+    },
+    "engine/ipc/client.ts": {
+      "blob": "68ca15a2ca56c769633ccb9597eabb73be078347",
+      "mode": "100644"
+    },
+    "engine/ipc/protocol.ts": {
+      "blob": "e03b59fc286c486d50da79242b6ad2a27eb62eef",
+      "mode": "100644"
+    },
+    "engine/ipc/server.ts": {
+      "blob": "ba99d06e370c4a32dbe9017639aa1a1f6cd9da99",
+      "mode": "100644"
+    },
+    "engine/migrate/inputs.ts": {
+      "blob": "8adc071179b0c1548ba4b66001c440cbbd0b5348",
+      "mode": "100644"
+    },
+    "engine/migrate/legacy.ts": {
+      "blob": "bd39e6af36359741ea8694c890c81f455aff99e3",
+      "mode": "100644"
+    },
+    "engine/migrate/main.ts": {
+      "blob": "8bb00dc6a0aee662700b53d8decece73fdefc3b1",
+      "mode": "100644"
+    },
+    "engine/pi/commands.ts": {
+      "blob": "5f956b5234363f2283c6bf8b78e2562af4ef0e89",
+      "mode": "100644"
+    },
+    "engine/pi/config.ts": {
+      "blob": "1478ccdaeb48579db027e165af609c2c14284926",
+      "mode": "100644"
+    },
+    "engine/pi/definitions.ts": {
+      "blob": "d2fc0f21bb178292f642861689dfa35c90b9fd4e",
+      "mode": "100644"
+    },
+    "engine/pi/delivery-state.ts": {
+      "blob": "cc591514cfa51afc87723ab12a44769e6f8d8a9c",
+      "mode": "100644"
+    },
+    "engine/pi/delivery.ts": {
+      "blob": "2dbb0f8252adb14da930535bbb1811ebee968fda",
+      "mode": "100644"
+    },
+    "engine/pi/extension.ts": {
+      "blob": "e02447be5114b3cdcbb8deeebab7d0a8c300591c",
+      "mode": "100644"
+    },
+    "engine/pi/host.ts": {
+      "blob": "ef304ecd515a258ad8837ffcdf8b8fdabb7b8990",
+      "mode": "100644"
+    },
+    "engine/pi/pipeline.ts": {
+      "blob": "c86b12fcf05e1885c492ab381b50318c04e1da4b",
+      "mode": "100644"
+    },
+    "engine/pi/render.ts": {
+      "blob": "dee0783d3c712d90b1fa43d9fb2f8f4d03169159",
+      "mode": "100644"
+    },
+    "engine/pi/runtime.ts": {
+      "blob": "4dc1355c922b3fcf0510c02fedacae834fe1b772",
+      "mode": "100644"
+    },
+    "engine/pi/tool-providers.ts": {
+      "blob": "1c667aff05834d4a9073d7ebcb25afeb689c9b5f",
+      "mode": "100644"
+    },
+    "engine/pi/tools.ts": {
+      "blob": "236de3be733dcc01989aa47db540971392928770",
+      "mode": "100644"
+    },
+    "engine/pi/ui.ts": {
+      "blob": "b5af032902454f0e0677151d4a0876b41a14d876",
+      "mode": "100644"
+    },
+    "engine/sources/jsonl.ts": {
+      "blob": "d87b39c59cc8a4272b4984c979c36eb989c32ddb",
+      "mode": "100644"
+    },
+    "engine/sources/log.ts": {
+      "blob": "2590e40a69cc79e8e846d2587f1c21a6c98d7d88",
+      "mode": "100644"
+    },
+    "engine/sources/session.ts": {
+      "blob": "bb050b5bc375a8cecfa4861b940b1b153b05cfec",
+      "mode": "100644"
+    },
+    "engine/ui/detail.ts": {
+      "blob": "b1c6806c0708c4983dd70909fb2eb64b09328be3",
+      "mode": "100644"
+    },
+    "engine/ui/frame.ts": {
+      "blob": "dcec91a2ff061e04456ba4fc0c00baa57bceb9ba",
+      "mode": "100644"
+    },
+    "engine/ui/integration.ts": {
+      "blob": "e192b97e6bf7fe605421544cd00de98435362644",
+      "mode": "100644"
+    },
+    "engine/ui/mascot.ts": {
+      "blob": "8ebdcba43c9d7d1739a62bfb271a88a02cfb3d18",
+      "mode": "100644"
+    },
+    "engine/ui/text.ts": {
+      "blob": "db20b0b834a204c558acc1018a257ab4e3cc7a29",
+      "mode": "100644"
+    },
+    "engine/ui/widget.ts": {
+      "blob": "9fd938dcd1e3730debc82fac51f5c79c4039cab5",
+      "mode": "100644"
+    },
+    "engine/ui/workspace.ts": {
+      "blob": "1a388f985a226dd1e6489dea35404485b55cf171",
+      "mode": "100644"
+    },
+    "engine/verify/checks.ts": {
+      "blob": "88249176ef23fca503f52c51c4c488165d8c4b2f",
+      "mode": "100644"
+    },
+    "engine/verify/destination.ts": {
+      "blob": "f78b28a209623014688f0d86273ad5b2cd43a9da",
+      "mode": "100644"
+    },
+    "engine/verify/evidence.ts": {
+      "blob": "ca5e0f80ce229d76aa695c84feaa6c39a17bdc10",
+      "mode": "100644"
+    },
+    "engine/verify/integrate.ts": {
+      "blob": "1fcb0349d6409d914b3f20e95450f2c6e8f45b4b",
+      "mode": "100644"
+    },
+    "engine/verify/record.ts": {
+      "blob": "88f9df58824df2585dbd3bd47b8c8f98e726acee",
+      "mode": "100644"
+    },
+    "engine/verify/stages.ts": {
+      "blob": "3b11f25be00472bf5cb9e73bd51c3f30307ce7ab",
+      "mode": "100644"
+    },
+    "engine/verify/subject.ts": {
+      "blob": "fc8a951d88a5c53ce7d8712a562125ded80d1744",
+      "mode": "100644"
+    },
+    "engine/viewer/arguments.mjs": {
+      "blob": "fb4dfd822fcdc7b327e60df3581d804e55dbe367",
+      "mode": "100644"
+    },
+    "engine/viewer/client.ts": {
+      "blob": "c956771576259d5b64f6fa82d9eb2475bf2ab97d",
+      "mode": "100644"
+    },
+    "engine/viewer/main.ts": {
+      "blob": "36486f5afae62a717fcd4a5ba8bf2d3da5d4bdc4",
+      "mode": "100644"
+    },
+    "engine/viewer/screen.ts": {
+      "blob": "7c6b3df27dc780252182a688527309dd04a47fb7",
+      "mode": "100644"
+    },
+    "engine/viewer/selection.ts": {
+      "blob": "0a495b90a8c31072627123baa73f911413aa4a35",
+      "mode": "100644"
+    },
+    "engine/workspace/changes.ts": {
+      "blob": "f5355af0e6730bbcfc3373d3dfbb1fe610b82556",
+      "mode": "100644"
+    },
+    "engine/workspace/dependencies.ts": {
+      "blob": "fe97a73ea1bb6b7850d2cddf1415a1b9b95d32a0",
+      "mode": "100644"
+    },
+    "engine/workspace/gate.ts": {
+      "blob": "5f05c0fbb2b7f460cb610c0e53828d4c93456c43",
+      "mode": "100644"
+    },
+    "engine/workspace/git.ts": {
+      "blob": "ee7b82fc110c8a769944ccce35a29b5a09f3af6d",
+      "mode": "100644"
+    },
+    "engine/workspace/include.ts": {
+      "blob": "ee1cc5f80b7d62571accd3e766facaabbe8ecdbb",
+      "mode": "100644"
+    },
+    "engine/workspace/live.ts": {
+      "blob": "aa88d1ec4acaf62e7c22f16a0cd309dd39d25a3b",
+      "mode": "100644"
+    },
+    "engine/workspace/location.ts": {
+      "blob": "de8e9b76d7180f60e2bf23658dc736c3373b3264",
+      "mode": "100644"
+    },
+    "engine/workspace/paths.ts": {
+      "blob": "1ab4ce72e25d0c7878b31e0da3875a00fd223cf9",
+      "mode": "100644"
+    },
+    "engine/workspace/snapshot.ts": {
+      "blob": "3a85ff7bc640a6da3bbf6300773ac354ab6c5977",
+      "mode": "100644"
+    },
+    "engine/workspace/worktree.ts": {
+      "blob": "4fb9c35362a06c437ad3831c7387dc6a3544ed52",
+      "mode": "100644"
+    },
+    "examples/README.md": {
+      "blob": "c4d53177e1b5722e975042628d540282398320dc",
+      "mode": "100644"
+    },
+    "examples/agents/planner.md": {
+      "blob": "278eab3dd207f51de28d884e716168f4930a62e1",
+      "mode": "100644"
+    },
+    "examples/agents/researcher.md": {
+      "blob": "1a2409afad811ac00e15bffcaa67d5cb547c357b",
+      "mode": "100644"
+    },
+    "examples/configs/luna.json": {
+      "blob": "df13df04d1c1fea97f3c435a92ef3e4c4136a73d",
+      "mode": "100644"
+    },
+    "examples/configs/no-codemode.json": {
+      "blob": "a9b4034856c9100bde490250035397962d9d2437",
+      "mode": "100644"
+    },
+    "examples/configs/per-role.json": {
+      "blob": "8294f007c7b275202f2acc0dd4b19940f6974416",
+      "mode": "100644"
+    },
+    "examples/configs/research.json": {
+      "blob": "fce5b3c62deb84cc960b2adf03536f84ab9686b3",
+      "mode": "100644"
+    },
+    "examples/job.json": {
+      "blob": "7fea1bd9eaebeb17b9e4e3a9d0481971753dde74",
+      "mode": "100644"
+    },
+    "examples/jobs.md": {
+      "blob": "ddfa11ac8623f8397d860c657862614610f61bfb",
+      "mode": "100644"
+    },
+    "examples/jobs/accessibility-remediation-job.json": {
+      "blob": "54e42ccb66cb67cc786e031eb4ecdc5a5131d4bf",
+      "mode": "100644"
+    },
+    "examples/jobs/batch-migration-job.json": {
+      "blob": "e7c2e52273ba87977e0b1a291ffe70fa54dbfdbd",
+      "mode": "100644"
+    },
+    "examples/jobs/data-pipeline-job.json": {
+      "blob": "0b606dfe62549741ed5ce59b9ce0f1987d22466c",
+      "mode": "100644"
+    },
+    "examples/jobs/fast-fix-job.json": {
+      "blob": "b3c7a39640d42ecf99bdc65f4407da303dd0b778",
+      "mode": "100644"
+    },
+    "examples/jobs/feature-delivery-job.json": {
+      "blob": "0b871802422c10a4fdb4bccbae4f3da5f9d722a7",
+      "mode": "100644"
+    },
+    "examples/jobs/monorepo-setup-job.json": {
+      "blob": "f7c6803aa83ecd79a1122f8e7f371760350d0acd",
+      "mode": "100644"
+    },
+    "examples/jobs/node-deps-job.json": {
+      "blob": "65a98f1fe5d20d7fb241bc58040c8751c194fe6d",
+      "mode": "100644"
+    },
+    "examples/jobs/parallel-builders-job.json": {
+      "blob": "90476bc23ee468131c882648a0877ee50fd6b050",
+      "mode": "100644"
+    },
+    "examples/jobs/research-decision-job.json": {
+      "blob": "41d114e3dd26e87e39e00594c952deab85e0580e",
+      "mode": "100644"
+    },
+    "examples/jobs/research-plan-job.json": {
+      "blob": "3da8199f0e0f82e8f10788956ef9d9fa8554f454",
+      "mode": "100644"
+    },
+    "examples/jobs/review-changes-job.json": {
+      "blob": "aeaed24dfe5cca7a012413cdd6f809642b58e181",
+      "mode": "100644"
+    },
+    "examples/jobs/ux-discovery-job.json": {
+      "blob": "e9254021586361f15505fe796a02d052eeb7964f",
+      "mode": "100644"
+    },
+    "examples/pinata.config.json": {
+      "blob": "24f7c5c0b8be9e8a976cafc591cbdfb2cf1fc119",
+      "mode": "100644"
+    },
+    "examples/relay/README.md": {
+      "blob": "5152f345a830a489285469e0161ccd4c927edd91",
+      "mode": "100644"
+    },
+    "examples/relay/expected-report.md": {
+      "blob": "b9a38df3b1f9bd6f8dae9aa36931db121b6ef022",
+      "mode": "100644"
+    },
+    "examples/relay/job.json": {
+      "blob": "4acff4ab3604e22b1aa40cddca4ec47d10bb8be9",
+      "mode": "100644"
+    },
+    "examples/relay/setup.mjs": {
+      "blob": "db188971816c73e4522efe8d105b2e77d6151eed",
+      "mode": "100644"
+    },
+    "examples/relay/starter/.gitignore": {
+      "blob": "4e81b7dca6f11b51bfe0d66c9ce66a56d4a549ea",
+      "mode": "100644"
+    },
+    "examples/relay/starter/README.md": {
+      "blob": "5f9b426fbcdb056259ab1d5b5f365a6085e8e5f0",
+      "mode": "100644"
+    },
+    "examples/relay/starter/REQUIREMENTS.md": {
+      "blob": "7acebb79f49a9d4cb3818e1d06c70f5ff8066f19",
+      "mode": "100644"
+    },
+    "examples/relay/starter/bin/relay.mjs": {
+      "blob": "e195622c53cba99ce91570ae846ff7cd63b63028",
+      "mode": "100644"
+    },
+    "examples/relay/starter/data/events.jsonl": {
+      "blob": "ae6cd8d16980037357c540b42b32b0c5c65c7b19",
+      "mode": "100644"
+    },
+    "examples/relay/starter/package.json": {
+      "blob": "6a2e67f406cec2b32dd48fff8b316208e5b8f705",
+      "mode": "100644"
+    },
+    "examples/relay/starter/src/parse.mjs": {
+      "blob": "a78eaa9a8e50c004d8f24e78bdd966ccb9672c43",
+      "mode": "100644"
+    },
+    "examples/relay/starter/src/render.mjs": {
+      "blob": "1063fa1cb457008f6e0708de70b9ef23e30b341c",
+      "mode": "100644"
+    },
+    "examples/relay/starter/src/summarize.mjs": {
+      "blob": "d055d7c4059a75cf32ed911032dc66086cacc3e2",
+      "mode": "100644"
+    },
+    "examples/relay/verify.mjs": {
+      "blob": "bb3933635073d2df6a95314d78513378a2899968",
+      "mode": "100644"
+    },
+    "examples/scout-job.json": {
+      "blob": "74dd36ec0c4d4138d4bcaba27417ef8dcdf70cf6",
+      "mode": "100644"
+    },
+    "examples/tutorial-build-job.json": {
+      "blob": "73ded297832f24ca54e1e2e919e8fbbea1c436d3",
+      "mode": "100644"
+    },
+    "media/README.md": {
+      "blob": "0e13ca9f3de1aca59381c7278343fb00530f9e28",
+      "mode": "100644"
+    },
+    "media/pinata-demo-poster.png": {
+      "blob": "10e787ff58d42f8e6cb00fe1035a6e2c35e3c0e9",
+      "mode": "100644"
+    },
+    "media/pinata-demo.mp4": {
+      "blob": "64b8e015e45f93a3ae791c28ab128dbad029b147",
+      "mode": "100644"
+    },
+    "media/pinata-hero-v2.png": {
+      "blob": "ceef452d6dfe8f50305f306accc81c441b99701d",
+      "mode": "100644"
+    },
+    "media/proof.md": {
+      "blob": "2c6458dbecb1ba6f0c01236f48ce911d1535afa5",
+      "mode": "100644"
+    },
+    "package-lock.json": {
+      "blob": "836b1e08ae20bcad553c014a4fb7005085d8af80",
+      "mode": "100644"
+    },
+    "package.json": {
+      "blob": "86e0a9fd29913e05d83adbaeb42f1cdc6c54b2ed",
+      "mode": "100644"
+    },
+    "prompts/builder.md": {
+      "blob": "c291f9b9f401a37217f4afe0fa4286524e1c1cd3",
+      "mode": "100644"
+    },
+    "prompts/pinata-fix.md": {
+      "blob": "e5b451a44ae4eee34a0dfc22fe0c73a7c857eac0",
+      "mode": "100644"
+    },
+    "prompts/pinata-review.md": {
+      "blob": "f6a11da047c90c51fdc929360c212fa6709a8f83",
+      "mode": "100644"
+    },
+    "prompts/reviewer.md": {
+      "blob": "bbacc1533ba57faf0428e23964e0f05094277c29",
+      "mode": "100644"
+    },
+    "prompts/scout.md": {
+      "blob": "55647f576b3e26dab6d242ef7a73a8ceee808264",
+      "mode": "100644"
+    },
+    "scripts/bench-ci.mjs": {
+      "blob": "65969733306f24647c33783beb8054d029fa1dec",
+      "mode": "100644"
+    },
+    "scripts/pi-binary.mjs": {
+      "blob": "5c813e15f0a6a7de978d3a5fff24925baaefe336",
+      "mode": "100644"
+    },
+    "scripts/readiness.mjs": {
+      "blob": "3300a60feef377297b5135b94274fba6f5616434",
+      "mode": "100644"
+    },
+    "scripts/release-npm.mjs": {
+      "blob": "a3561bcf5ab2990441d04a37a26d6ab3f88130a3",
+      "mode": "100644"
+    },
+    "scripts/sync-github-package.mjs": {
+      "blob": "d8db9648eb2186b166cfac32c0e50cde318f11cd",
+      "mode": "100644"
+    },
+    "scripts/test.mjs": {
+      "blob": "d4478bf0ded73cc4be6788e8bcf31301897ac82d",
+      "mode": "100644"
+    },
+    "skills/engmgmt/SKILL.md": {
+      "blob": "a94efb76d77b94d2393837e097a0a3001c5c6d63",
+      "mode": "100644"
+    },
+    "skills/subagents/SKILL.md": {
+      "blob": "c99e567a49fed1a33149b814f207c6b4f90bd2c9",
+      "mode": "100644"
+    },
+    "skills/subagents/reference.md": {
+      "blob": "2164c7b534e3907b39a921ac02513c95eb0f898a",
+      "mode": "100644"
+    },
+    "test/bench-ci.test.mjs": {
+      "blob": "77a2cf5f6774b9a16d448ccc4530d79b189c52aa",
+      "mode": "100644"
+    },
+    "test/engine/agent-extension.test.ts": {
+      "blob": "0c173b5e312d3db911e0536f0ac1d42aca4e3d2d",
+      "mode": "100644"
+    },
+    "test/engine/arena-adapters.test.ts": {
+      "blob": "e2afc92a557d2198e9a95e5639b704df5214a54a",
+      "mode": "100644"
+    },
+    "test/engine/arena-coordinator.test.ts": {
+      "blob": "90dd0119119d2b46eb3a4b2bd83e22280626b96a",
+      "mode": "100644"
+    },
+    "test/engine/arena-corpus.test.ts": {
+      "blob": "56c6006e6f46bd19b9db64bafb4ff0435410c494",
+      "mode": "100644"
+    },
+    "test/engine/arena-evidence.test.ts": {
+      "blob": "216072b7cac757e5c8e6ed910f13154230f8a259",
+      "mode": "100644"
+    },
+    "test/engine/arena-integrity.test.ts": {
+      "blob": "746d676bcc85fe5503bcf7dfe17f1d7f0b26b643",
+      "mode": "100644"
+    },
+    "test/engine/arena-native.test.ts": {
+      "blob": "60706ee5463c83f0edc05bb6da33614d6cfa4f49",
+      "mode": "100644"
+    },
+    "test/engine/arena-project.test.ts": {
+      "blob": "bec99631e4282c9c21851fd384bfe162fdfa55b8",
+      "mode": "100644"
+    },
+    "test/engine/arena-report.test.ts": {
+      "blob": "546efc8625c02651288e1fa4f15ae4d5d23b9f57",
+      "mode": "100644"
+    },
+    "test/engine/arena-runner.test.ts": {
+      "blob": "3f94b4ea8c99785effa88e6b138c3d91291626e1",
+      "mode": "100644"
+    },
+    "test/engine/arena-treatment.test.ts": {
+      "blob": "ad3e1e0a2960635e23538ea169e9bcd431fd2a7b",
+      "mode": "100644"
+    },
+    "test/engine/backends.test.ts": {
+      "blob": "4196ee8d225f3ae2c0bd1380b3c932b4a5b1c292",
+      "mode": "100644"
+    },
+    "test/engine/benchmark-evidence.test.ts": {
+      "blob": "e32318a32ac670f7bd374b6a9bdd960da369822b",
+      "mode": "100644"
+    },
+    "test/engine/budgets.test.ts": {
+      "blob": "0340d60496aaa63d3473b524fbb531de9209df25",
+      "mode": "100644"
+    },
+    "test/engine/builders.test.ts": {
+      "blob": "8aa9014ed014e8ed1039d572fffa474574bd07d4",
+      "mode": "100644"
+    },
+    "test/engine/checks.test.ts": {
+      "blob": "0a5f783630f27716d271aea4f0413b7753c343aa",
+      "mode": "100644"
+    },
+    "test/engine/definitions.test.ts": {
+      "blob": "c43ea0b027ff49f5fc3aa0396c622e89bf5d8894",
+      "mode": "100644"
+    },
+    "test/engine/delivery.test.ts": {
+      "blob": "3468dfb452091ea80c4136d12f151a548b68859f",
+      "mode": "100644"
+    },
+    "test/engine/detail.test.ts": {
+      "blob": "632a1c2cdc6278057bb3689c4bef16c532525dac",
+      "mode": "100644"
+    },
+    "test/engine/docs.test.ts": {
+      "blob": "5ee8540e5f9fad7780e3e21a2952d4a48fec909e",
+      "mode": "100644"
+    },
+    "test/engine/engine.test.ts": {
+      "blob": "bb6b0abf9200237b3c7b8bab0a1db5ec41fbe8e5",
+      "mode": "100644"
+    },
+    "test/engine/examples.test.ts": {
+      "blob": "657267086522e2f91fbde06bc3bfb2ee02b3b100",
+      "mode": "100644"
+    },
+    "test/engine/faux.ts": {
+      "blob": "e44613c0d2d5ddedbeefa4fbb086f511e1ae7615",
+      "mode": "100644"
+    },
+    "test/engine/fingerprint.test.ts": {
+      "blob": "73e46c8da1bbbb75ae9d40ca25c1fa4e7ef7b0a6",
+      "mode": "100644"
+    },
+    "test/engine/fixtures/benchmark-lifecycle.mjs": {
+      "blob": "2afa4dc54de48e6120d1e3d1948c328fbb02b329",
+      "mode": "100644"
+    },
+    "test/engine/fixtures/faux-extension.ts": {
+      "blob": "3516d0071268c365388f7664d9c4722c7807002d",
+      "mode": "100644"
+    },
+    "test/engine/fixtures/relay/.gitignore": {
+      "blob": "4e81b7dca6f11b51bfe0d66c9ce66a56d4a549ea",
+      "mode": "100644"
+    },
+    "test/engine/fixtures/relay/README.md": {
+      "blob": "5f9b426fbcdb056259ab1d5b5f365a6085e8e5f0",
+      "mode": "100644"
+    },
+    "test/engine/fixtures/relay/REQUIREMENTS.md": {
+      "blob": "7acebb79f49a9d4cb3818e1d06c70f5ff8066f19",
+      "mode": "100644"
+    },
+    "test/engine/fixtures/relay/bin/relay.mjs": {
+      "blob": "5bd9f0379968af7b2cf346d2d5512cb728575251",
+      "mode": "100644"
+    },
+    "test/engine/fixtures/relay/data/events.jsonl": {
+      "blob": "ae6cd8d16980037357c540b42b32b0c5c65c7b19",
+      "mode": "100644"
+    },
+    "test/engine/fixtures/relay/package.json": {
+      "blob": "6a2e67f406cec2b32dd48fff8b316208e5b8f705",
+      "mode": "100644"
+    },
+    "test/engine/fixtures/relay/src/parse.mjs": {
+      "blob": "88696997b22e9790af89859547df1ac9b4cf29ca",
+      "mode": "100644"
+    },
+    "test/engine/fixtures/relay/src/render.mjs": {
+      "blob": "839928adbe14154ca6de5a6b7d6c655b0d270742",
+      "mode": "100644"
+    },
+    "test/engine/fixtures/relay/src/summarize.mjs": {
+      "blob": "3e283d6545470c388f5ce64b0ddd5499ceb95a95",
+      "mode": "100644"
+    },
+    "test/engine/fixtures/relay/test/cli.test.mjs": {
+      "blob": "202ab693e8177f984e36bdfb84e4d4620f46748e",
+      "mode": "100644"
+    },
+    "test/engine/fixtures/relay/test/parse.test.mjs": {
+      "blob": "463ab0dfd1cb7b6cafc332265c4bc7ef40e55d48",
+      "mode": "100644"
+    },
+    "test/engine/fixtures/relay/test/render.test.mjs": {
+      "blob": "f0b96a37874a280a97c23d900c29b17514d2b969",
+      "mode": "100644"
+    },
+    "test/engine/fixtures/relay/test/summarize.test.mjs": {
+      "blob": "f87e5ccc6ef9b5296d7f46c68786b8207048747c",
+      "mode": "100644"
+    },
+    "test/engine/git.test.ts": {
+      "blob": "1d88198a03c9eb078b7569d491740ffc4efcd7ca",
+      "mode": "100644"
+    },
+    "test/engine/headless.test.ts": {
+      "blob": "bf207dfcbcbe20e81cbf0196abb7fd0f96cee9fe",
+      "mode": "100644"
+    },
+    "test/engine/helpers.ts": {
+      "blob": "2e299d2ba7156285aa408bf09b646869ce178371",
+      "mode": "100644"
+    },
+    "test/engine/herdr.test.ts": {
+      "blob": "e10a6438559db0d9a256a0220a8c7a25e0213f1a",
+      "mode": "100644"
+    },
+    "test/engine/in-process.test.ts": {
+      "blob": "d60e5ccbf6626c1b4ff4ac3213909b3243ee7d6b",
+      "mode": "100644"
+    },
+    "test/engine/integrate.test.ts": {
+      "blob": "8ef27656e90df64aedfa1c06af1db487b803fbdc",
+      "mode": "100644"
+    },
+    "test/engine/ipc.test.ts": {
+      "blob": "ccc4476e88b21f264c56441c850374446b37c8fe",
+      "mode": "100644"
+    },
+    "test/engine/limiter.test.ts": {
+      "blob": "84160034d9e2476b3590aeddaebe31c4a64c6d80",
+      "mode": "100644"
+    },
+    "test/engine/live-smoke.ts": {
+      "blob": "2a0b731a008d4613144fe9537e178bdb7fdb161f",
+      "mode": "100644"
+    },
+    "test/engine/location.test.ts": {
+      "blob": "6d4c33552dd7f930b25e8ed7396358ef6ec21a2c",
+      "mode": "100644"
+    },
+    "test/engine/log.test.ts": {
+      "blob": "2336fd7958904c825e7c6059e542f1f52acdae9b",
+      "mode": "100644"
+    },
+    "test/engine/migrate.test.ts": {
+      "blob": "824658c18413ed61948a6571855f01de959df5d6",
+      "mode": "100644"
+    },
+    "test/engine/package-smoke.ts": {
+      "blob": "fb7523895ea1cf0c93610b02c54c13be357c6f7c",
+      "mode": "100644"
+    },
+    "test/engine/paths.test.ts": {
+      "blob": "eb0aae107f1fc4e47b1b6471267f896759d2b2d4",
+      "mode": "100644"
+    },
+    "test/engine/performance.test.ts": {
+      "blob": "f6c1ca1c7141e520c3a480e68c56339e3500bcba",
+      "mode": "100644"
+    },
+    "test/engine/pi-adapter.test.ts": {
+      "blob": "d831e20c4b4fc8b508c8caacb94808a88704f9eb",
+      "mode": "100644"
+    },
+    "test/engine/pi-smoke.ts": {
+      "blob": "23e467e90ae6f48f14e1d9e538c6d5bbc387bcce",
+      "mode": "100644"
+    },
+    "test/engine/process-performance.test.ts": {
+      "blob": "ec4170b55efb27800719f9bfa8ea30c2e7623e2a",
+      "mode": "100644"
+    },
+    "test/engine/prompts.test.ts": {
+      "blob": "defe110bc9a991ec0818c2e8809a58615f9dcdd5",
+      "mode": "100644"
+    },
+    "test/engine/quality.test.ts": {
+      "blob": "88d911c74a3b21cd33fbd058be5a3fbac554e0ce",
+      "mode": "100644"
+    },
+    "test/engine/relay.test.ts": {
+      "blob": "5057e5a09b1389fe670a1770b74b32a224656ace",
+      "mode": "100644"
+    },
+    "test/engine/render.test.ts": {
+      "blob": "03e2b2d8cebead7a6dcf6ccd25add0cb1f834a80",
+      "mode": "100644"
+    },
+    "test/engine/repair-accounting.test.ts": {
+      "blob": "d35f1241985509b9a22c56e8bfaed10e2c0cdfb0",
+      "mode": "100644"
+    },
+    "test/engine/results.test.ts": {
+      "blob": "edaf0e199aad0c9af54b04fbf79d520e47fd3dc0",
+      "mode": "100644"
+    },
+    "test/engine/rss-reader.test.ts": {
+      "blob": "2fdb143c319e72b431e7b7c45f9fb53a9e6e2764",
+      "mode": "100644"
+    },
+    "test/engine/scheduler.test.ts": {
+      "blob": "a77c76ebbe6b4affbadf7b0a770ea0a04ae81b09",
+      "mode": "100644"
+    },
+    "test/engine/store.test.ts": {
+      "blob": "1559f568a48e0a59b76abf0144f3ffad63a0123e",
+      "mode": "100644"
+    },
+    "test/engine/survive.test.ts": {
+      "blob": "e27d4b92c6892d8d8ce8a10bd45def24fb6043d0",
+      "mode": "100644"
+    },
+    "test/engine/ui.test.ts": {
+      "blob": "d96ac6698be0312903b55859f4a417bd8c2a7f07",
+      "mode": "100644"
+    },
+    "test/engine/validate.test.ts": {
+      "blob": "32c520e74703335433c8f2c6fbb7bc22bcdc1bf5",
+      "mode": "100644"
+    },
+    "test/engine/view-command.test.ts": {
+      "blob": "b6e4335f6199ba02e0b2b569f8f7f17de4bdde9d",
+      "mode": "100644"
+    },
+    "test/engine/view.test.ts": {
+      "blob": "799e0689849c1a1e5ac3d1486a4490cfba44d068",
+      "mode": "100644"
+    },
+    "test/engine/viewer.test.ts": {
+      "blob": "84e265aa3189135778c80f6d12299a1c70d5fe96",
+      "mode": "100644"
+    },
+    "test/engine/workspace.test.ts": {
+      "blob": "aac890e98a315eb6b0682af3c208315badfad8af",
+      "mode": "100644"
+    },
+    "test/engine/worlds.ts": {
+      "blob": "e11575e289c3361a38ac38ed6a1c523a33e7e228",
+      "mode": "100644"
+    },
+    "test/github-package.test.mjs": {
+      "blob": "2b128fd1c6fc4d1c6417a9abb660f5c02099d084",
+      "mode": "100644"
+    },
+    "test/quality/engine.ts": {
+      "blob": "439706f86d14c45447819fc31408dcc6e94a86dc",
+      "mode": "100644"
+    },
+    "test/quality/fixtures.mjs": {
+      "blob": "df5081d27d4acf610f3873d34f5abb84bb6650cf",
+      "mode": "100644"
+    },
+    "test/quality/oracle.mjs": {
+      "blob": "bcc3d8e40824895cd1b5c640cb3f56d5b6930351",
+      "mode": "100644"
+    },
+    "test/quality/report.mjs": {
+      "blob": "9ed28ab24443fd52a400d44590271e15a5548b6b",
+      "mode": "100644"
+    },
+    "test/quality/score.mjs": {
+      "blob": "87718733ab42e0d60eeb94b2ace5aa2bff3a79f4",
+      "mode": "100644"
+    },
+    "test/readiness/application-child.ts": {
+      "blob": "50d856dbfd14805a0ce1ebfa89568996bea74938",
+      "mode": "100644"
+    },
+    "test/readiness/application.test.ts": {
+      "blob": "62cbb7c8e948e82eec0f86c02e86df62ab860300",
+      "mode": "100644"
+    },
+    "test/readiness/baseline.test.ts": {
+      "blob": "76a10421d8ab4e1ae89a1c011f5ba4e9a52e2f98",
+      "mode": "100644"
+    },
+    "test/readiness/fixtures.ts": {
+      "blob": "260d4bb641c1803043b01f9e567a7abd14e4dbea",
+      "mode": "100644"
+    },
+    "test/readiness/harness.test.ts": {
+      "blob": "1059bd2456a131f1dcd70fedb0b32c7afd518d09",
+      "mode": "100644"
+    },
+    "test/readiness/host-claim-child.ts": {
+      "blob": "8dbcf05b3527392f6ee6830e70ba8c8d71329277",
+      "mode": "100644"
+    },
+    "test/readiness/journal-prototype.ts": {
+      "blob": "f437f6133061a2398d5abfed55035c1d45711767",
+      "mode": "100644"
+    },
+    "test/readiness/ledger-child.ts": {
+      "blob": "ff330ba6c942edcaf611ca210cd7a874b85e6952",
+      "mode": "100644"
+    },
+    "test/readiness/matrix-child.ts": {
+      "blob": "ba473c76063bc97f381940ca43c1e4e2dcab8af5",
+      "mode": "100644"
+    },
+    "test/readiness/ownership.test.ts": {
+      "blob": "e0d220f52f83e4be45ede418683908cdf5ad994d",
+      "mode": "100644"
+    },
+    "test/readiness/process-tree-child.ts": {
+      "blob": "435342b41730ad83298417c2c9550d8f4631092e",
+      "mode": "100644"
+    },
+    "test/readiness/process.test.ts": {
+      "blob": "bbae079b1233b6a0992a98b3f6e888ab5eb37c3d",
+      "mode": "100644"
+    },
+    "test/readiness/profile.ts": {
+      "blob": "f490f099013a5e9a5cb700c837a2363c7c41df2b",
+      "mode": "100644"
+    },
+    "test/readiness/sdk.test.ts": {
+      "blob": "2d37b13ad3d9ca00a998eb8ab42b1709057b2628",
+      "mode": "100644"
+    },
+    "test/readiness/ui-extension.ts": {
+      "blob": "686193b8c3149916919a7bf3e0041ec2e5dcbd6d",
+      "mode": "100644"
+    },
+    "test/readiness/ui-pty.py": {
+      "blob": "3b3198eefb4584ac814ed5e80567e748b6b1a8a7",
+      "mode": "100644"
+    },
+    "test/readiness/usage-prototype.ts": {
+      "blob": "2b888aa7cfd362f421665c5c549b1a9845c749e9",
+      "mode": "100644"
+    },
+    "test/release.test.mjs": {
+      "blob": "f95baf0db1c10651fe464caef4c25b2675989134",
+      "mode": "100644"
+    },
+    "tsconfig.json": {
+      "blob": "dd6c152dfefedecf1b38fc8ae9f09f7463ffe0b0",
+      "mode": "100644"
+    }
+  }
+}

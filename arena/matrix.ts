@@ -1,105 +1,226 @@
-// Counterbalance system order without running competing live trials simultaneously.
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { resolve, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { parseAdapterConfig, runArena } from "./runner.ts";
-import { allTasks } from "./corpus/index.ts";
+import { randomUUID } from "node:crypto";
+import { lstat, mkdir, readFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
+import { z } from "zod";
+import { pathToFileURL } from "node:url";
+import { canonicalJson } from "../engine/contracts/digest.ts";
+import { publishImmutable } from "../engine/storage/io.ts";
+import { adapterSchema } from "./adapters.ts";
+import { conditionSchema, limitsSchema } from "./contracts.ts";
+import { regularBytes } from "./evidence.ts";
+import { readBatch, type Batch } from "./ledger.ts";
+import { runArena } from "./runner.ts";
 
-export function balancedOrder(names: string[], rounds: number): string[][] {
-  if (!names.length || new Set(names).size !== names.length)
-    throw new Error("Unique treatments required");
-  if (!Number.isInteger(rounds) || rounds < 1) throw new Error("Positive rounds required");
+export const matrixSchema = z.strictObject({
+  schemaVersion: z.literal(2),
+  rounds: z.number().int().positive(),
+  tasks: z
+    .array(
+      z.strictObject({ id: z.string().min(1), version: z.number().int().positive().optional() }),
+    )
+    .min(1),
+  conditions: z
+    .array(
+      z.strictObject({
+        name: z.string().min(1),
+        adapter: adapterSchema,
+        requested: conditionSchema,
+      }),
+    )
+    .min(1),
+  limits: limitsSchema,
+});
+export type Matrix = z.infer<typeof matrixSchema>;
+export function balancedOrder(names: readonly string[], rounds: number): string[][] {
+  if (
+    !names.length ||
+    new Set(names).size !== names.length ||
+    !Number.isInteger(rounds) ||
+    rounds < 1
+  )
+    throw new Error("Unique conditions and positive rounds are required");
   return Array.from({ length: rounds }, (_, round) => {
-    const offset = Math.floor(round / 2) % names.length;
-    const rotated = [...names.slice(offset), ...names.slice(0, offset)];
-    return round % 2 ? rotated.reverse() : rotated;
+    const rotated = Array.from(
+      { length: names.length },
+      (_, index) => names[(index + round) % names.length],
+    );
+    return Math.floor(round / names.length) % 2 ? rotated.reverse() : rotated;
   });
+}
+export const matrixScheduleSchema = z.strictObject({
+  schemaVersion: z.literal(2),
+  matrix: z.uuid(),
+  allocatedAt: z.iso.datetime(),
+  input: matrixSchema,
+  cells: z.array(
+    z.strictObject({
+      id: z.uuid(),
+      batch: z.uuid(),
+      round: z.number().int().positive(),
+      condition: z.string(),
+      task: z.string(),
+      taskVersion: z.number().int().positive().optional(),
+      order: z.number().int().nonnegative(),
+    }),
+  ),
+});
+export async function runMatrix(
+  input: Matrix,
+  options: {
+    out: string;
+    repositoryRoot: string;
+    allowExternal?: boolean;
+    signal?: AbortSignal;
+    afterAllocated?: (directory: string) => Promise<void>;
+    afterBatchAllocated?: (batch: Batch) => Promise<void>;
+  },
+): Promise<string> {
+  const config = matrixSchema.parse(input);
+  const orders = balancedOrder(
+    config.conditions.map((condition) => condition.name),
+    config.rounds,
+  );
+  const directory = resolve(options.out, `matrix-${randomUUID()}`);
+  await mkdir(directory, { recursive: true, mode: 0o700 });
+  const cells = orders
+    .flatMap((order, index) =>
+      config.tasks.flatMap((task) =>
+        order.map((condition) => ({
+          id: randomUUID(),
+          batch: randomUUID(),
+          round: index + 1,
+          condition,
+          task: task.id,
+          ...(task.version ? { taskVersion: task.version } : {}),
+        })),
+      ),
+    )
+    .map((cell, order) => ({ ...cell, order }));
+  const schedule = matrixScheduleSchema.parse({
+    schemaVersion: 2,
+    matrix: randomUUID(),
+    allocatedAt: new Date().toISOString(),
+    input: config,
+    cells,
+  });
+  // Batch identity is allocated in this immutable schedule before its directory is
+  // created. Killing either process cannot leave an unknown batch pointer (A3).
+  await publishImmutable(
+    join(directory, "schedule.json"),
+    Buffer.from(canonicalJson(schedule)),
+    "arena.matrix",
+  );
+  await options.afterAllocated?.(directory);
+  for (const cell of cells) {
+    if (options.signal?.aborted) break;
+    const condition = config.conditions.find((entry) => entry.name === cell.condition);
+    if (!condition) throw new Error("Unknown scheduled condition");
+    await runArena({
+      out: directory,
+      repositoryRoot: options.repositoryRoot,
+      batchId: cell.batch,
+      tasks: [{ id: cell.task, version: cell.taskVersion }],
+      trials: 1,
+      workflows: [condition.requested.workflow],
+      adapter: condition.adapter,
+      condition: condition.requested,
+      limits: config.limits,
+      allowExternal: options.allowExternal,
+      signal: options.signal,
+      afterAllocated: options.afterBatchAllocated,
+    });
+  }
+  return directory;
+}
+export async function readMatrix(
+  directory: string,
+): Promise<{ schedule: z.infer<typeof matrixScheduleSchema>; batches: (Batch | null)[] }> {
+  const schedule = matrixScheduleSchema.parse(
+    JSON.parse((await regularBytes(join(directory, "schedule.json"))).toString()),
+  );
+  const identities = new Set<string>();
+  const batches: (Batch | null)[] = [];
+  for (const [index, cell] of schedule.cells.entries()) {
+    if (identities.has(cell.batch) || identities.has(cell.id) || cell.order !== index)
+      throw new Error("Duplicate or unordered matrix cell");
+    identities.add(cell.batch);
+    identities.add(cell.id);
+    try {
+      await lstat(join(directory, `arena-${cell.batch}`, "manifest.json"));
+    } catch (error) {
+      if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
+      batches.push(null);
+      continue;
+    }
+    {
+      const batch = await readBatch(join(directory, `arena-${cell.batch}`));
+      if (
+        batch.manifest.batch !== cell.batch ||
+        batch.cells.length !== 1 ||
+        batch.cells[0].cell.task !== cell.task
+      )
+        throw new Error("Matrix batch identity mismatch");
+      batches.push(batch);
+    }
+  }
+  return { schedule, batches };
 }
 
-async function main() {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const args = process.argv.slice(2);
-  if (!args.includes("--allow-external")) throw new Error("Live matrix requires --allow-external");
-  const configFile = args.find((arg) => !arg.startsWith("--"));
-  if (!configFile) throw new Error("Usage: node arena/matrix.ts matrix.json --allow-external");
-  const input = JSON.parse(readFileSync(resolve(configFile), "utf8")) as {
-    out?: string;
-    configs: string[];
-    tasks: string[];
-    rounds: number;
-    timeoutMs: Record<string, number>;
-  };
-  const adapters = input.configs.map((path) =>
-    parseAdapterConfig(JSON.parse(readFileSync(resolve(path), "utf8"))),
-  );
-  const orders = balancedOrder(
-    adapters.map((adapter) => adapter.name),
-    input.rounds,
-  );
-  const tasks = input.tasks.map((id) => {
-    const task = allTasks.find((candidate) => candidate.id === id);
-    if (!task) throw new Error(`Unknown task ${id}`);
-    if (!Number.isInteger(input.timeoutMs[id]) || input.timeoutMs[id] < 1000)
-      throw new Error(`Invalid timeout for ${id}`);
-    return task;
-  });
-  const cells = orders.flatMap((order, round) =>
-    tasks.flatMap((task) =>
-      order.map((name) => ({
-        round: round + 1,
-        task: task.id,
-        name,
-        status: "pending",
-        batch: null as string | null,
-      })),
-    ),
-  );
-  const directory = resolve(
-    input.out ?? "arena/results",
-    `matrix-${new Date().toISOString().replaceAll(":", "-")}`,
-  );
-  mkdirSync(directory, { recursive: true });
-  const save = () =>
-    writeFileSync(
-      join(directory, "schedule.json"),
-      JSON.stringify({ input, cells }, null, 2) + "\n",
-    );
-  save();
   const controller = new AbortController();
-  const cancel = () => controller.abort();
-  process.once("SIGINT", cancel);
-  process.once("SIGTERM", cancel);
+  const abort = () => controller.abort();
+  process.once("SIGINT", abort);
+  process.once("SIGTERM", abort);
   try {
-    for (const cell of cells) {
-      if (controller.signal.aborted) break;
-      cell.status = "running";
-      save();
-      const adapter = adapters.find((candidate) => candidate.name === cell.name)!;
-      console.log(`Starting round ${cell.round}: ${cell.task} / ${cell.name}`);
-      const batch = await runArena({
-        adapter: { ...adapter, timeoutMs: input.timeoutMs[cell.task] },
-        tasks: tasks.filter((task) => task.id === cell.task),
-        trials: 1,
-        workflows: ["native"],
-        timeoutMs: input.timeoutMs[cell.task],
-        signal: controller.signal,
-        allowExternal: true,
-        out: directory,
-      });
-      cell.batch = batch.directory;
-      cell.status = batch.results.every(
-        (result) => result.status === "completed" && result.candidateCorrect === true,
+    if (args.includes("--help"))
+      console.log(
+        "node arena/matrix.ts CONFIG.json [--out DIR] [--allow-external]. The version 2 schedule is durably allocated before execution.",
+      );
+    else {
+      const file = args[0];
+      if (!file || file.startsWith("--"))
+        throw new Error("A version 2 matrix configuration is required");
+      let out = "arena/results";
+      let allowExternal = false;
+      for (let index = 1; index < args.length; index++) {
+        if (args[index] === "--allow-external") allowExternal = true;
+        else if (args[index] === "--out" && args[index + 1]) out = args[++index];
+        else throw new Error(`Unknown matrix option: ${args[index]}`);
+      }
+      const directory = await runMatrix(
+        matrixSchema.parse(JSON.parse(await readFile(resolve(file), "utf8"))),
+        {
+          out,
+          repositoryRoot: process.cwd(),
+          allowExternal,
+          signal: controller.signal,
+          afterAllocated: async (path) => {
+            console.log(`Matrix allocated: ${path}`);
+          },
+        },
+      );
+      const retained = await readMatrix(directory);
+      if (
+        retained.batches.some(
+          (batch) =>
+            !batch ||
+            batch.cells.some(
+              (cell) =>
+                cell.active ||
+                cell.results.at(-1)?.state !== "completed" ||
+                cell.results.at(-1)?.oracle.state !== "pass",
+            ),
+        )
       )
-        ? "passed"
-        : "failed";
-      save();
-      console.log(`${cell.status}: ${cell.batch}`);
+        process.exitCode = 1;
+      console.log(`Matrix retained: ${directory}`);
     }
+  } catch (error) {
+    console.error(String(error));
+    process.exitCode = 1;
   } finally {
-    process.removeListener("SIGINT", cancel);
-    process.removeListener("SIGTERM", cancel);
-    save();
+    process.removeListener("SIGINT", abort);
+    process.removeListener("SIGTERM", abort);
   }
-  if (cells.some((cell) => cell.status !== "passed")) process.exitCode = 1;
-  console.log(`Schedule: ${join(directory, "schedule.json")}`);
 }
-if (process.argv[1] === fileURLToPath(import.meta.url)) await main();

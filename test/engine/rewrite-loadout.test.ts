@@ -6,11 +6,11 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { fauxAssistantMessage } from "@earendil-works/pi-ai";
 import { ModelRuntime, SessionManager } from "@earendil-works/pi-coding-agent";
-import { openHost } from "../../rewrite/engine/host/index.ts";
-import { processArtifacts } from "../../rewrite/engine/backends/process-transport.ts";
-import { freezeConversationSeed } from "../../rewrite/engine/context/conversation.ts";
-import { MemoryStore } from "../../rewrite/engine/memory/index.ts";
-import { type ArtifactRef, type SessionCheckpoint } from "../../rewrite/engine/contracts/index.ts";
+import { openHost } from "../../engine/host/index.ts";
+import { processArtifacts } from "../../engine/backends/process-transport.ts";
+import { freezeConversationSeed } from "../../engine/context/conversation.ts";
+import { MemoryStore } from "../../engine/memory/index.ts";
+import { type ArtifactRef, type SessionCheckpoint } from "../../engine/contracts/index.ts";
 import { installLoadoutProvider } from "./fixtures/rewrite-loadout-provider.ts";
 
 for (const backend of ["in-process", "process"] as const)

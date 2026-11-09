@@ -1,25 +1,47 @@
-# Recover work
+# Recover and inspect partial work
 
-Use `pinata_status` or `pinata logs` to inspect saved results, assignments, workspaces and
-messages. Shared edits and isolated worktrees survive cancellation or failure. Never reset
-a shared checkout to recover one worker.
+Start with read-only `pinata status`, `result`, `conversation` and `changes` for the
+exact assignment. Use `--saved` when no owner is running. Failed/cancelled output
+is retained. Shared files stay in place; isolated snapshots and worktrees remain
+inspectable. Do not infer correctness from execution or old review labels.
 
-A current-format detached worker can be reattached by Pi or `pinata resume`. A lost
-in-process worker is uncertain: tools may already have had effects. Inspect its saved
-conversation and workspace, then explicitly send a follow-up or start a replacement.
-Missing conversation/workspace state produces an actionable error; do not call a fresh
-session uninterrupted continuation. New assignments preserve earlier results and do not
-replay descendants.
+For a lost live connection, reconnect to the existing owner. After an uncertain
+mutation reply, query its original request ID before retrying the same payload.
+Changed payloads under that ID are rejected. A durable receipt does not guarantee
+exactly-once arbitrary external tool effects.
 
-An acknowledged message is on disk. Queued/handled transport disposition does not prove
-consumption. Persisted custom-message entry IDs establish known consumption. Recovery
-never blindly re-enqueues consumed or ambiguous inputs. Retrying the same message ID
-identifies its original request. Exactly-once arbitrary tool effects are not promised.
+An uncertain `@handle` reply includes `/pinata-retry run-prefix:input-token`. Use
+that command in the original session/run instead of submitting the text again:
+it preserves the original request, message, target and create/steer/follow-up action.
+The checksum-verified envelope is retained in `RUN_DIRECTORY/mention-inputs/` even
+if Pi had not yet persisted its first custom-only session. If that binding is lost,
+inspect the retained run and envelope; do not infer a new request from its text.
 
-Application records each write in `integration/journal.json`. Retry or rollback only when
-recorded destination identity and files still match. Use `recover: true` on `pinata_integrate` or `pinata_rollback` (`pinata integrate --recover` for CLI application)
-to reconcile a matching interrupted operation after its local owner has stopped.
-An interrupted rollback must finish before another application. Unknown locks/writer owners require
-reconciliation; inspect their host/process, stop owned activity, and preserve the journal
-before removing an abandoned gate. Age alone cannot establish safety. See
-[trust](../explanation/trust.md) and [migration](../reference/migration.md).
+`pinata recover RUN_DIRECTORY` asks the live owner to inspect original attempts and
+reattach supported processes or finalize retained stopped work. It does not start a
+replacement process. A missing session or unconfirmed owner is an explicit result.
+Use `continue` only when the selected worker's context/workspace remains recoverable;
+otherwise start a replacement with explicit origin/context.
+
+An `add` worker request can name `origin: { run, worker, assignment }` for an existing
+assignment in the same run. The new worker keeps that exact provenance while its
+definition, workspace and grants are resolved independently. Origin alone copies no
+conversation, context or files and adds no dependency; supply explicit `context`,
+`inputs` or `after` when needed. The conversation UI's `/replace` command records the
+selected assignment as origin. Child requests use `{ worker, assignment }` within
+their bound run and may reference only their parent or its descendants.
+
+An application receipt names its operation. Query that operation before retrying.
+Journal phase and cursor meaning are authoritative together. `rollback` reverses
+only still-matching destination content; later edits cause a conflict. `reconcile`
+uses the selected operation and exact owner epoch. Preserve before/after blobs,
+worktrees and journals until the result is understood. Never fix a conflict with a
+whole-checkout reset or by deleting ownership files.
+
+Run-owner and checkout ownership reconciliation require exact retained identity and
+proof of dead ownership. No age-based stealing occurs. Live/remote/ambiguous ownership
+must be handled by its matching host or remain blocked. The integration APIs retain
+evidence for explicit offline reconciliation; the CLI does not invent cleanup proof.
+
+For older stores, use [migration](../reference/migration.md). An old process must
+finish or stop through its matching executable/protocol before writable import.

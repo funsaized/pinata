@@ -9,8 +9,8 @@ import {
   assignmentKey,
   type AssignmentResult,
   type CommandReceipt,
-} from "../../rewrite/engine/contracts/index.ts";
-import { verifyArtifact } from "../../rewrite/engine/storage/index.ts";
+} from "../../engine/contracts/index.ts";
+import { verifyArtifact } from "../../engine/storage/index.ts";
 import { piFixture } from "./rewrite-pi-fixture.ts";
 
 function accepted(receipt: CommandReceipt): void {

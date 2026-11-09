@@ -1,281 +1,416 @@
-// The run's socket server. It starts on demand (observe mode, /pinata view --external), writes
-// link.json (socket path and token, 0600) into the run directory, and shuts down when the
-// run has settled and no clients remain. A connection whose first frame is not a valid
-// hello for this run, within HELLO_TIMEOUT_MS, is dropped.
-import { randomBytes } from "node:crypto";
-import { mkdtemp, rm, unlink, writeFile } from "node:fs/promises";
-import { createServer, type Server, type Socket } from "node:net";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import type { AgentEvent } from "../core/types.ts";
-import type { RunView } from "../core/view.ts";
+import { randomUUID } from "node:crypto";
+import { createServer, type Socket } from "node:net";
+import { DomainError, type RuntimeEvent, type SurfaceError } from "../contracts/index.ts";
+import { surfaceError, SurfaceFailure, type RuntimeSource } from "../sources/runtime.ts";
+import { publishIpcLink, sameToken } from "./credentials.ts";
+import { encodeFrame, LineDecoder } from "./framing.ts";
+import { IpcNotificationChannel } from "./notifications.ts";
 import {
-  BATCH_MS,
-  HELLO_TIMEOUT_MS,
-  LineDecoder,
-  MAX_UNACKED,
-  PROTOCOL_VERSION,
-  ProtocolError,
-  clientFrame,
-  encode,
-  newToken,
-  sameToken,
+  clientFrameSchema,
+  DEFAULT_LIMITS,
+  IPC_VERSION,
+  ipcLimitsSchema,
+  ipcLinkSchema,
   type ClientFrame,
-  type Link,
-  type ServerFrame,
+  type IpcCredentials,
+  type IpcLimits,
+  type IpcLink,
 } from "./protocol.ts";
+import { MessageWriter } from "./writer.ts";
+import type { CompletionNotice } from "../runtime/delivery.ts";
 
-// What the server needs from the engine for one run.
-export interface IpcSource {
-  view(): RunView | undefined;
-  subscribe(consumer: (event: AgentEvent) => void): () => void;
-  steer(
-    agent: string,
-    text: string,
-    as: "steer" | "followUp",
-    messageId?: string,
-  ): Promise<unknown>;
-  abort(agent: string): Promise<void>;
-  messages(agent: string): Promise<{
-    messages: unknown[];
-    streaming?: { text: string; thinking: string };
-  }>;
-}
+export type IpcServerOptions = {
+  directory: string;
+  viewer: RuntimeSource;
+  control?: RuntimeSource;
+  limits?: Partial<IpcLimits>;
+  notifications?: IpcNotificationChannel;
+};
+export type IpcServer = { readonly link: IpcLink; close(): Promise<void> };
 
-export interface ServerOptions {
-  run: string;
-  dir: string;
-  source: IpcSource;
-  theme?: string | null;
-  helloTimeoutMs?: number;
-  // Called after the server shut itself down (settled run, no clients).
-  onClose?: () => void;
-}
-
-// Unix socket paths are limited to about 104 bytes (macOS) or 108 (Linux).
-const SOCKET_PATH_MAX = 100;
-
-async function socketPath(run: string, dir: string): Promise<{ path: string; temp?: string }> {
-  if (process.platform === "win32")
-    return { path: `\\\\.\\pipe\\pinata-${run}-${randomBytes(6).toString("hex")}` };
-  const inRun = join(dir, "pinata.sock");
-  if (Buffer.byteLength(inRun) <= SOCKET_PATH_MAX) return { path: inRun };
-  // A deep checkout: a private (0700) temporary directory instead.
-  const temp = await mkdtemp(join(tmpdir(), "pinata-"));
-  return { path: join(temp, "s"), temp };
-}
-
-class Client {
-  helloed = false;
-  role: "viewer" | "agent" = "viewer";
-  pending: AgentEvent[] = [];
-  pendingBytes = 0;
-  // The highest event seq the client has (from a snapshot or a batch) and acknowledged.
-  queued = -1;
-  acked = -1;
-  timer: ReturnType<typeof setTimeout> | undefined;
-  unsubscribe: (() => void) | undefined;
-  snapshots = 0;
-  readonly decoder = new LineDecoder();
-  readonly socket: Socket;
-  constructor(socket: Socket) {
-    this.socket = socket;
+export async function startIpcServer(options: IpcServerOptions): Promise<IpcServer> {
+  if (options.viewer.capabilities.control)
+    throw new DomainError("invalid_input", "IPC viewer source must have read-only authority");
+  if (
+    options.control &&
+    (!options.control.capabilities.control || options.control.run !== options.viewer.run)
+  )
+    throw new DomainError("invalid_input", "IPC control source must authorize the same run");
+  const limits = ipcLimitsSchema.parse({ ...DEFAULT_LIMITS, ...options.limits });
+  const snapshot = options.viewer.snapshot();
+  if (options.control && options.control.snapshot().ownerEpoch !== snapshot.ownerEpoch)
+    throw new DomainError("owner_unconfirmed", "IPC sources belong to different runtime owners");
+  const serverId = randomUUID();
+  const connections = new Set<Connection>();
+  const server = createServer((socket) => {
+    const connection = new Connection(socket, {
+      sources: options,
+      limits,
+      link,
+      credentials,
+      ended: () => {
+        void connection.settled().then(() => connections.delete(connection));
+      },
+    });
+    connections.add(connection);
+  });
+  let credentials: IpcCredentials | undefined;
+  let link: IpcLink;
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      server.removeListener("error", reject);
+      resolve();
+    });
+  });
+  const address = server.address();
+  if (!address || typeof address === "string")
+    throw new Error("IPC server has no loopback endpoint");
+  link = ipcLinkSchema.parse({
+    schemaVersion: 2,
+    protocol: IPC_VERSION,
+    run: options.viewer.run,
+    serverId,
+    ownerEpoch: snapshot.ownerEpoch,
+    endpoint: { host: "127.0.0.1", port: address.port },
+    credentialFile: `${serverId}.credentials.json`,
+  });
+  try {
+    credentials = await publishIpcLink(options.directory, link, Boolean(options.control));
+  } catch (error) {
+    server.close();
+    for (const connection of connections) connection.close();
+    throw error;
   }
+  let closing: Promise<void> | undefined;
+  return {
+    link,
+    close() {
+      if (!closing)
+        closing = (async () => {
+          const active = [...connections];
+          for (const connection of active) connection.close();
+          await new Promise<void>((resolve, reject) =>
+            server.close((error) => (error ? reject(error) : resolve())),
+          );
+          await Promise.all(active.map((connection) => connection.settled()));
+        })();
+      return closing;
+    },
+  };
+}
 
-  send(frame: ServerFrame): void {
-    if (this.socket.destroyed) return;
-    // A stalled viewer can reconnect to the durable log; never grow its socket queue forever.
-    if (this.socket.writableLength > 4 * 1024 * 1024) {
-      this.socket.destroy();
-      return;
+class Connection {
+  private readonly socket: Socket;
+  private readonly options: {
+    sources: IpcServerOptions;
+    limits: IpcLimits;
+    link: IpcLink;
+    credentials?: IpcCredentials;
+    ended(): void;
+  };
+  private readonly writer: MessageWriter;
+  private readonly decoder: LineDecoder;
+  private readonly requests = new Map<
+    string,
+    { controller: AbortController; pending: Promise<void> }
+  >();
+  private readonly subscriptions = new Map<string, () => void>();
+  private readonly deliveries = new Map<
+    string,
+    {
+      noticeId: string;
+      resolve(value: { status: "delivered" | "undelivered" }): void;
+      reject(error: unknown): void;
+      clear(): void;
     }
-    this.socket.write(encode(frame));
-  }
-}
+  >();
+  private source?: RuntimeSource;
+  private detachNotices?: () => void;
+  private closed = false;
+  private readonly helloTimeout: NodeJS.Timeout;
+  private readonly pending = new Set<Promise<void>>();
 
-export class RunServer {
-  readonly link: Link;
-  private readonly options: ServerOptions;
-  private readonly server: Server;
-  private readonly clients = new Set<Client>();
-  private readonly temp: string | undefined;
-  private watchSettle: (() => void) | undefined;
-  closed = false;
-
-  private constructor(options: ServerOptions, server: Server, link: Link, temp?: string) {
+  constructor(socket: Socket, options: Connection["options"]) {
+    this.socket = socket;
     this.options = options;
-    this.server = server;
-    this.link = link;
-    this.temp = temp;
-  }
-
-  static async start(options: ServerOptions): Promise<RunServer> {
-    const { path, temp } = await socketPath(options.run, options.dir);
-    if (process.platform !== "win32") await unlink(path).catch(() => {});
-    const link: Link = {
-      v: PROTOCOL_VERSION,
-      run: options.run,
-      socket: path,
-      token: newToken(),
-      pid: process.pid,
-    };
-    const server = createServer();
-    const self = new RunServer(options, server, link, temp);
-    server.on("connection", (socket) => self.accept(socket));
-    await new Promise<void>((resolve, reject) => {
-      server.once("error", reject);
-      server.listen(path, () => {
-        server.off("error", reject);
-        resolve();
-      });
-    });
-    server.unref();
-    await writeFile(join(options.dir, "link.json"), JSON.stringify(link, null, 2) + "\n", {
-      mode: 0o600,
-    });
-    // Shut down once the run settles and the last client leaves.
-    self.watchSettle = options.source.subscribe((e) => {
-      if (e.t === "run_settled") queueMicrotask(() => self.maybeClose());
-    });
-    return self;
-  }
-
-  get clientCount(): number {
-    return this.clients.size;
-  }
-
-  private accept(socket: Socket): void {
-    const client = new Client(socket);
-    this.clients.add(client);
-    socket.setEncoding("utf8");
-    socket.setNoDelay(true);
-    const hello = setTimeout(
-      () => socket.destroy(),
-      this.options.helloTimeoutMs ?? HELLO_TIMEOUT_MS,
+    this.decoder = new LineDecoder(options.limits.frameBytes);
+    this.writer = new MessageWriter(socket, options.limits, (error) =>
+      this.fail(surfaceError(error)),
     );
-    hello.unref();
-    socket.on("data", (chunk: string) => {
+    this.helloTimeout = setTimeout(
+      () => this.fail({ code: "unauthenticated", message: "IPC authentication timed out" }),
+      5000,
+    );
+    socket.setNoDelay(true);
+    socket.on("data", (bytes: Buffer) => {
       try {
-        for (const raw of client.decoder.push(chunk)) {
-          const frame = clientFrame(raw);
-          if (!client.helloed) {
-            clearTimeout(hello);
-            this.hello(client, frame);
-          } else void this.handle(client, frame);
-        }
+        for (const frame of this.decoder.push(bytes)) this.receive(clientFrameSchema.parse(frame));
       } catch (error) {
-        // Before hello, a bad frame gets no answer; afterwards the client learns why.
-        if (client.helloed) client.send({ type: "error", message: (error as Error).message });
-        socket.destroy();
+        this.fail(surfaceError(error));
       }
     });
-    socket.on("error", () => {});
-    socket.on("close", () => {
-      clearTimeout(hello);
-      clearTimeout(client.timer);
-      client.unsubscribe?.();
-      this.clients.delete(client);
-      this.maybeClose();
+    socket.on("end", () => {
+      try {
+        this.decoder.finish();
+      } catch (error) {
+        this.fail(surfaceError(error));
+      }
     });
+    socket.on("error", () => this.close());
+    socket.on("close", () => this.close());
   }
-
-  private hello(client: Client, frame: ClientFrame): void {
-    if (
-      frame.type !== "hello" ||
-      !sameToken(frame.token, this.link.token) ||
-      frame.run !== this.options.run
-    )
-      throw new ProtocolError("The first frame must be a valid hello for this run");
-    if (frame.role === "agent")
-      throw new ProtocolError("Agent connections arrive with the process backend");
-    client.helloed = true;
-    const view = this.options.source.view();
-    client.send({
-      type: "welcome",
-      v: PROTOCOL_VERSION,
-      theme: this.options.theme ?? null,
-      runs: view ? [{ run: view.run, status: view.status }] : [],
-    });
-    this.snapshot(client);
-    client.unsubscribe = this.options.source.subscribe((e) => this.push(client, e));
-  }
-
-  private snapshot(client: Client): void {
-    const view = this.options.source.view();
-    if (!view) return;
-    client.pending = [];
-    client.pendingBytes = 0;
-    clearTimeout(client.timer);
-    client.timer = undefined;
-    client.queued = view.seq;
-    client.acked = view.seq;
-    client.snapshots++;
-    client.send({ type: "snapshot", run: view.run, view });
-  }
-
-  private push(client: Client, event: AgentEvent): void {
-    if (event.seq <= client.queued) return; // already in the snapshot
-    client.pending.push(event);
-    client.pendingBytes += Buffer.byteLength(JSON.stringify(event));
-    client.queued = event.seq;
-    // Too far behind: drop the backlog and send the current state instead.
-    if (client.queued - client.acked > MAX_UNACKED || client.pendingBytes > 512 * 1024)
-      return this.snapshot(client);
-    client.timer ??= setTimeout(() => this.flush(client), BATCH_MS);
-  }
-
-  private flush(client: Client): void {
-    client.timer = undefined;
-    if (!client.pending.length) return;
-    const events = client.pending;
-    client.pending = [];
-    client.pendingBytes = 0;
-    client.send({ type: "events", events });
-  }
-
-  private async handle(client: Client, frame: ClientFrame): Promise<void> {
-    try {
-      if (frame.type === "ack") client.acked = Math.max(client.acked, frame.seq);
-      else if (frame.type === "steer") {
-        const receipt = await this.options.source.steer(
-          frame.agent,
-          frame.text,
-          frame.as,
-          frame.messageId,
-        );
-        if (frame.messageId)
-          client.send({ type: "message_ack", messageId: frame.messageId, receipt });
-      } else if (frame.type === "abort") await this.options.source.abort(frame.agent);
-      else if (frame.type === "messages")
-        client.send({
-          type: "messages",
-          agent: frame.agent,
-          ...(await this.options.source.messages(frame.agent)),
+  private receive(frame: ClientFrame): void {
+    if (this.closed) return;
+    if (!this.source) {
+      if (frame.type !== "hello")
+        throw new SurfaceFailure({
+          code: "unauthenticated",
+          message: "IPC hello is required before requests",
         });
-      else throw new ProtocolError(`Unexpected ${frame.type} frame from a viewer`);
-    } catch (error) {
-      client.send({
-        type: "error",
-        message: (error as Error).message,
-        ...(frame.type === "steer" && frame.messageId && { messageId: frame.messageId }),
-      });
+      this.authenticate(frame);
+      return;
+    }
+    switch (frame.type) {
+      case "hello":
+        throw new SurfaceFailure({
+          code: "invalid_input",
+          message: "IPC connection is already authenticated",
+        });
+      case "request":
+        this.request(frame);
+        return;
+      case "subscribe":
+        this.subscribe(frame);
+        return;
+      case "unsubscribe":
+        this.subscriptions.get(frame.id)?.();
+        this.subscriptions.delete(frame.id);
+        this.writer.unsubscribe(frame.id);
+        return;
+      case "event_ack":
+        if (this.subscriptions.has(frame.subscription))
+          this.writer.acknowledge(frame.subscription, frame.id);
+        return;
+      case "abort_wait":
+        this.requests.get(frame.id)?.controller.abort();
+        return;
+      case "notification_receipt": {
+        const delivery = this.deliveries.get(frame.id);
+        if (!delivery || delivery.noticeId !== frame.noticeId)
+          throw new SurfaceFailure({
+            code: "invalid_input",
+            message: "IPC notification receipt does not match its delivery",
+          });
+        delivery.clear();
+        this.deliveries.delete(frame.id);
+        delivery.resolve({ status: frame.status });
+        return;
+      }
     }
   }
-
-  private maybeClose(): void {
-    const view = this.options.source.view();
-    if (!this.clients.size && view && view.status !== "running") void this.close();
+  private authenticate(frame: Extract<ClientFrame, { type: "hello" }>): void {
+    if (!frame.versions.includes(IPC_VERSION)) {
+      this.fail(
+        {
+          code: "protocol_version",
+          message: `IPC protocol ${IPC_VERSION} is required; use a matching Pinata executable`,
+        },
+        [IPC_VERSION],
+      );
+      return;
+    }
+    const { link, credentials } = this.options;
+    const expected = credentials?.[frame.role];
+    const source =
+      frame.role === "control" ? this.options.sources.control : this.options.sources.viewer;
+    if (
+      !credentials ||
+      !expected ||
+      !source ||
+      frame.run !== link.run ||
+      frame.serverId !== link.serverId ||
+      !sameToken(expected, frame.token)
+    )
+      throw new SurfaceFailure({
+        code: "unauthenticated",
+        message: "IPC authentication does not match this run, role or server",
+      });
+    if (frame.notices && (frame.role !== "control" || !this.options.sources.notifications))
+      throw new SurfaceFailure({
+        code: "capability_denied",
+        message: "This IPC connection cannot receive parent notifications",
+      });
+    this.source = source;
+    clearTimeout(this.helloTimeout);
+    this.socket.write(
+      encodeFrame(
+        {
+          type: "welcome",
+          version: IPC_VERSION,
+          run: link.run,
+          serverId: link.serverId,
+          ownerEpoch: link.ownerEpoch,
+          role: frame.role,
+          capabilities: {
+            ...source.capabilities,
+            notifications: frame.role === "control" && Boolean(this.options.sources.notifications),
+          },
+          limits: this.options.limits,
+        },
+        this.options.limits.frameBytes,
+      ),
+    );
+    if (frame.notices)
+      this.detachNotices = this.options.sources.notifications?.attach((notice, signal) =>
+        this.notice(notice, signal),
+      );
   }
-
-  async close(): Promise<void> {
+  private track(pending: Promise<void>): void {
+    this.pending.add(pending);
+    void pending
+      .catch((error: unknown) => this.fail(surfaceError(error)))
+      .finally(() => this.pending.delete(pending));
+  }
+  private request(frame: Extract<ClientFrame, { type: "request" }>): void {
+    const source = this.source;
+    if (!source) throw new Error("IPC source missing after authentication");
+    if (this.requests.has(frame.id))
+      throw new SurfaceFailure({
+        code: "conflict",
+        message: "IPC transport request ID is already pending",
+      });
+    if (this.requests.size >= this.options.limits.pendingRequests)
+      throw new SurfaceFailure({
+        code: "transport_limit",
+        message: "IPC connection has too many pending requests",
+      });
+    const controller = new AbortController();
+    const pending = (async () => {
+      const reply = await source.request(frame.call, controller.signal);
+      if (!this.closed) await this.writer.send({ type: "reply", id: frame.id, reply });
+    })().finally(() => this.requests.delete(frame.id));
+    this.requests.set(frame.id, { controller, pending });
+    this.track(pending);
+  }
+  private subscribe(frame: Extract<ClientFrame, { type: "subscribe" }>): void {
+    const source = this.source;
+    if (!source) throw new Error("IPC source missing after authentication");
+    if (this.subscriptions.has(frame.id))
+      throw new SurfaceFailure({
+        code: "conflict",
+        message: "IPC subscription ID is already active",
+      });
+    if (this.subscriptions.size >= 4)
+      throw new SurfaceFailure({
+        code: "transport_limit",
+        message: "IPC connection has too many subscriptions",
+      });
+    const snapshot = source.snapshot();
+    if (frame.since?.ownerEpoch === snapshot.ownerEpoch && frame.since.revision > snapshot.revision)
+      throw new SurfaceFailure({
+        code: "conflict",
+        message: "IPC subscription cursor is ahead of this run",
+      });
+    // Reconnect always starts with the current canonical snapshot. It includes
+    // durable inbox/outbox state and never requires scanning the whole journal.
+    this.subscriptions.set(frame.id, () => {});
+    const pending = source
+      .subscribe((event: RuntimeEvent) =>
+        this.writer.event(frame.id, event, () => source.snapshot()),
+      )
+      .then(async (unsubscribe) => {
+        if (this.closed || !this.subscriptions.has(frame.id)) {
+          unsubscribe();
+          return;
+        }
+        this.subscriptions.set(frame.id, unsubscribe);
+        await this.writer.send({
+          type: "subscribed",
+          id: frame.id,
+          cursor: { ownerEpoch: snapshot.ownerEpoch, revision: snapshot.revision },
+          reset: true,
+        });
+      });
+    this.track(pending);
+  }
+  private notice(
+    notice: CompletionNotice,
+    signal: AbortSignal,
+  ): Promise<{ status: "delivered" | "undelivered" }> {
+    if (this.closed)
+      return Promise.reject(
+        new SurfaceFailure({
+          code: "transport_closed",
+          message: "Parent IPC connection is closed",
+        }),
+      );
+    if (this.deliveries.size >= this.options.limits.pendingRequests)
+      return Promise.resolve({ status: "undelivered" });
+    signal.throwIfAborted();
+    const id = randomUUID();
+    const receipt = new Promise<{ status: "delivered" | "undelivered" }>((resolve, reject) => {
+      const abort = () => {
+        this.deliveries.delete(id);
+        signal.removeEventListener("abort", abort);
+        reject(signal.reason);
+      };
+      this.deliveries.set(id, {
+        noticeId: notice.id,
+        resolve,
+        reject,
+        clear: () => signal.removeEventListener("abort", abort),
+      });
+      signal.addEventListener("abort", abort, { once: true });
+    });
+    this.track(
+      this.writer.send({ type: "notice", id, notice }).catch((error: unknown) => {
+        const delivery = this.deliveries.get(id);
+        delivery?.clear();
+        delivery?.reject(error);
+        this.deliveries.delete(id);
+        throw error;
+      }),
+    );
+    return receipt;
+  }
+  private fail(error: SurfaceError, supportedVersions?: number[]): void {
+    if (this.closed) return;
+    this.writer.close(new SurfaceFailure(error));
+    try {
+      this.socket.end(
+        encodeFrame(
+          { type: "error", error, ...(supportedVersions ? { supportedVersions } : {}) },
+          this.options.limits.frameBytes,
+        ),
+      );
+    } catch {
+      this.socket.destroy();
+    }
+    this.close(false);
+  }
+  close(destroy = true): void {
     if (this.closed) return;
     this.closed = true;
-    this.watchSettle?.();
-    for (const client of this.clients) client.socket.destroy();
-    await new Promise<void>((resolve) => this.server.close(() => resolve()));
-    await rm(join(this.options.dir, "link.json"), { force: true });
-    if (process.platform !== "win32") await unlink(this.link.socket).catch(() => {});
-    if (this.temp) await rm(this.temp, { recursive: true, force: true });
-    this.options.onClose?.();
+    clearTimeout(this.helloTimeout);
+    for (const request of this.requests.values()) request.controller.abort();
+    for (const unsubscribe of this.subscriptions.values()) unsubscribe();
+    this.subscriptions.clear();
+    this.detachNotices?.();
+    const error = new SurfaceFailure({
+      code: "transport_closed",
+      message: "IPC connection closed before acknowledgment",
+    });
+    for (const delivery of this.deliveries.values()) {
+      delivery.clear();
+      delivery.reject(error);
+    }
+    this.deliveries.clear();
+    this.writer.close(error);
+    if (destroy) this.socket.destroy();
+    this.options.ended();
+  }
+  async settled(): Promise<void> {
+    await Promise.allSettled(this.pending);
   }
 }

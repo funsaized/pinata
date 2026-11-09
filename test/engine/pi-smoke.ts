@@ -1,144 +1,21 @@
-// Runs the engine inside the real `pi` binary: `pi --mode rpc` with the engine extension and a
-// test extension that registers a faux provider. 3 scouts plus a dependent planner run in
-// process; a background run resumes the idle parent exactly once; /pinata answers without a
-// model turn. Run with `node test/engine/pi-smoke.ts` (PINATA_PI selects the binary).
+// Real Pi RPC integration using only a native scripted provider.
 import assert from "node:assert/strict";
-import { spawn, spawnSync } from "node:child_process";
-import { copyFile, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { commandReceiptSchema, surfaceReplySchema } from "../../engine/contracts/index.ts";
+import { piCommand, record, rpc } from "./rewrite-smoke-rpc.ts";
 
-const ROOT = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
-// The pi command. PINATA_PI may name the binary, or Pi's JavaScript CLI (run with this Node),
-// which is how CI runs the npm-installed Pi on every OS (Windows cannot spawn pi.cmd without
-// a shell).
-export function piCommand(): string[] {
-  const pi = process.env.PINATA_PI ?? "pi";
-  return /\.(c|m)?js$/.test(pi) ? [process.execPath, pi] : [pi];
-}
-const PI = piCommand();
-
-export interface RpcRecord {
-  type: string;
-  [key: string]: any;
-}
-
-export function rpc(argv: string[], options: { cwd: string; env: NodeJS.ProcessEnv }) {
-  const child = spawn(argv[0], argv.slice(1), {
-    cwd: options.cwd,
-    env: options.env,
-    stdio: ["pipe", "pipe", "pipe"],
-    windowsHide: true,
-  });
-  const records: RpcRecord[] = [];
-  const waiters: Array<{ match: (r: RpcRecord) => boolean; resolve: (r: RpcRecord) => void }> = [];
-  let buffer = "";
-  let stderr = "";
-  child.stderr.setEncoding("utf8").on("data", (d: string) => (stderr += d));
-  child.stdout.setEncoding("utf8").on("data", (chunk: string) => {
-    buffer += chunk;
-    let at: number;
-    while ((at = buffer.indexOf("\n")) !== -1) {
-      const raw = buffer.slice(0, at).replace(/\r$/, "");
-      buffer = buffer.slice(at + 1);
-      if (!raw.trim()) continue;
-      let record: RpcRecord;
-      try {
-        record = JSON.parse(raw);
-      } catch {
-        continue;
-      }
-      records.push(record);
-      if (process.env.PINATA_SMOKE_DEBUG && record.type !== "message_update")
-        console.error(raw.slice(0, 300));
-      for (const w of waiters.slice())
-        if (w.match(record)) {
-          waiters.splice(waiters.indexOf(w), 1);
-          w.resolve(record);
-        }
-    }
-  });
-  let n = 0;
-  const exited = new Promise<number | null>((resolve) => child.on("close", resolve));
-  return {
-    records,
-    get stderr() {
-      return stderr;
-    },
-    send(command: Record<string, unknown>) {
-      const id = `c${++n}`;
-      child.stdin.write(JSON.stringify({ id, ...command }) + "\n");
-      return id;
-    },
-    wait(match: (r: RpcRecord) => boolean, ms = 60_000, from = 0): Promise<RpcRecord> {
-      const seen = records.slice(from).find(match);
-      if (seen) return Promise.resolve(seen);
-      return new Promise((resolve, reject) => {
-        const timer = setTimeout(
-          () => reject(new Error(`timed out; stderr: ${stderr.slice(-2000)}`)),
-          ms,
-        );
-        waiters.push({ match, resolve: (r) => (clearTimeout(timer), resolve(r)) });
-      });
-    },
-    async close() {
-      child.stdin.end();
-      const t = setTimeout(() => child.kill(), 10_000);
-      await exited;
-      clearTimeout(t);
-    },
-  };
-}
-
-export async function integrationSmoke(pi: ReturnType<typeof rpc>): Promise<void> {
-  const from = pi.records.length;
-  pi.send({ type: "prompt", message: "smoke-integration: hand off, integrate and verify" });
-  for (const toolName of ["pinata_run", "pinata_changes", "pinata_integrate"]) {
-    const end = await pi.wait(
-      (r) => r.type === "tool_execution_end" && r.toolName === toolName,
-      120_000,
-      from,
-    );
-    const result = end.result?.details?.result;
-    assert(result, JSON.stringify(end));
-    if (toolName === "pinata_run") assert.equal(result.status, "succeeded", JSON.stringify(result));
-    else if (toolName === "pinata_changes") assert.equal(result.scope, "builder-artifacts");
-    else assert.equal(result.status, "applied", JSON.stringify(result));
-  }
-  await pi.wait((r) => r.type === "agent_settled", 120_000, from);
-}
-
-async function main() {
-  const dir = await mkdtemp(join(tmpdir(), "pinata-pi-smoke-"));
-  const repo = join(dir, "repo");
-  const agent = join(dir, "agent");
-  await mkdir(repo, { recursive: true });
-  await mkdir(join(agent, "pinata", "agents"), { recursive: true });
-  await writeFile(
-    join(agent, "pinata.json"),
-    JSON.stringify({ worktreeRoot: join(dir, "worktrees") }),
-  );
-  await copyFile(
-    join(ROOT, "examples", "agents", "planner.md"),
-    join(agent, "pinata", "agents", "planner.md"),
-  );
-  await writeFile(join(repo, "README.md"), "# Smoke fixture\n");
-  const git = (...args: string[]) =>
-    assert.equal(spawnSync("git", ["-C", repo, ...args]).status, 0);
-  git("init", "-q");
-  git("add", "-A");
-  git(
-    "-c",
-    "user.name=t",
-    "-c",
-    "user.email=t@example.invalid",
-    "-c",
-    "commit.gpgsign=false",
-    "commit",
-    "-qm",
-    "init",
-  );
+const root = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
+export async function runPiSmoke(options: { packageRoot?: string; installed?: boolean } = {}) {
+  const packageRoot = options.packageRoot ?? root;
+  const directory = await mkdtemp(join(tmpdir(), "pinata-rewrite-pi-smoke-"));
+  const workspace = join(directory, "workspace");
+  const agent = join(directory, "agent");
+  await Promise.all([mkdir(workspace), mkdir(agent)]);
+  await writeFile(join(workspace, "README.md"), "# Real Pi scripted fixture\n");
   await writeFile(
     join(agent, "settings.json"),
     JSON.stringify({ quietStartup: true, retry: { enabled: false } }),
@@ -151,131 +28,188 @@ async function main() {
     PI_TELEMETRY: "0",
   };
   delete env.PINATA_AGENT;
+  const [piBinary, ...piArgs] = piCommand();
+  const version = spawnSync(piBinary, [...piArgs, "--version"], {
+    env,
+    encoding: "utf8",
+    timeout: 15_000,
+  });
+  assert.equal(version.status, 0, version.stderr || version.stdout);
+  if (options.installed) {
+    const [binary, ...args] = piCommand();
+    const installed = spawnSync(binary, [...args, "install", packageRoot, "--no-approve"], {
+      cwd: workspace,
+      env,
+      encoding: "utf8",
+      timeout: 30_000,
+    });
+    assert.equal(installed.status, 0, installed.stderr || installed.stdout);
+  }
   const pi = rpc(
     [
-      ...PI,
+      ...piCommand(),
       "--mode",
       "rpc",
-      "--no-session",
+      "--session",
+      join(directory, "parent.jsonl"),
       "--offline",
-      "--no-extensions",
-      "--no-skills",
-      "--no-prompt-templates",
+      ...(!options.installed
+        ? ["--no-extensions", "--extension", join(packageRoot, "engine", "pi", "extension.ts")]
+        : []),
+      ...(!options.installed ? ["--no-skills", "--no-prompt-templates"] : []),
       "--no-themes",
       "--no-context-files",
       "--extension",
-      join(ROOT, "engine", "pi", "extension.ts"),
-      "--extension",
-      join(ROOT, "test", "engine", "fixtures", "faux-extension.ts"),
+      join(root, "test", "engine", "fixtures", "rewrite-smoke-provider.ts"),
       "--provider",
-      "faux",
+      "rewrite-smoke",
       "--model",
-      "faux-1",
+      "script",
       "--thinking",
       "off",
     ],
-    { cwd: repo, env },
+    { cwd: workspace, env },
   );
   try {
-    // Foreground: 3 parallel scouts and a dependent planner, inside this Pi.
-    const t0 = performance.now();
-    pi.send({ type: "prompt", message: "smoke-foreground: run pinata" });
-    const runEnd = await pi.wait(
-      (r) => r.type === "tool_execution_end" && r.toolName === "pinata_run",
-      120_000,
+    const commandId = pi.send({ type: "get_commands" });
+    const commandReply = await pi.wait(
+      (event) => event.type === "response" && event.id === commandId,
     );
-    const result = runEnd.result?.details?.result;
-    assert(result, `no pinata_run result: ${JSON.stringify(runEnd).slice(0, 2000)}`);
-    assert.equal(result.status, "succeeded", JSON.stringify(result, null, 2));
-    assert.deepEqual(
-      result.tasks.map((t: any) => t.id),
-      ["scout-1", "scout-2", "scout-3", "plan"],
+    const commands = record(commandReply.data).commands;
+    assert(Array.isArray(commands));
+    const names = commands.map((entry: unknown) => record(entry).name);
+    for (const name of [
+      "pinata",
+      "pinata-fleet",
+      "pinata-conversation",
+      "pinata-schema",
+      "pinata-new",
+      "pinata-grants",
+      "pinata-memory",
+      "pinata-retry",
+    ])
+      assert(names.includes(name), `Missing packaged command ${name}`);
+    if (options.installed) {
+      for (const name of [
+        "skill:subagents",
+        "scout",
+        "builder",
+        "reviewer",
+        "pinata-review",
+        "pinata-fix",
+      ])
+        assert(names.includes(name), `Missing packaged command ${name}`);
+      for (const name of ["planner", "researcher"])
+        assert(!names.includes(name), `Retired opt-in prompt ${name} was installed`);
+    }
+    const from = pi.records.length;
+    pi.send({ type: "prompt", message: "smoke-coordinator: launch the scripted dependency graph" });
+    const run = await pi.wait(
+      (event) => event.type === "tool_execution_end" && event.toolName === "pinata_run",
+      from,
     );
-    assert(result.tasks.every((t: any) => t.status === "succeeded" && t.brief));
-    const updates = pi.records.filter(
-      (r) => r.type === "tool_execution_update" && r.toolName === "pinata_run",
-    );
-    assert(updates.length >= 1, "progress updates stream");
-    await pi.wait((r) => r.type === "agent_settled");
-    const foregroundMs = performance.now() - t0;
-    // /pinata answers without a model turn.
-    const before = pi.records.length;
-    const id = pi.send({ type: "prompt", message: "/pinata" });
-    const response = await pi.wait((r) => r.type === "response" && r.id === id);
-    assert.equal(response.success, true, JSON.stringify(response));
-    const notify = await pi.wait(
-      (r) => r.type === "extension_ui_request" && r.method === "notify",
-      10_000,
-      before,
-    );
-    assert.match(notify.message, /scout-1/);
+    const accepted = surfaceReplySchema.parse(record(run.result).details);
     assert(
-      !pi.records.slice(before).some((r) => r.type === "agent_start"),
-      "/pinata started no model turn",
+      accepted.status === "ok" &&
+        accepted.response.method === "execute" &&
+        accepted.response.result.status === "accepted",
+      JSON.stringify(run),
     );
-    // Background: returns at once; the settled run resumes the idle parent exactly once.
-    const mark = pi.records.length;
-    pi.send({ type: "prompt", message: "smoke-background: run pinata in the background" });
+    assert.equal(accepted.response.result.assignments.length, 4);
+    const wait = await pi.wait(
+      (event) => event.type === "tool_execution_end" && event.toolName === "pinata_wait",
+      from,
+    );
+    const settled = surfaceReplySchema.parse(record(wait.result).details);
+    assert(settled.status === "ok" && settled.response.method === "wait", JSON.stringify(wait));
+    assert.equal(settled.response.result.results.length, 4);
+    assert(
+      settled.response.result.results.every(
+        (result) =>
+          result.execution.phase === "ended" &&
+          result.execution.reason === "completed" &&
+          result.transcript,
+      ),
+    );
+    await pi.wait((event) => event.type === "agent_settled", from);
+    const direct = pi.records.length;
+    const schemaId = pi.send({ type: "prompt", message: "/pinata-schema pinata.command.v1" });
+    const schemaReply = await pi.wait(
+      (event) => event.type === "response" && event.id === schemaId,
+      direct,
+    );
+    assert.equal(schemaReply.success, true, JSON.stringify(schemaReply));
     await pi.wait(
-      (r) =>
-        r.type === "message_end" &&
-        JSON.stringify(r.message?.content ?? "").includes("SMOKE-BACKGROUND-RECEIVED"),
-      120_000,
-      mark,
+      (event) =>
+        event.type === "message_end" && JSON.stringify(event.message).includes("pinata.schema.v3"),
+      direct,
     );
-    await new Promise((r) => setTimeout(r, 1500));
-    const later = pi.records.slice(mark);
-    const delivered = later.filter(
-      (r) =>
-        r.type === "message_end" &&
-        r.message?.role === "custom" &&
-        r.message?.customType === "pinata-assignment",
+    assert(
+      !pi.records.slice(direct).some((event) => event.type === "agent_start"),
+      "Schema command requested a coordinator turn",
     );
-    assert.equal(delivered.length, 1, "delivered exactly once");
-    const received = later.filter(
-      (r) =>
-        r.type === "message_end" &&
-        JSON.stringify(r.message?.content ?? "").includes("SMOKE-BACKGROUND-RECEIVED"),
+    const addressedFrom = pi.records.length;
+    const addressedId = pi.send({ type: "prompt", message: "@scout-1 Read README once more" });
+    const addressedReply = await pi.wait(
+      (event) => event.type === "response" && event.id === addressedId,
+      addressedFrom,
     );
-    assert.equal(received.length, 1, "one resumed turn");
-    const runs = (await readdir(join(repo, ".git", "pinata"))).filter((name) =>
-      /^[a-f0-9-]{36}$/.test(name),
+    assert.equal(addressedReply.success, true, JSON.stringify(addressedReply));
+    const addressed = await pi.wait(
+      (event) =>
+        event.type === "message_end" && record(event.message).customType === "pinata.addressed.v3",
+      addressedFrom,
     );
-    assert.equal(runs.length, 2);
-    // `pinata logs` prints a finished run through the pi binary in print mode.
-    const logs = spawnSync(
-      process.execPath,
-      [join(ROOT, "bin", "pinata.mjs"), "logs", runs[0].slice(0, 8), "--json"],
-      {
-        cwd: repo,
-        encoding: "utf8",
-        env: { ...process.env, PINATA_PI: PI.at(-1)!, PI_CODING_AGENT_DIR: agent },
-        timeout: 60_000,
-      },
+    const addressedMessage = record(addressed.message);
+    const followUp = commandReceiptSchema.parse(addressedMessage.details);
+    assert(followUp.status === "accepted");
+    assert.deepEqual(followUp.assignments, [
+      { run: settled.response.result.results[0].ref.run, worker: "scout-1", assignment: 2 },
+    ]);
+    assert.equal(typeof addressedMessage.content, "string");
+    const retry = record(JSON.parse(String(addressedMessage.content))).retry;
+    assert.equal(typeof retry, "string");
+    const retriedFrom = pi.records.length;
+    const retryId = pi.send({ type: "prompt", message: retry });
+    const retryReply = await pi.wait(
+      (event) => event.type === "response" && event.id === retryId,
+      retriedFrom,
     );
-    assert.equal(logs.status, 0, logs.stderr);
-    const lines = logs.stdout.split("\n").filter((l) => l.startsWith("{"));
-    assert(lines.length > 1, `pinata logs printed: ${logs.stdout}\n${logs.stderr}`);
-    const logged = lines.map((l) => JSON.parse(l));
-    assert.equal(logged[0].t, "run_started");
-    assert.equal(logged.at(-1).t, "run_settled");
-    await integrationSmoke(pi);
-    console.log(
-      JSON.stringify({
-        ok: true,
-        foregroundMs: Math.round(foregroundMs),
-        runs: runs.length,
-        pi: PI,
-      }),
+    assert.equal(retryReply.success, true, JSON.stringify(retryReply));
+    const retried = await pi.wait(
+      (event) =>
+        event.type === "message_end" && record(event.message).customType === "pinata.addressed.v3",
+      retriedFrom,
     );
-  } catch (error) {
-    if (process.env.PINATA_SMOKE_DEBUG)
-      for (const r of pi.records) console.error(JSON.stringify(r).slice(0, 400));
-    throw error;
+    assert.deepEqual(commandReceiptSchema.parse(record(retried.message).details), followUp);
+    await pi.wait(
+      (event) =>
+        event.type === "message_end" &&
+        record(event.message).customType === "pinata.completion.v3" &&
+        String(record(event.message).content).includes("scout-1/2: completed."),
+      addressedFrom,
+    );
+    assert(
+      !pi.records.slice(addressedFrom).some((event) => event.type === "agent_start"),
+      "Addressing or retry requested a coordinator turn",
+    );
+    const parent = await readFile(join(directory, "parent.jsonl"), "utf8");
+    assert.match(parent, /pinata.runtime.v3/);
+    assert.match(parent, /pinata.input.v3/);
+    return {
+      ok: true,
+      assignments: 5,
+      commands: names.length,
+      realPi: piCommand(),
+      piVersion: version.stdout.trim(),
+      node: process.version,
+      provider: "scripted",
+      packageRoot,
+    };
   } finally {
     await pi.close();
-    await rm(dir, { recursive: true, force: true });
+    await rm(directory, { recursive: true, force: true });
   }
 }
-
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) await main();
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1])
+  console.log(JSON.stringify(await runPiSmoke()));

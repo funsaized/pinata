@@ -16,16 +16,12 @@ import {
   type CallerAuthority,
   type Transition,
   type UsageObservation,
-} from "../../rewrite/engine/contracts/index.ts";
-import { prepareCommand } from "../../rewrite/engine/core/accept.ts";
-import { prepareControl } from "../../rewrite/engine/core/control.ts";
-import { initialState, reduce } from "../../rewrite/engine/core/state.ts";
-import {
-  occupiedAssignments,
-  readiness,
-  readyAssignments,
-} from "../../rewrite/engine/core/readiness.ts";
-import { assignmentUsage, reconcileUsage } from "../../rewrite/engine/core/usage.ts";
+} from "../../engine/contracts/index.ts";
+import { prepareCommand } from "../../engine/core/accept.ts";
+import { prepareControl } from "../../engine/core/control.ts";
+import { initialState, reduce } from "../../engine/core/state.ts";
+import { occupiedAssignments, readiness, readyAssignments } from "../../engine/core/readiness.ts";
+import { assignmentUsage, reconcileUsage } from "../../engine/core/usage.ts";
 
 const ref = (worker: string, assignment = 1): AssignmentRef => ({ run: "run", worker, assignment });
 const blob = (value: unknown): ArtifactRef => ({

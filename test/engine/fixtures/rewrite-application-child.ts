@@ -1,8 +1,8 @@
-import { ApplicationStore } from "../../../rewrite/engine/application/index.ts";
+import { ApplicationStore } from "../../../engine/application/index.ts";
 import { FixtureArtifacts, FixtureGit } from "../rewrite-application-fixture.ts";
 import { join } from "node:path";
 import { z } from "zod";
-import { artifactRefSchema } from "../../../rewrite/engine/contracts/common.ts";
+import { artifactRefSchema } from "../../../engine/contracts/common.ts";
 
 const request = z
   .strictObject({

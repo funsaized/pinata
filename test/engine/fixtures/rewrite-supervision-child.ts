@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { fileURLToPath } from "node:url";
-import { launchSupervised } from "../../../rewrite/engine/backends/supervision/index.ts";
+import { launchSupervised } from "../../../engine/backends/supervision/index.ts";
 
 const [mode, directory, lifetime] = process.argv.slice(2);
 const file = fileURLToPath(import.meta.url);

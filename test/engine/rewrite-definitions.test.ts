@@ -11,14 +11,15 @@ import {
   readLoadout,
   resolveConfig,
   type WorkerResolverOptions,
-} from "../../rewrite/engine/definitions/index.ts";
+} from "../../engine/definitions/index.ts";
 import {
   workerRequestSchema,
   type ArtifactPort,
   type BackendCapabilities,
   type CallerAuthority,
-} from "../../rewrite/engine/contracts/index.ts";
-import { digestBytes } from "../../rewrite/engine/storage/io.ts";
+} from "../../engine/contracts/index.ts";
+import { digestBytes } from "../../engine/storage/io.ts";
+import { checkResolvedWorker } from "../../engine/core/accept.ts";
 
 const model = (id: string) => ({ provider: "fixture", id, thinking: "off" as const });
 const capabilities: BackendCapabilities = {
@@ -116,6 +117,31 @@ test("definition Markdown uses a strict closed header and rejects invalid select
   await assert.rejects(findDefinition("reader", [f.personal, f.project]));
 });
 
+test("definition resolution freezes only the explicitly requested replacement origin", async (t) => {
+  const f = await fixture(t);
+  const origin = { run: caller.run, worker: "previous", assignment: 3 };
+  const request = workerRequestSchema.parse({
+    id: "reader",
+    agent: "reader",
+    task: "Read",
+    origin,
+  });
+  const resolved = await f.resolve({}, { origin });
+  assert.deepEqual(resolved.origin, origin);
+  assert.equal(resolved.context, undefined);
+  checkResolvedWorker(request, resolved, caller);
+  assert.throws(
+    () => checkResolvedWorker(request, { ...resolved, origin: undefined }, caller),
+    /origin/,
+  );
+  assert.throws(
+    () =>
+      checkResolvedWorker(request, { ...resolved, origin: { ...origin, assignment: 4 } }, caller),
+    /origin/,
+  );
+  assert.equal((await f.resolve()).origin, undefined);
+});
+
 test("configuration merges map entries while later supplied objects replace earlier objects", () => {
   const resolved = resolveConfig([
     {
@@ -138,6 +164,27 @@ test("configuration merges map entries while later supplied objects replace earl
   assert.deepEqual(resolved.passEnv, ["TWO"]);
   assert.equal(resolved.workspace, "worktree");
   assert.throws(() => resolveConfig([{ ui: { unknown: true } }]));
+});
+
+test("checkout observation is frozen only from an explicit worker request", async (t) => {
+  const f = await fixture(t);
+  assert.equal((await f.resolve()).observeWorkspace, undefined);
+  assert.equal((await f.resolve({}, { observeWorkspace: false })).observeWorkspace, false);
+  const request = workerRequestSchema.parse({
+    id: "reader",
+    agent: "reader",
+    task: "Read and retain a checkout observation",
+    observeWorkspace: true,
+  });
+  const resolved = await f.resolve({}, request);
+  assert.equal(resolved.observeWorkspace, true);
+  assert.equal(resolved.access, "read");
+  assert.equal(resolved.workspace, "shared");
+  checkResolvedWorker(request, resolved, caller);
+  assert.throws(
+    () => checkResolvedWorker(request, { ...resolved, observeWorkspace: undefined }, caller),
+    /observeWorkspace/,
+  );
 });
 
 test("worker resolution freezes precedence, fallbacks and backend capabilities before launch", async (t) => {
