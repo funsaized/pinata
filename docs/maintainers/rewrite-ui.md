@@ -3,7 +3,9 @@
 The Pi extension and standalone viewer share the same screen router, projections,
 conversation reader and command receipts. Opening a screen never requests a model
 turn. Pi uses its public non-overlay custom-component API and keeps a compact fleet
-widget in the coordinator conversation.
+widget in the coordinator conversation only while assignments are active or queued.
+Opening a screen replaces that widget; returning restores it. Both views leave an
+editor margin. Idle fleets remain accessible through /pinata.
 
 ## Navigation and controls
 
@@ -24,7 +26,9 @@ widget in the coordinator conversation.
 | Ctrl+L                                  | Refresh the conversation, or reconnect a disconnected attachment          |
 
 The default worker arrows use Shift because Pi's fullscreen viewport consumes
-Ctrl+Up/Down before custom components receive them. All shortcuts are configurable
+Ctrl+Up/Down before custom components receive them. Ctrl+Left/Right, Ctrl+B and
+Ctrl+R retain editor behavior while the conversation composer has focus; use Tab
+for transcript controls or the explicit slash commands. Named shortcuts are configurable (navigation keys are reserved)
 through `ui.keys`: `openFleet`, `parentScreen`, `previousScreen`, `nextScreen`,
 `previousWorker`, `nextWorker`, `previousAssignment`, `nextAssignment`, `stop`,
 `background`, `recover`, and `refresh`. Duplicate or unsupported key definitions
@@ -163,3 +167,31 @@ Their raw terminal and frame evidence is retained in
 name identifies the installed CLI; it does not establish compiled Bun execution
 on macOS. Compiled Pi was exercised on Linux. No Windows terminal execution is
 claimed here.
+
+## Fleet interaction and presentation
+
+Fleet arrows select rows; Enter opens the selected assignment. Left/Right collapse
+and expand real child branches. Dependencies remain explicit waiting reasons.
+`/` edits a worker/task search; Enter retains it, and reopening search and deleting
+its text clears it. `f` cycles all/active/failed, `h` includes older assignments,
+`Q` shows queued work, and `q` returns to the coordinator. Filtering moves selection
+to a visible match. `?` opens scrollable help with configured bindings. `a` opens an
+action list whose labels distinguish assignment, worker, and run scopes.
+
+In conversations, Tab switches composer/transcript focus. The composer retains
+Ctrl+Left/Right, Ctrl+B and Ctrl+R for editing. Transcript focus enables `f` to follow
+latest output, `d` to expand metadata and tool payloads, and `m` to load older pages.
+Scrolling disables follow mode without changing the draft. The composer identifies
+whether ordinary text will steer, follow up, or continue.
+
+Full motion animates active markers at four frames per second; reduced/off use
+static markers. Elapsed observations update once per second without animation.
+Timers stop when no view is subscribed or no assignment is active. Pi's own
+16 ms render scheduler coalesces paint requests; per-view bounded wrapping caches
+avoid repeatedly wrapping unchanged transcript text.
+
+Pi tool cards summarize calls and results; expansion retains complete structured
+details. Model-facing agent discovery is compact and includes effective grants,
+model defaults and backend capabilities. Unnamed schema queries return an index
+to the model; canonical query details retain the complete schemas. Neither compact
+presentation nor animation changes execution, acceptance, or recovery authority.

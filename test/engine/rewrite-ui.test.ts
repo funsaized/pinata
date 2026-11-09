@@ -285,9 +285,9 @@ test("wheel and click act on the visible fleet or conversation, and mismatched c
   assert.equal(router.fleetScroll, 4);
   screen.render(80);
   assert.equal(router.fleetScroll, 4, "Rendering does not snap scrolling back to the selected row");
-  screen.handleMouse({ ...mouse, type: "click", button: "left", clickCount: 2 });
+  screen.handleMouse({ ...mouse, y: 3, type: "click", button: "left", clickCount: 2 });
   await tick();
-  assert.equal(router.selected?.worker, "worker-6");
+  assert.equal(router.selected?.worker, "worker-3");
   assert.equal(router.screen, "conversation");
   assert.match(router.conversation().error ?? "", /different assignment/);
   assert.equal(router.conversation().page, undefined);
@@ -363,6 +363,7 @@ test("steering requires the visible active assignment; factual labels distinguis
   assert.match(router.notice, /visible assignment/);
   router.navigate("conversation", ref());
   await tick();
+  router.details = true;
   const rendered = renderScreen(router, {
     width: 200,
     height: 50,
@@ -901,4 +902,97 @@ test("tool-name schema discovery returns only the requested input schema", async
   const result = reply.response.result;
   assert(result && "kind" in result && result.kind === "schemas");
   assert.deepEqual(Object.keys(result.schemas), ["pinata_run"]);
+});
+
+test("fleet help, search, filtering and actions are usable without a composer", async () => {
+  const source = new UiSource(uiState(3));
+  for (const assignment of Object.values(source.state.assignments))
+    assignment.execution = { phase: "running" };
+  const router = new ScreenRouter(source);
+  await router.start();
+  router.navigate("fleet");
+  const tui = new TuiAltScreen(new MemoryTerminal());
+  tui.requestRender = () => {};
+  const screen = new PinataScreen({ tui, router, main() {} });
+  screen.handleInput("?");
+  assert.match(screen.render(80).join("\n"), /Pinata help/);
+  screen.handleInput("\u001b[B");
+  assert.equal(router.helpScroll, 1);
+  screen.handleInput("\u001b");
+  screen.handleInput("/");
+  screen.handleInput("worker-2");
+  screen.handleInput("\r");
+  assert.deepEqual(
+    router.fleetAssignments().map((row) => row.ref.worker),
+    ["worker-2"],
+  );
+  screen.handleInput("f");
+  assert.equal(router.filter, "active");
+  screen.handleInput("h");
+  assert.equal(router.history, true);
+  screen.handleInput("a");
+  assert.match(screen.render(80).join("\n"), /Stop entire run/);
+  screen.handleInput("\u001b");
+  assert.equal(source.calls.length, 0, "browsing actions does not execute them");
+  screen.dispose();
+  router.dispose();
+});
+
+test("composer editing keys preserve focus and transcript controls are explicit", async () => {
+  const source = new UiSource();
+  const router = new ScreenRouter(source);
+  await router.start();
+  router.navigate("conversation", ref());
+  await tick();
+  const tui = new TuiAltScreen(new MemoryTerminal());
+  tui.requestRender = () => {};
+  const screen = new PinataScreen({ tui, router, main() {} });
+  const before = source.calls.length;
+  screen.handleInput("hello world");
+  screen.handleInput("\u001b[1;5D");
+  screen.handleInput("\u0002");
+  assert.equal(router.screen, "conversation");
+  assert.equal(source.calls.length, before);
+  screen.handleInput("\t");
+  screen.handleInput("f");
+  assert.equal(router.conversation().follow, true);
+  screen.handleInput("d");
+  assert.equal(router.details, true);
+  screen.handleInput("\u001b[A");
+  assert.equal(router.conversation().follow, false);
+  assert.equal(router.draft, "hello world");
+  screen.dispose();
+  router.dispose();
+});
+
+test("queued-only compact trees never resurrect completed rows and narrow rows retain status", () => {
+  const state = uiState(2);
+  state.assignments[assignmentKey(ref())].execution = {
+    phase: "ended",
+    reason: "completed",
+    cleanup: "confirmed",
+  };
+  const options = { width: 35, paint: createPaint("terminal-default"), ascii: true };
+  const queued = fleetWidget(state, options).join("\n");
+  assert(!queued.includes("worker-1"));
+  assert.match(queued, /1 queued/);
+  state.assignments[assignmentKey(ref(2))].execution = { phase: "running" };
+  const active = fleetWidget(state, options).join("\n");
+  assert.match(active, /running/);
+  assert.throws(() => resolveKeys({ stop: "enter" }), /reserved/);
+});
+
+test("collapsed branches preserve real ancestry and expansion restores children", () => {
+  const source = new UiSource(uiState(2));
+  for (const assignment of Object.values(source.state.assignments))
+    assignment.execution = { phase: "running" };
+  source.state.workers["worker-2"].parentAssignment = ref();
+  const router = new ScreenRouter(source);
+  router.navigate("fleet", ref());
+  assert.equal(router.fleetNodes().length, 2);
+  router.collapse(true);
+  assert.equal(router.fleetNodes().length, 1);
+  router.collapse(false);
+  assert.equal(router.fleetNodes().length, 2);
+  router.dispose();
 });

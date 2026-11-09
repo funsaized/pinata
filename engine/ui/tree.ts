@@ -34,8 +34,7 @@ export function assignmentTree(
     if (options.activeOnly) return phase !== "queued" && phase !== "ended";
     return options.queued || phase !== "queued";
   });
-  if (options.activeOnly && !chosen.length)
-    chosen = all.filter((assignment) => assignment.execution.phase === "ended").slice(-3);
+
   if (options.limit) chosen = chosen.slice(0, options.limit);
   const included = new Set(chosen.map((assignment) => assignmentKey(assignment.ref)));
   for (const assignment of chosen) {

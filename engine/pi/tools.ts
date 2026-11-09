@@ -3,9 +3,12 @@ import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
+import { Text } from "@earendil-works/pi-tui";
+import { displayText } from "../ui/text.ts";
 import { z } from "zod";
 import {
   canonicalJson,
+  surfaceReplySchema,
   queryResultSchema,
   DomainError,
   identitySchema,
@@ -130,7 +133,7 @@ export const coordinatorTools: readonly ToolOperation[] = [
   queryTool(
     "pinata_agents",
     "definitions",
-    "Discover validated agent definitions with their source paths and content digests.",
+    "Discover compact agent descriptions, defaults and effective launch grants. Full instructions remain available through pinata_status query kind definitions.",
   ),
   queryTool(
     "pinata_changes",
@@ -197,6 +200,41 @@ export function registerCoordinatorTools(
       label: tool.name.replace(/^pinata_/, "Pinata "),
       description: tool.description,
       parameters: piParameters(tool.schema),
+      renderCall(args, theme, context) {
+        const parsed = z.record(z.string(), z.unknown()).safeParse(args);
+        const command = parsed.success ? parsed.data.command : undefined;
+        const kind =
+          command && typeof command === "object" && "kind" in command
+            ? String(command.kind)
+            : tool.name.replace("pinata_", "");
+        const count =
+          command &&
+          typeof command === "object" &&
+          "workers" in command &&
+          Array.isArray(command.workers)
+            ? ` · ${command.workers.length} workers`
+            : "";
+        const phase =
+          context.executionStarted && context.durationMs === undefined
+            ? tool.name === "pinata_wait"
+              ? " · waiting for assignments…"
+              : " · preparing request…"
+            : context.durationMs === undefined
+              ? ""
+              : ` · ${(context.durationMs / 1000).toFixed(2)}s`;
+        return new Text(theme.fg("accent", `Pinata · ${displayText(kind)}${count}${phase}`), 0, 0);
+      },
+      renderResult(result, options, theme) {
+        const detail = result.details;
+        const parsed = surfaceReplySchema.safeParse(detail);
+        const summary = parsed.success
+          ? toolSummary(parsed.data)
+          : "Retained output page · expand for details";
+        const expanded = options.expanded
+          ? "\n" + displayText(JSON.stringify(detail, null, 2))
+          : "";
+        return new Text(theme.fg(result.isError ? "error" : "text", summary + expanded), 0, 0);
+      },
       executionMode: tool.name === "pinata_wait" ? "parallel" : "sequential",
       async execute(
         callId,
@@ -240,10 +278,77 @@ export function registerCoordinatorTools(
           reply.status === "error" ||
           (reply.response.method === "execute" && reply.response.result.status === "rejected");
         return {
-          content: [{ type: "text", text: await pages.format(reply) }],
+          content: [
+            {
+              type: "text",
+              text: await pages.format(
+                tool.name === "pinata_agents" &&
+                  reply.status === "ok" &&
+                  reply.response.method === "query" &&
+                  reply.response.result.kind === "definitions"
+                  ? {
+                      kind: "agents",
+                      agents: reply.response.result.definitions.map(
+                        ({ definition, path, digest }) => ({
+                          name: definition.name,
+                          description: definition.handoffDescription,
+                          model: definition.model,
+                          settings: definition.pinata,
+                          tools: definition.tools,
+                          path,
+                          digest,
+                        }),
+                      ),
+                      launch: reply.response.result.launch,
+                      details: "Use pinata_status query kind definitions for full instructions.",
+                    }
+                  : tool.name === "pinata_status" &&
+                      reply.status === "ok" &&
+                      reply.response.method === "query" &&
+                      reply.response.result.kind === "schemas" &&
+                      !(
+                        value &&
+                        typeof value === "object" &&
+                        "query" in value &&
+                        value.query &&
+                        typeof value.query === "object" &&
+                        "name" in value.query
+                      )
+                    ? {
+                        kind: "schema_index",
+                        names: Object.keys(reply.response.result.schemas),
+                        next: "Request query {kind: schemas, name: <name>} for one schema.",
+                      }
+                    : reply,
+              ),
+            },
+          ],
           details: reply,
           ...(rejected ? { isError: true } : {}),
         };
       },
     });
+}
+
+export function toolSummary(reply: SurfaceReply | ToolPageReply): string {
+  if ("status" in reply && reply.status === "error")
+    return displayText(`Rejected: ${reply.error.message}`);
+  if (!("response" in reply)) return "Retained output page · expand for details";
+  const response = reply.response;
+  if (response.method === "execute") {
+    const receipt = response.result;
+    return receipt.status === "rejected"
+      ? displayText(`Rejected: ${receipt.error.message}`)
+      : `Accepted · ${receipt.assignments.length} assignments · expand for receipt`;
+  }
+  if (response.method === "query") {
+    const result = response.result;
+    if (result.kind === "definitions")
+      return displayText(
+        `Agents: ${result.definitions.map((entry) => entry.definition.name).join(", ")} · expand for details`,
+      );
+    if (result.kind === "schemas") return `Schemas: ${Object.keys(result.schemas).join(", ")}`;
+    return `Pinata ${result.kind} · expand for details`;
+  }
+  return `Pinata ${response.method} finished · expand for details`;
 }

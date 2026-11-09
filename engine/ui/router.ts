@@ -26,6 +26,8 @@ export type ConversationView = {
   error?: string;
   scroll: number;
   inspection?: QueryResult;
+  follow?: boolean;
+  newOutput?: boolean;
 };
 type PendingMessage = {
   text: string;
@@ -51,13 +53,24 @@ export class ScreenRouter {
   definition?: DefinitionSummary;
   palette: PaletteName;
   mode: Config["mode"];
-  readonly motion: Config["ui"]["motion"];
+  motion: Config["ui"]["motion"];
   readonly keys: Record<string, string>;
   notice = "";
   fleetScroll = 0;
   fleetPageSize = 1;
   fleetRenderedSelection?: string;
   showQueued = false;
+  help = false;
+  helpScroll = 0;
+  actions = false;
+  actionIndex = 0;
+  search = "";
+  searching = false;
+  history = false;
+  filter: "all" | "active" | "failed" = "all";
+  readonly collapsed = new Set<string>();
+  transcriptFocus = false;
+  details = false;
   readonly activity = new Map<string, string>();
   private readonly drafts = new Map<string, string>();
   private readonly conversations = new Map<string, ConversationView>();
@@ -105,8 +118,10 @@ export class ScreenRouter {
   }
   onChange(listener: () => void): () => void {
     this.listeners.add(listener);
+    this.updateTicker();
     return () => {
       this.listeners.delete(listener);
+      this.updateTicker();
     };
   }
   private changed(): void {
@@ -157,6 +172,15 @@ export class ScreenRouter {
     )
       void this.loadSettings().catch((error: unknown) => this.fail(error));
     if (!this.selected) this.selected = assignments(this.state)[0]?.ref;
+    if (this.screen === "fleet") {
+      const rows = this.fleetAssignments();
+      if (
+        !rows.some(
+          (row) => this.selected && assignmentKey(row.ref) === assignmentKey(this.selected),
+        )
+      )
+        this.selected = rows[0]?.ref;
+    }
     this.changed();
     if (
       this.screen === "conversation" &&
@@ -226,9 +250,62 @@ export class ScreenRouter {
     if (row) this.navigate(this.screen, row.ref);
   }
   fleetAssignments(): ReturnType<typeof assignments> {
-    return assignmentTree(this.state, { selected: this.selected, queued: this.showQueued }).map(
-      (node) => node.assignment,
-    );
+    return this.fleetNodes().map((node) => node.assignment);
+  }
+  fleetNodes(ascii = false): ReturnType<typeof assignmentTree> {
+    const nodes = assignmentTree(this.state, {
+      ascii,
+      selected: this.selected,
+      queued: this.showQueued,
+    });
+    const hidden = new Set<string>();
+    return nodes.filter((node) => {
+      const assignment = node.assignment;
+      const key = assignmentKey(assignment.ref);
+      const worker = this.state.workers[assignment.ref.worker];
+      const parent = worker.parentAssignment ? assignmentKey(worker.parentAssignment) : undefined;
+      if (parent && (hidden.has(parent) || this.collapsed.has(parent))) {
+        hidden.add(key);
+        return false;
+      }
+      if (
+        !this.history &&
+        assignment.execution.phase === "ended" &&
+        this.state.latest[worker.id] !== assignment.ref.assignment
+      )
+        return false;
+      if (this.filter === "active" && assignment.execution.phase === "ended") return false;
+      if (
+        this.filter === "failed" &&
+        !(assignment.execution.phase === "ended" && assignment.execution.reason === "failed")
+      )
+        return false;
+      return `${worker.id} ${worker.agent} ${assignment.task}`
+        .toLowerCase()
+        .includes(this.search.toLowerCase());
+    });
+  }
+  refreshView(): void {
+    const rows = this.fleetAssignments();
+    if (
+      !rows.some((row) => this.selected && assignmentKey(row.ref) === assignmentKey(this.selected))
+    )
+      this.selected = rows[0]?.ref;
+    this.fleetRenderedSelection = undefined;
+    this.changed();
+  }
+  collapse(value: boolean): void {
+    if (!this.selected) return;
+    const key = assignmentKey(this.selected);
+    if (value) this.collapsed.add(key);
+    else this.collapsed.delete(key);
+    this.refreshView();
+  }
+  toggleFollow(): void {
+    const view = this.conversation();
+    view.follow = !view.follow;
+    if (view.follow) view.newOutput = false;
+    this.changed();
   }
   toggleQueued(): void {
     this.showQueued = !this.showQueued;
@@ -243,9 +320,13 @@ export class ScreenRouter {
     return timing ? Math.max(0, (timing.end ?? this.now()) - timing.start) : undefined;
   }
   private updateTicker(): void {
-    const running = [...this.observedTimes.values()].some((timing) => timing.end === undefined);
+    const running =
+      this.listeners.size > 0 &&
+      Object.values(this.state.assignments).some(
+        (assignment) => !["queued", "ended"].includes(assignment.execution.phase),
+      );
     if (running && !this.ticker) {
-      this.ticker = setInterval(() => this.changed(), 1000);
+      this.ticker = setInterval(() => this.changed(), this.motion === "full" ? 250 : 1000);
       this.ticker.unref();
     } else if (!running && this.ticker) {
       clearInterval(this.ticker);
@@ -274,6 +355,12 @@ export class ScreenRouter {
       return;
     const config = reply.response.result.config;
     this.mode = config.mode;
+    if (this.motion !== config.ui.motion && this.ticker) {
+      clearInterval(this.ticker);
+      this.ticker = undefined;
+    }
+    this.motion = config.ui.motion;
+    this.updateTicker();
     if (!this.localPalette) this.palette = config.ui.palette;
     Object.assign(this.keys, config.ui.keys);
     this.changed();
@@ -329,6 +416,7 @@ export class ScreenRouter {
       return;
     }
     const view = this.conversation();
+    view.follow = false;
     view.scroll = Math.max(0, view.scroll + lines);
     this.changed();
   }
@@ -367,6 +455,8 @@ export class ScreenRouter {
         view.error = "Source returned a conversation for a different assignment";
         return;
       }
+      if (view.page && !view.follow && page.artifact?.digest !== view.page.artifact?.digest)
+        view.newOutput = true;
       view.page = {
         ...page,
         entries: more ? [...(view.page?.entries ?? []), ...page.entries] : page.entries,

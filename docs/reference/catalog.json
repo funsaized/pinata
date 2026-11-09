@@ -1805,6 +1805,106 @@
                                         "required": ["definition", "path", "digest"],
                                         "additionalProperties": false
                                       }
+                                    },
+                                    "launch": {
+                                      "type": "object",
+                                      "properties": {
+                                        "parentContextAvailable": {
+                                          "type": "boolean"
+                                        },
+                                        "grants": {
+                                          "$ref": "#/definitions/__schema19"
+                                        },
+                                        "backend": {
+                                          "type": "string"
+                                        },
+                                        "workspace": {
+                                          "type": "string"
+                                        },
+                                        "parentModel": {
+                                          "allOf": [
+                                            {
+                                              "$ref": "#/definitions/__schema9"
+                                            }
+                                          ]
+                                        },
+                                        "models": {
+                                          "type": "object",
+                                          "propertyNames": {
+                                            "type": "string"
+                                          },
+                                          "additionalProperties": {
+                                            "$ref": "#/definitions/__schema9"
+                                          }
+                                        },
+                                        "backends": {
+                                          "type": "object",
+                                          "propertyNames": {
+                                            "type": "string"
+                                          },
+                                          "additionalProperties": {
+                                            "type": "object",
+                                            "properties": {
+                                              "available": {
+                                                "type": "boolean"
+                                              },
+                                              "reason": {
+                                                "allOf": [
+                                                  {
+                                                    "$ref": "#/definitions/__schema3"
+                                                  }
+                                                ]
+                                              },
+                                              "steer": {
+                                                "type": "boolean"
+                                              },
+                                              "continuation": {
+                                                "type": "boolean"
+                                              },
+                                              "conversationSeed": {
+                                                "type": "boolean"
+                                              },
+                                              "skills": {
+                                                "type": "boolean"
+                                              },
+                                              "memory": {
+                                                "type": "boolean"
+                                              },
+                                              "delegation": {
+                                                "type": "boolean"
+                                              },
+                                              "fallbacks": {
+                                                "type": "boolean"
+                                              },
+                                              "surviving": {
+                                                "type": "boolean"
+                                              },
+                                              "cleanup": {
+                                                "type": "string",
+                                                "enum": ["confirmed", "unverified"]
+                                              }
+                                            },
+                                            "required": [
+                                              "available",
+                                              "steer",
+                                              "continuation",
+                                              "conversationSeed",
+                                              "surviving",
+                                              "cleanup"
+                                            ],
+                                            "additionalProperties": false
+                                          }
+                                        }
+                                      },
+                                      "required": [
+                                        "parentContextAvailable",
+                                        "grants",
+                                        "backend",
+                                        "workspace",
+                                        "models",
+                                        "backends"
+                                      ],
+                                      "additionalProperties": false
                                     }
                                   },
                                   "required": ["kind", "definitions"],
@@ -10093,6 +10193,106 @@
                                 "required": ["definition", "path", "digest"],
                                 "additionalProperties": false
                               }
+                            },
+                            "launch": {
+                              "type": "object",
+                              "properties": {
+                                "parentContextAvailable": {
+                                  "type": "boolean"
+                                },
+                                "grants": {
+                                  "$ref": "#/definitions/__schema18"
+                                },
+                                "backend": {
+                                  "type": "string"
+                                },
+                                "workspace": {
+                                  "type": "string"
+                                },
+                                "parentModel": {
+                                  "allOf": [
+                                    {
+                                      "$ref": "#/definitions/__schema8"
+                                    }
+                                  ]
+                                },
+                                "models": {
+                                  "type": "object",
+                                  "propertyNames": {
+                                    "type": "string"
+                                  },
+                                  "additionalProperties": {
+                                    "$ref": "#/definitions/__schema8"
+                                  }
+                                },
+                                "backends": {
+                                  "type": "object",
+                                  "propertyNames": {
+                                    "type": "string"
+                                  },
+                                  "additionalProperties": {
+                                    "type": "object",
+                                    "properties": {
+                                      "available": {
+                                        "type": "boolean"
+                                      },
+                                      "reason": {
+                                        "allOf": [
+                                          {
+                                            "$ref": "#/definitions/__schema2"
+                                          }
+                                        ]
+                                      },
+                                      "steer": {
+                                        "type": "boolean"
+                                      },
+                                      "continuation": {
+                                        "type": "boolean"
+                                      },
+                                      "conversationSeed": {
+                                        "type": "boolean"
+                                      },
+                                      "skills": {
+                                        "type": "boolean"
+                                      },
+                                      "memory": {
+                                        "type": "boolean"
+                                      },
+                                      "delegation": {
+                                        "type": "boolean"
+                                      },
+                                      "fallbacks": {
+                                        "type": "boolean"
+                                      },
+                                      "surviving": {
+                                        "type": "boolean"
+                                      },
+                                      "cleanup": {
+                                        "type": "string",
+                                        "enum": ["confirmed", "unverified"]
+                                      }
+                                    },
+                                    "required": [
+                                      "available",
+                                      "steer",
+                                      "continuation",
+                                      "conversationSeed",
+                                      "surviving",
+                                      "cleanup"
+                                    ],
+                                    "additionalProperties": false
+                                  }
+                                }
+                              },
+                              "required": [
+                                "parentContextAvailable",
+                                "grants",
+                                "backend",
+                                "workspace",
+                                "models",
+                                "backends"
+                              ],
+                              "additionalProperties": false
                             }
                           },
                           "required": ["kind", "definitions"],
@@ -27047,6 +27247,106 @@
                 "required": ["definition", "path", "digest"],
                 "additionalProperties": false
               }
+            },
+            "launch": {
+              "type": "object",
+              "properties": {
+                "parentContextAvailable": {
+                  "type": "boolean"
+                },
+                "grants": {
+                  "$ref": "#/definitions/__schema32"
+                },
+                "backend": {
+                  "type": "string"
+                },
+                "workspace": {
+                  "type": "string"
+                },
+                "parentModel": {
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/__schema1"
+                    }
+                  ]
+                },
+                "models": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {
+                    "$ref": "#/definitions/__schema1"
+                  }
+                },
+                "backends": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {
+                    "type": "object",
+                    "properties": {
+                      "available": {
+                        "type": "boolean"
+                      },
+                      "reason": {
+                        "allOf": [
+                          {
+                            "$ref": "#/definitions/__schema2"
+                          }
+                        ]
+                      },
+                      "steer": {
+                        "type": "boolean"
+                      },
+                      "continuation": {
+                        "type": "boolean"
+                      },
+                      "conversationSeed": {
+                        "type": "boolean"
+                      },
+                      "skills": {
+                        "type": "boolean"
+                      },
+                      "memory": {
+                        "type": "boolean"
+                      },
+                      "delegation": {
+                        "type": "boolean"
+                      },
+                      "fallbacks": {
+                        "type": "boolean"
+                      },
+                      "surviving": {
+                        "type": "boolean"
+                      },
+                      "cleanup": {
+                        "type": "string",
+                        "enum": ["confirmed", "unverified"]
+                      }
+                    },
+                    "required": [
+                      "available",
+                      "steer",
+                      "continuation",
+                      "conversationSeed",
+                      "surviving",
+                      "cleanup"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "parentContextAvailable",
+                "grants",
+                "backend",
+                "workspace",
+                "models",
+                "backends"
+              ],
+              "additionalProperties": false
             }
           },
           "required": ["kind", "definitions"],
@@ -35589,7 +35889,7 @@
       "output": "pinata.surface-reply.v1"
     },
     "pinata_agents": {
-      "description": "Discover validated agent definitions with their source paths and content digests.",
+      "description": "Discover compact agent descriptions, defaults and effective launch grants. Full instructions remain available through pinata_status query kind definitions.",
       "input": {
         "$schema": "http://json-schema.org/draft-07/schema#",
         "type": "object",

@@ -1,10 +1,14 @@
 # Tool patterns
 
-Call `pinata_status` with `query: {kind: "schemas", name: "pinata.command.v1"}`
+Tool input schemas are supplied automatically; ordinary startup needs no schema query.
+For additional details, call `pinata_status` with `query: {kind: "schemas", name: "pinata.command.v1"}`
 to inspect the current command union. `pinata_agents` discovers frozen-definition
-inputs. Coordinator tools return `pinata.surface-reply.v1`, except `pinata_page`,
-which returns `pinata.tool-page-reply.v1`. Inspect rejected receipts and application
-results rather than reading only prose.
+inputs and effective launch grants. Coordinator tool details retain
+`pinata.surface-reply.v1`, except `pinata_page`, which returns
+`pinata.tool-page-reply.v1`. Model-facing agent discovery uses a compact `agents`
+projection; unnamed schema discovery uses `schema_index`. Query `definitions`
+for full instructions or request a named schema for its content. Inspect rejected
+receipts and application results rather than reading only prose.
 
 Start a worker:
 

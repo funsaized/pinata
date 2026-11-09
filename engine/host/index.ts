@@ -248,6 +248,17 @@ export async function openHost(options: HostOptions): Promise<Host> {
             ...(options.origin ? { origin: options.origin } : {}),
           },
         }),
+    launchInfo: (authority, current = config) => ({
+      parentContextAvailable: authority.kind === "worker" || Boolean(options.parentContext),
+      grants: authority.grants,
+      backend: current.backend,
+      workspace: current.workspace,
+      parentModel: options.parentModel,
+      models: current.models,
+      backends: Object.fromEntries(
+        Object.entries(backends).map(([kind, backend]) => [kind, backend.capabilities]),
+      ),
+    }),
     resolveWorkers: createWorkerResolver({
       cwd: workspace,
       agentDir,

@@ -1,3 +1,4 @@
+import type { LaunchInfo } from "../contracts/runtime.ts";
 import { Schedules, type SchedulingOptions } from "../schedules/index.ts";
 import { randomUUID } from "node:crypto";
 import type { ArtifactPort, BackendObservation, SessionCheckpoint } from "../contracts/backend.ts";
@@ -99,6 +100,7 @@ export type RuntimeOptions = {
   fault?: FaultHook;
   resolveWorkers?: WorkerResolver;
   resolveConfig?: (config?: ConfigLayer) => Config | Promise<Config>;
+  launchInfo?: (caller: CallerAuthority, config?: Config) => LaunchInfo;
   discoverDefinitions?: () => Promise<DefinitionSummary[]>;
   effectPort?: InertEffectPort;
   execution?: ExecutionOptions;
@@ -724,7 +726,11 @@ export class Runtime {
         case "schemas": {
           const schemas = exportSchemas();
           if (request.name && !Object.hasOwn(schemas, request.name))
-            throw new DomainError("invalid_input", `Unknown schema: ${request.name}`, "name");
+            throw new DomainError(
+              "invalid_input",
+              `Unknown schema: ${request.name}. Available names: ${Object.keys(schemas).join(", ")}`,
+              "name",
+            );
           return immutable(
             queryResultSchema.parse({
               kind: "schemas",
@@ -732,13 +738,24 @@ export class Runtime {
             }),
           );
         }
-        case "definitions":
+        case "definitions": {
+          const config = this.state.config
+            ? configSchema.parse(
+                JSON.parse(
+                  Buffer.from(await this.store.readArtifact(this.state.config)).toString("utf8"),
+                ),
+              )
+            : undefined;
           return immutable(
             queryResultSchema.parse({
               kind: "definitions",
               definitions: (await this.options.discoverDefinitions?.()) ?? [],
+              ...(this.options.launchInfo
+                ? { launch: this.options.launchInfo(caller, config) }
+                : {}),
             }),
           );
+        }
         default:
           throw new DomainError("unsupported", "Unsupported runtime query");
       }

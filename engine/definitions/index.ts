@@ -1,6 +1,7 @@
 import { readFile, realpath } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { configSchema, type Config } from "../contracts/config.ts";
+import { digestBytes } from "../storage/io.ts";
 import { canonicalJson } from "../contracts/digest.ts";
 import {
   DomainError,
@@ -100,280 +101,322 @@ export function createWorkerResolver(options: WorkerResolverOptions): WorkerReso
     const config =
       context?.config ??
       resolveConfig([options.config?.personal, options.config?.project, options.config?.run]);
-    const put = (bytes: Uint8Array): Promise<ArtifactRef> => storage.putArtifact(bytes);
+    const artifacts = new Map<string, Promise<ArtifactRef>>();
+    const put = (bytes: Uint8Array): Promise<ArtifactRef> => {
+      const digest = digestBytes(bytes);
+      let pending = artifacts.get(digest);
+      if (!pending) {
+        pending = storage.putArtifact(bytes);
+        artifacts.set(digest, pending);
+      }
+      return pending;
+    };
+    const skillSets = new Map<string, Awaited<ReturnType<typeof freezeSkills>>>();
+    const providerFiles = new Map<string, { path: string; artifact: ArtifactRef }>();
     const configRef = await put(Buffer.from(canonicalJson(config)));
     const workers: FrozenWorker[] = [];
+    // Capture each definition once per command; later commands still see user edits.
+    const definitions = new Map<string, DefinitionSource>();
     for (const request of requests) {
-      const source = await resolveDefinition(
-        request.agent,
-        options.definitionDirectories,
-        options.bootstrap,
-      );
-      const definition = source.definition;
-      const backend = request.backend ?? config.backend;
-      const capabilities = options.backends[backend];
-      if (!capabilities?.available)
-        throw new DomainError(
-          "unsupported",
-          capabilities?.reason ?? `Backend ${backend} is unavailable`,
-          "backend",
-        );
-      const lifetime = request.lifetime ?? "attached";
-      if (lifetime === "surviving" && !capabilities.surviving)
-        throw new DomainError(
-          "unsupported",
-          `Backend ${backend} cannot survive its host`,
-          "lifetime",
-        );
-      const candidates: Array<[string, ModelRef | undefined]> = [
-        ["task", request.model],
-        ["agent-config", config.models[request.agent]],
-        [
-          "definition",
-          definition.model
-            ? definitionModel(definition.model, definition.modelSettings.reasoning?.effort ?? "off")
-            : undefined,
-        ],
-        ["default-config", config.models.default],
-        ["parent", options.parentModel],
-      ];
-      const selected = candidates.find((entry) => entry[1] !== undefined);
-      if (!selected?.[1])
-        throw new DomainError("unsupported", `No model was resolved for ${request.agent}`, "model");
-      const requestedModel = selected[1];
-      const fallbacks = Object.hasOwn(config.fallbacks, request.agent)
-        ? config.fallbacks[request.agent]
-        : definition.pinata.fallbacks.length
-          ? definition.pinata.fallbacks
-          : (config.fallbacks.default ?? []);
-      if (fallbacks.length && !capabilities.fallbacks)
-        throw new DomainError(
-          "unsupported",
-          `Backend ${backend} does not support explicit model fallbacks`,
-          "fallbacks",
-        );
-      const modelChoices = [requestedModel, ...fallbacks];
-      const availability = await Promise.all(
-        modelChoices.map((candidate) => options.modelAvailable(candidate)),
-      );
-      const selectedIndex = availability.findIndex(Boolean);
-      const model = modelChoices[selectedIndex];
-      if (!model)
-        throw new DomainError(
-          "unsupported",
-          `None of the configured models is available for ${request.agent}`,
-          "model",
-        );
-      const access =
-        caller.kind === "worker" && caller.grants.access === "read"
-          ? "read"
-          : definition.pinata.access;
-      if (access === "write" && caller.grants.access !== "write")
-        throw new DomainError(
-          "capability_denied",
-          "Definition requires write access outside the caller grant",
-          "pinata.access",
-        );
-      const workspace =
-        request.workspace ??
-        (source.workspaceDeclared ? definition.pinata.workspace : config.workspace);
-      if (!caller.grants.workspaces.includes(workspace))
-        throw new DomainError(
-          "capability_denied",
-          "Selected workspace is not granted",
-          "workspace",
-        );
-      const selectedTools =
-        caller.kind === "worker"
-          ? definition.tools.filter(
-              (name) =>
-                caller.grants.tools.includes(name) &&
-                (access !== "read" || options.tools[name]?.access === "read"),
-            )
-          : definition.tools;
-      const configuredProviders = [
-        ...Object.entries(config.toolProviders),
-        ...(config.webExtension
-          ? [
-              [
-                "webExtension",
-                { extension: config.webExtension, tools: [...webToolNames] },
-              ] as const,
-            ]
-          : []),
-      ];
-      const selectedProviders = configuredProviders.filter(([, provider]) =>
-        provider.tools.some((name) => selectedTools.includes(name)),
-      );
-      for (const name of selectedTools) {
-        const registered = options.tools[name];
-        const provided = selectedProviders.some(([, provider]) => provider.tools.includes(name));
-        if (selectedProviders.filter(([, provider]) => provider.tools.includes(name)).length > 1)
-          throw new DomainError(
-            "invalid_input",
-            `Multiple configured providers supply ${name}`,
-            "toolProviders",
+      try {
+        let source = definitions.get(request.agent);
+        if (!source) {
+          source = await resolveDefinition(
+            request.agent,
+            options.definitionDirectories,
+            options.bootstrap,
           );
-        if (!registered && !provided)
-          throw new DomainError("unsupported", `Unknown tool ${name}`, "tools");
-        if (!caller.grants.tools.includes(name))
+          definitions.set(request.agent, source);
+        }
+        const definition = source.definition;
+        const backend = request.backend ?? config.backend;
+        const capabilities = options.backends[backend];
+        if (!capabilities?.available)
           throw new DomainError(
-            "capability_denied",
-            `Tool ${name} is outside the caller grant`,
-            "tools",
+            "unsupported",
+            capabilities?.reason ?? `Backend ${backend} is unavailable`,
+            "backend",
           );
-        if (access === "read" && (registered?.access ?? "write") === "write")
+        const lifetime = request.lifetime ?? "attached";
+        if (lifetime === "surviving" && !capabilities.surviving)
           throw new DomainError(
-            "capability_denied",
-            `Read-only definition cannot use writable tool ${name}`,
-            "tools",
+            "unsupported",
+            `Backend ${backend} cannot survive its host`,
+            "lifetime",
           );
-      }
-      if (new Set(definition.tools).size !== definition.tools.length)
-        throw new DomainError("invalid_input", "Definition repeats a tool name", "tools");
-      if (
-        definition.outputType &&
-        !source.outputSchema &&
-        !Object.hasOwn(schemaRegistry, definition.outputType)
-      )
-        throw new DomainError(
-          "unsupported",
-          `Unregistered output schema ${definition.outputType}`,
-          "outputType",
-        );
-      const inheritance = request.inheritContext ?? definition.pinata.inheritContext;
-      if (
-        inheritance === "parent" &&
-        (!caller.grants.inheritContext || !capabilities.conversationSeed || !options.parentContext)
-      )
-        throw new DomainError(
-          caller.grants.inheritContext ? "unsupported" : "capability_denied",
-          "Parent conversation import is unavailable or ungranted",
-          "inheritContext",
-        );
-      const memory = request.memory ?? definition.pinata.memory;
-      if (
-        memory.scope !== "none" &&
-        (memory.scope !== caller.grants.memory.scope ||
-          (memory.access === "write" && caller.grants.memory.access !== "write"))
-      )
-        throw new DomainError(
-          "capability_denied",
-          "Selected memory scope or access is not granted",
-          "memory",
-        );
-      if (memory.scope !== "none" && !capabilities.memory)
-        throw new DomainError(
-          "unsupported",
-          `Backend ${backend} does not support scoped memory`,
-          "memory",
-        );
-      const depth =
-        request.delegation?.maxDepth ??
-        (caller.kind === "worker"
-          ? Math.min(definition.pinata.delegation.maxDepth, caller.grants.delegation.maxDepth)
-          : definition.pinata.delegation.maxDepth);
-      if (depth > caller.grants.delegation.maxDepth)
-        throw new DomainError(
-          "capability_denied",
-          "Delegation depth exceeds the caller grant",
-          "delegation",
-        );
-      if (definition.pinata.skills.length && !capabilities.skills)
-        throw new DomainError(
-          "unsupported",
-          `Backend ${backend} does not support frozen explicit skills`,
-          "pinata.skills",
-        );
-      // All reads are captured before acceptance. Skills never modify the tool or access grant.
-      const skills = await freezeSkills(definition.pinata.skills, {
-        cwd: dirname(source.path),
-        agentDir: options.agentDir,
-        artifacts: { put },
-      });
-      const providers: FrozenLoadout["providers"] = [];
-      for (const [name, provider] of selectedProviders) {
-        const path = await realpath(resolve(options.cwd, provider.extension));
-        providers.push({
-          name,
-          path,
-          artifact: await put(await readFile(path)),
-          tools: [...provider.tools],
-        });
-      }
-      const definitionRef = await put(Buffer.from(canonicalJson(definition)));
-      const loadout = loadoutSchema.parse({
-        schemaVersion: 1,
-        agent: request.agent,
-        definition: definitionRef,
-        source: { path: source.path, artifact: await put(source.bytes) },
-        config: configRef,
-        skills,
-        providers,
-        ...(source.trusted
-          ? {
-              trusted: source.outputSchema
-                ? { outputSchema: await put(Buffer.from(canonicalJson(source.outputSchema))) }
-                : {},
-            }
-          : {}),
-        ...(definition.pinata.color ? { color: definition.pinata.color } : {}),
-        provenance: {
-          model: selectedIndex === 0 ? selected[0] : `fallback:${selectedIndex}`,
-          workspace: request.workspace
-            ? "task"
-            : source.workspaceDeclared
-              ? "definition"
-              : "config",
-        },
-      });
-      const loadoutRef = await put(Buffer.from(canonicalJson(loadout)));
-      const inheritedContext =
-        inheritance === "parent"
-          ? await options.parentContext?.(request, caller, context?.parentCheckpoint)
-          : undefined;
-      let worker = frozenWorkerSchema.parse({
-        id: request.id,
-        agent: request.agent,
-        ...(request.origin ? { origin: request.origin } : {}),
-        definition: definitionRef,
-        ...(definition.pinata.color ? { color: definition.pinata.color } : {}),
-        loadout: loadoutRef,
-        config: configRef,
-        model,
-        fallbacks,
-        tools: selectedTools,
-        access,
-        workspace,
-        ...(request.observeWorkspace !== undefined
-          ? { observeWorkspace: request.observeWorkspace }
-          : {}),
-        backend,
-        lifetime,
-        grants: {
-          access,
-          tools: selectedTools,
-          workspaces: [workspace],
-          inheritContext: inheritance === "parent",
-          memory,
-          delegation: {
-            maxDepth: depth,
-            agents: depth
-              ? definition.handoffs.filter((name) => caller.grants.delegation.agents.includes(name))
-              : [],
-            tools: depth ? [...caller.grants.delegation.tools] : [],
-            workspaces: depth
-              ? caller.grants.delegation.workspaces.filter((mode) =>
-                  caller.grants.workspaces.includes(mode),
+        const candidates: Array<[string, ModelRef | undefined]> = [
+          ["task", request.model],
+          ["agent-config", config.models[request.agent]],
+          [
+            "definition",
+            definition.model
+              ? definitionModel(
+                  definition.model,
+                  definition.modelSettings.reasoning?.effort ?? "off",
                 )
-              : [],
+              : undefined,
+          ],
+          ["default-config", config.models.default],
+          ["parent", options.parentModel],
+        ];
+        const selected = candidates.find((entry) => entry[1] !== undefined);
+        if (!selected?.[1])
+          throw new DomainError(
+            "unsupported",
+            `No model was resolved for ${request.agent}`,
+            "model",
+          );
+        const requestedModel = selected[1];
+        const fallbacks = Object.hasOwn(config.fallbacks, request.agent)
+          ? config.fallbacks[request.agent]
+          : definition.pinata.fallbacks.length
+            ? definition.pinata.fallbacks
+            : (config.fallbacks.default ?? []);
+        if (fallbacks.length && !capabilities.fallbacks)
+          throw new DomainError(
+            "unsupported",
+            `Backend ${backend} does not support explicit model fallbacks`,
+            "fallbacks",
+          );
+        const modelChoices = [requestedModel, ...fallbacks];
+        const availability = await Promise.all(
+          modelChoices.map((candidate) => options.modelAvailable(candidate)),
+        );
+        const selectedIndex = availability.findIndex(Boolean);
+        const model = modelChoices[selectedIndex];
+        if (!model)
+          throw new DomainError(
+            "unsupported",
+            `None of the configured models is available for ${request.agent}`,
+            "model",
+          );
+        const access =
+          caller.kind === "worker" && caller.grants.access === "read"
+            ? "read"
+            : definition.pinata.access;
+        if (access === "write" && caller.grants.access !== "write")
+          throw new DomainError(
+            "capability_denied",
+            "Definition requires write access outside the caller grant",
+            "pinata.access",
+          );
+        const workspace =
+          request.workspace ??
+          (source.workspaceDeclared ? definition.pinata.workspace : config.workspace);
+        if (!caller.grants.workspaces.includes(workspace))
+          throw new DomainError(
+            "capability_denied",
+            "Selected workspace is not granted",
+            "workspace",
+          );
+        const selectedTools =
+          caller.kind === "worker"
+            ? definition.tools.filter(
+                (name) =>
+                  caller.grants.tools.includes(name) &&
+                  (access !== "read" || options.tools[name]?.access === "read"),
+              )
+            : definition.tools;
+        const configuredProviders = [
+          ...Object.entries(config.toolProviders),
+          ...(config.webExtension
+            ? [
+                [
+                  "webExtension",
+                  { extension: config.webExtension, tools: [...webToolNames] },
+                ] as const,
+              ]
+            : []),
+        ];
+        const selectedProviders = configuredProviders.filter(([, provider]) =>
+          provider.tools.some((name) => selectedTools.includes(name)),
+        );
+        for (const name of selectedTools) {
+          const registered = options.tools[name];
+          const provided = selectedProviders.some(([, provider]) => provider.tools.includes(name));
+          if (selectedProviders.filter(([, provider]) => provider.tools.includes(name)).length > 1)
+            throw new DomainError(
+              "invalid_input",
+              `Multiple configured providers supply ${name}`,
+              "toolProviders",
+            );
+          if (!registered && !provided)
+            throw new DomainError("unsupported", `Unknown tool ${name}`, "tools");
+          if (!caller.grants.tools.includes(name))
+            throw new DomainError(
+              "capability_denied",
+              `Tool ${name} is outside the caller grant`,
+              "tools",
+            );
+          if (access === "read" && (registered?.access ?? "write") === "write")
+            throw new DomainError(
+              "capability_denied",
+              `Read-only definition cannot use writable tool ${name}`,
+              "tools",
+            );
+        }
+        if (new Set(definition.tools).size !== definition.tools.length)
+          throw new DomainError("invalid_input", "Definition repeats a tool name", "tools");
+        if (
+          definition.outputType &&
+          !source.outputSchema &&
+          !Object.hasOwn(schemaRegistry, definition.outputType)
+        )
+          throw new DomainError(
+            "unsupported",
+            `Unregistered output schema ${definition.outputType}`,
+            "outputType",
+          );
+        const inheritance = request.inheritContext ?? definition.pinata.inheritContext;
+        if (
+          inheritance === "parent" &&
+          (!caller.grants.inheritContext ||
+            !capabilities.conversationSeed ||
+            !options.parentContext)
+        )
+          throw new DomainError(
+            caller.grants.inheritContext ? "unsupported" : "capability_denied",
+            caller.grants.inheritContext
+              ? "This backend cannot import parent context. Include needed context in task."
+              : "Parent context is not granted. Omit inheritContext and include needed context in task, or enable the caller grant.",
+            "inheritContext",
+          );
+        const memory = request.memory ?? definition.pinata.memory;
+        if (
+          memory.scope !== "none" &&
+          (memory.scope !== caller.grants.memory.scope ||
+            (memory.access === "write" && caller.grants.memory.access !== "write"))
+        )
+          throw new DomainError(
+            "capability_denied",
+            "Selected memory scope or access is not granted",
+            "memory",
+          );
+        if (memory.scope !== "none" && !capabilities.memory)
+          throw new DomainError(
+            "unsupported",
+            `Backend ${backend} does not support scoped memory`,
+            "memory",
+          );
+        const depth =
+          request.delegation?.maxDepth ??
+          (caller.kind === "worker"
+            ? Math.min(definition.pinata.delegation.maxDepth, caller.grants.delegation.maxDepth)
+            : definition.pinata.delegation.maxDepth);
+        if (depth > caller.grants.delegation.maxDepth)
+          throw new DomainError(
+            "capability_denied",
+            "Delegation depth exceeds the caller grant",
+            "delegation",
+          );
+        if (definition.pinata.skills.length && !capabilities.skills)
+          throw new DomainError(
+            "unsupported",
+            `Backend ${backend} does not support frozen explicit skills`,
+            "pinata.skills",
+          );
+        // All reads are captured before acceptance. Skills never modify the tool or access grant.
+        const skillKey = canonicalJson([dirname(source.path), definition.pinata.skills]);
+        let skills = skillSets.get(skillKey);
+        if (!skills) {
+          skills = await freezeSkills(definition.pinata.skills, {
+            cwd: dirname(source.path),
+            agentDir: options.agentDir,
+            artifacts: { put },
+          });
+          skillSets.set(skillKey, skills);
+        }
+        const providers: FrozenLoadout["providers"] = [];
+        for (const [name, provider] of selectedProviders) {
+          const requestedPath = resolve(options.cwd, provider.extension);
+          let captured = providerFiles.get(requestedPath);
+          if (!captured) {
+            const path = await realpath(requestedPath);
+            captured = { path, artifact: await put(await readFile(path)) };
+            providerFiles.set(requestedPath, captured);
+          }
+          providers.push({ name, ...captured, tools: [...provider.tools] });
+        }
+        const definitionRef = await put(Buffer.from(canonicalJson(definition)));
+        const loadout = loadoutSchema.parse({
+          schemaVersion: 1,
+          agent: request.agent,
+          definition: definitionRef,
+          source: { path: source.path, artifact: await put(source.bytes) },
+          config: configRef,
+          skills,
+          providers,
+          ...(source.trusted
+            ? {
+                trusted: source.outputSchema
+                  ? { outputSchema: await put(Buffer.from(canonicalJson(source.outputSchema))) }
+                  : {},
+              }
+            : {}),
+          ...(definition.pinata.color ? { color: definition.pinata.color } : {}),
+          provenance: {
+            model: selectedIndex === 0 ? selected[0] : `fallback:${selectedIndex}`,
+            workspace: request.workspace
+              ? "task"
+              : source.workspaceDeclared
+                ? "definition"
+                : "config",
           },
-        },
-        ...(inheritedContext ? { context: inheritedContext } : {}),
-      });
-      if (options.freezeWorker)
-        worker = await options.freezeWorker(worker, request, caller, { put });
-      workers.push(worker);
+        });
+        const loadoutRef = await put(Buffer.from(canonicalJson(loadout)));
+        const inheritedContext =
+          inheritance === "parent"
+            ? await options.parentContext?.(request, caller, context?.parentCheckpoint)
+            : undefined;
+        let worker = frozenWorkerSchema.parse({
+          id: request.id,
+          agent: request.agent,
+          ...(request.origin ? { origin: request.origin } : {}),
+          definition: definitionRef,
+          ...(definition.pinata.color ? { color: definition.pinata.color } : {}),
+          loadout: loadoutRef,
+          config: configRef,
+          model,
+          fallbacks,
+          tools: selectedTools,
+          access,
+          workspace,
+          ...(request.observeWorkspace !== undefined
+            ? { observeWorkspace: request.observeWorkspace }
+            : {}),
+          backend,
+          lifetime,
+          grants: {
+            access,
+            tools: selectedTools,
+            workspaces: [workspace],
+            inheritContext: inheritance === "parent",
+            memory,
+            delegation: {
+              maxDepth: depth,
+              agents: depth
+                ? definition.handoffs.filter((name) =>
+                    caller.grants.delegation.agents.includes(name),
+                  )
+                : [],
+              tools: depth ? [...caller.grants.delegation.tools] : [],
+              workspaces: depth
+                ? caller.grants.delegation.workspaces.filter((mode) =>
+                    caller.grants.workspaces.includes(mode),
+                  )
+                : [],
+            },
+          },
+          ...(inheritedContext ? { context: inheritedContext } : {}),
+        });
+        if (options.freezeWorker)
+          worker = await options.freezeWorker(worker, request, caller, { put });
+        workers.push(worker);
+      } catch (error) {
+        if (error instanceof DomainError)
+          throw new DomainError(error.code, `Worker ${request.id}: ${error.message}`, error.field);
+        throw error;
+      }
     }
     return structuredClone(workers);
   };

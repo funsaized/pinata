@@ -136,6 +136,7 @@ try:
                         frames.append(event)
                         stages[visit] = 2
                         if visit == 1:
+                            send(b"\td\t")
                             send(b"\x1b[<65;10;20M")
                             send(b"worker-one draft")
                         else:

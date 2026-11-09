@@ -817,3 +817,41 @@ test(
     assert.equal(exact.source, left.control);
   },
 );
+
+test("compact discovery exposes launch grants while preserving full definitions and schema details", async (t) => {
+  const f = await fixture(t);
+  const agents = f.session.extensionRunner.getToolDefinition("pinata_agents");
+  const status = f.session.extensionRunner.getToolDefinition("pinata_status");
+  assert(agents && status);
+  const context = f.session.extensionRunner.createToolContext("discovery", undefined);
+  const result = await agents.execute("agents", {}, undefined, undefined, context);
+  const text = result.content.find((part) => part.type === "text");
+  assert(text?.type === "text");
+  const compact = JSON.parse(text.text);
+  assert.equal(compact.kind, "agents");
+  assert.equal(compact.launch.grants.inheritContext, false);
+  assert(compact.launch.backends["in-process"]);
+  assert(!compact.agents[0].instructions);
+  const detail = surfaceReplySchema.parse(result.details);
+  assert.equal(detail.status, "ok");
+  if (
+    detail.status !== "ok" ||
+    detail.response.method !== "query" ||
+    detail.response.result.kind !== "definitions"
+  )
+    throw new Error("Expected definitions");
+  assert(detail.response.result.definitions[0].definition.instructions);
+  const schemas = await status.execute(
+    "schemas",
+    { query: { kind: "schemas" } },
+    undefined,
+    undefined,
+    context,
+  );
+  const schemaText = schemas.content.find((part) => part.type === "text");
+  assert(schemaText?.type === "text");
+  const index = JSON.parse(schemaText.text);
+  assert.equal(index.kind, "schema_index");
+  assert(index.names.includes("pinata.command.v1"));
+  assert.equal(surfaceReplySchema.parse(schemas.details).status, "ok");
+});

@@ -15,39 +15,8 @@ import { renderScreen } from "./render.ts";
 import { ScreenRouter, type MessageAction } from "./router.ts";
 import { padded } from "./text.ts";
 
-const defaults = {
-  openFleet: "shift+up",
-  parentScreen: "shift+down",
-  previousScreen: "ctrl+left",
-  nextScreen: "ctrl+right",
-  previousWorker: "shift+left",
-  nextWorker: "shift+right",
-  previousAssignment: "alt+left",
-  nextAssignment: "alt+right",
-  stop: "ctrl+x",
-  background: "ctrl+b",
-  recover: "ctrl+r",
-  refresh: "ctrl+l",
-  scrollUp: "alt+pageUp",
-  scrollDown: "alt+pageDown",
-} as const;
-export type UiKeys = Record<keyof typeof defaults, KeyId>;
-export function resolveKeys(config: Record<string, string>): UiKeys {
-  const keys = { ...defaults } as UiKeys;
-  for (const [name, key] of Object.entries(config)) {
-    if (!Object.hasOwn(defaults, name)) throw new Error(`Unknown Pinata key action: ${name}`);
-    if (
-      !/^(?:(?:ctrl|alt|shift|super)\+)*(?:[a-z0-9]|left|right|up|down|enter|escape|tab|space|pageUp|pageDown|home|end|f(?:[1-9]|1[0-2]))$/.test(
-        key,
-      )
-    )
-      throw new Error(`Invalid Pinata key: ${key}`);
-    keys[name as keyof UiKeys] = key as KeyId;
-  }
-  if (new Set(Object.values(keys)).size !== Object.values(keys).length)
-    throw new Error("Pinata key actions must use distinct shortcuts");
-  return keys;
-}
+import { resolveKeys, type UiKeys } from "./keys.ts";
+export { resolveKeys } from "./keys.ts";
 export type ScreenOptions = {
   tui: TUI;
   router: ScreenRouter;
@@ -120,7 +89,8 @@ export class PinataScreen implements Component, Focusable {
       this.syncedWorker = this.router.selected?.worker;
       this.syncedDraft = this.router.draft;
     }
-    this.editor.focused = this.focus && this.router.screen === "conversation";
+    this.editor.focused =
+      this.focus && this.router.screen === "conversation" && !this.router.transcriptFocus;
   }
   render(width: number): string[] {
     this.syncEditor();
@@ -129,12 +99,13 @@ export class PinataScreen implements Component, Focusable {
         ? this.editor.render(Math.max(1, width))
         : [];
     const rows = renderScreen(this.router, {
-      width,
+      width: Math.max(1, width - 2),
       height: Math.max(1, this.options.tui.terminal.rows - editor.length - 1),
       paint: this.paint(),
       ascii: this.options.ascii,
       hitRows: this.hitRows,
     });
+    for (let index = 0; index < rows.length; index++) rows[index] = " " + rows[index];
     rows.push("");
     this.editorTop = rows.length;
     return [...rows, ...editor].map((line) => this.paint()("background", padded(line, width)));
@@ -155,6 +126,76 @@ export class PinataScreen implements Component, Focusable {
   }
   handleInput(data: string): void {
     if (!this.alive) return;
+    if (this.router.actions) {
+      if (matchesKey(data, "escape")) this.router.actions = false;
+      else if (matchesKey(data, "up"))
+        this.router.actionIndex = Math.max(0, this.router.actionIndex - 1);
+      else if (matchesKey(data, "down"))
+        this.router.actionIndex = Math.min(5, this.router.actionIndex + 1);
+      else if (matchesKey(data, "enter")) {
+        const index = this.router.actionIndex;
+        this.router.actions = false;
+        this.run(() =>
+          index < 3
+            ? this.router.control(
+                "cancel",
+                ["assignment", "worker", "run"][index] as "assignment" | "worker" | "run",
+              )
+            : this.router.control(index === 3 ? "background" : index === 4 ? "recover" : "inspect"),
+        );
+      }
+      this.requestRender();
+      return;
+    }
+    if (this.router.help) {
+      if (matchesKey(data, "down") || matchesKey(data, "pageDown")) this.router.helpScroll++;
+      if (matchesKey(data, "up") || matchesKey(data, "pageUp"))
+        this.router.helpScroll = Math.max(0, this.router.helpScroll - 1);
+      this.requestRender();
+      if (matchesKey(data, "escape") || data === "?") {
+        this.router.help = false;
+        this.requestRender();
+      }
+      return;
+    }
+    if (this.router.searching) {
+      if (matchesKey(data, "escape") || matchesKey(data, "enter")) this.router.searching = false;
+      else if (matchesKey(data, "backspace"))
+        this.router.search = [...this.router.search].slice(0, -1).join("");
+      else if (
+        [...data].every(
+          (character) => character.codePointAt(0)! >= 32 && character.codePointAt(0)! !== 127,
+        )
+      )
+        this.router.search += data;
+      this.router.refreshView();
+      return;
+    }
+    if (this.router.screen === "conversation" && matchesKey(data, "tab")) {
+      this.router.transcriptFocus = !this.router.transcriptFocus;
+      this.requestRender();
+      return;
+    }
+    const composing = this.router.screen === "conversation" && !this.router.transcriptFocus;
+    if (
+      composing &&
+      ["ctrl+left", "ctrl+right", "ctrl+b", "ctrl+r"].some((key) => matchesKey(data, key as KeyId))
+    ) {
+      this.editor.handleInput(data);
+      this.syncedDraft = this.editor.getExpandedText();
+      this.router.setDraft(this.syncedDraft);
+      return;
+    }
+    if (!composing && data === "a") {
+      this.router.actions = true;
+      this.requestRender();
+      return;
+    }
+    if (!composing && data === "?") {
+      this.router.help = true;
+      this.requestRender();
+      return;
+    }
     if (matchesKey(data, this.keys.openFleet)) return this.router.navigate("fleet");
     if (matchesKey(data, this.keys.previousScreen)) return this.move(-1);
     if (matchesKey(data, this.keys.nextScreen)) return this.move(1);
@@ -191,13 +232,51 @@ export class PinataScreen implements Component, Focusable {
       return;
     }
     if (this.router.screen === "fleet") {
-      if (data === "q" || data === "Q") return this.router.toggleQueued();
+      if (data === "q") {
+        this.router.navigate("main");
+        this.options.main();
+        return;
+      }
+      if (data === "Q") return this.router.toggleQueued();
+      if (data === "/") {
+        this.router.searching = true;
+        this.requestRender();
+        return;
+      }
+      if (data === "h") {
+        this.router.history = !this.router.history;
+        this.router.refreshView();
+        return;
+      }
+      if (data === "f") {
+        this.router.filter =
+          this.router.filter === "all"
+            ? "active"
+            : this.router.filter === "active"
+              ? "failed"
+              : "all";
+        this.router.refreshView();
+        return;
+      }
+      if (matchesKey(data, "left")) return this.router.collapse(true);
+      if (matchesKey(data, "right")) return this.router.collapse(false);
       if (matchesKey(data, "up")) this.moveRow(-1);
       else if (matchesKey(data, "down")) this.moveRow(1);
       else if (matchesKey(data, "enter")) this.router.navigate("conversation");
       return;
     }
     if (this.router.screen !== "conversation" || !this.router.selected) return;
+    if (this.router.transcriptFocus) {
+      if (data === "f") this.router.toggleFollow();
+      if (data === "d") {
+        this.router.details = !this.router.details;
+        this.requestRender();
+      }
+      if (data === "m") this.run(() => this.router.loadConversation(true));
+      if (matchesKey(data, "up")) this.router.scroll(-1);
+      if (matchesKey(data, "down")) this.router.scroll(1);
+      return;
+    }
     this.syncEditor();
     if (matchesKey(data, "enter") || matchesKey(data, "ctrl+enter")) {
       if (!this.sending) this.run(() => this.submit());
@@ -209,6 +288,8 @@ export class PinataScreen implements Component, Focusable {
   }
   handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
     if (!this.alive) return undefined;
+    if (this.router.help || this.router.actions || this.router.searching)
+      return { handled: true, render: false };
     if (event.type === "wheel" && event.wheelDelta) {
       this.router.scroll(event.wheelDelta);
       return { handled: true, render: true };
@@ -329,8 +410,7 @@ export class PinataScreen implements Component, Focusable {
             );
             break;
           case "help":
-            this.router.notice =
-              "/steer text · /follow-up text · /continue text · /stop · /stop-assignment · /stop-run · /background · /inspect · /recover · /reconnect · /replace id task · /worker id [assignment] · /assignment n · /scroll up|down|lines · /more · /palette name";
+            this.router.help = true;
             break;
         }
         if (

@@ -250,7 +250,7 @@ test("worker resolution freezes precedence, fallbacks and backend capabilities b
       { backends: { "in-process": { ...capabilities, conversationSeed: false } } },
       { inheritContext: "parent" },
     ),
-    /Parent conversation/,
+    /Worker reader: This backend cannot import parent context/,
   );
   await assert.rejects(f.resolve({}, { lifetime: "surviving" }), /cannot survive/);
   await writeFile(join(f.project, "reader.md"), markdown());
@@ -352,4 +352,31 @@ test("explicit skill snapshots retain resource bytes without broadening tools or
   await writeFile(join(f.project, "reader.md"), markdown("pinata: { skills: [skills/example] }\n"));
   await symlink(join(f.directory, "missing"), join(skill, "linked"));
   await assert.rejects(f.resolve(), /traverses a link/);
+});
+
+test("batch resolution captures definitions once, deduplicates artifacts, and sees later edits", async (t) => {
+  const f = await fixture(t);
+  const requests = ["first", "second"].map((id) =>
+    workerRequestSchema.parse({ id, agent: "reader", task: "Read" }),
+  );
+  const resolver = createWorkerResolver({
+    ...f.options,
+    freezeWorker: async (worker) => {
+      if (worker.id === "first")
+        await writeFile(join(f.personal, "reader.md"), markdown("", "Changed instructions."));
+      return worker;
+    },
+  });
+  const writes: string[] = [];
+  const storage = {
+    putArtifact: async (bytes: Uint8Array) => {
+      writes.push(digestBytes(bytes));
+      return f.artifacts.put(bytes);
+    },
+  };
+  const workers = await resolver(requests, caller, storage);
+  assert.deepEqual(workers[0].definition, workers[1].definition);
+  assert.equal(writes.length, new Set(writes).size);
+  const later = await resolver([requests[1]], caller, storage);
+  assert.notDeepEqual(later[0].definition, workers[0].definition);
 });

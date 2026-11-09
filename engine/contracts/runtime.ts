@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { grantsSchema, modelSchema } from "./common.ts";
+import { backendCapabilitiesSchema } from "./backend.ts";
 import { applicationStateSchema } from "./application.ts";
 import { workspaceEntrySchema } from "./workspace.ts";
 import {
@@ -140,6 +142,16 @@ export const changesQueryResultSchema = z.strictObject({
   ),
 });
 export type ChangesQueryResult = z.infer<typeof changesQueryResultSchema>;
+export const launchInfoSchema = z.strictObject({
+  parentContextAvailable: z.boolean(),
+  grants: grantsSchema,
+  backend: z.string(),
+  workspace: z.string(),
+  parentModel: modelSchema.optional(),
+  models: z.record(z.string(), modelSchema),
+  backends: z.record(z.string(), backendCapabilitiesSchema),
+});
+export type LaunchInfo = z.infer<typeof launchInfoSchema>;
 export const queryResultSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("config"), config: configSchema.nullable() }),
   changesQueryResultSchema,
@@ -152,6 +164,7 @@ export const queryResultSchema = z.discriminatedUnion("kind", [
   z.strictObject({
     kind: z.literal("definitions"),
     definitions: z.array(definitionSummarySchema),
+    launch: launchInfoSchema.optional(),
   }),
   z.strictObject({
     kind: z.literal("events"),

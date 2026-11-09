@@ -145,7 +145,7 @@ Output: `pinata.surface-reply.v1`. Input is generated in the catalog.
 
 ### pinata_agents
 
-Discover validated agent definitions with their source paths and content digests.
+Discover compact agent descriptions, defaults and effective launch grants. Full instructions remain available through pinata_status query kind definitions.
 
 Output: `pinata.surface-reply.v1`. Input is generated in the catalog.
 

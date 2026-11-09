@@ -77,6 +77,7 @@ export function installCoordinatorUi(
             width,
             paint: paint(binding),
             mode: binding.router.mode,
+            motion: binding.router.motion,
             activity: binding.router.activity,
             elapsed: (ref) => binding.router.observedElapsed(ref),
             ascii: process.env.TERM === "dumb" || process.env.PINATA_ASCII === "1",
@@ -131,7 +132,13 @@ export function installCoordinatorUi(
         );
         return;
       }
-      const router = await api.bind(context, source);
+      context.ui.setStatus?.("pinata.opening", "Opening fleet…");
+      let router: ScreenRouter;
+      try {
+        router = await api.bind(context, source);
+      } finally {
+        context.ui.setStatus?.("pinata.opening", undefined);
+      }
       router.navigate(screen, ref);
       if (screen === "main") {
         closeScreen?.();

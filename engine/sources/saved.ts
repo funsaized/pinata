@@ -210,7 +210,11 @@ export async function openSavedSource(directory: string): Promise<RuntimeSource>
           case "schemas": {
             const schemas = exportSchemas();
             if (query.name && !Object.hasOwn(schemas, query.name))
-              throw new DomainError("invalid_input", `Unknown schema: ${query.name}`, "name");
+              throw new DomainError(
+                "invalid_input",
+                `Unknown schema: ${query.name}. Use a canonical name such as pinata.command.v1.`,
+                "name",
+              );
             return {
               status: "ok",
               response: {

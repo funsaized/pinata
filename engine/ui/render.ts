@@ -1,9 +1,11 @@
+import { resolveKeys } from "./keys.ts";
+import { readiness } from "../core/readiness.ts";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { assignmentKey, type AssignmentRef, type CoreState } from "../contracts/index.ts";
 import { assignmentDetails, assignments, executionLabel, contextLabel } from "./projection.ts";
 import { agentAccent, type Paint } from "./palette.ts";
 import { displayText, fit, lines, padded } from "./text.ts";
-import type { ScreenRouter } from "./router.ts";
+import type { ConversationView, ScreenRouter } from "./router.ts";
 import { assignmentTree, type TreeNode } from "./tree.ts";
 
 export type RenderOptions = {
@@ -67,6 +69,8 @@ type TreeOptions = {
   activity?: ReadonlyMap<string, string>;
   elapsed?(ref: AssignmentRef): number | undefined;
   selected?: AssignmentRef;
+  motion?: "full" | "reduced" | "off";
+  collapsed?: ReadonlySet<string>;
 };
 type TreeLine = { text: string; ref: AssignmentRef; worker: boolean };
 function treeLines(state: CoreState, nodes: TreeNode[], options: TreeOptions): TreeLine[] {
@@ -82,37 +86,71 @@ function treeLines(state: CoreState, nodes: TreeNode[], options: TreeOptions): T
         : ` · observed ${elapsed < 60_000 ? (elapsed / 1000).toFixed(1) + "s" : (elapsed / 60_000).toFixed(1) + "m"}`;
     const isSelected =
       options.selected && assignmentKey(options.selected) === assignmentKey(assignment.ref);
+    const animated =
+      options.motion === "full" && !["ended", "queued"].includes(assignment.execution.phase)
+        ? ["|", "/", "-", "\\"][Math.floor(performance.now() / 250) % 4]
+        : undefined;
     const marker = isSelected
       ? ">"
       : assignment.execution.phase === "queued"
         ? options.ascii
           ? "o"
           : "○"
-        : options.ascii
-          ? "*"
-          : "•";
+        : (animated ??
+          (assignment.execution.phase === "ended"
+            ? assignment.execution.reason === "completed"
+              ? "+"
+              : "!"
+            : options.ascii
+              ? "*"
+              : "•"));
     const identity =
       options.paint(
         "strong",
         options.paint(worker.color ?? agentAccent(worker.agent), worker.agent),
       ) + options.paint("muted", ` ${worker.id}/${assignment.ref.assignment}`);
     const prefix =
-      options.paint("border", node.prefix) +
+      options.paint(
+        "border",
+        node.prefix +
+          (node.hasChildren
+            ? options.collapsed?.has(assignmentKey(assignment.ref))
+              ? "[+] "
+              : "[-] "
+            : ""),
+      ) +
       options.paint(statusToken(status), `${marker} `) +
       identity;
     const suffix =
-      options.paint(statusToken(status), ` · ${status}`) + options.paint("muted", duration);
+      options.paint(statusToken(status), ` · ${status}`) +
+      options.paint("muted", options.width >= 60 ? duration : "");
     const task =
       displayText(assignment.task)
         .split("\n")
         .find((line) => line.trim())
         ?.trim() ?? "";
-    const taskWidth = Math.max(0, options.width - visibleWidth(prefix + suffix) - 1);
+    const identityWidth = Math.max(1, options.width - visibleWidth(suffix));
+    const compactPrefix = fit(prefix, identityWidth);
+    const taskWidth = Math.max(0, options.width - visibleWidth(compactPrefix + suffix) - 1);
+    const taskText =
+      taskWidth && visibleWidth(task) > taskWidth
+        ? (taskWidth > 1 ? fit(task, taskWidth - 1) : "") + "…"
+        : fit(task, Math.max(1, taskWidth));
     output.push({
-      text: prefix + (taskWidth ? ` ${fit(task, taskWidth)}` : "") + suffix,
+      text: compactPrefix + (taskWidth ? ` ${taskText}` : "") + suffix,
       ref: assignment.ref,
       worker: true,
     });
+    if (assignment.execution.phase === "queued") {
+      output.push({
+        text: options.paint(
+          "muted",
+          `${node.continuation}waiting: ${readiness(state)[assignmentKey(assignment.ref)]}`,
+        ),
+        ref: assignment.ref,
+        worker: false,
+      });
+    }
     if (options.mode === "observe") {
       const activity = displayText(options.activity?.get(assignmentKey(assignment.ref)) ?? "")
         .split("\n")
@@ -170,6 +208,40 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
   const width = Math.max(1, options.width);
   const height = Math.max(1, options.height);
   const { paint } = options;
+  if (router.actions)
+    return [
+      `Actions · ${router.selected?.worker ?? "no worker selected"}/${router.selected?.assignment ?? ""}`,
+      ...[
+        "Stop selected assignment",
+        "Stop selected worker",
+        "Stop entire run",
+        "Release foreground wait",
+        "Recover selected assignment",
+        "Inspect selected result",
+      ].map((label, index) => `${index === router.actionIndex ? ">" : " "} ${label}`),
+      "↑↓ select · Enter execute · Esc cancel",
+    ]
+      .flatMap((line) => lines(line, width))
+      .slice(0, height);
+  if (router.help) {
+    const help = [
+      "Pinata help · Esc or ? closes",
+      "Fleet: ↑↓ select · Enter conversation · ← collapse · → expand",
+      "/ search worker/task · Enter keeps filter · / then Backspace clears",
+      "f cycles all/active/failed · h toggles assignment history · Q queued",
+      "Conversation: Tab switches transcript/composer focus",
+      "Transcript: ↑↓ scroll · f follow latest · d details/tool output · m older",
+      ...Object.entries(resolveKeys(router.keys)).map(([action, key]) => `${key}: ${action}`),
+      "a opens actions with explicit assignment/worker/run targets.",
+      "Composer preserves Ctrl+Left/Right, Ctrl+B and Ctrl+R for editing.",
+      "/steer text · /follow-up text · /continue text · /inspect",
+      "/stop (worker) · /stop-assignment · /stop-run · /recover · /reconnect",
+      "/replace id task · /worker id [assignment] · /palette name",
+    ].flatMap((line) => lines(line, width));
+    router.helpScroll = Math.min(router.helpScroll, Math.max(0, help.length - height));
+    return help.slice(router.helpScroll, router.helpScroll + height);
+  }
+
   options.hitRows?.clear();
   const header =
     paint("accent.pink", options.ascii ? "[P] Pinata" : "✦ Pinata") +
@@ -201,12 +273,7 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
     const queued = assignments(router.state).filter(
       (assignment) => assignment.execution.phase === "queued",
     ).length;
-    const nodes = assignmentTree(router.state, {
-      ascii: options.ascii,
-      selected: router.selected,
-      queued: router.showQueued,
-      trailing: queued > 0,
-    });
+    const nodes = router.fleetNodes(options.ascii);
     const rows = treeLines(router.state, nodes, {
       ...options,
       width,
@@ -214,8 +281,16 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
       activity: router.activity,
       elapsed: (ref) => router.observedElapsed(ref),
       selected: router.selected,
+      motion: router.motion,
+      collapsed: router.collapsed,
     });
-    const available = Math.max(1, height - output.length - 3);
+    output.push(
+      fit(
+        `${router.filter} · ${router.history ? "history" : "latest"}${router.search || router.searching ? ` · search: ${displayText(router.search)}${router.searching ? "_" : ""}` : ""}`,
+        width,
+      ),
+    );
+    const available = Math.max(1, height - output.length - 5 - (router.notice ? 1 : 0));
     router.fleetPageSize = available;
     let first = Math.min(router.fleetScroll, Math.max(0, rows.length - available));
     const selected = router.selected ? assignmentKey(router.selected) : undefined;
@@ -232,18 +307,31 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
     }
     if (!rows.length)
       output.push(
-        fit("No assignments accepted. Start a named definition with @handle message.", width),
+        fit(
+          Object.keys(router.state.assignments).length
+            ? "No matching rows · / search · f filter · Q queued · h history"
+            : "No assignments accepted. Start a named definition with @handle message.",
+          width,
+        ),
       );
+    if (queued)
+      output.push(
+        paint("muted", `${queued} queued · Q ${router.showQueued ? "collapse" : "expand"}`),
+      );
+    if (rows.length > available)
+      output.push(
+        paint(
+          "muted",
+          `Rows ${first + 1}–${Math.min(rows.length, first + available)} of ${rows.length}`,
+        ),
+      );
+    const selectedTask =
+      router.selected && router.state.assignments[assignmentKey(router.selected)]?.task;
+    if (selectedTask) output.push(fit(paint("muted", displayText(selectedTask)), width));
     output.push(
       paint(
         "muted",
-        `${options.ascii ? "`- o" : "└─ ○"} ${queued} queued${queued ? ` · Q ${router.showQueued ? "collapse" : "expand"}` : ""}`,
-      ),
-    );
-    output.push(
-      paint(
-        "muted",
-        `${router.state.attachment} · capacity ${router.state.maxConcurrent ?? "unbounded"} · Enter opens the selected assignment`,
+        `${router.state.attachment}${router.state.maxConcurrent === null ? "" : ` · capacity ${router.state.maxConcurrent}`}`,
       ),
     );
   } else {
@@ -272,8 +360,7 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
       output.push(fit(displayText(`${details[1]} · ${details[2]}`), width));
       output.push(fit(displayText(details[7]), width));
       const body = [
-        ...details.slice(3, 7),
-        ...details.slice(8),
+        ...(router.details ? [...details.slice(3, 7), ...details.slice(8)] : []),
         `Task: ${assignment.task}`,
         "",
         ...(view.loading ? ["Loading retained conversation…"] : []),
@@ -283,7 +370,10 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
               `${view.page.source === "assignment" ? "Saved assignment transcript" : view.page.source === "checkpoint" ? "Live or saved session checkpoint" : "Conversation unavailable"}${view.page.artifact ? ` · ${view.page.artifact.digest.slice(0, 12)}` : ""}`,
             ]
           : []),
-        ...(view.page?.entries.flatMap((entry) => [conversationEntry(entry), ""]) ?? []),
+        ...(view.page?.entries.flatMap((entry) => [
+          router.details ? conversationEntry(entry) : compactEntry(entry),
+          "",
+        ]) ?? []),
         ...(view.page && !view.page.complete ? ["More retained entries: /more"] : []),
         ...(router.mode === "observe" && router.activity.get(assignmentKey(assignment.ref))
           ? [
@@ -297,10 +387,26 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
             ]
           : []),
         ...(view.inspection ? ["Retained result", JSON.stringify(view.inspection, null, 2)] : []),
-      ].flatMap((line) => lines(line, width));
-      const available = Math.max(1, height - output.length - 2);
+      ].flatMap((line) => conversationLines(view, line, width));
+      const available = Math.max(1, height - output.length - 3 - (router.notice ? 1 : 0));
+      if (view.follow) view.scroll = Math.max(0, body.length - available);
       view.scroll = Math.min(view.scroll, Math.max(0, body.length - available));
       output.push(...body.slice(view.scroll, view.scroll + available));
+      const action =
+        assignment.execution.phase !== "ended"
+          ? "Steer"
+          : assignment.execution.reason === "completed"
+            ? "Follow up"
+            : "Continue";
+      output.push(
+        fit(
+          paint(
+            "accent",
+            `${router.transcriptFocus ? "Transcript" : action} · Tab switch focus · ${view.follow ? "following latest" : view.newOutput ? "new output · f follows" : "reading history"}`,
+          ),
+          width,
+        ),
+      );
     }
   }
   if (router.notice) output.push(fit(paint("warning", displayText(router.notice)), width));
@@ -309,11 +415,53 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
       paint(
         "muted",
         displayText(
-          `${router.keys.openFleet ?? "Shift+Up"} fleet · ${router.keys.parentScreen ?? "Shift+Down"} back · ${router.keys.previousWorker ?? "Shift+Left"}/${router.keys.nextWorker ?? "Right"} workers · /help`,
+          router.screen === "fleet"
+            ? width < 70
+              ? "↑↓ select · Enter open · ? help · Esc back"
+              : "↑↓ select · Enter open · ←→ branches · / search · f filter · h history · a actions · ? help · Esc back"
+            : "Tab focus · f follow / d details / m older (transcript) · /help · Esc back",
         ),
       ),
       width,
     ),
   );
   return output.slice(0, height).map((line) => paint("background", padded(line, width)));
+}
+
+function compactEntry(value: unknown): string {
+  const entry = record(value);
+  const message = entry && record(entry.message);
+  if (message?.role === "toolResult")
+    return `tool result ${displayText(String(message.toolName ?? ""))}${message.isError ? " (error)" : ""} · d expands`;
+  if (Array.isArray(message?.content)) {
+    return conversationEntry({
+      ...entry,
+      message: {
+        ...message,
+        content: message.content.map((part: unknown) => {
+          const item = record(part);
+          return item?.type === "toolCall"
+            ? { type: "text", text: `[tool call: ${String(item.name)} · d expands]` }
+            : part;
+        }),
+      },
+    });
+  }
+  return conversationEntry(value);
+}
+
+// Cache wrapping per view, not globally across sessions. Eviction bounds retained text.
+const wrapping = new WeakMap<ConversationView, { width: number; entries: Map<string, string[]> }>();
+function conversationLines(view: ConversationView, text: string, width: number): string[] {
+  let cache = wrapping.get(view);
+  if (!cache || cache.width !== width) {
+    cache = { width, entries: new Map() };
+    wrapping.set(view, cache);
+  }
+  const existing = cache.entries.get(text);
+  if (existing) return existing;
+  const result = lines(text, width);
+  if (cache.entries.size >= 256) cache.entries.delete(cache.entries.keys().next().value ?? "");
+  cache.entries.set(text, result);
+  return result;
 }
