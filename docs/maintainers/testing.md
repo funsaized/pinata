@@ -17,6 +17,9 @@ The exhaustive apply and rollback fault matrices run as separate files afterward
 one at a time, each retaining its five-minute bound. Test timeouts are external
 supervision; they are not worker deadlines.
 
+Development dependencies pin Pi SDK 1.5.0. CI also tests the native Pi 1.1.0 host
+for compatibility; smoke reports identify the host and worker runtimes separately.
+
 ## Behavior coverage
 
 The [coverage map](rewrite-coverage.md) connects the contracts and observed
