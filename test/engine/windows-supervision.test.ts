@@ -257,6 +257,10 @@ test(
   async (t) => {
     const executable = await windowsHelperExecutable();
     const job = await WindowsJob.open(randomUUID());
+    let output = "";
+    job.stdout.setEncoding("utf8").on("data", (chunk: string) => {
+      output += chunk;
+    });
     t.after(async () => {
       await job.stop();
     });
@@ -265,8 +269,15 @@ test(
       args: [fixture, "hold"],
       cwd: await directory(t),
     });
-    const before = await job.inspect();
-    assert.equal(before.activeProcesses, 1);
+    await until(() => output.endsWith("\n"));
+    const { payload } = JSON.parse(output);
+    const original = await observeProcess(payload);
+    assert(original);
+    assert(
+      (await job.inspect()).processes.some(
+        (entry) => entry.pid === payload && entry.startIdentity === original.startIdentity,
+      ),
+    );
     const collision = spawn(executable, [job.name, randomUUID()], {
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true,
@@ -279,7 +290,11 @@ test(
     const [code] = await once(collision, "close");
     assert.equal(code, 1);
     assert.match(errors, /already exists/);
-    assert.equal((await job.inspect()).activeProcesses, 1);
+    assert(
+      (await job.inspect()).processes.some(
+        (entry) => entry.pid === payload && entry.startIdentity === original.startIdentity,
+      ),
+    );
     assert.equal((await job.stop()).closed, true);
   },
 );
