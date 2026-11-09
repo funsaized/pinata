@@ -662,7 +662,13 @@ export async function launchSupervised(options: LaunchOptions): Promise<Supervis
   let handle: SupervisedProcess | undefined;
   try {
     const identity = await new Promise<SupervisorIdentity>((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error("Guardian enrollment timed out")), 10_000);
+      // Windows enrollment includes bounded helper startup and a separate native
+      // identity query. Its cold start must finish before the host's outer deadline.
+      const enrollmentTimeoutMs = process.platform === "win32" ? 30_000 : 10_000;
+      const timeout = setTimeout(
+        () => reject(new Error("Guardian enrollment timed out")),
+        enrollmentTimeoutMs,
+      );
       child.once("message", (message: unknown) => {
         clearTimeout(timeout);
         const parsed = z

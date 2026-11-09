@@ -50,6 +50,7 @@ The kernel's job membership and termination behavior are documented in
 
 The shared tests exercise input/output, cancellation, descendants after root exit,
 authentication, reconnect and host loss. Windows-specific tests cover native
-creation-boundary crashes, Unicode/environment/argument handling, inherited pipes,+nested jobs, explicit command-script invocation and lost-launcher uncertainty.
+creation-boundary crashes, Unicode/environment/argument handling, inherited pipes,
+nested jobs, explicit command-script invocation and lost-launcher uncertainty.
 CI also exercises real Pi process sessions, the installed package and native Pi's
 default Node worker. Native-worker reports and run files are retained as artifacts.
