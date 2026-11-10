@@ -1,6 +1,6 @@
 ---
 name: subagents
-description: Delegate explicitly requested work, design Pinata jobs, or coordinate Pinata workers. Do not activate solely because an ordinary task could benefit from delegation.
+description: Coordinate Pinata workers when asked to use agents, parallelize work, have a lead coordinate a team, or split areas into delegated subtasks. Also design Pinata jobs. Do not activate solely because an ordinary task could benefit from delegation.
 license: MIT
 compatibility: Pi 1.1+ and Node 22.19+. Git is needed for optional worktrees. See platform documentation for verified capabilities.
 ---
@@ -15,6 +15,20 @@ does not require schema discovery. Start with `pinata_run` and
 Omit `inheritContext` unless parent import is explicitly granted; put necessary
 context in the task. For additional schema details request only the relevant
 name, such as `pinata.command.v1` or `pinata_run`, rather than the entire registry. [reference.md](reference.md) explains the current tool vocabulary.
+
+Choose topology from the current `pinata_agents` discovery before promising a
+plan. If `delegation.enabled` is false or absent, use ordinary sibling workers;
+do not load nested instructions, request extra depth, or probe grants with launches.
+If the user explicitly requires hierarchy, explain the reported blocker and point
+to the opt-in setup; do not change grants or imply a flat plan is hierarchical.
+When `delegation.enabled` is true, consider only its listed `parents` and their
+per-agent `delegation` scopes. Independent peer tasks still belong in a flat batch.
+Natural-language requests such as “have a lead coordinate the implementation” or
+“split each area into delegated subtasks” justify a parent when that worker should
+own decomposition, child coordination and synthesis. Read [nested.md](nested.md)
+only when selecting that enabled workflow. Do not add a parent merely for a tree.
+Reuse discovery within the same run; refresh after definition, grant, backend or
+run changes. Discovery is a planning snapshot; accepted grants remain authoritative.
 
 Write concrete assignments with useful context, file responsibilities and observable
 goals. Honor user authorization and project instructions. Shared checkout is the

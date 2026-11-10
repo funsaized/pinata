@@ -45,7 +45,9 @@ pinata serve examples/recipes/authorized-nested.json --workspace /path/to/projec
 The [grant](recipes/grants.json) permits one child level, builder definitions and a
 specific tool/workspace set. Workers cannot widen it. Children share run capacity.
 At capacity one, a blocking child wait returns `capacity_blocked`; finish the parent
-assignment and continue it after the child settles. Parent completion leaves
+assignment and follow up with the same parent after the child settles.
+See [the nested workflow guide](../docs/how-to/nested-delegation.md) for Pi setup,
+capability-aware natural-language planning and synthesis. Parent completion leaves
 accepted children running; parent cancellation includes its subtree by default.
 
 To inspect a session trigger, submit [scheduled-follow-up.json](recipes/scheduled-follow-up.json)

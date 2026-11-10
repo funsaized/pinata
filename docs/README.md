@@ -13,6 +13,7 @@ compose ordinary delegation, isolation and optional nested/scheduled work.
 - [Navigation, palettes and observation modes](how-to/modes.md)
 - [Backends](how-to/backends.md) and [platform support](how-to/platforms.md)
 - [Context and scoped memory](how-to/customize.md)
+- [Optional nested delegation](how-to/nested-delegation.md)
 
 ## Reference
 

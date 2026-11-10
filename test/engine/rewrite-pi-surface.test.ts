@@ -830,6 +830,14 @@ test("compact discovery exposes launch grants while preserving full definitions 
   const compact = JSON.parse(text.text);
   assert.equal(compact.kind, "agents");
   assert.equal(compact.launch.grants.inheritContext, false);
+  assert.equal(compact.delegation.enabled, false);
+  assert.deepEqual(compact.delegation.parents, []);
+  assert(
+    compact.agents.every(
+      (agent: { handoffs: string[]; delegation: { enabled: boolean } }) =>
+        Array.isArray(agent.handoffs) && !agent.delegation.enabled,
+    ),
+  );
   assert(compact.launch.backends["in-process"]);
   assert(!compact.agents[0].instructions);
   const detail = surfaceReplySchema.parse(result.details);

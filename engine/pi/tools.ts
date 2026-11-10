@@ -1,3 +1,4 @@
+import { delegationAvailability } from "./discovery.ts";
 import type {
   AgentToolResult,
   ExtensionAPI,
@@ -274,6 +275,16 @@ export function registerCoordinatorTools(
           await source(context),
           signal,
         );
+        const delegation =
+          tool.name === "pinata_agents" &&
+          reply.status === "ok" &&
+          reply.response.method === "query" &&
+          reply.response.result.kind === "definitions"
+            ? delegationAvailability(
+                reply.response.result.definitions,
+                reply.response.result.launch,
+              )
+            : undefined;
         const rejected =
           reply.status === "error" ||
           (reply.response.method === "execute" && reply.response.result.status === "rejected");
@@ -288,6 +299,12 @@ export function registerCoordinatorTools(
                   reply.response.result.kind === "definitions"
                   ? {
                       kind: "agents",
+                      delegation: {
+                        enabled: [...(delegation?.values() ?? [])].some((entry) => entry.enabled),
+                        parents: [...(delegation?.entries() ?? [])]
+                          .filter(([, entry]) => entry.enabled)
+                          .map(([name]) => name),
+                      },
                       agents: reply.response.result.definitions.map(
                         ({ definition, path, digest }) => ({
                           name: definition.name,
@@ -295,6 +312,8 @@ export function registerCoordinatorTools(
                           model: definition.model,
                           settings: definition.pinata,
                           tools: definition.tools,
+                          handoffs: definition.handoffs,
+                          delegation: delegation?.get(definition.name),
                           path,
                           digest,
                         }),

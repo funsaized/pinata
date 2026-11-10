@@ -6,7 +6,8 @@ to inspect the current command union. `pinata_agents` discovers frozen-definitio
 inputs and effective launch grants. Coordinator tool details retain
 `pinata.surface-reply.v1`, except `pinata_page`, which returns
 `pinata.tool-page-reply.v1`. Model-facing agent discovery uses a compact `agents`
-projection; unnamed schema discovery uses `schema_index`. Query `definitions`
+projection, including an effective `delegation` summary and each definition's
+`handoffs`. Plan child work only for an enabled parent in that summary. Unnamed schema discovery uses `schema_index`. Query `definitions`
 for full instructions or request a named schema for its content. Inspect rejected
 receipts and application results rather than reading only prose.
 
