@@ -223,7 +223,7 @@ export class PinataScreen implements Component, Focusable {
       this.requestRender();
       return;
     }
-    if (!composing && data === "?") {
+    if (data === "?" && (!composing || !this.router.draft)) {
       this.router.help = true;
       this.router.helpScroll = 0;
       this.requestRender();

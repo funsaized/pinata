@@ -45,69 +45,85 @@ export function helpPanel(
   paint: Paint,
 ): string[] {
   const keys = resolveKeys(router.keys);
-  const body = columns(
-    [
-      {
-        title: "Fleet",
-        rows: [
-          ["↑ / ↓", "Select subagent"],
-          ["Enter", "Open conversation"],
-          ["← / →", "Collapse / expand children"],
-          ["/", "Search worker or task"],
-          ["f", "Cycle all / active / failed"],
-          ["h", "Toggle assignment history"],
-          ["Q", "Show / hide queued work"],
-          ["a", "Open actions"],
-          ["?", "Open / close help"],
-        ],
-      },
-      {
-        title: "Navigation",
-        rows: [
-          [keys.parentScreen, "Return to parent screen"],
-          [keys.previousScreen, "Previous screen"],
-          [keys.nextScreen, "Next screen"],
-          [keys.previousWorker, "Previous worker"],
-          [keys.nextWorker, "Next worker"],
-          [keys.previousAssignment, "Previous assignment"],
-          [keys.nextAssignment, "Next assignment"],
-          [keys.scrollUp, "Scroll up a page"],
-          [keys.scrollDown, "Scroll down a page"],
-        ],
-      },
-      {
-        title: "Conversation",
-        rows: [
-          ["Tab", "Switch transcript / message"],
-          ["↑ / ↓", "Scroll focused transcript"],
-          ["f", "Follow latest output"],
-          ["d", "Show details and tool output"],
-          ["m", "Load older messages"],
-          ["Enter", "Send message"],
-          ["/help", "Help while composing"],
-          [keys.refresh, "Refresh or reconnect"],
-        ],
-      },
-      {
-        title: "Actions (outside composer)",
-        rows: [
-          [keys.stop, "Stop selected worker"],
-          [keys.background, "Release coordinator wait"],
-          [keys.recover, "Reconcile selected assignment"],
-          ["/steer text", "Guide active work"],
-          ["/follow-up text", "Add another assignment"],
-          ["/continue text", "Continue stopped work"],
-          ["/inspect", "Read retained result"],
-        ],
-      },
-    ],
-    width,
-    paint,
-  );
+  const fleet = router.screen === "fleet";
+  const composing = router.screen === "conversation" && !router.transcriptFocus;
+  const context = fleet ? "Fleet" : composing ? "Message" : "Transcript";
+  const sections: Section[] = fleet
+    ? [
+        {
+          title: "Fleet",
+          rows: [
+            ["↑ / ↓", "Select subagent"],
+            ["Enter", "Open conversation"],
+            ["← / →", "Collapse / expand children"],
+            ["/", "Search worker or task"],
+            ["f", "Cycle all / active / failed"],
+            ["h", "Toggle assignment history"],
+            ["Q", "Show / hide queued work"],
+            ["a", "Open actions"],
+          ],
+        },
+        {
+          title: "Navigation",
+          rows: [
+            ["PageUp / PageDown", "Scroll fleet"],
+            [keys.parentScreen, "Return to Pi"],
+            ["?", "Open / close help"],
+          ],
+        },
+      ]
+    : composing
+      ? [
+          {
+            title: "Message",
+            rows: [
+              ["Enter", "Send message"],
+              ["Shift+Enter", "Insert newline"],
+              ["Ctrl+Left / Right", "Move by word"],
+              ["Tab", "Focus transcript"],
+              ["? (empty message)", "Open help"],
+            ],
+          },
+          {
+            title: "Navigation",
+            rows: [
+              [keys.previousWorker, "Previous worker"],
+              [keys.nextWorker, "Next worker"],
+              [keys.parentScreen, "Return to fleet"],
+            ],
+          },
+        ]
+      : [
+          {
+            title: "Transcript",
+            rows: [
+              ["↑ / ↓", "Scroll transcript"],
+              ["PageUp / PageDown", "Scroll by page"],
+              ["f", "Toggle following latest"],
+              ["d", "Expand / collapse tool output"],
+              ["m", "Load older messages"],
+              [keys.refresh, "Refresh or reconnect"],
+              ["Tab", "Focus message"],
+              ["a", "Open actions"],
+              ["?", "Open / close help"],
+            ],
+          },
+          {
+            title: "Navigation",
+            rows: [
+              [keys.previousWorker, "Previous worker"],
+              [keys.nextWorker, "Next worker"],
+              [keys.previousAssignment, "Previous assignment"],
+              [keys.nextAssignment, "Next assignment"],
+              [keys.parentScreen, "Return to fleet"],
+            ],
+          },
+        ];
+  const body = columns(sections, width, paint);
   const available = Math.max(1, height - 4);
   router.helpScroll = Math.min(router.helpScroll, Math.max(0, body.length - available));
   return [
-    paint("strong", "Pinata help · Keyboard shortcuts"),
+    paint("strong", `Pinata help · ${context}`),
     "",
     ...body.slice(router.helpScroll, router.helpScroll + available),
     "",

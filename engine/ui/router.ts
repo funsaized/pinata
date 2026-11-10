@@ -89,6 +89,7 @@ export class ScreenRouter {
   private localPalette = false;
   private readonly observedTimes = new Map<string, { start: number; end?: number }>();
   private ticker?: NodeJS.Timeout;
+  private lastConversationRead = -Infinity;
 
   constructor(source: RuntimeSource, options: RouterOptions = {}) {
     this.source = source;
@@ -339,12 +340,42 @@ export class ScreenRouter {
         (assignment) => !["queued", "ended"].includes(assignment.execution.phase),
       );
     if (running && !this.ticker) {
-      this.ticker = setInterval(() => this.changed(), this.motion === "full" ? 250 : 1000);
+      this.ticker = setInterval(
+        () => {
+          this.changed();
+          this.refreshFollowingConversation();
+        },
+        this.motion === "full" ? 250 : 1000,
+      );
       this.ticker.unref();
     } else if (!running && this.ticker) {
       clearInterval(this.ticker);
       this.ticker = undefined;
     }
+  }
+  private refreshFollowingConversation(): void {
+    if (
+      !this.alive ||
+      !this.source.capabilities.live ||
+      this.screen !== "conversation" ||
+      !this.selected ||
+      this.help ||
+      this.actions
+    )
+      return;
+    const assignment = this.state.assignments[assignmentKey(this.selected)];
+    const view = this.conversation();
+    // Retained messages can change without a response event (for example tool
+    // output). Refresh only the visible follower, at most once per second.
+    if (
+      !assignment ||
+      ["queued", "ended"].includes(assignment.execution.phase) ||
+      !view.follow ||
+      view.loading ||
+      this.now() - this.lastConversationRead < 1000
+    )
+      return;
+    void this.loadConversation().catch((error: unknown) => this.fail(error));
   }
   private clearTiming(): void {
     this.observedTimes.clear();
@@ -447,6 +478,7 @@ export class ScreenRouter {
     const generation = this.generation;
     const key = assignmentKey(ref);
     view.loading = true;
+    this.lastConversationRead = this.now();
     view.refreshPending = false;
     this.changed();
     try {

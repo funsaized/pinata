@@ -496,13 +496,19 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
               ]),
           ["?", "help"],
         ]
-      : [
-          ["Tab", "focus"],
-          ["f", "follow"],
-          ["d", "details"],
-          ["m", "older"],
-          ["/help", "help"],
-        ];
+      : router.transcriptFocus
+        ? [
+            ["Tab", "message"],
+            ["f", "follow"],
+            ["d", "details"],
+            ["m", "older"],
+            ["?", "help"],
+          ]
+        : [
+            ["Tab", "transcript"],
+            ["Enter", "send"],
+            ["?", "help (empty message)"],
+          ];
   controls.push([resolveKeys(router.keys).parentScreen, "back"]);
   output.push(
     fit(
