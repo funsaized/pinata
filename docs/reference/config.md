@@ -26,7 +26,7 @@ Worker overrides and explicit definition settings resolve into frozen launch dat
 | `mode`                    | `lean` compact observation or `observe` activity excerpts; execution semantics and retained conversation remain the same.                                                      |
 | `execution.maxConcurrent` | Positive active assignment capacity including descendants; omitted/null means unbounded.                                                                                       |
 | `toolProviders`           | Explicit extension path and provided tool names. The host classifies tools; skills cannot grant them.                                                                          |
-| `webExtension`            | Explicit provider for the known read-oriented web tools; unavailable providers fail actionably.                                                                                |
+| `webExtension`            | Explicit provider for the known read-oriented web tools; unavailable providers return an error explaining the failure.                                                         |
 | `passEnv`                 | Explicit safe environment names for setup. Values are not stored in command/config evidence. Control and loader-injection variables are refused.                               |
 | `setup`                   | `false` disables setup; a string selects a command. Omission can detect a root locked package manager. Setup is only for writable isolated work and requires shell capability. |
 | `worktreeRoot`            | Optional host worktree location; accepted workspace identity is frozen.                                                                                                        |

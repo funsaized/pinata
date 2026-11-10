@@ -55,3 +55,15 @@ Reserve `npm run format` for intentional repository-wide formatting.
 Keep documentation, examples, and tests aligned with observable behavior.
 Explain what changed and what was verified; distinguish scripted evidence from
 live results. Keep the implementation and explanation as small as the task allows.
+
+## Repository writing
+
+After changing prose, run `npm run docs:lint:changed`. Run
+`npm run docs:lint:agents -- --changed` for agent definitions, prompts, skills and
+repository instructions. Install the pinned tools once with `npm run docs:setup`.
+Address useful findings and preserve technical meaning when a suggestion does not
+fit. All v1 findings are advisory; tool or configuration failures still fail.
+Read [the writing guide](docs/maintainers/writing.md) for scope and rule selection.
+Use a humanizer pass to remove filler and awkward phrasing while preserving claims,
+code examples, grants, recovery instructions and evidence limits. Review behavior
+against the implementation; a clean prose scan does not establish correctness.

@@ -23,8 +23,8 @@ receipts when inspecting/applying an earlier assignment. A stable request ID mak
 acceptance retries idempotent; it does not promise exactly-once arbitrary tool effects.
 
 Coordinator and child-management tool content is limited to 32 KiB per reply.
-Large replies retain their
-exact full `details` and return an immutable JSON text fragment with `totalBytes`,
+Large replies retain their complete `details` and return an immutable JSON text
+fragment with `totalBytes`,
 byte offsets, a digest and `nextCursor`. Pass that cursor to `pinata_page` until
 `complete` is true; concatenate each `text` fragment to recover all original data.
 These cursors only read already-exposed output and cannot name a filesystem path.

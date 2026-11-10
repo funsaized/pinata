@@ -1,0 +1,35 @@
+name: Repository prose
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "22.19.0"
+          package-manager-cache: false
+      - run: npm run docs:setup
+      - run: node --test test/vale.test.mjs
+      - name: Check reader prose
+        run: node scripts/vale.mjs --json > vale-docs.json
+      - name: Check operational instructions
+        if: ${{ !cancelled() }}
+        run: node scripts/vale.mjs --agents --json > vale-agents.json
+      - name: Retain advisory findings
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: prose-findings
+          path: vale-*.json
+          retention-days: 14

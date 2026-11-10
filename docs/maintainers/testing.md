@@ -21,6 +21,10 @@ Development dependencies pin Pi SDK 1.5.0. CI also tests the native Pi 1.1.0 hos
 for compatibility, then selects native Pi 1.5.0 for the benchmark baseline. Reports
 identify the host and worker runtimes separately.
 
+For prose changes, run the separate [writing checks](writing.md).
+`npm run docs:setup` installs the pinned tools; `npm run docs:lint:changed` checks
+edited reader documentation without model calls.
+
 ## Behavior coverage
 
 The [coverage map](rewrite-coverage.md) connects the contracts and observed

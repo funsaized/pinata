@@ -10,3 +10,9 @@ arena/results/
 
 # Machine-specific arena adapter paths (regenerate with arena:bootstrap).
 arena/local/
+
+# Pinned documentation tools and downloaded upstream styles.
+.vale/bin/
+.vale/styles/Google/
+.vale/styles/ai-tells/
+.vale/styles/config/templates/

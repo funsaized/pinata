@@ -32,12 +32,13 @@ later work. Interrupted operations preserve original blobs and ownership evidenc
 Cleanup is confirmed only for activity whose ownership can be established. The POSIX
 supervisor uses a live nonce binding rather than trusting a historical PID/group.
 Unknown, escaped or unverifiable activity retains exclusion. Windows process cleanup
-requires the planned Job Object helper, which has not been packaged or verified.
+uses the packaged Job Object launcher. See [platform support](../how-to/platforms.md)
+for prerequisites and the scope of Windows CI checks.
 
 Durability assumes a local filesystem supporting the documented atomic create/link
 and fsync operations. Actual machine power loss and network filesystems are outside
-the demonstrated evidence. A corrupt/torn record, stale claim or ambiguous effect is
-an inspection/reconciliation case; it is not silently retried or deleted.
+the demonstrated evidence. Inspect and reconcile corrupt or torn records, stale claims and ambiguous effects.
+The runtime does not silently retry or delete them.
 
 Historical runs, reports and source archives remain at their recorded Git revisions
 or artifact paths. Explicit migration

@@ -1,4 +1,4 @@
-# Code Style
+# Code style
 
 Optimize for correctness, readability, maintainability, and obviousness. A reader
 should understand a function from top to bottom without mentally executing it or
@@ -38,7 +38,7 @@ boundary. Narrow types instead of using assertions or non-null assertions.
 Model mutually exclusive task and run states with discriminated unions.
 
 Prefer `type`; use `interface` when its extension or merging semantics are needed.
-Prefer string unions or const objects to enums. Keep runtime TypeScript compatible
+Prefer string unions or `const` objects to enums. Keep runtime TypeScript compatible
 with Node's type stripping and the repository's `erasableSyntaxOnly` setting.
 Use explicit `.ts` extensions for TypeScript imports and `node:` for Node built-ins.
 

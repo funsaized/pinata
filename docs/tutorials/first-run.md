@@ -12,9 +12,9 @@ commands. A bare `@scout` opens the available worker/definition view.
 Press Shift+Down to see the fleet tree. Enter opens the selected conversation;
 Shift+Left/Right moves between workers; Shift+Up returns to the parent screen.
 The same actions are available through `/pinata`, `/pinata-fleet` and
-`/pinata-conversation`. Browsing does not start a coordinator model turn. Observe
-the last activity, execution phase and context observation; unknown context remains
-unknown rather than being inferred from cumulative tokens.
+`/pinata-conversation`. Browsing does not start a coordinator model turn. Check
+the last activity, execution phase and context observation. When context usage is
+unknown, the UI leaves it unknown; cumulative tokens cannot establish it.
 
 After the scout finishes, send `@scout Follow the parser's error path and identify
 missing tests`. This creates the next assignment in the same conversation. The

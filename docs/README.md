@@ -27,5 +27,6 @@ compose ordinary delegation, isolation and optional nested/scheduled work.
 
 - [Architecture](explanation/architecture.md) and [trust boundaries](explanation/trust.md)
 - [Choosing delegation](explanation/why-pinata.md)
+- [Writing and prose checks](maintainers/writing.md)
 - [Testing](maintainers/testing.md), [performance](maintainers/performance.md) and [coding arena](maintainers/coding-arena.md)
 - [Test coverage](maintainers/rewrite-coverage.md), [implementation evidence](maintainers/rewrite-progress.md) and [historical records](maintainers/history.md)

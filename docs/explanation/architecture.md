@@ -1,8 +1,8 @@
 # Architecture
 
-One Runtime owns command acceptance, execution state and durable history. Pi,
-headless CLI, IPC clients and viewers translate requests or observe that runtime.
-They do not each schedule workers or maintain a competing run state.
+One Runtime accepts commands, tracks execution and records durable history. Pi,
+the headless CLI, IPC clients and viewers send requests to that runtime or observe
+its state. They share its scheduler and run state.
 
 ```mermaid
 flowchart TD

@@ -23,8 +23,8 @@ remain comparison-ineligible without independent inner-workflow attestation.
 
 Historical demo recordings show their original release, UI and workflow. They
 are not demonstrations or benchmarks of the replacement. The accepted tree UI
-has separate [terminal captures](rewrite-ui.md). Windows runtime verification is
-deferred; do not describe portability checks as a completed Windows execution test.
+has separate [terminal captures](rewrite-ui.md). The [platform guide](../how-to/platforms.md) describes the Windows runtime checks
+configured in CI. Use recorded results when claiming those checks passed.
 
 Before publication, check claims against the exact installed artifact and its
 recorded platform results. Local implementation does not authorize a release,

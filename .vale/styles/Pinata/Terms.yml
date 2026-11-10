@@ -1,0 +1,7 @@
+extends: substitution
+message: "Use '%s' instead of '%s' for Pinata terminology."
+level: warning
+ignorecase: true
+swap:
+  'sub-agent': subagent
+  'work-tree': worktree

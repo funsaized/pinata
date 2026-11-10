@@ -1,8 +1,7 @@
 # Pinata
 
 An extensible subagent runtime for [Pi](https://github.com/badlogic/pi-mono).
-Start workers, watch their conversations, steer them and continue their work as
-the task develops. The coordinator decides what to delegate, test, review and accept.
+Start workers, follow their conversations and steer their work as the task develops. The coordinator decides what to delegate, test, review and accept.
 
 Workers share the current checkout by default. Choose an isolated Git worktree when
 you want a separate patch; inspect and apply it explicitly with conflict checks.
@@ -33,7 +32,7 @@ tokens; schema discovery, example validation and the default test suite do not.
 - [API and schemas](docs/reference/api.md): tools, CLI, events, hooks and versioned contracts.
 - [Migration](docs/reference/migration.md): preserve old runs and convert inputs explicitly.
 
-Custom agents are Markdown files with validated model settings, tools, skills and
+Define custom agents in Markdown with validated model settings, tools, skills and
 colors. Parent context, scoped memory, nested delegation and capacity are explicit
 options. Schedules belong to a live session and resume paused after a crash. Pinata
 has no automatic review policy or production token/time budget.
