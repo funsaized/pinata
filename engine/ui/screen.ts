@@ -102,7 +102,10 @@ export class PinataScreen implements Component, Focusable {
     this.syncEditor();
     const height = Math.max(1, this.options.tui.terminal.rows);
     const renderedEditor =
-      this.router.screen === "conversation" && this.router.selected
+      this.router.screen === "conversation" &&
+      this.router.selected &&
+      !this.router.help &&
+      !this.router.actions
         ? this.editor.render(Math.max(1, width))
         : [];
     const editorBudget = Math.max(0, height - 3);
@@ -124,7 +127,8 @@ export class PinataScreen implements Component, Focusable {
         })
       : [];
     // Fill the viewport even for short reports and anchor controls above the composer.
-    const footerRows = this.router.screen === "conversation" ? 2 : 1;
+    const footerRows =
+      this.router.screen === "conversation" && !this.router.help && !this.router.actions ? 2 : 1;
     rows.splice(
       Math.max(0, rows.length - footerRows),
       0,
@@ -160,14 +164,17 @@ export class PinataScreen implements Component, Focusable {
       else if (matchesKey(data, "enter")) {
         const index = this.router.actionIndex;
         this.router.actions = false;
-        this.run(() =>
-          index < 3
+        this.run(async () => {
+          const reply = await (index < 3
             ? this.router.control(
                 "cancel",
                 ["assignment", "worker", "run"][index] as "assignment" | "worker" | "run",
               )
-            : this.router.control(index === 3 ? "background" : index === 4 ? "recover" : "inspect"),
-        );
+            : this.router.control(
+                index === 3 ? "background" : index === 4 ? "recover" : "inspect",
+              ));
+          if (index === 5 && reply.status === "ok") this.router.navigate("conversation");
+        });
       }
       this.requestRender();
       return;
@@ -218,6 +225,7 @@ export class PinataScreen implements Component, Focusable {
     }
     if (!composing && data === "?") {
       this.router.help = true;
+      this.router.helpScroll = 0;
       this.requestRender();
       return;
     }

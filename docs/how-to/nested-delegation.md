@@ -26,6 +26,24 @@ pinata serve examples/recipes/authorized-nested.json --workspace /path/to/projec
 
 This uses your selected model and may spend tokens. The tests below are offline.
 
+## Global Pi setup
+
+To make an explicit delegation grant available across workspaces, save the grants
+JSON in `<Pi agent directory>/pinata/grants.json` (normally
+`~/.pi/agent/pinata/grants.json`). Put parent definitions in that directory's
+`agents/` folder. Pi reads personal grants when opening a run; `/pinata-grants`
+and integration-provided grants take precedence. Invalid personal grants fail
+with the file path instead of silently falling back. Project `pinata.json` cannot
+grant authority. Restart Pi to load extension changes and use `/pinata-new` for
+new workers; accepted workers keep their frozen grants.
+
+Models in `pinata.json` select providers and reasoning levels. They do not create
+agent definitions or enable child delegation. The parent needs a positive
+`pinata.delegation.maxDepth` and allowed `handoffs`; the host grant needs sufficient
+depth, child agent names, tools and workspaces. Choose the smallest useful depth.
+A parent may hand off to another delegating definition when the remaining depth
+and host scope permit it.
+
 ## Plan from effective capabilities
 
 Call `pinata_agents` once. Its compact `delegation.enabled` is true only if at
@@ -47,7 +65,8 @@ follows up with that same parent for synthesis. Reports do not require snapshots
 Cancellation and interrupted cleanup retain their normal semantics.
 
 The fleet displays the resulting recorded ancestry. Collapse/expand affects only
-the display; `after` edges do not create branches.
+the display; `after` edges appear as dependency references below each assignment,
+including after completion. They do not create parentage.
 
 ## Verify without a model service
 

@@ -35,6 +35,19 @@ goals. Honor user authorization and project instructions. Shared checkout is the
 default; coordinate overlap and preserve unrelated edits. Select a worktree for an
 explicit isolated experiment. A changed workspace mode requires a new worker.
 
+For staged analysis and synthesis, declare the known stages together with `after`
+edges: parallel analysts, summarizers depending on their analysts, then a final
+summary depending on the requested earlier results. Queued stages make the plan
+visible before execution. Tell downstream workers to use their supplied
+`pinata_dependency` tool to list and read exact frozen dependency results, paging
+with `next` as `offset` when needed. Previews are not complete reports. Avoid
+waiting between known stages just to copy reports into task context. A dependency
+graph can have several predecessors per assignment; it is separate from child
+ancestry. Use enabled delegation when a worker should choose and coordinate its
+own subtasks, including requests to have
+subagents spawn others. Explain any disabled delegation scope before substituting
+coordinator-managed stages.
+
 Use `pinata_run` with a `create` or `add` command to start useful work. Continue your
 own work while workers run, then wait/yield for relevant completion notices. `after`
 binds to exact accepted assignments and controls ordering, not acceptance. Explicit

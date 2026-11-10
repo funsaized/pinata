@@ -38,7 +38,9 @@ No config field enables retired cost/turn/tool/time budgets, mandatory ownership
 automatic checks or review acceptance. Migrate old policy fields explicitly.
 Host authority is separate: `--grants <json>` for headless, `/pinata-grants <json>`
 followed by `/pinata-new` in Pi, or `HostOptions.grants` for integration code.
-Changing a host grant does not mutate accepted worker grants.
+Pi also reads personal grants from `<Pi agent directory>/pinata/grants.json`.
+Explicit command or integration grants override that file. Project configuration
+cannot grant authority. Changing a host grant does not mutate accepted worker grants.
 
 Setup success is retained per relevant worker input identity. Setup failures retain
 partial files and diagnostics; ambiguous interrupted setup is not automatically

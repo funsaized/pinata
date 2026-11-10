@@ -1,3 +1,4 @@
+import { actionsPanel, helpPanel } from "./panels.ts";
 import { renderConversation, type ConversationPresentation } from "./conversation.ts";
 import { resolveKeys } from "./keys.ts";
 import { visibleWidth } from "@earendil-works/pi-tui";
@@ -69,6 +70,13 @@ function statusToken(phase: string): "success" | "warning" | "error" | "muted" |
   if (phase.includes("queued")) return "muted";
   return "accent";
 }
+export function activityIndicator(motion: "full" | "reduced" | "off", now: number): string {
+  if (motion !== "full") return "--c--";
+  const frame = Math.floor(now / 250) % 15;
+  const position = Math.floor(frame / 3);
+  return "-".repeat(position) + ["c", "C", "c"][frame % 3] + "-".repeat(4 - position);
+}
+
 type TreeOptions = {
   width: number;
   paint: Paint;
@@ -79,6 +87,7 @@ type TreeOptions = {
   selected?: AssignmentRef;
   motion?: "full" | "reduced" | "off";
   collapsed?: ReadonlySet<string>;
+  dependencies?: boolean;
 };
 type TreeLine = { text: string; ref: AssignmentRef; worker: boolean };
 function treeLines(state: CoreState, nodes: TreeNode[], options: TreeOptions): TreeLine[] {
@@ -94,24 +103,15 @@ function treeLines(state: CoreState, nodes: TreeNode[], options: TreeOptions): T
         : ` · observed ${elapsed < 60_000 ? (elapsed / 1000).toFixed(1) + "s" : (elapsed / 60_000).toFixed(1) + "m"}`;
     const isSelected =
       options.selected && assignmentKey(options.selected) === assignmentKey(assignment.ref);
-    const animated =
-      options.motion === "full" && !["ended", "queued"].includes(assignment.execution.phase)
-        ? ["|", "/", "-", "\\"][Math.floor(performance.now() / 250) % 4]
-        : undefined;
-    const marker = isSelected
-      ? ">"
+    const active = !["ended", "queued"].includes(assignment.execution.phase);
+    const activity = active
+      ? activityIndicator(options.motion ?? "off", performance.now())
       : assignment.execution.phase === "queued"
-        ? options.ascii
-          ? "o"
-          : "○"
-        : (animated ??
-          (assignment.execution.phase === "ended"
-            ? assignment.execution.reason === "completed"
-              ? "+"
-              : "!"
-            : options.ascii
-              ? "*"
-              : "•"));
+        ? "  o  "
+        : assignment.execution.phase === "ended" && assignment.execution.reason === "completed"
+          ? "  +  "
+          : "  !  ";
+    const marker = `${isSelected ? ">" : " "} ${activity}`;
     const identity =
       options.paint(
         "strong",
@@ -149,6 +149,19 @@ function treeLines(state: CoreState, nodes: TreeNode[], options: TreeOptions): T
       ref: assignment.ref,
       worker: true,
     });
+    if (options.dependencies && assignment.after.length) {
+      const dependencyText =
+        "after: " + assignment.after.map((ref) => `${ref.worker}/${ref.assignment}`).join(", ");
+      for (const line of lines(
+        dependencyText,
+        Math.max(1, options.width - visibleWidth(node.continuation)),
+      ))
+        output.push({
+          text: options.paint("muted", node.continuation + line),
+          ref: assignment.ref,
+          worker: false,
+        });
+    }
     if (assignment.execution.phase === "queued") {
       output.push({
         text: options.paint(
@@ -204,8 +217,7 @@ export function fleetWidget(state: CoreState, options: TreeOptions): string[] {
   }).slice(0, 8);
   const output = [options.paint("accent.cyan", `${options.ascii ? "*" : "●"} Agents`)];
   output.push(...treeLines(state, nodes, options).map((row) => row.text));
-  if (attention)
-    output.push(options.paint("error", `${attention} need attention · Shift+Down opens fleet`));
+  if (attention) output.push(options.paint("error", `${attention} need attention`));
   if (active + attention > 4)
     output.push(
       options.paint(
@@ -223,41 +235,14 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
   const width = Math.max(1, options.width);
   const height = Math.max(1, options.height);
   const { paint } = options;
-  if (router.actions)
-    return [
-      `Actions · ${router.selected?.worker ?? "no worker selected"}/${router.selected?.assignment ?? ""}`,
-      ...[
-        "Stop selected assignment",
-        "Stop selected worker",
-        "Stop entire run",
-        "Release foreground wait",
-        "Recover selected assignment",
-        "Inspect selected result",
-      ].map((label, index) => `${index === router.actionIndex ? ">" : " "} ${label}`),
-      "↑↓ select · Enter execute · Esc cancel",
-    ]
-      .flatMap((line) => lines(line, width))
-      .slice(0, height);
-  if (router.help) {
-    const help = [
-      "Pinata help · Esc or ? closes",
-      "Fleet: ↑↓ select · Enter conversation · ← collapse · → expand",
-      "/ search worker/task · Enter keeps filter · / then Backspace clears",
-      "f cycles all/active/failed · h toggles assignment history · Q queued",
-      "Conversation: Tab switches transcript/composer focus",
-      "Transcript: ↑↓ scroll · f follow latest · d details/tool output · m older",
-      ...Object.entries(resolveKeys(router.keys)).map(([action, key]) => `${key}: ${action}`),
-      "a opens actions with explicit assignment/worker/run targets.",
-      "Composer preserves Ctrl+Left/Right, Ctrl+B and Ctrl+R for editing.",
-      "/steer text · /follow-up text · /continue text · /inspect",
-      "/stop (worker) · /stop-assignment · /stop-run · /recover · /reconnect",
-      "/replace id task · /worker id [assignment] · /palette name",
-    ].flatMap((line) => lines(line, width));
-    router.helpScroll = Math.min(router.helpScroll, Math.max(0, help.length - height));
-    return help.slice(router.helpScroll, router.helpScroll + height);
-  }
-
   options.hitRows?.clear();
+  if (router.actions || router.help)
+    return (
+      router.actions
+        ? actionsPanel(router, width, height, paint)
+        : helpPanel(router, width, height, paint)
+    ).map((line) => paint("background", padded(line, width)));
+
   const header =
     paint("accent.pink", options.ascii ? "[P] Pinata" : "✦ Pinata") +
     paint("border", " › ") +
@@ -307,6 +292,7 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
       selected: router.selected,
       motion: router.motion,
       collapsed: router.collapsed,
+      dependencies: true,
     });
     output.push(
       fit(

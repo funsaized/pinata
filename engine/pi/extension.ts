@@ -1,3 +1,4 @@
+import { readPersonalGrants } from "./grants.ts";
 import { join } from "node:path";
 import {
   getAgentDir,
@@ -106,7 +107,7 @@ export function createPinataExtension(options: PiExtensionOptions = {}): Extensi
           workspace: saved?.workspace ?? options.host?.workspace ?? context.cwd,
           ...(saved ? { directory: saved.directory, run: saved.run } : {}),
           agentDir,
-          grants: configuredGrants,
+          grants: configuredGrants ?? (await readPersonalGrants(agentDir)),
           modelRuntime: options.host?.modelRuntime ?? (await modelRuntime(context, agentDir)),
           parentModel:
             options.host?.parentModel ??
