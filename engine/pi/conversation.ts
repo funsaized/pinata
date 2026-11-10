@@ -5,12 +5,20 @@ import {
   UserMessageComponent,
   type Theme,
 } from "@earendil-works/pi-coding-agent";
-import { wrapTextWithAnsi } from "@earendil-works/pi-tui";
-import type { ConversationPresentation } from "../ui/conversation.ts";
+import { Box, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import type { ConversationPresentation, ConversationSurface } from "../ui/conversation.ts";
 import { displayText, fit } from "../ui/text.ts";
 
 // Presentation only: retained messages never create a Pi session or execute tools.
-export function piConversationPresentation(hostTheme?: Theme): ConversationPresentation {
+export function piConversationPresentation(
+  hostTheme?: Pick<Theme, "bg" | "fg">,
+): ConversationPresentation {
+  const backgrounds = {
+    pending: "toolPendingBg",
+    success: "toolSuccessBg",
+    error: "toolErrorBg",
+    custom: "customMessageBg",
+  } as const;
   const markdown = getMarkdownTheme();
   return {
     markdown,
@@ -20,7 +28,24 @@ export function piConversationPresentation(hostTheme?: Theme): ConversationPrese
       markdown.codeBlock("theme"),
       hostTheme?.bg("userMessageBg", hostTheme.fg("userMessageText", "theme")) ?? "",
       highlightCode("const value = 'text';", "typescript").join(""),
+      ...Object.values(backgrounds).map((token) => hostTheme?.bg(token, "theme") ?? ""),
     ].join("/"),
+    ...(hostTheme
+      ? {
+          surface(kind: ConversationSurface, rows: string[], width: number): string[] {
+            // Match Pi's tool/custom-message shells, including full-width backgrounds.
+            const box = new Box(width > 2 ? 1 : 0, 1, (text) =>
+              hostTheme.bg(backgrounds[kind], text),
+            );
+            box.addChild({
+              render: (contentWidth) =>
+                rows.flatMap((line) => wrapTextWithAnsi(line, contentWidth)),
+              invalidate() {},
+            });
+            return box.render(width);
+          },
+        }
+      : {}),
     user(text, width) {
       // Pi prompt-zone markers belong to the parent transcript, not this overlay.
       return new UserMessageComponent(displayText(text), markdown, 1)

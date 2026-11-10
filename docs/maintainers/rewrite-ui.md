@@ -211,7 +211,10 @@ Shift+Up returns from a worker to the fleet, and from the fleet to Pi.
 
 The panel fills the terminal, including after resize, with controls and the composer
 anchored at the bottom. Pi conversations use its native user-message cards, Markdown
-theme and syntax highlighter. Expanded tool arguments and read results also receive
+theme and syntax highlighter. Tool calls/results use Pi's pending, success and
+error backgrounds with native padding; worker reports and extension messages use
+its custom-message background. Assistant prose retains Pi's unboxed Markdown
+layout. Theme changes invalidate the cached message surfaces. Expanded tool arguments and read results also receive
 syntax highlighting; terminal-default and no-color modes retain plain rendering.
 Backend and context metadata remain available through the details toggle. Tool
 calls retain individual tool/path labels and four-line output previews; errors

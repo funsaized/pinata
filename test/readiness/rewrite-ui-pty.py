@@ -25,7 +25,7 @@ output = pathlib.Path(args.out).resolve()
 output.mkdir(parents=True, exist_ok=False)
 agent = output / "agent"
 agent.mkdir()
-(agent / "settings.json").write_text(json.dumps({"quietStartup": True, "retry": {"enabled": False}}))
+(agent / "settings.json").write_text(json.dumps({"quietStartup": True, "theme": "dark", "retry": {"enabled": False}}))
 report = output / "events.jsonl"
 env = dict(os.environ, PI_CODING_AGENT_DIR=str(agent), PI_OFFLINE="1", PI_SKIP_VERSION_CHECK="1", PI_TELEMETRY="0", TERM="xterm-256color", PINATA_REWRITE_UI_LOG=str(report))
 env.pop("NO_COLOR", None)
@@ -185,6 +185,9 @@ try:
     text = "\n".join(plain(line) for frame in frames for line in frame["output"])
     assert "Pinata" in text and "Full retained conversation line 100" in text
     assert "following latest" in text
+    for label in ("Native tool surface", "Native error surface", "Native extension surface"):
+        rows = [line for frame in frames if frame["width"] == 120 for line in frame["output"] if label in line]
+        assert rows and any(re.search(r"\x1b\[48[;:][0-9;:]+m", line) for line in rows), f"Missing native background: {label}"
     print(json.dumps({"ok": True, "visits": opens, "disposals": 3, "parentDraftPreserved": True, "workerDraftsPreserved": True, "providerCalls": 0, "overlay": True, "widths": [120, 60, 30], "palettes": ["inherit", "one-light", "terminal-default"], "terminalBytes": len(terminal)}))
 finally:
     if process.poll() is None:

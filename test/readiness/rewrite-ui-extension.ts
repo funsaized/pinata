@@ -48,7 +48,7 @@ export default function rewriteUiCapture(pi: ExtensionAPI): void {
     if (call.method !== "query") throw new Error("The UI capture only supports queries");
     const query = runtimeQuerySchema.parse(call.input);
     if (query.kind !== "conversation") throw new Error("Unexpected capture query");
-    return conversationReply(
+    const reply = conversationReply(
       query.ref,
       Array.from(
         { length: 100 },
@@ -56,6 +56,33 @@ export default function rewriteUiCapture(pi: ExtensionAPI): void {
       ).join("\n") +
         "\n\n## Highlighted result\n\n**Worker response** with code:\n\n```typescript\nconst answer: number = 42;\nconsole.log(answer);\n```",
     );
+    if (
+      reply.status === "ok" &&
+      reply.response.method === "query" &&
+      reply.response.result.kind === "conversation"
+    ) {
+      reply.response.result.entries.push(
+        {
+          message: {
+            role: "toolResult",
+            toolName: "read",
+            toolCallId: "read-result",
+            content: "Native tool surface",
+          },
+        },
+        {
+          message: {
+            role: "toolResult",
+            toolName: "read",
+            toolCallId: "read-error",
+            isError: true,
+            content: "Native error surface",
+          },
+        },
+        { message: { role: "custom", content: "Native extension surface" } },
+      );
+    }
+    return reply;
   };
   const ui = installCoordinatorUi(pi, async () => source, {
     settings: () => ({ palette: "inherit", motion: "reduced" }),

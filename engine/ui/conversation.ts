@@ -2,9 +2,12 @@ import { Markdown, type MarkdownTheme } from "@earendil-works/pi-tui";
 import type { Paint } from "./palette.ts";
 import { displayText, fit, lines } from "./text.ts";
 
+export type ConversationSurface = "pending" | "success" | "error" | "custom";
+
 export type ConversationPresentation = {
   markdown: MarkdownTheme;
   cacheKey: string;
+  surface?(kind: ConversationSurface, rows: string[], width: number): string[];
   user(text: string, width: number): string[];
   code(text: string, language: string, width: number): string[];
   file(text: string, path: string, width: number): string[];
@@ -57,6 +60,18 @@ function renderEntries(entries: unknown[], options: ConversationOptions): string
   const output: string[] = [];
   const calls = new Map<string, string>();
   const paths = new Map<string, string>();
+  const results = new Map<string, boolean>();
+  for (const entry of entries) {
+    const message = object(object(entry)?.message);
+    if (message?.role === "toolResult")
+      results.set(String(message.toolCallId), Boolean(message.isError));
+  }
+  const surface = (start: number, kind: ConversationSurface) => {
+    if (!options.presentation?.surface) return;
+    const rows = output.splice(start);
+    while (rows.at(-1) === "") rows.pop();
+    output.push(...options.presentation.surface(kind, rows, width), "");
+  };
   const markdown = (value: string) =>
     new Markdown(displayText(value), 1, 0, options.presentation?.markdown ?? theme(paint)).render(
       width,
@@ -71,6 +86,7 @@ function renderEntries(entries: unknown[], options: ConversationOptions): string
       continue;
     }
     const role = String(message.role ?? "message");
+    const start = output.length;
     if (role === "toolResult") {
       const report = object(object(message.details)?.report);
       if (message.toolName === "submit_result" && report && !message.isError) {
@@ -100,6 +116,7 @@ function renderEntries(entries: unknown[], options: ConversationOptions): string
         if (report.assessment && !assessment) extra.assessment = report.assessment;
         if (Object.keys(extra).length)
           output.push(...lines(JSON.stringify(extra, null, 2), width), "");
+        surface(start, "custom");
         continue;
       }
       const label = calls.get(String(message.toolCallId)) ?? String(message.toolName ?? "tool");
@@ -121,6 +138,7 @@ function renderEntries(entries: unknown[], options: ConversationOptions): string
           paint("muted", fit(`… ${body.length - previewRows} more lines · Tab, d expands`, width)),
         );
       output.push("");
+      surface(start, message.isError ? "error" : "success");
       continue;
     }
     let body = text(message.content);
@@ -152,10 +170,12 @@ function renderEntries(entries: unknown[], options: ConversationOptions): string
         output.push(...markdown(body), "");
       }
     }
+    if (role === "custom" && body) surface(start, "custom");
     if (Array.isArray(message.content))
       for (const part of message.content) {
         const item = object(part);
         if (item?.type === "toolCall") {
+          const callStart = output.length;
           const args = object(item.arguments);
           const target = args?.path ?? args?.command ?? args?.pattern ?? args?.query ?? "";
           const label = displayText(
@@ -172,6 +192,12 @@ function renderEntries(entries: unknown[], options: ConversationOptions): string
             );
           } else if (item.name !== "submit_result") {
             output.push(paint("accent", fit(`Tool call · ${label}`, width)));
+          }
+          if (output.length > callStart) {
+            let kind: ConversationSurface = "pending";
+            if (results.has(String(item.id)))
+              kind = results.get(String(item.id)) ? "error" : "success";
+            surface(callStart, kind);
           }
         } else if (expanded && item?.type === "thinking") {
           output.push(paint("muted", "Thinking"), ...markdown(String(item.thinking ?? "")), "");
