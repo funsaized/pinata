@@ -17,9 +17,9 @@ one worker's retained notes or `project-agent` for an agent's notes within one
 canonical project. The host must grant the same scope and requested read/write access.
 There is no global cross-project profile.
 
-Memory tools return a revision. An edit/clear must name the current revision; a
-concurrent change produces a conflict. Read, merge and retry deliberately. Clear
-records an empty revision while preserving history. A worker cannot supply a new
+Memory tools return a revision. To edit or clear memory, name the current revision.
+If another write changes it, read the new value, merge your changes and retry with
+that revision. Clearing memory records an empty revision and preserves history. A worker cannot supply a new
 project path or namespace through the tool input. Model-produced notes are data
 subordinate to current instructions and grants.
 

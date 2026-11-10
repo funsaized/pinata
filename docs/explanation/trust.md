@@ -11,7 +11,7 @@ extensions execute with the host account's permissions. Use an appropriate exter
 sandbox for untrusted code. Checkout gates and run ownership protect orchestration
 integrity among cooperating processes, not hostile same-user mutation.
 
-Selected skills are explicitly loaded from frozen resources. Parent context imports
+Pinata loads selected skills from frozen resources. Parent context imports
 only supported conversation data, retaining complete tool pairs and compaction
 provenance while excluding host controls. Memory defaults off. Its worker or
 project-agent scope is bound by the host; writes require a separate grant and CAS
@@ -41,7 +41,7 @@ the demonstrated evidence. Inspect and reconcile corrupt or torn records, stale 
 The runtime does not silently retry or delete them.
 
 Historical runs, reports and source archives remain at their recorded Git revisions
-or artifact paths. Explicit migration
-creates new identities and provenance, preserves old grants and assignment numbers,
+or artifact paths. Explicit migration creates new identities and provenance,
+preserves old grants and assignment numbers,
 and requires continuation for uncertain work. An upgrade never takes over a live old
 owner or implicitly kills its processes. See [migration](../reference/migration.md).

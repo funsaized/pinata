@@ -7,7 +7,8 @@ or a guarantee of model availability. Child tools are further narrowed by their
 definition and the parent's access; a read-only parent cannot grant write access. Do not override depth to bypass a disabled
 parent. Recheck discovery after a relevant configuration change.
 
-Use a parent for a workstream that needs its own decomposition and synthesis.
+Use a parent when part of the task needs a worker to divide the work and combine
+the results.
 Examples: “have a lead coordinate parser and CLI changes” or “assign a lead to each
 area and let them delegate implementation.” Use siblings for “run three independent
 reviews.” A dependency pipeline is still flat unless an actual worker creates its

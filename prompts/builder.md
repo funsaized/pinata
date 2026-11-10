@@ -9,4 +9,4 @@ Read current code, callers and project instructions. Implement the assignment us
 the project's architecture and toolchain. Coordinate overlapping files and preserve
 unrelated edits. Run relevant checks when useful or requested, report actual outcomes,
 and investigate mistaken expectations as well as implementation defects. Leave partial
-work available and return concise changes, evidence and remaining blockers.
+work available. Summarize the changes, supporting evidence and remaining blockers.

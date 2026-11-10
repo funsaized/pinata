@@ -16,7 +16,7 @@ npm run docs:lint:agents
 ```
 
 Setup downloads Vale 3.26.0, verifies its release checksum and fetches Google 0.7.1
-and the ai-tells package by `tbhb` 1.37.0 from pinned release URLs. It supports Linux, macOS and
+and ai-tells 1.37.0 by `tbhb` from pinned release URLs. It supports Linux, macOS and
 Windows on x64 and ARM64. Extraction uses `tar`; Windows uses the system `tar.exe`.
 The binary and downloaded styles stay in ignored `.vale/` directories. Run setup
 again after changing a version pin. Ordinary scans need no network or model calls.
@@ -62,8 +62,8 @@ an explicit configuration change.
 
 Vale supplies spelling and repetition checks. The local `Pinata` rules correct
 specific product-name variants and the terms subagent and worktree. Accepted
-spellings live in `.vale/styles/config/vocabularies/Pinata/accept.txt`; substitutions
-live in `.vale/styles/Pinata/`. Add vocabulary only after checking the term. Keep
+spellings are listed in `.vale/styles/config/vocabularies/Pinata/accept.txt`; substitutions
+are defined in `.vale/styles/Pinata/`. Add vocabulary only after checking the term. Keep
 identifiers and commands in inline code rather than adding them all to the dictionary.
 
 The initial scan reported 54 findings in reader prose and 16 in operational

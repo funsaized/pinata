@@ -4,7 +4,7 @@ The [generated inventory](generated.md) and [JSON catalog](catalog.json) come fr
 the same Zod schemas used by the runtime. Run `pinata schema <name> --json`,
 `pinata tools --json` or `pinata agents list --json` to inspect the installed version.
 Required fields, defaults, enums and nested variants are in those schemas. Runtime
-validation additionally checks authority, references, resource identity and journal
+validation also checks authority, references, resource identity and journal
 consistency. Pi may coerce a scalar before canonical validation; CLI and IPC do not.
 
 ## Package API
@@ -27,17 +27,17 @@ The contracts entry exports `versions`, `assignmentKey`, `canonicalJson`,
 `assignmentKey` preserves the full run/worker/assignment tuple; canonical JSON and
 digests provide deterministic data identities, not execution authority. `DomainError`
 contains a typed code/message/optional field. The host entry also exports
-`defineAgent` and `builtinTools`, the built-in read/write classification. The sources entry additionally
-exports `callRuntime` for canonical calls, `surfaceError` for boundary error translation
+`defineAgent` and `builtinTools`, the built-in read/write classification. The sources
+entry also exports `callRuntime` for canonical calls, `surfaceError` for boundary error translation
 and `SurfaceFailure` for typed adapter errors, plus `ToolPages` and `toolContentBytes`
 for bounded model-facing presentation. These do not replace caller validation.
 
 `openHost(options)` binds a canonical workspace, durable run directory, definitions,
 model runtime, backend adapters and caller authority. It returns `runtime`, `caller`,
 `source`, `workspace`, `directory`, resolved `config` and asynchronous `close(reason)`.
-Use a fresh directory or an explicitly selected existing manifest. A mismatching
-run/workspace is refused. Closing cancels owned activity and records cleanup;
-unconfirmed ownership is returned rather than hidden.
+Use a fresh directory or explicitly select an existing manifest. The host rejects
+a run that does not match the workspace. Closing cancels owned activity and records
+cleanup, including any ownership that remains unconfirmed.
 
 `HostOptions` accepts `workspace`, `directory`, `run`, `sessionId`, import `origin`,
 `agentDir`, ordered `definitionDirectories`, layered `config`, `parentModel`,
@@ -220,6 +220,6 @@ normal isolated results without moving branch HEAD or the user's index. Failed a
 cancelled work remains available without an automatic completion commit.
 
 In-process and supervised process backends have scripted Linux/macOS evidence.
-Herdr is optional and requires an available owned monitor. Windows has a typed
-Job Object helper port but no verified packaged helper; process cleanup there remains
-unavailable. An unavailable backend is not silently replaced by another backend.
+Herdr is optional and requires an available owned monitor. Windows uses the packaged Job Object launcher described in
+[platform support](../how-to/platforms.md). That guide lists its prerequisites and
+the Windows checks configured in CI; recorded results establish which checks passed. An unavailable backend is not silently replaced by another backend.

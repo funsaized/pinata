@@ -11,8 +11,8 @@ best-effort control. Never copy control credentials into a model prompt or child
 worker transport.
 
 Requests carry transport IDs and canonical surface calls. Mutation payloads also
-carry durable request IDs, which survive a lost connection. A reply that was not
-received is uncertain; reconnect and query its receipt before retrying the same ID.
+carry durable request IDs, which survive a lost connection. If you do not receive a reply, the outcome is uncertain. Reconnect and query its
+receipt before retrying the same ID.
 `AttachedSource.reconnect()` resynchronizes observations and never replays mutations.
 
 Subscriptions carry revision/epoch cursors and receive a snapshot reset when needed.

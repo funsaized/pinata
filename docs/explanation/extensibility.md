@@ -1,14 +1,13 @@
 # Extension points
 
 Prefer Markdown definitions, explicit skills, configuration and host adapters over
-new built-in workflow roles. A definition chooses instructions and requested tools;
-the host supplies authority. The coordinator chooses decomposition, review and
-acceptance.
+new built-in workflow roles. A definition specifies instructions and requests tools. The host grants access,
+and the coordinator decides how to divide, review and accept the work.
 
 The [API guide](../reference/api.md) documents Runtime, worker resolution,
 execution/workspace/application ports, notification delivery and source adapters.
-Public ports report observations and capabilities; they cannot bypass canonical
-acceptance or overwrite journal authority. Custom tool extensions are trusted host
+Public ports report observations and capabilities. They cannot bypass command
+acceptance or override the journal. Custom tool extensions are trusted host
 code and must declare actual tool access before a worker can use them.
 
 Use the generated schemas for external integrations. Keep pure contracts and core

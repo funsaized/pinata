@@ -19,9 +19,9 @@ for a shared reader too. This choice is frozen for its follow-ups. The snapshot
 records an observed interval and scope; it does not certify correctness or that
 the checkout stayed unchanged throughout execution.
 
-For isolated work, explicit `inputs` select immutable predecessor snapshots to compose
-into the target worktree. Missing requested snapshots fail preparation with retained
-evidence. Pinata does not guess the intended composition from roles or task text.
+For isolated work, use `inputs` to select immutable predecessor snapshots and
+combine them in the target worktree. If a requested snapshot is missing, preparation
+fails and retains the evidence. Pinata does not guess the intended composition from roles or task text.
 Dependencies and inputs are separate fields in `pinata.worker.v1`.
 
 Worktrees start from a frozen base, including dirty source content by default.
@@ -42,10 +42,10 @@ files of at most 16 MiB each; dependency directories are better recreated by set
 Dependency setup runs only in writable isolated work. `setup: false` disables it;
 a string selects an explicit shell command; omission may detect the root lockfile
 and package manager. Selected shell capability is required. Only approved environment
-names pass through, with values supplied at execution rather than serialized.
+variables pass through. Their values are supplied at execution and are not serialized.
 Success is recorded for the corresponding worker/input identity. Failed setup
-preserves its partial edits. An interrupted uncertain command needs inspection and
-reconciliation instead of automatic replay.
+preserves its partial edits. Inspect and reconcile an interrupted command whose outcome is uncertain before
+deciding whether to run it again.
 
 ## Complete dependency results
 

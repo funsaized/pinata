@@ -8,9 +8,8 @@ pinata run examples/job.json --workspace /path/to/project --model provider/model
 ```
 
 `run` waits for the accepted finite work, reports exact results and closes its host.
-Use `serve` as the foreground session host for later additions/follow-ups and
-session-scoped schedules. It starts no coordinator model merely to keep the
-session alive. Closing the owning session stops future schedule triggers.
+Use `serve` to keep a foreground session open for later workers, follow-ups and
+session schedules. Keeping the session alive does not start a coordinator model. Closing the owning session stops future schedule triggers.
 
 Start the session and attach from another terminal:
 
@@ -32,8 +31,8 @@ To recover live control, explicitly `serve --directory RUN_DIRECTORY` and inspec
 new empty conversation. `continue` creates a new assignment only when the retained
 context/workspace can be used safely.
 
-For more authority, pass an explicit `--grants grants.json` validated against
-`pinata.grants.v1`. Job/model fields cannot widen it. `--definitions` can be repeated
+To grant additional capabilities, pass `--grants grants.json`. Pinata validates
+the file against `pinata.grants.v1`; job and model fields cannot expand those grants. `--definitions` can be repeated
 to select an ordered definition search list. An isolated job still requires a
 separate explicit `apply`; exit 0 never claims an unperformed correctness check.
 See [commands](../reference/commands.md) for the complete grammar and exit codes.

@@ -17,8 +17,9 @@ after the host is lost. Explicit host shutdown stops both lifetimes. A new owner
 must inspect the retained attempt before deciding how to continue.
 The worktree and durable store outlive idle session disposal.
 
-Stop receipts distinguish stopped activity from unconfirmed ownership. Payload exit
-alone is insufficient when descendants or output drains remain. A lost guardian,
-ambiguous identity or unsupported helper cannot produce a confirmed-cleanup claim.
+A stop receipt confirms cleanup only when ownership and termination are known.
+The payload exiting is insufficient if descendants are still running or output
+is still draining. Cleanup remains unconfirmed if the guardian is lost, identity
+is ambiguous or the required helper is unsupported.
 See [backend evidence](../maintainers/rewrite-backends.md), [recovery](recover.md)
 and [platform support](platforms.md).

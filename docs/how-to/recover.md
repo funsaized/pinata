@@ -1,8 +1,7 @@
 # Recover and inspect partial work
 
 Start with read-only `pinata status`, `result`, `conversation` and `changes` for the
-exact assignment. Use `--saved` when no owner is running. Failed/cancelled output
-is retained. Shared files stay in place; isolated snapshots and worktrees remain
+exact assignment. Use `--saved` when no owner is running. Pinata retains output from failed and cancelled assignments. Shared files stay in place; isolated snapshots and worktrees remain
 inspectable. Do not infer correctness from execution or old review labels.
 
 For a lost live connection, reconnect to the existing owner. After an uncertain
@@ -38,9 +37,10 @@ uses the selected operation and exact owner epoch. Preserve before/after blobs,
 worktrees and journals until the result is understood. Never fix a conflict with a
 whole-checkout reset or by deleting ownership files.
 
-Run-owner and checkout ownership reconciliation require exact retained identity and
-proof of dead ownership. No age-based stealing occurs. Live/remote/ambiguous ownership
-must be handled by its matching host or remain blocked. The integration APIs retain
+To reconcile run or checkout ownership, use the exact retained identity and prove
+that the owner is no longer active. A claim never expires because of its age.
+If ownership is live, remote or uncertain, its matching host must handle it;
+otherwise reconciliation remains blocked. The integration APIs retain
 evidence for explicit offline reconciliation; the CLI does not invent cleanup proof.
 
 For older stores, use [migration](../reference/migration.md). An old process must
