@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — 3.0.0
+## 3.0.0 (2026-11-10)
 
 - Replace the core, stores, backends, workspaces, UI and measurement harness with
   one runtime shared by Pi, the headless CLI and viewers. Versioned schemas and
@@ -19,8 +19,13 @@
 - Replace the arena and benchmarks while preserving historical evidence. Scripted
   results establish behavior and runtime overhead, not live coding quality.
 - Provide explicit input conversion and historical inspection for the breaking
-  data transition. Linux/macOS have scripted validation; Windows runtime
-  verification and its process supervisor remain deferred.
+  data transition. Linux and macOS have scripted validation. Windows uses a
+  source-packaged C# Job Object launcher with targeted x64 and ARM64 CI coverage.
+- Render worker conversations and reports with native Pi styling, preserve
+  interrupted assignments, and follow the latest output when opening a conversation.
+- Plan nested delegation from discovered capabilities and host grants.
+- Add pinned, advisory Vale checks for reader documentation and agent instructions,
+  with selected Google and ai-tells rules and Pinata terminology.
 
 ## 2.1.1 (2026-11-06)
 
