@@ -1,49 +1,10 @@
 {
-  "cwd": "/absolute/path/to/repository",
-  "approval": "Replace with the actual user-approved scope; not authorization by itself",
-  "instructions": [
-    "Follow the repository's AGENTS.md and existing toolchain. Preserve unrelated changes. No commits, installs, live spending, pushes, or releases."
-  ],
-  "config": {
-    "models": {
-      "default": {
-        "provider": "REPLACE_WITH_APPROVED_PROVIDER",
-        "id": "REPLACE_WITH_AVAILABLE_MODEL_ID",
-        "thinking": "medium"
-      }
-    }
-  },
-  "tasks": [
+  "schemaVersion": 4,
+  "workers": [
     {
-      "id": "build",
-      "task": "Replace with the approved implementation assignment",
-      "acceptance": ["Replace with a concrete acceptance criterion"],
-      "ownership": ["src/replace-with-owned-file.js"],
-      "checks": [
-        {
-          "id": "regression",
-          "argv": ["node", "--test", "test/replace-with-relevant-test.mjs"],
-          "timeoutMs": 120000
-        }
-      ],
-      "agent": "builder"
-    },
-    {
-      "id": "review",
-      "task": "Independently challenge the actual changes, caller assumptions, failure handling, and regression-check evidence. Distinguish concrete defects from speculation.",
-      "acceptance": [
-        "The accepted behavior is supported by actual changes and verification, with no unresolved blocking defects."
-      ],
-      "after": ["build"],
-      "reviewOf": "build",
-      "agent": "reviewer"
-    }
-  ],
-  "integratedChecks": [
-    {
-      "id": "integrated",
-      "argv": ["node", "--test", "test/replace-with-relevant-test.mjs"],
-      "timeoutMs": 120000
+      "id": "map",
+      "agent": "scout",
+      "task": "Map the entry points, data flow and existing tests for this project. Return concrete file references and unresolved questions. Do not edit files."
     }
   ]
 }

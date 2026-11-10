@@ -1,32 +1,47 @@
-# Trust and safety
+# Trust and recovery boundaries
 
-Pinata checks tool access, file ownership, and the changes an agent produces.
-Worktrees keep agent patches separate from your checkout. Shell commands and
-custom tools retain your operating-system permissions and network access.
+The trusted host binds caller identity, workspace roots, tool classifications and
+grants. Model requests and outputs are data validated against those bindings. A
+worker cannot choose a root IPC token, replace its caller, move its workspace or
+expand permissions through a result, skill, memory entry or nested command.
 
-## What is enforced
+Read-only access and allowed tools are separate from workspace selection. Worktrees
+isolate patches; they are not operating-system sandboxes. Shell and custom tool
+extensions execute with the host account's permissions. Use an appropriate external
+sandbox for untrusted code. Checkout gates and run ownership protect orchestration
+integrity among cooperating processes, not hostile same-user mutation.
 
-| Rule              | What Pinata checks                                                                                                                                                                                                                                                                      |
-| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Tools             | Each definition declares allowed tools. Every call passes through a guard, including calls from codemode scripts.                                                                                                                                                                       |
-| Workspace         | Live readers and review-target agents cannot use the built-in edit, write, or shell tools. Permissions come from the definition's workspace capabilities.                                                                                                                               |
-| Ownership         | Worktree agents edit owned paths in their own worktree, never through symbolic links. The engine also checks the captured change.                                                                                                                                                       |
-| Authorization     | A run with worktree agents requires an `approval` record of the user's authorization for those local writes.                                                                                                                                                                            |
-| Checks and review | The engine runs builder checks. Review verdicts are tied to the exact change and its original base.                                                                                                                                                                                     |
-| Integration       | Destination checks record a separate content tree. Reviewing the combined change requires a separate independent review. Pinata refuses secret-bearing files (`.env*`, `auth.json`, `.npmrc`, `.netrc`), symlinks, submodules, and overlapping file changes made since the run started. |
-| Delegation        | Pinata reserves delegation tools for the coordinator and excludes them from workers (`PINATA_AGENT=1`).                                                                                                                                                                                 |
-| Environment       | Checks and setup receive an allowlist of variables plus names configured in `passEnv`.                                                                                                                                                                                                  |
-| Viewers           | A client must present the run's token from `link.json`, stored with mode 0600 in a private directory.                                                                                                                                                                                   |
+Pinata loads selected skills from frozen resources. Parent context imports
+only supported conversation data, retaining complete tool pairs and compaction
+provenance while excluding host controls. Memory defaults off. Its worker or
+project-agent scope is bound by the host; writes require a separate grant and CAS
+revision. Old memory never overrides current instructions or grants.
 
-## What runs with your permissions
+A durable receipt proves that the run recorded a command. A transport receipt proves
+only transport acceptance. Consumption needs identifiable conversation evidence.
+Completion means an assignment ended and returned control. Worker assessments,
+reported checks, coordinator acceptance, applied patches and oracle correctness are
+distinct. No current UI label promotes a historical review to new verification.
 
-A builder's `bash` and every check run with your permissions and network access.
-Read the task, ownership, and checks before authorizing the work.
+Shared edits remain in the checkout on cancellation or failure. They do not claim
+exclusive authorship. Isolated apply validates paths, objects, destination identity,
+active writers and expected file content before journaled writes. It does not reset
+the user's checkout. Rollback refuses changed destination files rather than erasing
+later work. Interrupted operations preserve original blobs and ownership evidence.
 
-Pinata treats model output as data. It removes terminal control sequences from
-that output and labels results passed between agents as evidence.
+Cleanup is confirmed only for activity whose ownership can be established. The POSIX
+supervisor uses a live nonce binding rather than trusting a historical PID/group.
+Unknown, escaped or unverifiable activity retains exclusion. Windows process cleanup
+uses the packaged Job Object launcher. See [platform support](../how-to/platforms.md)
+for prerequisites and the scope of Windows CI checks.
 
-Custom tool providers are trusted code running with your permissions. Each provider
-is responsible for its tools' side effects, including in read-only workspaces.
-Configure providers deliberately. Saved entry-file hashes detect changes before a
-new launch; imported dependencies and remote services remain outside that check.
+Durability assumes a local filesystem supporting the documented atomic create/link
+and fsync operations. Actual machine power loss and network filesystems are outside
+the demonstrated evidence. Inspect and reconcile corrupt or torn records, stale claims and ambiguous effects.
+The runtime does not silently retry or delete them.
+
+Historical runs, reports and source archives remain at their recorded Git revisions
+or artifact paths. Explicit migration creates new identities and provenance,
+preserves old grants and assignment numbers,
+and requires continuation for uncertain work. An upgrade never takes over a live old
+owner or implicitly kills its processes. See [migration](../reference/migration.md).

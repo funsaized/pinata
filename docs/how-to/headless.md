@@ -1,104 +1,38 @@
-# Run jobs headless
+# Headless jobs and attachment
 
-Use `pinata run job.json` to execute a saved plan from a terminal, script, or CI. You get
-progress, saved results, and an exit code without opening an interactive Pi session.
-
-A job describes which agents do the work, what each owns, when tasks can start,
-and how their results will be checked. A coordinating agent can inspect your
-repository and write that job from a goal. See [designing jobs and use cases](../../examples/jobs.md#let-a-coordinator-design-the-job)
-for a prompt you can use in Pi or adapt for another coding agent.
-
-Install Pi and Pinata, configure model credentials, and choose models and limits
-before running a job. Agents spend tokens. For a prepared project and a complete
-walkthrough, use [Relay](../tutorials/relay.md).
-
-## Write a job file
-
-Ask your coordinator to read the [task contract](../reference/tools.md#task),
-[configuration reference](../reference/config.md), and fields below before writing
-the job. It should choose the agents, dependency order, ownership, and checks to
-fit your repository. You can also start from a [complete example](../../examples/jobs.md#complete-jobs)
-and edit it yourself.
-
-Start with a task and the model you want it to use. This example asks a scout to
-map duration parsing in a repository named `repo` next to the job file:
-
-```json
-{
-  "cwd": "repo",
-  "config": {
-    "models": { "default": { "provider": "openai", "id": "gpt-6-luna", "thinking": "low" } }
-  },
-  "tasks": [
-    {
-      "id": "map",
-      "agent": "scout",
-      "task": "Map duration parsing.",
-      "acceptance": ["file:line citations"]
-    }
-  ]
-}
-```
-
-Choose a model configured on your machine and replace the task and path. The
-[examples](../../examples/) folder has complete jobs you can adapt.
-
-A job requires `tasks`. It also accepts `config`, `approval`, `instructions`,
-`integratedChecks`, and `noIntegratedChecksReason`. `cwd` is relative to the job
-file; omit it to use the current shell directory. `background` and `survive` are
-options for Pi's `pinata_run` tool, not this command.
-
-## Run it
+A schema-4 job contains `workers` and optional layered `config`. Select an available
+model through the definition, config or `--model provider/id`:
 
 ```sh
-pinata run job.json
-pinata run job.json --json
-pinata run job.json --mode observe
-pinata run job.json --watch
+pinata run examples/job.json --workspace /path/to/project --model provider/model --json
 ```
 
-The command starts `pi` in print mode with only Pinata's headless extension.
-Text output prints one line per state change; `--json` prints the run's events as JSONL.
-`--watch` (or observe mode) starts the run's socket and prints the `pinata view` command
-on stderr.
+`run` waits for the accepted finite work, reports exact results and closes its host.
+Use `serve` to keep a foreground session open for later workers, follow-ups and
+session schedules. Keeping the session alive does not start a coordinator model. Closing the owning session stops future schedule triggers.
 
-| Exit code | Meaning                       |
-| --------- | ----------------------------- |
-| 0         | every task succeeded          |
-| 1         | a task failed or was rejected |
-| 2         | the job file is invalid       |
-| 3         | the run was cancelled         |
-
-## Apply a builder's changes
-
-For jobs with writers, record the authorized scope in `approval`. Exit code 0
-means every task and its configured checks succeeded. Builder patches remain in
-their worktrees until you apply them; the destination checkout is not yet verified.
-
-Open Pi in the repository and ask it to inspect the saved run, apply its approved
-changes, and run its destination checks. Pi uses `pinata_integrate` for this step.
-Follow [build and review](../tutorials/build-and-review.md) for the full sequence.
-
-`pinata run` finishes after the task graph completes. Run integration separately
-through Pi; that step applies the patches and runs `integratedChecks`.
-
-## Read a run's log
+Start the session and attach from another terminal:
 
 ```sh
-pinata logs
-pinata logs <run> --task <task> --follow
-pinata logs <run> --json
+pinata serve examples/job.json --workspace /path/to/project --model provider/model --json
+pinata attach RUN_DIRECTORY
+pinata status RUN_DIRECTORY --json
+pinata follow-up RUN_DIRECTORY map "Inspect the error cases" --request-id follow-up/errors
 ```
 
-## Runs that outlive Pi
+The actual run directory is in the owner's ready/closed output. A Git project uses
+the common Git directory's Pinata store; a non-Git project uses `.pinata/runs`.
+`--directory` selects an explicit store. Alias paths resolve to canonical workspace
+identity. Do not run old and new runtimes against the same store.
 
-A `pinata_run` with `background: true` and `survive: true` keeps going when Pi exits:
-pinata releases the run and starts a detached headless host that finishes the graph,
-writing to `<run>/headless.log`. The next Pi in the repository delivers the result. To
-continue such a run yourself (_manual_):
+After the owner closes, use `--saved` for status, results, conversations and changes.
+To recover live control, explicitly `serve --directory RUN_DIRECTORY` and inspect
+`recover` results. Missing or uncertain session/process evidence never becomes a
+new empty conversation. `continue` creates a new assignment only when the retained
+context/workspace can be used safely.
 
-```sh
-pinata resume <run>
-```
-
-Set `PINATA_NO_CONTINUE=1` to stop Pi from starting headless hosts.
+To grant additional capabilities, pass `--grants grants.json`. Pinata validates
+the file against `pinata.grants.v1`; job and model fields cannot expand those grants. `--definitions` can be repeated
+to select an ordered definition search list. An isolated job still requires a
+separate explicit `apply`; exit 0 never claims an unperformed correctness check.
+See [commands](../reference/commands.md) for the complete grammar and exit codes.

@@ -1,13 +1,67 @@
 {
-  "note": "Engine performance targets. bench --ci fails a result above twice its budget. Large-burst spawn uses a per-agent setup target.",
+  "note": "Version 3 runtime targets with 2x CI tolerance. Owner accepted effective latency limits 50 ms (fanout-8 spawn), 40 ms (fanout-32/64 setup), and 60 ms (stress-64 dependency) on 2026-11-08; other gates are unchanged. Historical failed reports retain their original limits. The owner approved Darwin/APFS effective latency limits of 150/450/350/450 ms for fanout-1 spawn, fanout-8 spawn, fanout-32 setup and fanout-64 setup on November 8, 2026. Selection requires observed filesystem-name evidence for the allocated cell directory; all other limits remain unchanged.",
   "budgets": [
-    { "scenario": "fanout-1", "metric": "spawnMs.p50", "max": 10 },
-    { "scenario": "fanout-8", "metric": "spawnMs.p50", "max": 10 },
-    { "scenario": "fanout-8", "metric": "memoryPerAgentMB", "max": 5 },
-    { "scenario": "fanout-32", "metric": "memoryPerAgentMB", "max": 5 },
-    { "scenario": "fanout-32", "metric": "setupMs.p50", "max": 5 },
-    { "scenario": "fanout-64", "metric": "setupMs.p50", "max": 5 },
-    { "scenario": "stress-64", "metric": "dependentMs.p99", "max": 5 },
-    { "scenario": "ux-8", "metric": "loopLagP99Ms", "max": 20 }
+    {
+      "scenario": "fanout-1",
+      "metric": "spawnMs.p50",
+      "max": 10
+    },
+    {
+      "scenario": "fanout-8",
+      "metric": "spawnMs.p50",
+      "max": 25
+    },
+    {
+      "scenario": "fanout-8",
+      "metric": "memoryPerAgentMB",
+      "max": 5
+    },
+    {
+      "scenario": "fanout-32",
+      "metric": "memoryPerAgentMB",
+      "max": 5
+    },
+    {
+      "scenario": "fanout-32",
+      "metric": "setupMs.p50",
+      "max": 20
+    },
+    {
+      "scenario": "fanout-64",
+      "metric": "setupMs.p50",
+      "max": 20
+    },
+    {
+      "scenario": "stress-64",
+      "metric": "dependentMs.p99",
+      "max": 30
+    },
+    {
+      "scenario": "ux-8",
+      "metric": "loopLagP99Ms",
+      "max": 20
+    }
+  ],
+  "darwinApfsOverrides": [
+    {
+      "scenario": "fanout-1",
+      "metric": "spawnMs.p50",
+      "max": 75
+    },
+    {
+      "scenario": "fanout-8",
+      "metric": "spawnMs.p50",
+      "max": 225
+    },
+    {
+      "scenario": "fanout-32",
+      "metric": "setupMs.p50",
+      "max": 175
+    },
+    {
+      "scenario": "fanout-64",
+      "metric": "setupMs.p50",
+      "max": 225
+    }
   ]
 }

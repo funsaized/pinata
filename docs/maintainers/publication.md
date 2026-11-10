@@ -9,8 +9,8 @@ in the release pull request.
 
 The npm package is `pi-pinata`, published by
 [funsaized](https://www.npmjs.com/~funsaized) from
-<https://github.com/funsaized/pinata>. It is MIT licensed and has no runtime npm
-dependencies.
+<https://github.com/funsaized/pinata>. It is MIT licensed. Its pinned runtime dependencies are Zod and cron-parser;
+Pi SDK packages remain optional peer dependencies.
 
 Record the approved action and target before proceeding. Never log npm tokens
 or read credential files to check identity.
@@ -64,8 +64,8 @@ npm pack --dry-run --json --ignore-scripts
 ```
 
 Inspect the file list. It should contain package metadata, README/LICENSE,
-the packaged skills (subagents registered by default), five prompt templates, three agent
-presets, optional agent examples, runtime modules, and docs. There
+the packaged skill (subagents registered by default), five prompt templates, three agent
+presets, optional agent examples, public API exports, runtime modules, and docs. There
 should be no run state, logs, tests, .git, node_modules, secrets, or other
 development files.
 

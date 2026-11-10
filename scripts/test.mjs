@@ -1,22 +1,27 @@
-// Runs the test suite: the engine's tests and the release script tests.
+// Scripted behavior checks; model-backed arena trials are separate.
 import { spawnSync } from "node:child_process";
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
 
-// The release script tests run where releases run (Linux, macOS); on Windows `npm` is a .cmd.
-// Run the scheduler latency check after the other engine tests so parallel fixtures
-// do not compete with its timing budget.
-const timed = ["scheduler.test.ts"];
+const boundarySuites = ["apply", "rollback"].map((direction) =>
+  join("test/engine", `rewrite-application-${direction}.test.ts`),
+);
 const engine = readdirSync("test/engine", { recursive: true })
-  .filter((file) => file.endsWith(".test.ts") && !timed.includes(file))
+  .filter((file) => file.endsWith(".test.ts"))
   .sort()
-  .map((file) => join("test/engine", file));
-const suites = [engine, ...timed.map((file) => [join("test/engine", file)])];
+  .map((file) => join("test/engine", file))
+  .filter((file) => !boundarySuites.includes(file));
+const suites = [engine];
 if (process.platform !== "win32") suites.push(["test/*.test.mjs"]);
+// Each exhaustive durability matrix has its own existing 300-second bound.
+// Run them separately so unrelated suites do not share their filesystem load.
+suites.push(...boundarySuites.map((file) => [file]));
 for (const files of suites) {
-  // A hung test fails after 5 minutes instead of holding CI until the job times out.
-  const r = spawnSync(process.execPath, ["--test", "--test-timeout=300000", ...files], {
-    stdio: "inherit",
-  });
-  if (r.status !== 0) process.exit(r.status ?? 1);
+  const outcome = spawnSync(
+    process.execPath,
+    ["--test", "--test-concurrency=2", "--test-timeout=300000", ...files],
+    { stdio: "inherit" },
+  );
+  if (outcome.error) throw outcome.error;
+  if (outcome.status !== 0) process.exit(outcome.status ?? 1);
 }

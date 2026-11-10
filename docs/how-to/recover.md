@@ -1,115 +1,47 @@
-# Recover, rerun, and clean up
+# Recover and inspect partial work
 
-Find the run first, then choose the recovery action for its state:
+Start with read-only `pinata status`, `result`, `conversation` and `changes` for the
+exact assignment. Use `--saved` when no owner is running. Pinata retains output from failed and cancelled assignments. Shared files stay in place; isolated snapshots and worktrees remain
+inspectable. Do not infer correctness from execution or old review labels.
 
-| What happened                       | What to do                                                           |
-| ----------------------------------- | -------------------------------------------------------------------- |
-| Pi closed while work was running    | Reopen Pi in the same repository; rerun tasks that were cancelled.   |
-| A builder check or review failed    | Repair the builder in the original run, then collect a fresh review. |
-| An applied patch needs to be undone | Roll back the integration if the checkout has not changed.           |
-| Work is finished                    | Clean up panes and preserved worktrees.                              |
+For a lost live connection, reconnect to the existing owner. After an uncertain
+mutation reply, query its original request ID before retrying the same payload.
+Changed payloads under that ID are rejected. A durable receipt does not guarantee
+exactly-once arbitrary external tool effects.
 
-## Find out what happened
+An uncertain `@handle` reply includes `/pinata-retry run-prefix:input-token`. Use
+that command in the original session/run instead of submitting the text again:
+it preserves the original request, message, target and create/steer/follow-up action.
+The checksum-verified envelope is retained in `RUN_DIRECTORY/mention-inputs/` even
+if Pi had not yet persisted its first custom-only session. If that binding is lost,
+inspect the retained run and envelope; do not infer a new request from its text.
 
-Ask Pi to show the latest run and explain any failed or unfinished tasks. You can
-also check the run list directly:
+`pinata recover RUN_DIRECTORY` asks the live owner to inspect original attempts and
+reattach supported processes or finalize retained stopped work. It does not start a
+replacement process. A missing session or unconfirmed owner is an explicit result.
+Use `continue` only when the selected worker's context/workspace remains recoverable;
+otherwise start a replacement with explicit origin/context.
 
-```text
-/pinata
-/pinata runs
-```
+An `add` worker request can name `origin: { run, worker, assignment }` for an existing
+assignment in the same run. The new worker keeps that exact provenance while its
+definition, workspace and grants are resolved independently. Origin alone copies no
+conversation, context or files and adds no dependency; supply explicit `context`,
+`inputs` or `after` when needed. The conversation UI's `/replace` command records the
+selected assignment as origin. Child requests use `{ worker, assignment }` within
+their bound run and may reference only their parent or its descendants.
 
-`/pinata` shows the latest run and unfinished work from earlier sessions. Ask Pi
-for a task's full result or transcript (`pinata_status`), open it with
-`/pinata view <run> --task <task>`, or read its log:
+An application receipt names its operation. Query that operation before retrying.
+Journal phase and cursor meaning are authoritative together. `rollback` reverses
+only still-matching destination content; later edits cause a conflict. `reconcile`
+uses the selected operation and exact owner epoch. Preserve before/after blobs,
+worktrees and journals until the result is understood. Never fix a conflict with a
+whole-checkout reset or by deleting ownership files.
 
-```sh
-pinata logs <run> --task <task>
-```
+To reconcile run or checkout ownership, use the exact retained identity and prove
+that the owner is no longer active. A claim never expires because of its age.
+If ownership is live, remote or uncertain, its matching host must handle it;
+otherwise reconciliation remains blocked. The integration APIs retain
+evidence for explicit offline reconciliation; the CLI does not invent cleanup proof.
 
-## Continue after Pi exits
-
-Open Pi in the same repository. It resumes unfinished runs that no other Pi
-session owns.
-
-Pinata reconnects to detached agents, including those that finished while Pi was
-closed. It verifies their results and continues the remaining tasks. In-process
-agents stop when Pi exits. Their tasks become `cancelled`, and dependent tasks
-are blocked.
-
-To restart those tasks and their dependents, ask Pi to rerun the interrupted work
-or use:
-
-```text
-/pinata rerun <run>
-```
-
-For work that should continue when you close Pi, ask for a background run with
-`survive: true`. See [backends](backends.md#keep-a-run-going-after-pi-exits).
-
-## Repair a failed task
-
-Read the failed check or review findings, then ask Pi to repair the builder with
-that feedback. Keep the original run ID throughout recovery. For a rejected review,
-the result's `recovery` field identifies the builder and supplies a `pinata_repair`
-call targeting that builder.
-
-`pinata_repair` continues in the same worktree, up to `limits.repairs`. The builder's
-checks and independent review run again, and blocked downstream tasks can then
-finish. Once every required task succeeds, inspect with `pinata_changes` and apply
-with `pinata_integrate`, both using the original run ID. Integration requires the
-approval recorded in that run, even if you have started other reviews since.
-
-Repair also works for a finished run from `pinata run` or an earlier Pi session:
-Pi loads its saved configuration and worktree
-on demand. Repair counts and accumulated usage carry across sessions. A run still
-owned by another live Pi, or stopped by cancellation or a run limit, cannot be
-reopened this way. For other tasks, start a new run with a corrected request.
-
-## Cancel work
-
-Ask Pi to cancel a run or one agent (`pinata_cancel`), or press Esc during a
-foreground run. Cancelling an agent in a separate process also stops the processes
-it started.
-
-## Undo applied changes
-
-Ask Pi to roll back the integration (`pinata_rollback`). Rollback restores files
-only if they still match the applied changes. Git HEAD and the staging area must
-also be unchanged since the changes were applied.
-
-If you have committed, staged, or edited files since then, ask Pi to reconcile the
-changes. If the integration record lacks the destination state needed for rollback,
-use `pinata_changes` to inspect the recorded changes and reconcile them manually.
-
-Apply, verify, and rollback share `pinata-integration.lock` in the destination's
-Git directory. After a crash, check the lock's process ID and timestamp, confirm
-no integration or verification is running, and inspect the integration record
-before removing the lock. Then retry. Files must still match their recorded state;
-do not remove an active lock or reset the checkout to force a retry.
-
-## Clean up
-
-Ask Pi to clean up finished Herdr workspaces, or run:
-
-```text
-/pinata gc
-/pinata gc --confirm
-```
-
-Inside Herdr, both commands close workspaces for finished tasks. Any other proposed
-cleanup is shown as a preview; review it before adding `--confirm`. Pinata skips
-locked, active, or uncertain runs, keeps manifests and evidence, and removes
-worktrees only when their changes are already preserved elsewhere.
-
-Run logs and results stay in `<git common dir>/pinata/<run>`. Delete a run directory
-when you no longer need its records. Worktrees are separate: preserve any changes
-you want, then use `git worktree remove <path>`. Each run records its worktree paths;
-its worktrees remain on disk after you delete the logs.
-
-The same cleanup commands work from a shell:
-
-```sh
-pinata gc
-pinata gc --confirm
-```
+For older stores, use [migration](../reference/migration.md). An old process must
+finish or stop through its matching executable/protocol before writable import.

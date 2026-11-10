@@ -1,21 +1,12 @@
 ---
-description: Delegate a well-specified fix directly to a builder and independent reviewer.
-argument-hint: "[fix, affected files, and acceptance criteria]"
+description: Delegate a concrete fix and finish with coordinator checks.
 ---
 
-Use pinata's subagents skill to carry out the requested fix: $@.
+Use Pinata for this requested fix: ${@:-the requested change}.
 
-When the affected files, intended behavior, and checks are known, run a builder
-and one independent reviewer with `pinata_run`. Give the builder explicit ownership
-and checks. Set the reviewer's `reviewOf` to the builder ID and include that ID
-in `after`. Keep both tasks self-contained. Use the same acceptance criteria
-and integrated checks that a longer workflow would require.
-
-Add a scout, research, or planning stage only when a concrete uncertainty needs
-it. Inspect the results and actual check evidence; repair actionable defects
-with `pinata_repair` (the reviewer runs again), then own integration within
-the user's authorized scope. Read `pinata_changes`; use `pinata_integrate` for exact
-application or reconcile conflicts yourself and use `pinata_verify` for destination
-checks. Obtain fresh review of reconciled changes; original reviews stay bound to their
-original bases and artifacts. A failed prerequisite or rejection keeps its normal recovery
-path. Do not infer authorization to commit, push, or publish from this shortcut.
+Discover relevant definitions and start useful workers with concrete responsibilities.
+Shared checkout is the default; use a worktree when isolation is requested. Continue
+your own inspection, run ordinary checks and read actual changes. Request review if
+useful. Send follow-ups with `pinata_run` command kind `follow_up`, or add workers as the
+plan develops. Yield when waiting for completion notices. Decide acceptance and final
+delivery from the evidence, not the fact that an assignment ended.

@@ -1,182 +1,159 @@
 # Testing
 
-Start with the local checks. They use scripted providers and make no paid model
-calls:
+Use Node 22.19 or later and the committed lockfile. The normal suite uses
+scripted providers and makes no paid model calls:
 
 ```sh
+npm ci --ignore-scripts
 npm run check
 npm test
 ```
 
-`check` runs oxfmt, oxlint and `tsc`. `npm test` runs `test/engine/**/*.test.ts` and the
-release script tests. It needs no Pi installed: process-backend tests run the Pi
-devDependency's CLI against a local loopback provider.
+`check` runs formatting, lint and TypeScript checks. Format changed files with
+`npm exec -- oxfmt --write <paths>`. The test runner executes the engine tests and
+the release, documentation and script contracts. Ordinary batches run at most two
+test files concurrently to avoid filesystem contention between process fixtures.
+The exhaustive apply and rollback fault matrices run as separate files afterward,
+one at a time, each retaining its five-minute bound. Test timeouts are external
+supervision; they are not worker deadlines.
 
-The default suite also exercises quality-report exit codes, benchmark completion and
-measurement gates, and the Relay example. Relay tests cover starter setup in a path
-with spaces, refusal to overwrite existing work, and the complete
-job through review and destination integration with scripted provider responses.
-The package smoke also creates a starter from the installed tarball. User-facing
-examples use real models.
+Development dependencies pin Pi SDK 1.5.0. CI also tests the native Pi 1.1.0 host
+for compatibility, then selects native Pi 1.5.0 for the benchmark baseline. Reports
+identify the host and worker runtimes separately.
 
-`test/engine/fixtures/relay/` holds the implementation and tests used by the
-scripted job. It is excluded from the npm package.
+For prose changes, run the separate [writing checks](writing.md).
+`npm run docs:setup` installs the pinned tools; `npm run docs:lint:changed` checks
+edited reader documentation without model calls.
 
-## What the harness covers
+## Behavior coverage
 
-| Layer                                 | Location                                                                                     | What it exercises                                                                                                          |
-| ------------------------------------- | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| Engine contracts                      | `test/engine/helpers.ts`, engine, scheduler, limiter, budget, result, and log tests          | Deterministic state transitions, dependencies, cancellation, bounds, and persistence with a fake backend.                  |
-| Real sessions with scripted responses | `test/engine/faux.ts`, `worlds.ts`, backend, builder, check, integration, and survival tests | Pi sessions and tools, process and detached backends, isolated worktrees, review, repair, integration, and crash recovery. |
-| User-facing surfaces                  | Adapter, headless, viewer, UI, docs, and example tests                                       | Commands, rendering, streaming, job/config validation, and relative links.                                                 |
-| Distribution                          | Release tests, `pi-smoke.ts`, `package-smoke.ts`                                             | Package contents and metadata, extension discovery, prompts, tool calls, and integration through the installed artifact.   |
+The [coverage map](rewrite-coverage.md) connects the contracts and observed
+defects to their regression tests. Core and storage tests exercise atomic command
+acceptance, immutable assignment dependencies, durable messages, torn records,
+owner claims and recovery. Runtime/backend tests exercise real Pi sessions with
+scripted responses, tool capabilities, continuation, nested children, cancellation
+and supervised process cleanup. Workspace tests exercise partial provisioning,
+setup, ignored-file inputs, capture, writer exclusion and interrupted application.
 
-Shared backend behavior belongs in `backends.test.ts`, which runs the same contracts
-against in-process, process, and detached transports. `in-process.test.ts` covers
-runtime caching and checkout-change detection specific to that backend. UI tests
-focus on status accuracy, conversation controls, selection races, and resource cleanup.
+Surface tests cover the same commands through Pi, CLI, saved readers and IPC.
+UI tests cover exact control targets, drafts, stale reads, reconnect, palettes,
+Unicode/ASCII display and repeated disposal. The Relay test runs six workers
+through a real shared-workspace graph and invokes its independent example checks.
+Malformed reports and failed checks remain visible without certifying execution.
 
-`scripts/test.mjs` runs the scheduler latency checks after the other engine tests
-to reduce fixture contention. Each test has a five-minute timeout.
-Release-script tests run on Linux and macOS. Herdr integration cases are conditional
-on an available Herdr session. `fingerprint.test.ts` covers checkout fingerprint caching;
-the paid smoke is the separate `live-smoke.ts` entry point.
+Focused tests use ordinary Node commands:
 
-The [CI workflow](../../.github/workflows/ci.yml) runs the checks and tests on Linux,
-macOS, and Windows with Node 22.19 and 24. It also runs the Pi and package smokes,
-Pi-hosted performance gates, and selected process-backend benchmarks. Interactive
-UX and viewer measurements run on Linux and macOS. Check the CI results for the
-commit you are testing to see which environments passed.
+```sh
+node --test test/engine/rewrite-contracts.test.ts
+node --test test/engine/rewrite-child-backends.test.ts
+node --test test/engine/rewrite-runtime-application.test.ts
+```
 
-## Smokes and benchmarks
+Keep scripted controls separate from model evaluation. A passing faux provider
+test establishes the exercised framework behavior, not coding quality.
+
+## Distribution and runtime integration
 
 ```sh
 node test/engine/pi-smoke.ts
 node test/engine/package-smoke.ts
-npm run bench -- --ci --host pi
-npm run bench:process -- --repeat 5 --scenario fanout-1 --scenario fanout-8
-npm run bench -- --host tui --scenario ux-8
-node bench/viewer.ts
+npm run arena -- --offline
 ```
 
-### Select the Pi runtime
+The Pi smoke uses the public RPC host and a scripted provider. The package smoke
+packs the actual manifest, validates required files and runtime dependencies,
+installs into a temporary prefix, imports the public API and loads the extension,
+skills and prompts through Pi. Set `PINATA_PI` to the absolute Pi executable to
+test a specific runtime. npm's PATH may otherwise select the development Node CLI.
+Reports record the selected executable and actual version; the native Bun binary
+and the pinned SDK are distinct environments.
 
-The smokes and `--host pi` use `PINATA_PI`, or `pi` on PATH when it is unset. npm
-scripts prepend `node_modules/.bin`, so `npm run bench -- --host pi` can select the
-development dependency's Node CLI. Set `PINATA_PI` to the native binary's absolute
-path when measuring the Bun runtime, as CI does, and check each result's `host`.
-The report's `meta.pi` records the version of that selected Pi command.
-
-### Read a benchmark result
-
-Benchmarks write ignored JSON reports and Markdown summaries to `bench/results/`. Every requested task must
-succeed. Reports must include complete launch and dependency samples, with finite,
-nonnegative core measurements.
-
-With `--ci`, every applicable in-process budget metric is required. A value above
-twice its budget in `bench/budgets.json` fails the check. Process and herdr-pi runs
-have execution checks without timing budgets, even with `--ci`. A complete scenario that exceeds its
-budget can retry twice; only a complete passing retry is accepted. Missing measurements,
-failed execution, or an incomplete retry fail the command. Reports include retry
-diagnostics and are saved even when the command fails. The `attempts` field retains
-each measurement, including retries; `meta.source` records the commit, dirty status,
-and lockfile hash to help identify the checkout used.
-`BENCH_BACKEND=process` or `herdr-pi` measures those backends
-(loopback provider). `--host tui` needs `script` (Linux, macOS).
-
-The default eight scenarios cover fan-out at 1/8/32/64 tasks, a dependency chain,
-mixed independent/dependent work, a builder with a reviewer, and eight streaming
-agents. The engine is warmed before measurement. Launch-to-first-request time,
-session setup, queue-inclusive dispatch, dependency dispatch, RSS, retained heap,
-CPU, wall time, and event-loop lag answer different questions; see `bench/lib.ts`
-for their definitions. `bench/viewer.ts` separately measures viewer startup and RSS
-across three runtime configurations.
-
-Default report names are unique; `--out` selects a specific path and refuses to
-overwrite an existing JSON report or its Markdown companion. CI retains available
-reports, command logs, and status files for 30 days, including on failure. The
-artifact name identifies the commit, OS, architecture, Node version, run and attempt. Faux and loopback providers make no paid calls. These measurements cover coordination overhead. Use live evaluations
-for coding quality and timed real assignments to measure time saved.
-
-Inside Herdr, `test/engine/herdr.test.ts` and the herdr-pi conformance cases also run; they
-create and close only their own workspaces.
-
-## Live runs (spend real tokens) — _manual_
-
-Use a live smoke to check the real model and tool connection. Use the quality
-evaluator to score the agents' answers, code, and reviews:
+Exercise the native host's default worker launcher separately:
 
 ```sh
-PINATA_LIVE_SMOKE=1 PINATA_LIVE_CONFIG=examples/configs/luna.json node test/engine/live-smoke.ts
-PINATA_LIVE_SMOKE=1 PINATA_LIVE_CONFIG=examples/configs/luna.json PINATA_EVAL_TRIALS=3 node test/quality/engine.ts
+PINATA_PI=/path/to/native/pi node test/engine/native-backend-smoke.ts
 ```
 
-`PINATA_LIVE_BACKEND=process|herdr-pi` runs the smoke on another backend. Record each run's
-cost in the release pull request or validation report.
+This scripted smoke requires Bun-native Pi by default, omits a Node-command override, records
+the actual worker runtime, and checks result usage and cleanup. It also checks a
+real Herdr monitor when a session is available. The printed directory retains its
+run and report for inspection.
+Set `PINATA_NATIVE_BACKEND_ALLOW_NODE=1` to exercise an installed Node Pi CLI
+explicitly; that mode asserts the Node host's default executable and labels the
+runtime in its report. It does not establish compiled Bun coverage.
 
-On a platform you have no machine for, run the
-[live smoke workflow](../../.github/workflows/live-smoke.yml) by hand (Actions → "Live smoke
-(paid model calls)", or `gh workflow run live-smoke.yml -f os=windows-latest`). It uses the
-`OPENAI_API_KEY` repository secret (an OpenAI platform API key) and covers the in-process and
-process backends; the runners have no Herdr.
+Run [performance gates](performance.md) after changes affecting startup, storage,
+session retention, process cleanup or UI responsiveness. Native PTY captures use
+`test/readiness/rewrite-ui-pty.py` and its scripted extension; those captures make
+no model calls. A render request is measured separately from terminal output.
 
-The live smoke checks that a real coordinator calls `pinata_run` and the three scouts
-and dependent planner succeed. It reports model, backend, elapsed time, and parent
-plus worker cost. Answer grading is covered by the quality evaluator below. Set
-`PINATA_LIVE_KEEP=1` to retain its temporary repository and task evidence.
+## Platforms
 
-The quality evaluator runs one to ten trials (`PINATA_EVAL_TRIALS`, default one).
-Each trial has two live scouts, a live builder, and its live reviewer; the scouts
-and builder start independently. The builder's parser is checked against 29 oracle
-cases. Each scout has seven factual answers scored for correctness and matching
-source evidence. Four additional cases use deterministic builders to supply one
-correct implementation and three faulty ones to live reviewers. Control/oracle
-consistency is checked before model calls.
+Linux and macOS run the full offline suite, Pi/package smokes and advisory measurements
+in CI on Node 22.19 and 24. Herdr cases run only when Herdr is available; an
+unavailable Herdr case is a skip, never a process-backend substitute. See the
+[backend record](rewrite-backends.md) for the selected supervisor protocol.
 
-The report includes component scores, false approvals and rejections, missing
-verdicts and usage, per-task costs, fixture hashes, and an explicit quality result.
-It writes to `bench/results/quality-engine-<date>.json` or `PINATA_EVAL_OUT`, and prints
-the temporary evidence directory. This evaluator is manual and is not invoked by
-the live-smoke workflow or `npm test`.
+Windows runs the portable contracts and storage suite plus the shared supervisor
+and process-backend contracts on Node 22.19/24, x64 and ARM64. The native helper
+suite covers creation-time Job Object enrollment, launcher crashes, argument and
+environment handling, descendant-held pipes and nested jobs. Real Pi RPC,
+installed-package and native-host/default-worker smokes run there too. The
+native-worker report and run files are retained as CI artifacts. These targeted
+checks do not replace the full Linux/macOS workspace and terminal suites. The
+[implementation record](rewrite-progress.md) lists actual local versions and
+results; planned CI is not a recorded pass.
 
-After saving the report, the evaluator exits 0 when `summary.quality.passed` is true
-and 1 when it is false. Wrong or unsupported factual answers, failed builder oracle
-cases, incorrect or missing review verdicts, and failed live work fail the quality gate.
-The offline regression tests cover these thresholds and the report/exit-code contract.
+## Model-backed evaluation
 
-### What is still unmeasured
+### Live OpenAI integration
 
-- Process benchmark comparisons are advisory. Collect repeated CI history on each
-  environment before proposing startup or per-process RSS budgets; the existing
-  budgets describe in-process agents.
-- Retain repeated live evaluation reports, including failed trials. Expand beyond
-  the parser fixture to actual scout-to-builder handoff, multi-file changes, review
-  repair, and destination integration. The current quality fixture does not measure
-  those workflows end to end.
-- Measure workflow choices on the same task: sequential versus parallel work, or a
-  builder alone versus a builder with independent review. Hold model choices and
-  task requirements constant, and report correctness, wall time, cost, and rework
-  across repeated trials. This would show when delegation helps without comparing
-  unrelated tools or treating agent count as an outcome.
+The `Live Pinata/Pi contract` workflow uses the repository's `OPENAI_API_KEY`
+secret on same-repository PRs, pushes to `master` and manual runs. Fork and
+Dependabot PRs skip this job because GitHub does not provide the secret. A missing
+key on a trusted run fails the check.
 
-The [why use Pinata guide](../explanation/why-pinata.md) helps users choose a first
-workflow. [Relay](../tutorials/relay.md) walks through a complete job with their
-models, reviews, and destination checks. The measurements listed above remain
-follow-up work.
+One Linux/Node 22.19 job exercises the process backend, which uses the in-process
+adapter inside its worker. Pi owns the provider protocol, tool loop and file-tool
+implementations. This check targets Pinata's integration with those pieces:
+resolved model and read-only grants, validated report artifacts, continuation into
+the correct assignment, usage attribution without double-counting, confirmed
+cleanup, and result/conversation replay after the host closes.
 
-## Definition and scale regression checks
+The model reads a random value hidden in a fixture file and submits a typed report.
+A follow-up replaces that value and requires the original from conversation
+history plus the new value. Both assignments must retain distinct usage identities
+and immutable results. A saved-run reader then verifies the persisted results and
+conversations. Platform, cancellation and crash cases stay in the scripted matrix;
+coding quality belongs in the arena.
 
-Benchmarks use resolved definitions. Performance budgets allow a 2× CI tolerance.
-Definition fixtures exercise custom writers/reviewers, local research sources, tool providers across
-backends, snapshot recovery, pagination, and a 1,000-task queue.
+The fixture pins [`gpt-5.4-mini-2026-03-17`](https://developers.openai.com/api/docs/models/gpt-5.4-mini), with thinking off, at most 256 output
+tokens and 64 KiB of serialized input per request. Each model runtime permits at
+most 12 HTTP attempts; two assignments give an upper bound of 24 for the job.
+HTTP retries are disabled, and Pi-level retries count toward that allowance.
+The key's account limit remains separate. Request IDs, observed tokens/cost,
+run journals and transcripts are retained for successful and failed checks.
+Credential directories are outside the uploaded tree. Superseded workflow runs
+cancel to avoid duplicating paid work.
 
-Additional scale benchmarks are opt-in (faux provider, no paid calls):
+With API spend authorized and `OPENAI_API_KEY` set in the environment:
 
 ```sh
-npm run bench -- --scenario scale-queue-1000 --scenario scale-fanin-256 --scenario scale-batches-8
+node test/engine/live-openai-smoke.ts
 ```
 
-They measure queueing, dependency fan-in, and repeated batches with at most 64 active
-agents. `settledHeapDeltaMB` measures heap retained after GC while compact run history
-is still available. Measure live session memory separately. Compare repeat runs on a quiet
-host. Provider latency is separate from engine overhead.
+The command prints its evidence directory. `npm test` exercises the request guard
+with a fake transport and makes no model calls.
+
+### Coding arena
+
+The [arena](coding-arena.md) runs model-backed coding evaluations separately.
+It records task versions, independent oracle results, every requested trial,
+execution outcomes and incomplete usage. Bootstrap, doctor and preview make no
+model calls. Native runs require `--allow-external` and separate authorization for
+token spend. Do not run them as part of `npm test` or a routine source change.
+
+Historical tests, known-bad M0 characterizations and reports are retained in the
+cutover evidence and frozen Git revisions. They are not execution alternatives in
+the shipped package. New regression tests assert the intended behavior rather
+than retaining assertions for known defects.

@@ -1,0 +1,13 @@
+{
+  "access": "write",
+  "tools": ["read", "grep", "find", "ls", "write", "edit", "bash"],
+  "workspaces": ["shared", "worktree"],
+  "inheritContext": false,
+  "memory": { "scope": "none", "access": "read" },
+  "delegation": {
+    "maxDepth": 1,
+    "agents": ["builder"],
+    "tools": ["read", "write", "edit", "bash"],
+    "workspaces": ["shared"]
+  }
+}

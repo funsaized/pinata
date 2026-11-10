@@ -1,153 +1,100 @@
-// The agent extension runs inside every agent, whatever the backend. It registers
-// `submit_result` with the role's schema and guards tool calls: tools outside the loadout are
-// blocked, readers cannot write, and builders can only edit owned paths inside their
-// worktree. Codemode's nested calls go through `tool_call` too, so they cannot bypass it.
-//
-// In process it is loaded inline with its options. Out of process (`--extension`), the default
-// export reads them from PINATA_AGENT_OPTIONS (JSON) or the file named by
-// PINATA_AGENT_OPTIONS_FILE.
-import { readFileSync } from "node:fs";
-import type {
-  AgentToolResult,
-  ExtensionAPI,
-  ExtensionFactory,
-} from "@earendil-works/pi-coding-agent";
-import { ResultError, resultSchema, validateResult } from "../core/results.ts";
-import type { AgentOptions, AgentResult } from "../core/types.ts";
-import { PathError, checkWrite } from "../workspace/paths.ts";
-import { detachedControl, type DetachedOptions } from "./detached.ts";
-import { reporter, type ReporterOptions } from "./reporter.ts";
+import type { AgentToolResult, ExtensionFactory } from "@earendil-works/pi-coding-agent";
+import type { z } from "zod";
+import {
+  reportedResultSchema,
+  schemaRegistry,
+  DomainError,
+  type FrozenWorker,
+  type ReportedResult,
+} from "../contracts/index.ts";
+import { piParameters } from "../pi/schema.ts";
+import { guardToolCall } from "./guard.ts";
+import { workerToolSchemas } from "./tool-schemas.ts";
 
-export const SUBMIT = "submit_result";
-const WRITE_TOOLS = new Set(["edit", "write", "bash", "powershell"]);
+export const reportTool = "submit_result";
 
-export interface AgentExtensionOptions extends AgentOptions {
-  codemode?: boolean;
-  // Out of process and detached: the control file, reminder and budgets (agent/detached.ts).
-  detached?: DetachedOptions;
-  // In an interactive Pi (herdr-pi): write events, identity and the first prompt (reporter.ts).
-  reporter?: ReporterOptions;
-}
-
-// What the agent extension reports to its host.
-export interface AgentReporter {
-  result(result: AgentResult): void;
-}
-
-const SUBMIT_DESCRIPTION =
-  "Report your final result to the coordinator. Call it exactly once, when you are done, with every required field. " +
-  "The coordinator verifies changed files and runs checks itself; report only what you actually observed. " +
-  "If the call returns an error, fix what it names and call it again.";
-
-export function allowedTools(opts: AgentExtensionOptions): Set<string> {
-  return new Set([...opts.tools, SUBMIT, ...(opts.codemode ? ["codemode"] : [])]);
-}
-
-// Decides whether one tool call may run. Returns a reason the model can act on, or null.
-export function guard(
-  opts: AgentExtensionOptions,
-  allowed: ReadonlySet<string>,
-  toolName: string,
-  input: Record<string, unknown>,
-  cwd: string,
-): string | null {
-  if (!allowed.has(toolName))
-    return `${toolName} is not available to the ${opts.role} role. Use only: ${[...allowed].join(", ")}.`;
-  if (!WRITE_TOOLS.has(toolName)) return null;
-  if (opts.readOnly)
-    return `The ${opts.role} role is read-only: ${toolName} is not allowed. Report what should change in submit_result instead.`;
-  if (toolName === "edit" || toolName === "write") {
-    if (!opts.writeRoot) return "This agent has no writable workspace.";
-    try {
-      checkWrite(
-        opts.writeRoot,
-        cwd,
-        String(input.path ?? ""),
-        opts.ownership,
-        opts.caseInsensitive,
-      );
-    } catch (error) {
-      if (error instanceof PathError)
-        return `${error.message}. Write only inside your ownership: ${opts.ownership.join(", ")}. If the task needs other files, report a blocker.`;
-      throw error;
-    }
-  }
-  return null;
-}
-
-export function agentExtension(
-  opts: AgentExtensionOptions,
-  reporter?: AgentReporter,
-): ExtensionFactory {
-  return (pi: ExtensionAPI) => {
-    const allowed = allowedTools(opts);
-    const schema = resultSchema(opts.definition ?? opts.role);
+export function workerExtension(options: {
+  worker: FrozenWorker;
+  root: string;
+  codemode: boolean;
+  runtimeTools?: readonly string[];
+  outputType?: string;
+  outputSchema?: z.ZodType;
+  onReport(report: ReportedResult): Promise<void>;
+  onReportingError(value: unknown, message: string): Promise<void>;
+  beforeRequest(): Promise<void>;
+}): ExtensionFactory {
+  const outputSchema =
+    options.outputSchema ??
+    (options.outputType
+      ? Object.entries(schemaRegistry).find(([name]) => name === options.outputType)?.[1]
+      : undefined);
+  if (options.outputType && !outputSchema)
+    throw new DomainError("unsupported", `Unknown output schema ${options.outputType}`);
+  const reportSchema =
+    outputSchema && options.outputType !== "pinata.result.v1"
+      ? reportedResultSchema.extend({ data: outputSchema })
+      : workerToolSchemas.submit_result.input;
+  return (pi) => {
     pi.registerTool({
-      name: SUBMIT,
-      label: "Submit result",
-      description: SUBMIT_DESCRIPTION,
-      parameters: schema,
+      name: reportTool,
+      label: "Report result",
+      description:
+        "Optionally report your result and observed evidence. Checks and assessments are attributed claims; the coordinator decides acceptance.",
+      parameters: piParameters(reportSchema),
       executionMode: "sequential",
-      async execute(_id, params): Promise<AgentToolResult<Record<string, unknown>>> {
-        let result: AgentResult;
-        try {
-          result = validateResult(params as AgentResult, {
-            role: opts.role,
-            definition: opts.definition,
-            reviewTarget: opts.reviewTarget,
-          });
-        } catch (error) {
-          if (!(error instanceof ResultError)) throw error;
+      async execute(
+        _id,
+        value,
+      ): Promise<AgentToolResult<{ report?: ReportedResult; reportingError?: string }>> {
+        const reject = async (message: string) => {
+          await options.onReportingError(value, message);
           return {
-            content: [
-              {
-                type: "text",
-                text: `submit_result rejected: ${error.message} Call submit_result again with the fix.`,
-              },
-            ],
-            details: { pinataError: error.message },
+            content: [{ type: "text" as const, text: `Report could not be parsed: ${message}` }],
+            details: { reportingError: message },
             isError: true,
           };
+        };
+        let parsed;
+        try {
+          parsed = await reportSchema.safeParseAsync(value);
+        } catch (error) {
+          return reject(
+            `Report validator failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
         }
-        reporter?.result(result);
+        if (!parsed.success) {
+          const message = parsed.error.issues
+            .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
+            .join("; ");
+          return reject(message);
+        }
+        const report = reportedResultSchema.parse(parsed.data);
+        await options.onReport(report);
         return {
-          content: [{ type: "text", text: "Result recorded. Your work is done; stop here." }],
-          // Out of process, the host reads the result from this tool result's details.
-          details: { pinataResult: result },
+          content: [{ type: "text", text: "Your report was recorded." }],
+          details: { report },
           terminate: true,
         };
       },
     });
-    pi.on("tool_call", (event, ctx) => {
-      const reason = guard(
-        opts,
-        allowed,
-        event.toolName,
-        (event.input ?? {}) as Record<string, unknown>,
-        ctx.cwd,
-      );
+    pi.on("tool_call", async (event, context) => {
+      const reason = await guardToolCall({
+        worker: options.worker,
+        root: options.root,
+        cwd: context.cwd,
+        name: event.toolName,
+        input: event.input,
+        runtimeTools: [
+          reportTool,
+          ...(options.codemode ? ["codemode"] : []),
+          ...(options.runtimeTools ?? []),
+        ],
+      });
       return reason ? { block: true, reason } : undefined;
     });
+    pi.on("before_provider_request", async () => {
+      await options.beforeRequest();
+    });
   };
-}
-
-export function readOptions(env: NodeJS.ProcessEnv = process.env): AgentExtensionOptions | null {
-  const raw =
-    env.PINATA_AGENT_OPTIONS ??
-    (env.PINATA_AGENT_OPTIONS_FILE ? readFileSync(env.PINATA_AGENT_OPTIONS_FILE, "utf8") : null);
-  if (!raw) return null;
-  const opts = JSON.parse(raw) as AgentExtensionOptions;
-  if (!opts || typeof opts.role !== "string" || !Array.isArray(opts.tools))
-    throw new Error("Invalid PINATA_AGENT_OPTIONS");
-  return opts;
-}
-
-// Out-of-process entry point (`pi --extension engine/agent/extension.ts`).
-export default function (pi: ExtensionAPI) {
-  const opts = readOptions();
-  if (!opts) return;
-  let submitted = false;
-  agentExtension(opts, { result: () => (submitted = true) })(pi);
-  if (opts.detached) detachedControl(pi, opts.detached, () => submitted);
-  if (opts.reporter) reporter(pi, opts.reporter);
 }

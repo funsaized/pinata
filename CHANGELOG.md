@@ -1,5 +1,32 @@
 # Changelog
 
+## 3.0.0 (2026-11-10)
+
+- Replace the core, stores, backends, workspaces, UI and measurement harness with
+  one runtime shared by Pi, the headless CLI and viewers. Versioned schemas and
+  public APIs describe commands, receipts, events and recovery.
+- Default to shared workspaces, with optional isolated worktrees and explicit,
+  conflict-checked application. Keep partial work and user edits through failure
+  and cancellation. Testing, review and acceptance belong to the coordinator;
+  production token, time and repair budgets are removed.
+- Retain exact assignment and message identities, immutable dependencies and
+  durable retry evidence. Supervised process workers support explicit recovery
+  and host survival without silently replaying uncertain effects.
+- Add selected skills and parent context, opt-in scoped memory, authorized nested
+  delegation, optional concurrency and session-owned schedules.
+- Add the compact fleet tree, selectable palettes, conversation drafts, direct
+  user mentions and exact addressed-input retry without a coordinator model turn.
+- Replace the arena and benchmarks while preserving historical evidence. Scripted
+  results establish behavior and runtime overhead, not live coding quality.
+- Provide explicit input conversion and historical inspection for the breaking
+  data transition. Linux and macOS have scripted validation. Windows uses a
+  source-packaged C# Job Object launcher with targeted x64 and ARM64 CI coverage.
+- Render worker conversations and reports with native Pi styling, preserve
+  interrupted assignments, and follow the latest output when opening a conversation.
+- Plan nested delegation from discovered capabilities and host grants.
+- Add pinned, advisory Vale checks for reader documentation and agent instructions,
+  with selected Google and ai-tells rules and Pinata terminology.
+
 ## 2.1.1 (2026-11-06)
 
 - Add a reproducible offline coding arena with independent scoring and retained

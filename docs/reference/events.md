@@ -1,71 +1,25 @@
-# Events
+# Events and observations
 
-Read `events.jsonl` when you need the recorded sequence of a run. It lives at
-`<git common dir>/pinata/<run>/events.jsonl`, with one JSON object per line and
-schema version 1. The widget, viewer, `pinata logs`, and recovery all use these
-events through the same reducer. Lean mode saves lifecycle events and usage;
-observe mode saves every event.
+`pinata.event.v3` has three variants: durable `committed` transitions, replay
+`snapshot` projections and transient `activity`. Every persisted variant is parsed
+strictly. [The generated catalog](catalog.json) contains every transition, result,
+usage, cleanup and notification field through its canonical enclosing schemas.
 
-## Common fields
+Revisions order committed run history; owner epochs distinguish ownership
+generations. An activity source and ordinal allow deduplication without interpreting
+text. Reattachment can reset a subscriber to a snapshot. Do not infer a missing
+transition from a gap in coalesced activity.
 
-| Field   | Meaning                                         |
-| ------- | ----------------------------------------------- |
-| `v`     | Schema version, currently `1`.                  |
-| `seq`   | Sequence number, increasing within the run.     |
-| `run`   | Run ID.                                         |
-| `agent` | Task ID; absent for events about the whole run. |
-| `at`    | Timestamp in epoch milliseconds.                |
+The lifecycle separately records accepted assignments, effect intent/observation,
+attempt starts, backend enrollment, input transport/consumption, saved conversations,
+usage, output, cleanup, snapshots and settlement. Application and schedule records
+have their own explicit identities. Worker-local assignment numbers never decrease.
 
-## Detached event recovery
+Use full assignment references as keys. Results for two assignments of the same
+worker must remain distinct. Completion notices have stable per-assignment IDs;
+transport delivery and model consumption are separate. Historical events keep their
+original version/subject and cannot establish new verification or usage coverage.
 
-Detached events may carry `source: {id, record}`: a process identity and its outbox
-record number. The engine uses this position to discard replayed records after a
-host crash. Lean logs persist the position with a `usage` checkpoint containing
-the current attempt's usage, turns and tool calls; settlement saves the final
-position. No separate cursor file is trusted for accounting. Logs without
-positions reconcile detached usage at settlement, so aggregate cost enforcement
-for that recovered attempt is delayed until its outcome is available.
-
-## Event types
-
-| `t`                | Fields                                                          | Lean |
-| ------------------ | --------------------------------------------------------------- | ---- |
-| `run_started`      | `tasks`, `mode`, `definitions?`                                 | yes  |
-| `agent_queued`     | `task?` (when added or requeued)                                | yes  |
-| `agent_started`    | `backend`, `model`, `workspace {kind, path}`                    | yes  |
-| `turn_start`       | `turn`                                                          | no   |
-| `text_delta`       | `delta`                                                         | no   |
-| `thinking_delta`   | `delta`                                                         | no   |
-| `message_end`      | `role`, `usage?`, `stopReason?`, `error?`                       | no   |
-| `tool_start`       | `call`, `name`, `args` (a truncated preview)                    | no   |
-| `tool_update`      | `call`, `preview`                                               | no   |
-| `tool_end`         | `call`, `ok`, `preview`, `ms`                                   | no   |
-| `steer`            | `by` (`user`, `parent`), `text`, `as` (`steer`, `followUp`)     | yes  |
-| `retry`            | `attempt`, `reason`                                             | yes  |
-| `check_start`      | `check`                                                         | yes  |
-| `check_end`        | `check`, `passed`, `ms`                                         | yes  |
-| `checkout_changed` | (a reader's live checkout changed while it read)                | yes  |
-| `usage`            | `usage`, `turns?`, `toolCalls?` (current attempt, at most 1/s)  | yes  |
-| `agent_settled`    | `status`, `summary`, `reason?`, `usage`, `turns`, `toolCalls`   | yes  |
-| `telemetry`        | `sample {rssMB, heapUsedMB, elu, lateMs, processes?}` (observe) | no   |
-| `run_resumed`      | `reason` (a repair, a rerun, or a new Pi)                       | yes  |
-| `run_settled`      | `status` (`succeeded`, `failed`, `cancelled`), `usage`          | yes  |
-
-`usage` is `{input, output, cacheRead, cacheWrite, totalTokens, cost}`; `cost` is in dollars.
-
-## Related files and definition snapshots
-
-Results are saved separately in `results/<task>.json`, transcripts in
-`transcripts/<task>.jsonl` (Pi messages), and the run's parameters in `run.json`.
-
-Runs store each resolved definition once in `run_started.definitions`, keyed by its
-SHA-256 digest. Tasks carry `agent` (the definition name) and `definition` (its digest).
-The snapshot includes the prompt, workspace mode, tool
-allowlist, output requirements, defaults, and source. Requeued tasks reuse the digest.
-The event schema is version 1.
-
-`run.json` uses schema version 2 and stores the same definition table plus
-resolved runtime configuration and extension entry identities. Resume validates snapshot
-digests and reuses the saved definitions.
-Stored results keep engine checks and artifact fingerprints separate from agent-reported
-checks. Destination verification records remain separate from both.
+Runtime subscribers are observation hooks, not an alternate mutation path. Submit
+commands through the owner and preserve request IDs. See [API hooks](api.md) and
+[IPC delivery](socket-protocol.md).

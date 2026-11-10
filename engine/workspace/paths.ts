@@ -1,133 +1,92 @@
-// Path rules shared by the agent extension's write guard and post-hoc verification: paths are
-// repo-relative with `/` separators; `..`, absolute paths, `.git`, symlinks and Windows
-// junctions are refused; comparisons are case-insensitive on case-insensitive volumes.
-import { lstatSync, realpathSync, statSync } from "node:fs";
-import { homedir } from "node:os";
-import {
-  isAbsolute,
-  join,
-  relative as relativePath,
-  resolve,
-  sep,
-  basename,
-  dirname,
-} from "node:path";
-import { owns, relative } from "../core/validate.ts";
+import { lstat, realpath } from "node:fs/promises";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { DomainError } from "../contracts/index.ts";
+import { isMissing } from "../storage/io.ts";
 
-export class PathError extends Error {
-  override name = "PathError";
+export async function canonicalWorkspace(path: string): Promise<string> {
+  const root = await realpath(path);
+  if (!(await lstat(root)).isDirectory())
+    throw new DomainError("invalid_input", "Workspace must be a directory");
+  return root;
 }
 
-// Resolves a path the way Pi's file tools do: an optional leading "@" is dropped, "~" is the
-// home directory, and Unicode spaces become plain spaces.
-export function toolPath(cwd: string, input: string): string {
-  let p = input.replace(/[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g, " ");
-  if (p.startsWith("@")) p = p.slice(1);
-  if (p === "~") p = homedir();
-  else if (p.startsWith("~/") || p.startsWith("~\\")) p = join(homedir(), p.slice(2));
-  return resolve(cwd, p);
+export function insideWorkspace(root: string, path: string): boolean {
+  const suffix = relative(root, path);
+  return (
+    suffix === "" || (!isAbsolute(suffix) && suffix !== ".." && !suffix.startsWith(`..${sep}`))
+  );
 }
 
-// Resolves a tool's path argument (absolute, or relative to `cwd`) to a path relative to `root`.
-export function repoRelative(root: string, cwd: string, input: string): string {
-  if (typeof input !== "string" || !input || input.includes("\0"))
-    throw new PathError("A path is required");
-  const absolute = toolPath(cwd, input);
-  const rel = relativePath(resolve(root), absolute);
-  if (!rel || rel === ".") throw new PathError("The repository root itself cannot be written");
-  if (rel.startsWith("..") || isAbsolute(rel))
-    throw new PathError(`${input} is outside the workspace ${root}`);
-  const normalized = rel.split(sep).join("/");
-  try {
-    return relative(normalized);
-  } catch {
-    throw new PathError(`${input} is not a safe repository path`);
-  }
+export function validateManifestPath(path: string): string | null {
+  if (
+    !path ||
+    path.includes("\0") ||
+    path.includes("\\") ||
+    path.startsWith("/") ||
+    /^[a-z]:/i.test(path)
+  )
+    return "Expected a relative portable path without NUL or drive aliases";
+  const segments = path.split("/");
+  if (segments.some((part) => !part || part === "." || part === ".."))
+    return "Path has an empty or traversal segment";
+  if (segments.some((part) => [".git", ".pinata"].includes(part.toLowerCase())))
+    return "Path addresses runtime or Git metadata";
+  if (
+    process.platform === "win32" &&
+    segments.some(
+      (part) =>
+        /[<>:"|?*\x00-\x1F]/.test(part) ||
+        /[ .]$/.test(part) ||
+        /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(part),
+    )
+  )
+    return "Path is not a native Windows filename";
+  return null;
 }
 
-// Refuses a path whose existing components include a symlink or junction.
-export function assertNoLinks(root: string, rel: string): void {
-  let current = root;
-  for (const part of rel.split("/")) {
-    current = join(current, part);
-    let st;
+export async function workspacePath(
+  root: string,
+  path: string,
+  options: { allowLeafSymlink?: boolean } = {},
+): Promise<string> {
+  const problem = validateManifestPath(path);
+  if (problem) throw new DomainError("invalid_input", `${problem}: ${path}`);
+  const canonicalRoot = await canonicalWorkspace(root);
+  let current = canonicalRoot;
+  const parts = path.split("/");
+  for (let index = 0; index < parts.length; index++) {
+    current = join(current, parts[index]);
     try {
-      st = lstatSync(current);
+      const state = await lstat(current);
+      if (state.isSymbolicLink() && !(options.allowLeafSymlink && index === parts.length - 1))
+        throw new DomainError("capability_denied", `Workspace path traverses a link: ${path}`);
+      if (index < parts.length - 1 && !state.isDirectory())
+        throw new DomainError("conflict", `Workspace parent is not a directory: ${path}`);
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+      if (isMissing(error)) break;
       throw error;
     }
-    if (st.isSymbolicLink()) throw new PathError(`${rel} goes through a symlink or junction`);
   }
+  return resolve(canonicalRoot, ...parts);
 }
 
-const insensitive = new Map<string, boolean>();
-
-// Whether the volume holding `root` compares names case-insensitively. Probed once per root
-// by statting a case-swapped spelling of the root directory.
-export function caseInsensitive(root: string): boolean {
-  const key = resolve(root);
-  const cached = insensitive.get(key);
-  if (cached !== undefined) return cached;
-  const name = basename(key);
-  const swapped = [...name]
-    .map((c) => (c === c.toLowerCase() ? c.toUpperCase() : c.toLowerCase()))
-    .join("");
-  let result: boolean;
-  if (swapped === name) result = process.platform === "win32" || process.platform === "darwin";
-  else {
-    try {
-      const a = statSync(key);
-      const b = statSync(join(dirname(key), swapped));
-      result = a.ino === b.ino && a.dev === b.dev;
-    } catch {
-      result = false;
-    }
-  }
-  insensitive.set(key, result);
-  return result;
-}
-
-// The write rule for builders: inside the workspace, not .git, no links, and owned.
-// A directory's real path (macOS reports /var as /private/var), or the path as given.
-function real(path: string): string {
-  try {
-    return realpathSync.native(path);
-  } catch {
-    return resolve(path);
-  }
-}
-
-// Rewrites an absolute path under `from` to the same place under `to`.
-function rebase(path: string, from: string, to: string): string {
-  const rel = relativePath(from, path);
-  return rel && !rel.startsWith("..") && !isAbsolute(rel) ? join(to, rel) : path;
-}
-
-export function checkWrite(
-  root: string,
-  cwd: string,
-  input: string,
-  ownership: readonly string[],
-  ci = caseInsensitive(root),
-): string {
-  // An agent process may see its cwd through a different symlink path than the one its
-  // write root was given as: compare the root and cwd by real path. Links below them are
-  // still refused (assertNoLinks).
-  const realRoot = real(root);
-  const realCwd = real(cwd);
-  const absolute = rebase(
-    rebase(toolPath(cwd, input), resolve(root), realRoot),
-    resolve(cwd),
-    realCwd,
-  );
-  const rel = repoRelative(realRoot, realCwd, absolute);
-  assertNoLinks(root, rel);
-  if (!owns(ownership, rel, ci))
-    throw new PathError(
-      `${rel} is outside this builder's ownership (${ownership.join(", ") || "none"})`,
+export function isSecretPath(path: string): boolean {
+  const parts = path.toLowerCase().split("/");
+  return parts.some((part) => {
+    if (/^\.env(?:\.|$)/.test(part) && !/^\.env\.(?:example|sample|template)$/.test(part))
+      return true;
+    return (
+      [
+        ".ssh",
+        ".aws",
+        ".npmrc",
+        ".netrc",
+        ".pypirc",
+        "credentials.json",
+        "auth.json",
+        "id_rsa",
+        "id_ed25519",
+      ].includes(part) || /\.(?:pem|p12|pfx|key)$/.test(part)
     );
-  return rel;
+  });
 }
-
-export { owns, relative };

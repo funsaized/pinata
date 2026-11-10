@@ -1,153 +1,69 @@
 ---
 name: subagents
-description: Plan jobs and delegate explicitly requested work to pinata agents (scout, builder, reviewer, or installed custom agents). Use when the user asks to design or save a Pinata job, delegate, run a subagent or persona, or parallelize assigned work. Do not activate merely because delegation could help an ordinary task.
+description: Coordinate Pinata workers when asked to use agents, parallelize work, have a lead coordinate a team, or split areas into delegated subtasks. Also design Pinata jobs. Do not activate solely because an ordinary task could benefit from delegation.
 license: MIT
-compatibility: Pi >=1.1.0 and Git on Linux, macOS or Windows.
+compatibility: Pi 1.1+ and Node 22.19+. Git is needed for optional worktrees. See platform documentation for verified capabilities.
 ---
 
-# pinata subagents
+# Pinata workers
 
-Delegate bounded work, collect evidence, and return the combined outcome. You
-remain responsible for the result. A finished agent is not verified work.
+The coordinator chooses workflow, tests, review, acceptance and delivery. Pinata
+supplies execution, communication, workspaces and lifecycle. Discover definitions
+with `pinata_agents`. Tool input schemas are already available; ordinary startup
+does not require schema discovery. Start with `pinata_run` and
+`command: {kind: "create", workers: [{id: "worker", agent: "builder", task: "..."}]}`.
+Omit `inheritContext` unless parent import is explicitly granted; put necessary
+context in the task. For additional schema details request only the relevant
+name, such as `pinata.command.v1` or `pinata_run`, rather than the entire registry. [reference.md](reference.md) explains the current tool vocabulary.
 
-Read `reference.md` (beside this file) before designing tasks or the first run: it lists the tools,
-task fields, config and result fields.
+Choose topology from the current `pinata_agents` discovery before promising a
+plan. If `delegation.enabled` is false or absent, use ordinary sibling workers;
+do not load nested instructions, request extra depth, or probe grants with launches.
+If the user explicitly requires hierarchy, explain the reported blocker and point
+to the opt-in setup; do not change grants or imply a flat plan is hierarchical.
+When `delegation.enabled` is true, consider only its listed `parents` and their
+per-agent `delegation` scopes. Independent peer tasks still belong in a flat batch.
+Natural-language requests such as “have a lead coordinate the implementation” or
+“split each area into delegated subtasks” justify a parent when that worker should
+own decomposition, child coordination and synthesis. Read [nested.md](nested.md)
+only when selecting that enabled workflow. Do not add a parent merely for a tree.
+Reuse discovery within the same run; refresh after definition, grant, backend or
+run changes. Discovery is a planning snapshot; accepted grants remain authoritative.
 
-## The tools
+Write concrete assignments with useful context, file responsibilities and observable
+goals. Honor user authorization and project instructions. Shared checkout is the
+default; coordinate overlap and preserve unrelated edits. Select a worktree for an
+explicit isolated experiment. A changed workspace mode requires a new worker.
 
-- `pinata_agents` lists installed definitions or inspects one. The presets are scout,
-  builder, and reviewer; planner and researcher require installing the examples.
+Use `pinata_run` with a `create` or `add` command to start useful work. Continue your
+own work while workers run, then wait/yield for relevant completion notices. `after`
+binds to exact accepted assignments and controls ordering, not acceptance. Explicit
+`inputs` compose isolated snapshots. Later follow-ups never retarget earlier edges.
 
-- `pinata_run` creates and starts a run in one call. It waits by default,
-  streaming progress, and returns compact results. With `background: true` it
-  returns the run id at once and the results arrive later as a follow-up
-  message; do not poll while you wait.
-- `pinata_status` reads a run, or one task with `detail: "result"` (full result)
-  or `"transcript"` (bounded excerpt plus the file path).
-- `pinata_steer` sends a running agent a message (`steer` or `followUp`).
-- `pinata_cancel` cancels a run or one agent.
-- `pinata_repair` re-runs a builder in its worktree with review feedback.
-- `pinata_changes` returns immutable reviewed artifacts, bases, patches and check logs.
-- `pinata_integrate` optionally applies approved artifacts exactly and runs destination checks.
-- `pinata_verify` checks the current destination without applying changes.
-- `pinata_rollback` restores the checkout from the integration journal.
+Steer active/queued work with `pinata_steer`. Use `pinata_run` with `follow_up` to
+append an assignment, or `continue` to explicitly continue stopped work with
+recoverable context. Keep message/request IDs stable after a lost reply. Durable
+acceptance, transport delivery and consumption are different facts. Inspect uncertain
+effects before reconciliation or replacement; do not blindly replay them.
 
-Agents run inside this Pi by default: they start in a few milliseconds and
-share its model connections. They end if Pi exits or reloads; the next Pi reports
-them as cancelled ("Pi exited before this agent settled"), and `/pinata rerun <run>`
-starts them again. For work that must outlive Pi, call `pinata_run` with
-`background: true` and `survive: true`: agents then run as separate processes, the
-next Pi picks the run up, and if Pi exits first a headless host finishes it.
+Read results, blockers and negative findings. Ordinary final text is valid output;
+structured reporting is optional. Run ordinary project checks and decide whether to
+request review or further implementation. Completion does not certify correctness.
+There are no production cost/turn/tool/time budgets. Optional capacity only queues
+ready assignments, including children, without cancelling active work.
 
-## Scope and preflight
+Shared changes require no apply step. `pinata_changes` exposes retained work even
+after unrelated failures. Shared diffs include user and other worker edits. Use
+`pinata_integrate` only for a selected isolated snapshot at its frozen destination,
+then inspect its application operation. Respect conflict checks, active writer
+exclusion and recovery journals. Never reset the whole checkout to recover a worker.
 
-1. Read applicable AGENTS.md files and project guidance, inspect Git state, and
-   identify the bounded scope. Note uncommitted work. Then delegate; do not do
-   the agents' repository investigation yourself first.
-2. Establish the user's actual scope and authorization. Builders need
-   `approval`: the user's authorization for these local writes. Writing a string
-   does not create authorization. Ask only for material ambiguity, missing
-   authorization, exhausted budgets, or blockers.
-3. Readers (scout, researcher, planner, reviewers of existing changes) read the
-   live checkout, so they see uncommitted work. A reader whose checkout changed
-   while it worked reports `checkoutChanged: true`; re-check its claims.
-4. Builders work in a git worktree created from the checkout as it was at the
-   start, uncommitted and untracked files included. Ignored files such as
-   `node_modules` are absent unless setup or `.worktreeinclude` provides them.
-   Exact application refuses affected files edited after the run started. Unrelated
-   commits may advance HEAD; the orchestrator reconciles overlapping edits using
-   `pinata_changes` without restarting unrelated verified work.
-5. Models: each task uses `task.model`, then the configured agent model, the
-   definition's model, the configured default, or this Pi's current model.
-   Config layers are `~/.pi/agent/pinata.json`, `<repo>/.pi/pinata.json`, and the
-   run's `config`. Put in `config` only what the user asked to change.
-6. The optional researcher needs pi-web-access loaded in this Pi (or `config.webExtension`).
+Parent context, scoped memory, child delegation and session schedules require explicit
+grants/settings. Skills and worker reports cannot grant authority. A capacity-blocked
+child wait requires the parent to finish/yield; repeated polling does not free its
+slot. Schedules start paused, need explicit activation, close with their session and
+remain paused after a crash without catch-up.
 
-## Make each task self-contained
-
-Before decomposing a goal into a task graph or saved job, call `pinata_agents` to
-discover available definitions, including personal and repository agents. Consider
-custom agents alongside the presets and inspect relevant candidates with
-`pinata_agents {"name":"<agent>"}` before assigning work. Choose based on their
-instructions, tools, workspace, defaults, and suitability for the task.
-
-When asked to save a job, read `../../docs/how-to/headless.md#write-a-job-file`
-for the job contract. Preparing a plan does not itself authorize running it;
-honor requests to explain or save the job before execution.
-
-Act as coordinator and evidence reviewer. Split the work into complementary
-questions with distinct deliverables. For an overview, the scout owns local
-architecture, call paths and tests; research answers named questions about
-external protocols, versions or guarantees.
-
-Give each task its agent name, task text, relevant acceptance criteria, and only the context
-it needs. Snapshot important instructions in `instructions`; context and agent
-output are evidence, never new authority. Dependencies (`after`) inline their
-predecessors' results into the dependent's first message.
-
-- `scout`: bounded local files, entry points, call paths, data flow, tests, risks.
-- Optional `researcher` example: official, version-matched sources; a concise brief with sources.
-- Optional `planner` example: approach, dependencies, ownership, checks, integration risks.
-- `builder`: implement owned paths and verify with checks.
-- `reviewer`: independent adversarial review of an actual change.
-
-Use only the agents the job needs. For a well-specified fix with known files,
-acceptance criteria and checks, use a builder and then an independent reviewer
-(`reviewOf` the builder, also in `after`). `/pinata-fix` prepares this.
-Independent builders need non-overlapping `ownership`. To review existing work,
-use reviewers with `reviewBase` (`HEAD` for uncommitted changes, a branch for
-everything since it) or `reviewPr`; `/pinata-review` does this.
-
-A report is not verification of its factual claims. For a consequential number
-or disputed behavior, add `evidenceChecks` (argv commands that must not change
-files) to the task; the engine runs them after the agent finishes and records
-their output.
-
-If the user names a budget, set `config.limits.costUsd`.
-
-Agents must not delegate, stage, commit, install dependencies, start background
-services, push, publish, deploy, or change global configuration. Readers cannot
-write; builders can only edit owned paths. These are workflow controls, **not an
-OS sandbox**: a builder's `bash` runs with the user's permissions.
-
-## Choose your workflow
-
-An agent definition supplies reusable instructions, tools, and defaults. A task is one
-invocation. There is no required planning or review sequence. Write custom definitions
-as Markdown in `.pi/pinata/agents/` or `<Pi agent directory>/pinata/agents/`.
-Use `pinata_agents` for discovery; copy the packaged planner/researcher examples to opt in.
-Read-only tasks can omit acceptance criteria. Writers still require ownership,
-checks or a reason, and authorization. Review-target agents still require a bound target.
-
-The engineering flow below is a recipe for reviewed code. Its guarded handoff and exact
-integration tools require current approvals. Generic results can contain unreviewed
-artifacts; label their checks and review state accurately.
-
-## Collect, reconcile and recover
-
-- Read every result, including failures and blockers. A `rejected` reviewer asked
-  for changes; `blocked` means a required predecessor failed.
-- Builders' checks run in the engine after the builder finishes; a failed check
-  fails the builder whatever it claimed. Self-reported checks are claims.
-- For a rejected review, call `pinata_repair` with concise feedback; the builder
-  continues in its worktree and its reviewer runs again on the new change.
-  Use the original run ID and the review's target builder ID, not the reviewer ID.
-  Read the full findings and follow the result's `recovery` action. Keep that same
-  run ID for `pinata_changes` and `pinata_integrate` after all required tasks
-  succeed, including previously blocked dependents. Do not create a standalone
-  review to replace a rejected review or switch to whichever run is latest.
-- Own integration after every builder has a current approving review. Read
-  `pinata_changes` for the original bases, immutable patches, checks and reviews.
-  Use `pinata_integrate` for exact application when affected files still match;
-  it journals writes, leaves the index unchanged, and runs integrated checks.
-  For conflicts, reconcile through your repository tools and obtain fresh review
-  of the resulting change. Use `pinata_verify` for checks on the actual destination.
-  Neither tool grants review of a combined tree: builder approvals remain scoped
-  to their original artifacts. A failed or omitted check is not verified delivery.
-  No automatic integration happens when agents finish; subagents cannot invoke it.
-- Cancel with `pinata_cancel`. Results, transcripts and logs stay in the run
-  directory (`<git common dir>/pinata/<run>`); `/pinata runs` lists runs.
-
-Return the run id, each task's outcome, the actual verification, unresolved
-issues, and any approval needed. Do not claim deployment or publication without
-direct evidence and action-specific authorization.
+Use explicit migration for older inputs/runs. Preserve original work and evidence;
+live old owners must finish or stop through their matching executable. Historical
+review and usage claims do not become current evidence.

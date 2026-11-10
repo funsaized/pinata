@@ -1,153 +1,117 @@
-# Measure performance
+# Measure runtime performance
 
-Run the benchmark suite on the checkout and runtime you want to assess:
-
-```sh
-npm run bench -- --ci --host pi
-```
-
-The suite measures agent startup, dependency scheduling, memory, CPU, and event-loop
-lag using local providers; it makes no paid model calls. Reports are saved in
-`bench/results/` as JSON with a Markdown summary. Keep both when sharing evidence:
-JSON contains the measurements and attempts, while the summary makes the results
-and provenance easier to review. Default filenames are unique. An explicit `--out`
-selects a path and refuses to overwrite an existing report or its Markdown companion.
-
-## Choose what to measure
-
-The default scenarios cover 1, 8, 32, and 64 parallel tasks, dependent tasks, a
-builder with a reviewer, and streaming agents. To measure another backend, set
-`BENCH_BACKEND=process` or `BENCH_BACKEND=herdr-pi`.
-
-For repeated process-backend measurements against the local loopback provider:
+The benchmark uses scripted or HTTP loopback providers. It measures runtime
+coordination, storage, sessions and cleanup; it does not measure model coding
+quality or time saved on a project.
 
 ```sh
+PINATA_PI=/absolute/path/to/pi node scripts/bench-ci.mjs engine --expose-gc bench/run.ts --ci --host pi
 npm run bench:process -- --repeat 5 --scenario fanout-1 --scenario fanout-8
+PINATA_PI=/absolute/path/to/pi npm run bench -- --host tui --scenario ux-8
+node --expose-gc bench/viewer.ts --repeat 3
 ```
 
-Save a named report and compare a later run with it:
+The [measurement protocol](rewrite-benchmarks.md) defines each timing, memory and
+coverage field. The in-process budgets in `bench/budgets.json` retain their 2× CI tolerance.
+The owner accepted revised 50/40/60 ms latency limits on November 8, 2026; the
+[measurement protocol](rewrite-benchmarks.md) records the original failed attempts
+and exact scope of that acceptance. A complete over-budget attempt may retry twice; every
+attempt remains in the report. Missing measurements, incomplete usage, failed
+execution or unconfirmed cleanup fail immediately. Process and Herdr timing is
+advisory until matching platform baselines exist. Unavailable backends are recorded
+as unavailable, not silently replaced.
 
-```sh
-npm run bench:process -- --repeat 5 --scenario fanout-1 --scenario fanout-8 --out bench/results/process-before.json
-npm run bench:process -- --repeat 5 --scenario fanout-1 --scenario fanout-8 --out bench/results/process-after.json --baseline bench/results/process-before.json
-```
+The CI wrapper measures in `os.tmpdir()` unless `PINATA_BENCH_ROOT` explicitly
+selects another root. The runtime workflow selects `/dev/shm` on Linux to match
+the accepted tmpfs baseline, and the runner's temporary directory on macOS for
+the APFS profile. Benchmarks use native Pi 1.5.0, matching the retained Linux
+baseline; native Pi 1.1.0 remains a separate compatibility smoke. A missing
+measurement root or benchmark executable fails the run. The wrapper copies
+the entire successful or failed batch back to
+`bench/results/`, with original-path mapping, and retains the source files. This
+keeps report retention independent of measurement storage without a filesystem
+fallback. Direct `bench/run.ts` invocation measures beside its `--out` path;
+`--ci` does not change that medium. Reports record actual filesystem type, block
+size, device and canonical cell directory. Baseline comparison rejects missing or
+different storage provenance.
+Shared GitHub runners gate execution, accounting and cleanup; their performance
+measurements use the advisory profile. The accepted Linux latency baseline used
+Node 22.19.0 on a Ryzen 5900XT. Both Node 22 and 24 exceeded its limits on shared
+runners, and Mac dependency dispatch varied between passing and failing
+runs. Those failed batches remain failed. Run the explicit `--ci` command above
+on controlled hardware to enforce the unchanged performance limits.
+Darwin CI selects the approved APFS profile only after observing the filesystem
+name and checking its device identity against the actual allocation. Missing or
+mismatched proof retains the default limits. Reports record the profile, exact
+limits and 2× factor; comparisons require matching named profiles.
+The wrapper forwards SIGINT/SIGTERM, waits for the runner and retains its files
+before preserving the interrupt exit status. SIGKILL cannot run that final copy;
+the synced command status identifies the original measurement directory.
 
-For `bench:process`, an output path inside the checkout must be Git-ignored, such
-as `bench/results/`, so that writing evidence does not change the source fingerprint
-between trials. A path outside the checkout is also allowed.
+The accepted local latency limits were measured on Linux tmpfs. The retained
+btrfs repository-disk cohort failed startup/setup limits and remains failed.
+The Linux tmpfs cohorts passed all eight gates on the frozen v7 source and again
+after adding named profiles, with exact unchanged `default-v1` limits.
+The valid macOS APFS cohort passed execution, accounting, cleanup, memory and UI
+checks but exceeded four startup/setup latency limits. Its report remains failed.
+The owner accepted separate 150/450/350/450 ms Mac/APFS limits and required a fresh
+passing run. The fresh run passed all eight scenarios on their first attempts
+with verified `darwin-apfs-v1` selection. Linux and all other gates remain unchanged.
+The [measurement record](rewrite-benchmarks.md) contains the exact scope and
+retained evidence. The two hosts differ in storage
+and Pi launcher, so these are not matched platform comparisons.
 
-Each scenario repetition uses a fresh Node host, requires a successful warm-up, and
-starts fresh child processes for the tasks. The process startup samples measure from child
-creation to its first provider request. The comparison is advisory; failed
-execution or missing required measurements still fail the command, but timing deltas
-do not. A partial or mixed baseline cohort is incomparable. Gather CI history
-before proposing process-specific budgets. Existing budgets describe in-process engine targets and
-must not be applied to process startup or per-process memory.
+## Workloads and comparisons
 
-Additional scale scenarios exercise a long queue, many predecessors feeding one
-task, and repeated batches:
+Default workloads exercise fan-out at 1/8/32/64 workers, dependencies, independent
+and dependent work, and streaming. Additional scale and retained-history probes:
 
 ```sh
 npm run bench -- --scenario scale-queue-1000 --scenario scale-fanin-256 --scenario scale-batches-8
+npm run bench -- --sweep --workers 1,8,32,64 --histories 1,128,1024
 ```
 
-For interactive UI and viewer measurements:
+Use `--mode lean|observe`, `--viewer attached|detached`,
+`--workspace shared|worktree`, `--backend in-process|process|herdr-pi` and
+`--lifetime attached|surviving` to select independent axes. Keep scripts, tool
+access, runtime, hardware and configuration matched. Source changes during a
+cohort make its comparison unstable. Native Pi/Bun and the Node SDK host require
+separate provenance. Run timing comparisons on a quiet host.
 
-```sh
-npm run bench -- --host tui --scenario ux-8
-node bench/viewer.ts --runs 3
-```
+Reports use unique JSON and Markdown paths under `bench/results/`; `--out` refuses
+to overwrite either file. Each cell is durably allocated before launch and retains
+its specification, status, raw measurements and supervisor evidence in the
+adjacent `.cells` directory. Keep incomplete and failed cells. A killed harness
+does not prove nested workers stopped: reconcile their exact supervisor identities
+and retain that evidence before claiming cleanup.
 
-The viewer startup marker records a live snapshot received and a render requested;
-it does not confirm that a frame was painted. The report compares configurations
-with different features, so interpret its startup and memory results as advisory.
+Startup includes the committed preparing boundary through the first ordinary
+workload provider request. Compaction requests retain separate identities without
+inferring the current assignment from historical conversation text, so this is
+not first-all-provider latency when compaction precedes workload generation. Full
+elapsed time, CPU and runtime usage still include compaction. The local HTTP
+fixture observes closure of its own idle connections before post-workload resource
+sampling; the exact resource-plateau and usage-completeness gates remain unchanged.
+Backend setup, acceptance, dependency dispatch and command-to-request measure
+different intervals. RSS samples are lower bounds, with host and child coverage
+reported separately. Retained heap follows collection; it can grow with durable
+history. Native hosts that lack a working resource inventory use explicitly
+labeled descriptor counts, which do not prove timer coverage.
 
-## Read and compare results
+## Interpreting evidence
 
-After a warm-up run, launch-to-first-request time includes task preparation as
-well as session startup. Session setup measures from the backend setup callback to
-the first request. Dependency dispatch measures how soon a task starts after its
-predecessors finish. In-process per-agent memory is an estimate based on the
-host's peak RSS increase and maximum concurrency. Process per-agent memory is the
-mean of sampled peaks for agent processes; it includes shared pages but excludes
-descendants and is not concurrent total RSS. Sampling can miss short-lived processes
-or peaks, so sampled peaks are lower bounds. Each child needs a sample after its
-`turn_start` event to establish loaded-process coverage. Missing child coverage is
-reported as missing, rather than substituted with host memory. These absolute child RSS peaks and the
-parent RSS delta are different quantities and cannot be compared directly.
-On Windows, the benchmark warms a persistent PowerShell/.NET RSS collector before
-measurement, avoiding a new PowerShell startup for each sample without delaying
-agent responses. Collector readiness and the first positive host query share a
-10-second startup deadline; subsequent queries have a 2-second deadline. Process
-measurement version 2 records and validates the platform
-`rssMethod` protocol; version 1 reports are not comparable with version 2.
-`settledHeapDeltaMB` is host heap retained
-after garbage collection and includes run history. CPU and event-loop lag describe
-the host process, not the combined work of child processes.
+The UI target is p95 event/key-to-render-request at most 100 ms with eight scripted
+workers. Actual terminal capture is separate. Repeated navigation and follow-up
+cycles must release owned resources. Component profiles identify reducer, queue,
+outbox, consumption, restore, skill-loading, fingerprint and durable-IO costs.
 
-With `--ci`, results must include all required measurements and finish every task.
-For the in-process backend, values above twice the limits in
-[bench/budgets.json](../../bench/budgets.json) fail the performance check. A
-complete scenario over budget can retry twice; execution failures and missing
-measurements fail immediately. Process and herdr-pi runs have execution checks but
-no timing budgets, including when `--ci` is set. CI runs 20 process trials with a
-60-second execution timeout per trial covering startup, warm-up and measured work,
-with cleanup and drain grace as described below. A 12-minute step cap leaves time
-for artifact upload. These are resource limits, not performance gates; checkpoint
-file I/O is not hard-time bounded. Each trial independently checkpoints to `<reportPath>.status.json`
-(for example `trials-uuid/1-fanout-1.json.status.json`), with running, stopping,
-and finished states. The initial and nonfinished states are invalid; a forced pipe
-drain, incomplete trial, or cleanup failure also invalidates the cohort. Checkpoints
-are written independently of aggregate publication.
+Investigate any regression beyond the preserved gates. Keep the original
+measurements when fixing a hot path. Do not change the timing boundary or exclude
+failed retries to make a result pass. A durability cost can be accepted explicitly
+with evidence; it must not be described as a free improvement.
 
-A host that exits while its output pipes remain open gets 250 ms to drain; the
-trial can fail before the configured trial timeout. Cleanup has a 2-second deadline,
-followed by at most 250 ms to drain pipes. Cleanup is best effort, not operating-system
-containment: already reparented or escaped descendants may evade discovery and may
-require caller cleanup. The runner does not signal an already exited host PID.
-
-Compare repeated runs on the same quiet machine with the same scenario, backend,
-provider, host, runtime and configuration. Baseline comparison checks the workload,
-platform, hardware, runtime and configuration for compatibility; a mismatch or
-unknown identity prevents a meaningful comparison. Inspect report provenance, including
-checkout commit, dirty status, lockfile hash, OS, architecture, Node and Pi versions.
-Pi launcher paths are informational; comparison checks the resolved runtime kind and
-executable or script content identity, including the interpreter for a Node CLI. A
-Node-script fingerprint covers its entry point and interpreter; imported modules
-outside the captured source and lockfile are not fully covered, so it does not prove
-full dependency equivalence. An unknown launcher identity or an older report without it is incomparable, even
-when the Pi versions match.
-Changes in hardware, load, platform or runtime can dominate the result, so do not
-interpret cross-platform or cross-runtime differences as regressions. CI artifacts
-provide evidence for each environment; they are not interchangeable baselines. For
-runtime selection, live model evaluations, and CI coverage, see [testing](testing.md).
-
-## Local process baseline
-
-The [raw aggregate](../../bench/baselines/process-linux-x64-node24-pi1.1.0-v2-2026-11-05.json)
-and [summary](../../bench/baselines/process-linux-x64-node24-pi1.1.0-v2-2026-11-05.md)
-record a clean checkout of commit `f7402f948e532800128925492958e789befd99db` on
-2026-11-05 with measurement version 2. It records that commit, not the current
-checkout. The run used a Linux x64 cloud VM with five AMD EPYC 9V74 CPUs and
-18 GiB memory, Node 24.19.0, native Pi 1.1.0, the process backend and loopback
-provider. There were five trials per scenario and 75 task samples in total, with
-no concurrent benchmark or test tasks. The aggregate embeds every trial.
-
-| Scenario | Median of trial startup p50s (ms) | Median of trial mean child peak RSS (MiB) |
-| -------- | --------------------------------: | ----------------------------------------: |
-| fanout-1 |                           464.144 |                                    143.30 |
-| fanout-8 |                          1300.469 |                                    135.86 |
-| chain    |                           470.318 |                                    142.80 |
-| builder  |                           457.431 |                                    141.65 |
-
-These are advisory observations from one host, not a confidence bound or a
-cross-platform budget. The earlier [version 1 aggregate](https://github.com/funsaized/pinata/blob/b7f6d0e/bench/baselines/process-linux-x64-node24-pi1.1.0-2026-11-05.json)
-and [summary](https://github.com/funsaized/pinata/blob/b7f6d0e/bench/baselines/process-linux-x64-node24-pi1.1.0-2026-11-05.md)
-remain in Git history as historical evidence and cannot be compared with version 2.
-A prior combined-head Windows Node 22 CI run timed out after 19 of 20 trials; artifact
-`13459461066` retains its evidence. Its preceding completed trial took 25.169 seconds
-overall versus 2.109 seconds measured in the scenario. The cause is unproven; this is
-not a result from the new collector. An earlier Windows Node 24 CI run
-completed every task but lacked loaded RSS samples in three chain trials; its
-[failed artifact](https://github.com/funsaized/pinata/actions/runs/42117768818/artifacts/13458041893)
-is retained for investigation.
+Before claiming a runtime optimization remedies arena performance, matched
+profiles must show that runtime overhead accounts for at least 10% of the affected
+end-to-end path. Smaller improvements remain useful local improvements. Only
+separately authorized [coding evaluations](coding-arena.md) can support claims
+about coding completion, speed or quality.

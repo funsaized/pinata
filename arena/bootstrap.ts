@@ -1,47 +1,60 @@
-import { accessSync, constants, mkdirSync, writeFileSync } from "node:fs";
-import { delimiter, dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-const arena = dirname(fileURLToPath(import.meta.url));
-// npm injects the repository's devDependency bins; prefer the user's installed CLIs.
-function installed(command: string): string {
-  const directories = (process.env.PATH ?? "")
-    .split(delimiter)
-    .filter((path) => !path.includes("node_modules"));
-  for (const directory of directories) {
-    const candidate = resolve(directory, command);
-    try {
-      accessSync(candidate, constants.X_OK);
-      return candidate;
-    } catch {
-      /* Try next PATH entry. */
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { resolveExecutable } from "./doctor.ts";
+import { defaultCondition, defaultLimits } from "./runner.ts";
+
+export async function bootstrap(args: string[]): Promise<void> {
+  let directory = join(dirname(fileURLToPath(import.meta.url)), "local");
+  let provider = "openai";
+  let model = "gpt-6-luna";
+  let thinking = "max";
+  for (let index = 0; index < args.length; index++) {
+    const flag = args[index];
+    if (flag === "--help") {
+      console.log(
+        "arena:bootstrap [--out DIR] [--provider ID] [--model ID] [--thinking LEVEL]. Overwrites generated v2 native configs; makes no model calls.",
+      );
+      return;
     }
+    const value = args[++index];
+    if (!value || value.startsWith("--")) throw new Error(`Missing value for ${flag}`);
+    if (flag === "--out") directory = resolve(value);
+    else if (flag === "--provider") provider = value;
+    else if (flag === "--model") model = value;
+    else if (flag === "--thinking") thinking = value;
+    else throw new Error(`Unknown option: ${flag}`);
   }
-  throw new Error(`Cannot find installed ${command} outside npm's node_modules bins`);
-}
-const commands = { codex: installed("codex"), pi: installed("pi") };
-mkdirSync(join(arena, "local"), { recursive: true });
-for (const agent of ["codex", "pi", "pinata"] as const) {
-  const executable = commands[agent === "codex" ? "codex" : "pi"];
-  const path = join(arena, "local", `${agent}.json`);
-  writeFileSync(
-    path,
-    JSON.stringify(
-      {
-        name: `${agent}-native`,
-        command: process.execPath,
-        args: [join(arena, "adapters/native.ts"), agent, "--executable", executable],
-        model: {
-          provider: "openai",
-          id: "gpt-6-luna",
-          version: null,
-          settings: { thinking: "max", concurrency: 4 },
-        },
-        timeoutMs: 1200000,
-      },
-      null,
-      2,
-    ) + "\n",
+  await mkdir(directory, { recursive: true });
+  for (const system of ["codex", "pi", "pinata"] as const) {
+    const explicit = system === "codex" ? process.env.ARENA_CODEX_BIN : process.env.PINATA_PI;
+    const command = await resolveExecutable(explicit ?? (system === "codex" ? "codex" : "pi"), {
+      excludeNodeModules: !explicit,
+    });
+    const adapter = { kind: "native", system, command, args: [] } as const;
+    const requested = {
+      ...defaultCondition({ ...adapter, args: [] }, "native"),
+      model: { provider, id: model, version: null, settings: { thinking, concurrency: 4 } },
+    };
+    const config = {
+      schemaVersion: 2,
+      adapter,
+      condition: requested,
+      limits: { ...defaultLimits, timeoutMs: 1200000, oracleTimeoutMs: 60000 },
+    };
+    const path = join(directory, `${system}.json`);
+    await writeFile(path, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
+    console.log(`Configured ${path}: ${command}`);
+  }
+  console.log(
+    "No model calls made. Native adapters remain unverified until independently attested.",
   );
-  console.log(`Configured ${path} → ${executable}`);
 }
-console.log("No model calls made. Run: npm run arena:doctor, then npm run arena:local");
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  try {
+    await bootstrap(process.argv.slice(2));
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  }
+}

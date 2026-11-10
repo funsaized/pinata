@@ -1,89 +1,71 @@
-// A bench extension that runs a scenario inside the real `pi` binary (Bun).
-// The runner passes BENCH_SPEC (a JSON file) and sends `/pinata-bench`.
-import { readFileSync, writeFileSync } from "node:fs";
-import * as ai from "@earendil-works/pi-ai";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { fauxProvider } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { PinataUI } from "../engine/pi/ui.ts";
-import { fauxStep, runEngineScenario } from "./targets/engine-core.ts";
-import type { ModelRef } from "../engine/core/types.ts";
-import type { Scenario } from "./lib.ts";
+import { installCoordinatorUi, type CoordinatorUi } from "../engine/ui/pi.ts";
+import type { RuntimeSource } from "../engine/sources/runtime.ts";
+import { publishImmutable } from "../engine/storage/io.ts";
+import { runCell } from "./engine.ts";
+import { cellSpecSchema } from "./types.ts";
+import { failedResult, writeResult } from "./host.ts";
 
-export interface PiHostSpec {
-  scenario: Scenario;
-  provider: "faux" | "loopback";
-  model: ModelRef;
-  agentDir: string;
-  repo: string;
-  runsDir: string;
-  out: string;
-  tokenDelayMs: number;
-  // Interactive TUI (E4.6): the run starts by itself, with the widget, footer and the first
-  // agent's detail view open, and Pi exits when it settles.
-  tui?: boolean;
-}
-
-export default function (pi: ExtensionAPI) {
-  const file = process.env.BENCH_SPEC;
-  if (!file) return;
-  const spec = JSON.parse(readFileSync(file, "utf8")) as PiHostSpec;
-  const firstRequest: Record<string, number> = {};
-  if (spec.provider === "faux") {
-    const faux = ai.fauxProvider({
-      provider: spec.model.provider,
-      models: [{ id: spec.model.id, contextWindow: 200_000, maxTokens: 8192 }],
-      ...(spec.tokenDelayMs > 0 && { tokensPerSecond: 1000 / spec.tokenDelayMs }),
-    });
-    const step = fauxStep(spec.scenario, firstRequest, ai);
-    faux.setResponses(Array.from({ length: 100_000 }, () => step));
-    pi.registerProvider(faux.provider);
-  }
-  const bench = async (ctx: ExtensionContext) => {
-    const ui = spec.tui ? new PinataUI(pi) : undefined;
+export default function extension(pi: ExtensionAPI): void {
+  const path = process.env.PINATA_BENCH_SPEC;
+  if (!path) throw new Error("Benchmark extension requires an allocated specification");
+  const local = fauxProvider({
+    provider: "pinata-benchmark-host",
+    models: [{ id: "offline", contextWindow: 200_000, maxTokens: 8192 }],
+  });
+  pi.registerProvider(local.provider);
+  let running = false;
+  const perform = async (context: ExtensionContext): Promise<void> => {
+    if (running) return;
+    running = true;
+    const spec = cellSpecSchema.parse(JSON.parse(await readFile(path, "utf8")));
+    let ui: CoordinatorUi | undefined;
+    let source: RuntimeSource | undefined;
+    let opened = false;
+    let opening: Promise<void> | undefined;
     try {
-      ui?.bind(ctx);
-      const raw = await runEngineScenario(spec.scenario, {
-        registry: ctx.modelRegistry,
-        model: spec.model,
-        agentDir: spec.agentDir,
-        repo: spec.repo,
-        runsDir: spec.runsDir,
-        onRun: (handle, engine) => {
-          if (!ui) return;
-          ui.follow(handle, engine);
-          const first = handle.view().order[0];
-          void ui.openView({ run: handle.id, task: first }, ctx);
+      const result = await runCell(spec, {
+        async onRuntime(runtimeSource) {
+          source = runtimeSource;
+          if (spec.host !== "tui" || !spec.viewer) return;
+          if (context.mode !== "tui")
+            throw new Error("Requested TUI benchmark did not enter Pi terminal mode");
+          ui = installCoordinatorUi(pi, async () => {
+            if (!source) throw new Error("Benchmark source unavailable");
+            return source;
+          });
+          await ui.bind(context, runtimeSource);
+          opening = ui.open(context, "fleet", undefined, runtimeSource);
+          opened = true;
+          void opening.catch(() => {});
         },
       });
-      // The open detail view must show the agent's brief and its streamed answer.
-      let shown = "";
-      if (ui?.detail) {
-        await ui.detail.sync();
-        shown = ui.detail.render(120).join("\n");
-        ui.detail.offset = Number.MAX_SAFE_INTEGER; // the top of the conversation
-        shown += ui.detail.render(120).join("\n");
-      }
-      const opened = {
-        mode: ctx.mode,
-        detailOpen: !!ui?.detail,
-        detailShows: {
-          brief: /\[bench:/.test(shown),
-          streamed: /The benchmark streams this sentence/.test(shown),
-        },
-      };
-      ui?.dispose();
-      writeFileSync(spec.out, JSON.stringify({ ...raw, firstRequest, ...opened }));
+      ui?.dispose(context);
+      await opening;
+      await publishImmutable(
+        join(spec.directory, "pi-host.json"),
+        Buffer.from(JSON.stringify({ mode: context.mode, opened, painted: false, errors: [] })),
+        "benchmark-pi-host",
+      );
+      await writeResult(spec, result);
     } catch (error) {
-      writeFileSync(spec.out, JSON.stringify({ error: (error as Error).stack ?? String(error) }));
+      ui?.dispose(context);
+      await opening?.catch(() => {});
+      await writeResult(spec, await failedResult(spec, error));
     }
-    ctx.shutdown();
+    context.shutdown();
   };
-  pi.registerCommand("pinata-bench", {
-    description: "Run one engine bench scenario in this Pi",
-    handler: (_args, ctx) => bench(ctx),
+  pi.registerCommand("pinata-benchmark", {
+    description: "Run an allocated local benchmark cell",
+    handler: (_args, context) => perform(context),
   });
-  if (spec.tui)
-    pi.on("session_start", (_event, ctx) => {
-      // Let the interactive TUI finish starting before the run begins.
-      setTimeout(() => void bench(ctx), 500);
-    });
+  pi.on("session_start", (_event, context) => {
+    if (context.mode === "tui")
+      setTimeout(() => {
+        void perform(context);
+      }, 50);
+  });
 }

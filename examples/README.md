@@ -1,208 +1,67 @@
 # Examples
 
-## Choose a starting point
+Start with [one scout](job.json) or the [Relay tutorial](../docs/tutorials/relay.md).
+The recipes below are building blocks for your coordinator. Choose concrete tasks
+and approved models before running them; these jobs use real providers unless you
+supply an offline test host.
 
-| You want to…                              | Start here                                                | What to expect                                                                           |
-| ----------------------------------------- | --------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| Build a complete example with your models | [Relay tutorial](../docs/tutorials/relay.md)              | A starter repository and ten-agent job, followed by review and destination verification. |
-| Try delegation in your own repository     | [First run](../docs/tutorials/first-run.md)               | Two read-only scouts and findings with file references.                                  |
-| Fix one well-defined bug                  | [Build and review](../docs/tutorials/build-and-review.md) | An isolated patch, engine-run checks, independent review, then local integration.        |
-| Adapt a job for scripts or CI             | [Task and job examples](jobs.md)                          | JSON templates; replace paths, ownership, checks, and model choices.                     |
+## Dynamic shared work
 
-For larger workflows, browse [delivery, research, UX, accessibility, and data pipeline jobs](jobs.md#where-jobs-help).
+[dynamic-shared.json](recipes/dynamic-shared.json) starts two independent builders.
+File responsibilities are instructions; shared writers may overlap. Coordinate
+interfaces, inspect changes and choose checks yourself. Use `pinata_run` with an
+`add` command to start another worker, or `follow_up` with a new message ID to queue
+more work on an existing worker. A dependency such as `after: ["parser"]` binds to
+the latest accepted parser assignment when the new worker is added.
 
-These examples run real agents using your configured models and spend tokens.
-Install Pi and Pinata, configure model credentials, and choose models and limits
-before launching a job. Start with [Relay](relay/README.md) for a ready-made repository.
-For the evidence behind these workflows, see [why use Pinata](../docs/explanation/why-pinata.md).
+## Isolated follow-up, application and recovery
 
-## Agent recipes
+[isolated-follow-up.json](recipes/isolated-follow-up.json) chooses a worktree for one
+experiment. Serve it when you need continued control:
 
-The presets are scout, builder, and reviewer. [planner](agents/planner.md) and
-[researcher](agents/researcher.md) are optional definitions: copy them to
-`.pi/pinata/agents/` or your personal Pi agent directory before running jobs that use
-them. See [creating agents](../docs/how-to/agents.md). The package includes the
-example files; copying them into an agent directory makes them available.
-
-For a well-specified fix, use [fast-fix-job.json](jobs/fast-fix-job.json):
-builder → independent reviewer. Add a scout when a concrete uncertainty needs
-answering first. The `/pinata-fix` prompt prepares that workflow interactively.
-
-Copy an assignment into Pi and replace paths and acceptance criteria with your own.
-Ask Pi to delegate explicitly. Persona commands such as `/scout` apply instructions
-to your current conversation; a request to delegate launches a worker.
-
-For complete walkthroughs, see [the tutorials](../docs/README.md#tutorials).
-For task JSON, model configs, and complete jobs, see [task and job examples](jobs.md).
-
-To investigate local code and its external dependencies together, give the scout
-and researcher separate questions. Pi combines their findings:
-
-```text
-Use scout and researcher subagents in parallel. Scout: explain this repository's
-purpose and trace one typical command through the local implementation. Researcher:
-clarify the schema/protocol guarantees and dependency-version caveats relevant to
-that command, using only the local files needed for applicability and primary
-external sources when needed. Avoid a second full architecture map. After required
-orientation, launch both and yield; then synthesize their evidence and spot-check
-material claims. Do not change files.
+```sh
+pinata serve examples/recipes/isolated-follow-up.json --workspace /path/to/project --model provider/model --json
+pinata changes RUN_DIRECTORY experiment 1 --json
+pinata follow-up RUN_DIRECTORY experiment "Add the agreed boundary case" --request-id example/follow-up
+pinata wait RUN_DIRECTORY experiment --json
+pinata apply RUN_DIRECTORY experiment 2 --destination /path/to/project --request-id example/apply
 ```
 
-## Scout: find local evidence
+Use the actual run directory printed by `serve`. Inspect the retained snapshot and
+application result. Later applications include the delta from the last applied
+snapshot. A conflicting edit, active writer or uncertain journal is an actionable
+refusal; preserve the evidence and use [recovery](../docs/how-to/recover.md). Worktree
+HEAD/index and manual commits remain intact. Failed work is still inspectable.
 
-Use a scout when you need to understand existing code. It reads and searches
-files using read-only local tools. Use a researcher for web sources and a builder
-for edits and test execution.
+## Authorized children and session schedules
 
-### Trace behavior
+[authorized-nested.json](recipes/authorized-nested.json) uses the example
+[delegator](agents/delegator.md). The host must explicitly grant its child scope:
 
-```text
-Use a scout subagent to trace how a request reaches input validation. Return
-the entry point, relevant callers, and tests with file and line references.
-Identify missing coverage, but do not change files or claim to run tests.
+```sh
+pinata serve examples/recipes/authorized-nested.json --workspace /path/to/project --model provider/model --definitions agents --definitions examples/agents --grants examples/recipes/grants.json --json
 ```
 
-### Find the project toolchain
+The [grant](recipes/grants.json) permits one child level, builder definitions and a
+specific tool/workspace set. Workers cannot widen it. Children share run capacity.
+At capacity one, a blocking child wait returns `capacity_blocked`; finish the parent
+assignment and follow up with the same parent after the child settles.
+See [the nested workflow guide](../docs/how-to/nested-delegation.md) for Pi setup,
+capability-aware natural-language planning and synthesis. Parent completion leaves
+accepted children running; parent cancellation includes its subtree by default.
 
-```text
-Delegate a scout to inspect this repository's package manifest, lockfiles, and
-test configuration. Report the existing command for the narrowest unit test
-suite and any setup it needs. Do not install dependencies or execute commands.
+To inspect a session trigger, submit [scheduled-follow-up.json](recipes/scheduled-follow-up.json)
+with `pinata execute RUN_DIRECTORY <file>`. Creation returns a paused preview.
+Activate it explicitly with a new command envelope:
+
+```json
+{
+  "requestId": "example/schedule/resume",
+  "command": { "kind": "schedule", "schedule": { "action": "resume", "id": "inspect" } }
+}
 ```
 
-## Researcher: answer a question from sources
-
-Use the optional researcher when the answer depends on external documentation. It needs
-[pi-web-access setup](../docs/how-to/research.md) and approval for external
-requests. Ask a scout first if you do not yet know the dependency version.
-
-### Check a version-specific API
-
-```text
-Use a researcher subagent to check the official Node.js 22.19.0 documentation for
-the built-in test runner. Confirm the command for running one .mjs test file.
-Fetch the source page, cite the URL and the claim it supports, and distinguish
-that version from newer documentation. Do not use snippets alone as evidence.
-```
-
-### Investigate an upgrade
-
-```text
-Delegate research on the dependency upgrade we just approved. Use the exact
-current and target versions in the brief. Inspect official release notes and
-migration guidance for changes affecting the APIs we use. Return source-backed
-risks and unresolved questions; do not install or modify anything.
-```
-
-The second example assumes the coordinator already knows and supplies the
-versions and affected APIs. Without them, narrow the question before launching.
-
-## Planner: propose the work
-
-Use a planner when you need help splitting a change into tasks. It reads code and
-earlier results, then proposes file ownership, dependency order, and checks for
-the coordinator to assign to builders.
-
-### Plan from a scout report
-
-```text
-Have a planner subagent use the scout's request-validation findings to propose
-the smallest fix. Name the files each builder would own, the dependency order,
-and the existing checks to run. Keep implementation out of this task.
-```
-
-### Divide independent work
-
-```text
-Delegate planning for the approved two-part change. Determine whether the API
-and CLI changes can use separate builders without overlapping ownership. If
-they depend on each other, make that ordering explicit. Include review and
-integrated checks, plus any unresolved decision that prevents implementation.
-```
-
-## Builder: make a bounded change
-
-Give a builder a specific change, the files it owns, and the checks it should pass.
-It has read, bash, edit, and write tools. Pi records your authorized write scope
-before launching; if no checks apply, the task must explain why.
-
-### Fix one regression
-
-```text
-Delegate a builder to trim surrounding whitespace in greet and add its
-regression test. Own only greet.mjs and greet.test.mjs. Run node --test
-greet.test.mjs. Preserve internal spaces and existing behavior for plain names.
-Do not install, stage, commit, push, or release.
-```
-
-### Make a documentation-only edit
-
-```text
-Use a builder to correct the approved command examples in docs/usage.md. That
-is the only owned file. Use the repository's existing documentation check if
-available; otherwise record why no automated check applies. Do not change
-runtime code or add a documentation toolchain.
-```
-
-Pi should identify the check to run or explain why no automated check applies.
-
-## Reviewer: challenge the actual result
-
-A reviewer uses read-only tools to inspect the actual patch, source, result, and
-saved check logs. Builders make fixes, and the engine runs the assigned checks.
-
-### Review a builder
-
-```text
-Delegate a reviewer for the greeting builder. Inspect its actual diff and the
-supervisor's check evidence. Check that the regression catches the reported
-bug and that the patch stays within scope. Cite concrete defects, or approve
-the current evidence if the acceptance criteria hold.
-```
-
-### Review a plan
-
-For a plan without a code diff, use a fresh scout or a custom read-only agent.
-The reviewer preset requires an actual change target.
-
-```text
-Have a fresh scout challenge the planner's migration proposal before any
-builder starts. Check dependency order, ownership overlap, data-loss risks,
-and whether the proposed tests can detect failure. Separate blocking defects
-from optional improvements. Do not implement the plan.
-```
-
-### Review your own changes
-
-`/pinata-review` sends three reviewers (correctness, risk, and tests) over your
-uncommitted changes and merges their findings. Name a branch or a pull request
-to review that instead, and add a focus if you have one:
-
-```text
-/pinata-review
-/pinata-review main Check the migration for data loss.
-/pinata-review 482
-```
-
-You can also ask in your own words:
-
-```text
-Have two reviewers look at everything on this branch since main, one for
-security and one for test coverage. Keep it under a dollar. Don't change files.
-```
-
-## Coordinate the whole coding job
-
-Ask the parent Pi to coordinate the whole job:
-
-```text
-Fix the greeting whitespace issue with pinata. Use the existing Node
-test, keep ownership to greet.mjs and greet.test.mjs, require an independent
-review, and integrate locally after checks pass. Do not commit, push, or publish.
-```
-
-Pi chooses the agents the job needs; a clear fix may only need a builder and
-reviewer. It collects the results, resolves review findings, and verifies the
-final change within the scope you authorized.
-
-[Task and job examples](jobs.md) · [Documentation index](../docs/README.md)
+Each accepted occurrence is an ordinary assignment and can spend tokens. Overlap
+defaults to skip; queue is explicit. Closing the owning Pi/headless session stops
+future triggers. Crash/reload leaves them paused, with no catch-up. Schedules are
+not OS cron jobs and do not outlive their session owner.

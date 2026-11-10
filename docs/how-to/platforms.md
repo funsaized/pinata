@@ -1,26 +1,48 @@
-# Set up on Windows and macOS
+# Platform support
 
-Pinata supports Linux, macOS, and Windows. CI tests all three.
+Pinata targets Linux, macOS and Windows with Node 22.19 or later. Direct development
+dependencies are pinned and the lockfile is retained. Pi peer ranges remain broad,
+while actual compatibility evidence is recorded for the tested versions.
 
-## Windows
+Linux and macOS have actual scripted runs for journals, workspaces, application,
+sessions, process cleanup, CLI/IPC and terminal navigation. The implementation
+record names exact Node/Pi versions and retained failures. Node 22.19/24 cells are
+part of release validation where those runtimes are available. Native Pi and Node
+SDK observations are reported separately.
 
-Install [Git for Windows](https://git-scm.com/download/win), Node 22.19+, and Pi 1.1.0+.
+The retained cutover measurements used compiled Pi/Bun on Linux and the Pi 1.5
+Node CLI on macOS. Older macOS artifacts named `native` refer to that Node CLI.
+Current CI exercises native Pi binaries separately and records the host and worker
+runtimes; the cutover reports are not relabeled as results of those newer runs.
 
-- Builder `setup` commands run with `cmd.exe /d /s /c`. Use cmd syntax or call a
-  script. For example, `"setup": "npm ci"` works on all three platforms.
-- `checks` run as argument arrays without a shell. For `.cmd` launchers such as
-  `npm`, Pinata uses `cmd.exe` and quotes each argument.
-- Pinata stops agents in separate processes with `taskkill /T /F`.
-- Pinata uses PowerShell's `Get-Process` to identify processes. The first process
-  check after Pi starts takes a moment; Pinata measures that delay once.
+Native Pi launches supervised workers and Herdr monitors through `node` on `PATH`;
+make Node 22.19 or later available there. Trusted host integrations can select a
+specific Node executable with `HostOptions.nodeCommand`. A Node-hosted Pi session
+uses its current Node executable by default.
 
-## macOS
+Windows requires the .NET Framework 4 C# compiler. Pinata compiles its packaged
+launcher source on first use and caches the executable under
+`%LOCALAPPDATA%\\Pinata\\job-launcher`, keyed by source, compiler and architecture.
+No helper binary or runtime is downloaded. A build receipt checks the cached
+executable before use; a missing compiler or changed cache fails the launch.
 
-Install Git through the Xcode command line tools, Node 22.19+, and Pi 1.1.0+.
+The Windows CI matrix runs Node 22.19 and 24 on x64 and ARM64. It exercises real
+Job Objects, descendants, cancellation, reconnect, host loss, creation failures,
+argument/environment handling, Pi process sessions, the installed package and
+native Pi's default Node workers. It also retains the portable contract/storage
+suite. This is targeted runtime coverage; the full workspace/application fault
+matrices and terminal-navigation suite run on Linux/macOS.
 
-Temporary paths resolve through `/private`. Pinata compares the real paths of
-builder write roots, so no extra setup is needed.
+Executable arguments are passed as data through `CreateProcessW`. Explicit
+`.cmd`/`.bat` invocations support ordinary quoted arguments and reject shell
+expansion characters; invoke an executable directly for arbitrary argument data.
+Job membership is established at creation, and cleanup requires zero active job
+processes plus closure of its last owned handle. A lost launcher acknowledgment
+retains an unconfirmed receipt. See the [launcher contract](../../engine/backends/supervision/windows-selection.md).
+Windows file fsync is supported; POSIX directory fsync has no demonstrated
+equivalent through Node on Windows.
 
-## Linux
-
-Make sure `git` and `pi` are on `PATH`. No extra setup is needed.
+Herdr requires its own available session and is conditionally exercised. Network
+filesystems, power-loss durability and universal escaped-process containment are
+outside the demonstrated results. See [implementation evidence](../maintainers/rewrite-progress.md)
+for the current gate status; a declared support target is not a test pass.

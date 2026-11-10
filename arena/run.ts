@@ -1,129 +1,127 @@
-import { readFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import { executeOffline, type OfflineMode } from "./adapters/offline.ts";
-import { tasks, allTasks } from "./corpus/index.ts";
-import { parseAdapterConfig, runArena, externalWorkflows, type ArenaOptions } from "./runner.ts";
-import type { AdapterRequest, ArenaTask, Workflow } from "./types.ts";
+import { pathToFileURL } from "node:url";
+import { adapterConfigSchema, adapterSchema, type Adapter } from "./adapters.ts";
+import { workflowSchema, type Condition, type Limits, type Workflow } from "./contracts.ts";
+import { cellState } from "./ledger.ts";
+import { runArena } from "./runner.ts";
 
-const help = `Usage: npm run arena -- [--offline | --adapter CONFIG --allow-external]
-  --out DIR                    Output parent (default arena/results)
-  --trials N                   Repetitions per task/workflow (default 1, max 100)
-  --task ID[,ID...]             Corpus tasks (default three small controls; team-board opt-in)
-  --workflow NAME[,NAME...]     Workflows (default four controls; native requires adapter)
-  --mode MODE                  known-good, noop, broken, repair-control
-  --timeout-ms N               Adapter timeout (default config timeout or 60000)
-  --oracle-timeout-ms N        Oracle timeout (task default; small controls 10000)
-  --max-repairs N              Repair budget (default 1)
-  --max-log-bytes N            Per-stream log cap (default 1048576)
-Offline runs are scripted harness controls, not model benchmarks.
-External commands can invoke paid models and require --allow-external.
-Exit 0: all trials completed and passed; exit 1: a failed trial or invalid input.
-`;
-
-export function parseArgs(argv: string[]): ArenaOptions {
-  const options: ArenaOptions = { out: "arena/results", tasks };
-  const seen = new Set<string>();
-  let offline = false;
-  for (let index = 0; index < argv.length; index++) {
-    const flag = argv[index];
-    if (seen.has(flag)) throw new Error(`Repeated option: ${flag}`);
-    seen.add(flag);
-    if (flag === "--offline") {
-      offline = true;
-      continue;
-    }
-    if (flag === "--allow-external") {
-      options.allowExternal = true;
-      continue;
-    }
-    if (
-      ![
-        "--out",
-        "--trials",
-        "--task",
-        "--workflow",
-        "--mode",
-        "--adapter",
-        "--timeout-ms",
-        "--oracle-timeout-ms",
-        "--max-repairs",
-        "--max-log-bytes",
-      ].includes(flag)
-    )
-      throw new Error(`Unknown option: ${flag}`);
-    const value = argv[++index];
-    if (!value || value.startsWith("--")) throw new Error(`Missing value for ${flag}`);
-    switch (flag) {
-      case "--out":
-        options.out = value;
+export async function main(args: string[]): Promise<number> {
+  let out = "arena/results";
+  let adapter: Adapter = { kind: "offline", mode: "known-good" };
+  let adapterFile: string | undefined;
+  let condition: Partial<Condition> = {};
+  let workflows: Workflow[] | undefined;
+  let tasks: { id: string; version?: number }[] | undefined;
+  let trials = 1;
+  let allowExternal = false;
+  const limits: Partial<Limits> = {};
+  const value = (index: number): string => {
+    if (!args[index] || args[index].startsWith("--"))
+      throw new Error(`Missing value after ${args[index - 1]}`);
+    return args[index];
+  };
+  for (let index = 0; index < args.length; index++) {
+    switch (args[index]) {
+      case "--help":
+        console.log(
+          "arena --offline [--mode known-good|noop|broken|repair-control] [--task checkout,reservations,incidents,team-board@2] [--workflow sequential,parallel,sequential-review,parallel-review] [--trials N] [--out DIR]\narena --adapter CONFIG --allow-external [--workflow native]\nExternal configs: {schemaVersion:2,adapter:{kind:external|native,...},condition:{...}}. External/native calls can spend model tokens. Results remain unverified until independently attested.",
+        );
+        return 0;
+      case "--offline":
         break;
-      case "--mode":
-        options.offlineMode = value as OfflineMode;
+      case "--out":
+        out = value(++index);
         break;
       case "--adapter":
-        options.adapter = parseAdapterConfig(JSON.parse(readFileSync(resolve(value), "utf8")));
+        adapterFile = value(++index);
         break;
-      case "--task": {
-        const ids = value.split(",");
-        if (
-          ids.some((id) => !allTasks.some((task) => task.id === id)) ||
-          new Set(ids).size !== ids.length
-        )
-          throw new Error(`Unknown or repeated task: ${value}`);
-        options.tasks = ids.map((id) => allTasks.find((task) => task.id === id)!);
+      case "--allow-external":
+        allowExternal = true;
         break;
-      }
-      case "--workflow": {
-        const names = value.split(",");
-        if (names.some((name) => !externalWorkflows.includes(name as Workflow)))
-          throw new Error(`Unknown workflow: ${value}`);
-        options.workflows = names as Workflow[];
+      case "--mode":
+        adapter = adapterSchema.parse({ kind: "offline", mode: value(++index) });
         break;
-      }
-      default: {
-        if (!/^\d+$/.test(value)) throw new Error(`Expected a nonnegative integer for ${flag}`);
-        const key = {
-          "--trials": "trials",
-          "--timeout-ms": "timeoutMs",
-          "--oracle-timeout-ms": "oracleTimeoutMs",
-          "--max-repairs": "maxRepairs",
-          "--max-log-bytes": "maxLogBytes",
-        }[flag] as "trials" | "timeoutMs" | "oracleTimeoutMs" | "maxRepairs" | "maxLogBytes";
-        options[key] = Number(value);
-      }
+      case "--workflow":
+        workflows = value(++index)
+          .split(",")
+          .map((entry) => workflowSchema.parse(entry));
+        break;
+      case "--task":
+        tasks = value(++index)
+          .split(",")
+          .map((entry) => {
+            const [id, version] = entry.split("@");
+            return { id, ...(version ? { version: Number(version) } : {}) };
+          });
+        break;
+      case "--trials":
+        trials = Number(value(++index));
+        break;
+      case "--timeout-ms":
+        limits.timeoutMs = Number(value(++index));
+        break;
+      case "--oracle-timeout-ms":
+        limits.oracleTimeoutMs = Number(value(++index));
+        break;
+      case "--cleanup-ms":
+        limits.cleanupMs = Number(value(++index));
+        break;
+      case "--max-repairs":
+        limits.maxRepairs = Number(value(++index));
+        break;
+      case "--max-log-bytes":
+        limits.maxLogBytes = Number(value(++index));
+        break;
+      default:
+        throw new Error(`Unknown arena argument: ${args[index]}`);
     }
   }
-  if (offline && options.adapter) throw new Error("Choose --offline or --adapter");
-  if (options.adapter && options.offlineMode)
-    throw new Error("--mode applies only to offline controls");
-  return options;
-}
-
-async function main() {
-  if (process.argv[2] === "--offline-worker") {
-    if (process.argv.length !== 4) throw new Error("Invalid offline worker input");
-    const { request, task, mode } = JSON.parse(readFileSync(process.argv[3], "utf8")) as {
-      request: AdapterRequest;
-      task: ArenaTask;
-      mode: OfflineMode;
-    };
-    process.stdout.write(JSON.stringify(await executeOffline(request, task, mode)) + "\n");
-    return;
+  if (adapterFile) {
+    const config = adapterConfigSchema.parse(
+      JSON.parse(await readFile(resolve(adapterFile), "utf8")),
+    );
+    adapter = config.adapter;
+    condition = config.condition;
+    const overrides = { ...limits };
+    Object.assign(limits, config.limits, overrides);
   }
-  if (process.argv.slice(2).some((arg) => arg === "--help" || arg === "-h")) {
-    process.stdout.write(help);
-    return;
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  process.once("SIGINT", abort);
+  process.once("SIGTERM", abort);
+  try {
+    const batch = await runArena({
+      out: resolve(out),
+      repositoryRoot: process.cwd(),
+      adapter,
+      condition,
+      tasks,
+      workflows,
+      trials,
+      limits,
+      allowExternal,
+      signal: controller.signal,
+      afterAllocated: async (allocated) => {
+        console.log(`Batch allocated: ${allocated.directory}`);
+      },
+    });
+    console.log(`Batch retained: ${batch.directory}`);
+    return batch.cells.every(
+      (cell) => cellState(cell) === "completed" && cell.results.at(-1)?.oracle.state === "pass",
+    )
+      ? 0
+      : 1;
+  } finally {
+    process.removeListener("SIGINT", abort);
+    process.removeListener("SIGTERM", abort);
   }
-  const { directory, results } = await runArena(parseArgs(process.argv.slice(2)));
-  console.log(
-    `Arena artifacts: ${directory}\nReport: ${directory}/report.md\n${results.filter((result) => result.status === "completed").length}/${results.length} trials completed and passed`,
-  );
-  if (results.some((result) => result.status !== "completed")) process.exitCode = 1;
 }
-
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url))
-  main().catch((error) => {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  try {
+    process.exitCode = await main(process.argv.slice(2));
+  } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 1;
-  });
+  }
+}

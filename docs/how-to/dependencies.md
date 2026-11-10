@@ -1,152 +1,64 @@
-# Give builders their dependencies
+# Workspaces and dependency inputs
 
-Builder worktrees start with your checkout's tracked and untracked files when the
-run begins. Ignored files are left out, including `node_modules`, `.venv`, and
-`.env`. Pinata prepares dependencies before the builder starts, using a setup
-command it can usually detect for you.
+`after` orders exact assignments. A worker ID resolves to its latest accepted
+assignment when the dependent is accepted; an explicit run/worker/assignment reference
+selects a particular earlier result. Multiple references to one worker preserve
+both summaries. Later follow-ups do not retarget old edges or reopen descendants.
 
-Each worktree has its own dependencies and lives outside your checkout and `.git`,
-under [`worktreeRoot`](../reference/config.md#worktree-location). Run metadata and
-setup logs live under `<git common dir>/pinata/`.
+Shared work is visible immediately in the authorized checkout. `after` therefore
+often provides the needed ordering. It does not mean a predecessor passed checks,
+and completion with a blocker still releases dependents. The coordinator decides
+whether to continue, replace or revise the plan.
 
-## Check the setup command
+Shared read-only workers retain their report, conversation and cleanup evidence
+without automatically capturing the checkout. Their changes query reports
+`source: "unavailable"`, which does not mean the checkout was unchanged. Shared
+writers and all isolated workers retain workspace snapshots when capture succeeds.
+Set `observeWorkspace: true` on a worker request to retain a content observation
+for a shared reader too. This choice is frozen for its follow-ups. The snapshot
+records an observed interval and scope; it does not certify correctness or that
+the checkout stayed unchanged throughout execution.
 
-Ask Pi to show the detected setup command and explain where it came from before
-starting the run.
+For isolated work, use `inputs` to select immutable predecessor snapshots and
+combine them in the target worktree. If a requested snapshot is missing, preparation
+fails and retains the evidence. Pinata does not guess the intended composition from roles or task text.
+Dependencies and inputs are separate fields in `pinata.worker.v1`.
 
-Pinata chooses the command once, at the start of the run, and records it in each
-builder's result:
+Worktrees start from a frozen base, including dirty source content by default.
+`includeUncommitted: false` selects committed content instead. Manual commits and
+the worktree index survive capture. A normal isolated completion can create a private
+checkpoint ref without moving HEAD. Shared execution never automatically commits.
 
-```json
-"setup": {
-  "command": "npm ci --prefer-offline --no-audit --no-fund",
-  "source": "detected",
-  "lockfiles": ["package-lock.json"]
-}
-```
+To copy selected local ignored files into a new worktree, list Git-style patterns
+in the source checkout's `.worktreeinclude`, for example `.env.local` or
+`local/**`. Pinata freezes the matching regular file identities at acceptance and
+copies them only during initial preparation. Source files must still match that
+observation; existing destination files are preserved. Links and unsafe paths are
+refused or recorded as omitted. Follow-ups keep the local copies and user edits.
+Included file contents are never archived as snapshot artifacts or delivered by
+application, even if a later ignore rule changes. The list is limited to 1,000
+files of at most 16 MiB each; dependency directories are better recreated by setup.
 
-The `source` field tells you how Pinata chose it:
+Dependency setup runs only in writable isolated work. `setup: false` disables it;
+a string selects an explicit shell command; omission may detect the root lockfile
+and package manager. Selected shell capability is required. Only approved environment
+variables pass through. Their values are supplied at execution and are not serialized.
+Success is recorded for the corresponding worker/input identity. Failed setup
+preserves its partial edits. Inspect and reconcile an interrupted command whose outcome is uncertain before
+deciding whether to run it again.
 
-| Source       | Meaning                                        |
-| ------------ | ---------------------------------------------- |
-| `detected`   | Chosen from lockfiles at the repository root   |
-| `config`     | Your `config.setup` command                    |
-| `none`       | Nothing will run; `reason` says why            |
-| `disabled`   | You set `config.setup` to `false`              |
-| `not-needed` | No builder tasks; setup is not detected or run |
+## Complete dependency results
 
-Pinata checks lockfiles at the repository root and chooses commands that leave
-them unchanged. If it finds both JavaScript and Python lockfiles, it joins their
-install commands with `&&`. See the [detection table](../reference/config.md#setup)
-for the commands.
-
-## Set the command yourself
-
-If detection finds no command, chooses the wrong one, or your project needs extra
-steps, ask Pi to set `setup`. Save it in the project's `.pi/pinata.json` to use it
-for every run:
-
-```json
-{
-  "setup": "uv sync --frozen && make codegen"
-}
-```
-
-A run's `config.setup` overrides this default.
-
-The command runs in the builder's worktree with `sh -c`, or `cmd.exe /d /s /c`
-on Windows. You may need your own command when:
-
-- Lockfiles conflict, such as `package-lock.json` alongside `yarn.lock`.
-- The package manager is missing from `PATH`. Install it or choose another command.
-- A monorepo only needs dependencies for one package, as in
-  [monorepo-setup-job.json](../../examples/jobs/monorepo-setup-job.json).
-- Tests need generated files, so you must run code generation after installing.
-
-## Copy dependencies from your checkout instead
-
-If your checkout already has the right dependencies, copying them may be faster
-than installing. Setup receives `PINATA_ROOT`, the absolute path of your main
-checkout:
-
-```json
-"config": {
-  "setup": "cp -a --reflink=auto \"$PINATA_ROOT/node_modules\" ."
-}
-```
-
-Check that those dependencies match the lockfile before copying them. On filesystems that support reflinks, copies can share data blocks while
-remaining independently writable. On macOS, use `cp -c -R` where supported. Speed
-depends on the filesystem and the dependencies being copied.
-
-## Copy local files with .worktreeinclude
-
-For ignored files that setup does not create, such as a `.env` with test settings,
-add a `.worktreeinclude` file at the repository root. It uses `.gitignore` patterns:
-
-```gitignore
-.env
-config/local.json
-```
-
-Pinata copies matching ignored files when it creates the builder's worktree.
-Claude Code uses the same file for its worktrees, so you can share the list.
-
-The copy rules are:
-
-- Files must be ignored in the worktree. Tracked and unignored files already come
-  from the run's snapshot.
-- Copies stay ignored and are excluded from builder changes, review diffs, and integration.
-- Pinata skips symbolic links, files over 16 MiB, and files already in the worktree.
-  More than 1000 matches fails the task; use narrower patterns.
-
-Builders can read these files and use them in commands. Include only what they need.
-
-## Turn setup off
-
-Ask Pi to disable setup for the run, or set:
-
-```json
-"config": { "setup": false }
-```
-
-Use this when checks need no dependencies, or to see which checks fail without them.
-
-## Fix a setup failure
-
-If setup fails, the builder's agent does not start. A command failure reports
-`Setup failed` and names the log file under `<run>/setup/<task>/`.
-
-- For a registry timeout or offline cache miss, ask Pi to repair the builder.
-  `pinata_repair` prepares the worktree again and retries setup.
-- `Setup changed project files` means the command changed tracked or unignored
-  files. An install may have rewritten the lockfile, or a dependency directory may
-  be missing from `.gitignore`. Fix the command or `.gitignore` and start a new run.
-- If the command is wrong, start a new run with a corrected `config.setup`.
-  The setup command stays fixed throughout a run.
-
-## Reuse prepared dependencies
-
-Pinata can automatically reuse dependencies for detected npm installs with a version
-2 or 3 lockfile, registry packages only, and no install hooks. It checks the cached
-contents and gives each builder its own writable copy. The cache lives under
-`<git common dir>/pinata/cache/dependencies/`; results show `setup.cache` as `hit`
-or `miss`. Custom commands and other package managers run normally.
-
-A changed lockfile, Node version, or npm configuration creates a new cache entry.
-If an entry is damaged, Pinata runs a normal install. To free the space, remove the
-cache directory while no runs are active.
-
-## Setup limits
-
-- Setup runs only for `worktree` agents, including `builder`. It never runs for
-  `live-readonly` or `review-target` agents.
-- After setup succeeds, repairs reuse it unless a lockfile or package manifest
-  (such as `package.json`) changes in the worktree.
-- Agents cannot install packages themselves. If a builder needs a new dependency,
-  it reports a blocker. Add it in your checkout and start a new run. The worktree
-  receives the updated lockfile even if you have not committed it.
-- Setup runs with your permissions and network access, like an approved check.
-
-Related: [setup reference](../reference/config.md#setup) ·
-[trust and safety](../explanation/trust.md)
+The worker brief previews up to eight dependency results at a time, with short
+summaries and exact assignment identities. A preview never replaces the retained
+result. Workers with dependencies receive `pinata_dependency`: use `kind: "list"`
+and the returned `next` offset to discover more, or `kind: "result"` with an exact
+`ref` to read the complete result in pages. Continue with the returned `next`
+offset and the same reference. The tool can read only results frozen into that
+assignment; it does not grant filesystem access or expose unrelated workers.
+These pages contain the retained result JSON, including its artifact references.
+They do not read the contents of those reports, transcripts or other artifacts.
+List offsets count entries; result offsets count UTF-16 code units in the JSON
+text. Use each returned `next` unchanged.
+Both list and result replies respect the serialized 32 KiB content limit. A single
+reference too large to fit returns an explicit error rather than an empty repeating page.

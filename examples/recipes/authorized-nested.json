@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 4,
+  "workers": [
+    {
+      "id": "delegator",
+      "agent": "delegator",
+      "task": "Split the coordinator's two independent implementation changes between authorized builder children using pinata_children. Inspect their exact results if capacity permits. If child_wait returns capacity_blocked, finish with the child IDs so the coordinator can continue after they settle."
+    }
+  ],
+  "config": { "execution": { "maxConcurrent": 2 } }
+}

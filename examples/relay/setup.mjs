@@ -60,7 +60,7 @@ if (import.meta.main) {
     const cwd = await setup(args[0]);
     console.log(`Created Relay starter: ${cwd}`);
     console.log(
-      "Open that directory and choose your models and limits in job.json. Setup made no model calls; running the job spends tokens.",
+      "Open that directory and choose your models in job.json. Setup made no model calls; running the job spends tokens.",
     );
     console.log(`Tutorial: ${resolve(HERE, "../../docs/tutorials/relay.md")}`);
     console.log(

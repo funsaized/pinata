@@ -1,182 +1,50 @@
 {
-  "tasks": [
+  "schemaVersion": 4,
+  "workers": [
     {
-      "id": "scout-contract",
+      "id": "contracts",
       "agent": "scout",
-      "task": "Map the module contracts and integration order from REQUIREMENTS.md. Identify interface risks; cite lines. Do not edit files.",
-      "acceptance": ["Concise actionable findings with file:line evidence."]
+      "task": "Read REQUIREMENTS.md. Map module interfaces and boundary cases for Relay, with file references. Do not edit files."
     },
     {
-      "id": "scout-tests",
-      "agent": "scout",
-      "task": "Inspect REQUIREMENTS.md and available files. Identify high-value boundary tests for each module, especially dates, percentile rank, markdown, and CLI exit codes; cite lines. Do not edit files.",
-      "acceptance": ["Concise actionable findings with file:line evidence."]
-    },
-    {
-      "id": "build-parse",
+      "id": "parse",
       "agent": "builder",
-      "after": ["scout-contract", "scout-tests"],
-      "task": "Implement the parse component in src/parse.mjs according to REQUIREMENTS.md. Add thorough meaningful tests in test/parse.test.mjs. Read the full contract and predecessor findings. Preserve the exact public interface. Do not edit other files. Run the assigned test command.",
-      "acceptance": [
-        "parse component meets every applicable requirement in REQUIREMENTS.md.",
-        "Tests cover normal behavior and boundary/error cases; assigned tests pass."
-      ],
-      "ownership": ["src/parse.mjs", "test/parse.test.mjs"],
-      "checks": [
-        {
-          "id": "parse-tests",
-          "argv": ["node", "--test", "test/parse.test.mjs"]
-        }
-      ]
+      "after": ["contracts"],
+      "task": "RELAY:parse — Implement src/parse.mjs and test/parse.test.mjs from REQUIREMENTS.md. Preserve other files and public interfaces. Run node --test test/parse.test.mjs and report the actual result. No dependencies or network access are needed."
     },
     {
-      "id": "review-parse",
-      "agent": "reviewer",
-      "after": ["build-parse"],
-      "reviewOf": "build-parse",
-      "task": "Independently review the parse builder artifact against REQUIREMENTS.md and the original acceptance criteria. Read source and engine-run test evidence. Check interface compatibility, boundary cases, failures, and test quality. Approve only when requirements hold; report concrete defects with file:line.",
-      "acceptance": [
-        "Verdict grounded in actual diff and engine checks; no unresolved substantive defects."
-      ]
-    },
-    {
-      "id": "build-summarize",
+      "id": "summarize",
       "agent": "builder",
-      "after": ["scout-contract", "scout-tests"],
-      "task": "Implement the summarize component in src/summarize.mjs according to REQUIREMENTS.md. Add thorough meaningful tests in test/summarize.test.mjs. Read the full contract and predecessor findings. Preserve the exact public interface. Do not edit other files. Run the assigned test command.",
-      "acceptance": [
-        "summarize component meets every applicable requirement in REQUIREMENTS.md.",
-        "Tests cover normal behavior and boundary/error cases; assigned tests pass."
-      ],
-      "ownership": ["src/summarize.mjs", "test/summarize.test.mjs"],
-      "checks": [
-        {
-          "id": "summarize-tests",
-          "argv": ["node", "--test", "test/summarize.test.mjs"]
-        }
-      ]
+      "after": ["contracts"],
+      "task": "RELAY:summarize — Implement src/summarize.mjs and test/summarize.test.mjs from REQUIREMENTS.md. Preserve other files and public interfaces. Run node --test test/summarize.test.mjs and report the actual result. No dependencies or network access are needed."
     },
     {
-      "id": "review-summarize",
-      "agent": "reviewer",
-      "after": ["build-summarize"],
-      "reviewOf": "build-summarize",
-      "task": "Independently review the summarize builder artifact against REQUIREMENTS.md and the original acceptance criteria. Read source and engine-run test evidence. Check interface compatibility, boundary cases, failures, and test quality. Approve only when requirements hold; report concrete defects with file:line.",
-      "acceptance": [
-        "Verdict grounded in actual diff and engine checks; no unresolved substantive defects."
-      ]
-    },
-    {
-      "id": "build-render",
+      "id": "render",
       "agent": "builder",
-      "after": ["scout-contract", "scout-tests"],
-      "task": "Implement the render component in src/render.mjs according to REQUIREMENTS.md. Add thorough meaningful tests in test/render.test.mjs. Read the full contract and predecessor findings. Preserve the exact public interface. Do not edit other files. Run the assigned test command.",
-      "acceptance": [
-        "render component meets every applicable requirement in REQUIREMENTS.md.",
-        "Tests cover normal behavior and boundary/error cases; assigned tests pass."
-      ],
-      "ownership": ["src/render.mjs", "test/render.test.mjs"],
-      "checks": [
-        {
-          "id": "render-tests",
-          "argv": ["node", "--test", "test/render.test.mjs"]
-        }
-      ]
+      "after": ["contracts"],
+      "task": "RELAY:render — Implement src/render.mjs and test/render.test.mjs from REQUIREMENTS.md. Preserve other files and public interfaces. Run node --test test/render.test.mjs and report the actual result. No dependencies or network access are needed."
     },
     {
-      "id": "review-render",
-      "agent": "reviewer",
-      "after": ["build-render"],
-      "reviewOf": "build-render",
-      "task": "Independently review the render builder artifact against REQUIREMENTS.md and the original acceptance criteria. Read source and engine-run test evidence. Check interface compatibility, boundary cases, failures, and test quality. Approve only when requirements hold; report concrete defects with file:line.",
-      "acceptance": [
-        "Verdict grounded in actual diff and engine checks; no unresolved substantive defects."
-      ]
-    },
-    {
-      "id": "build-cli",
+      "id": "cli",
       "agent": "builder",
-      "after": ["review-parse", "review-summarize", "review-render"],
-      "task": "Implement the cli component in bin/relay.mjs according to REQUIREMENTS.md. Add thorough meaningful tests in test/cli.test.mjs. Read the full contract and predecessor findings. Preserve the exact public interface. Do not edit other files. Run the assigned test command.",
-      "acceptance": [
-        "cli component meets every applicable requirement in REQUIREMENTS.md.",
-        "Tests cover normal behavior and boundary/error cases; assigned tests pass."
-      ],
-      "ownership": ["bin/relay.mjs", "test/cli.test.mjs"],
-      "checks": [
-        {
-          "id": "cli-tests",
-          "argv": ["node", "--test", "test/cli.test.mjs"]
-        },
-        {
-          "id": "expected-report",
-          "argv": ["node", "verify.mjs"],
-          "timeoutMs": 30000
-        }
-      ]
+      "after": ["parse", "summarize", "render"],
+      "task": "RELAY:cli — Implement bin/relay.mjs and test/cli.test.mjs from REQUIREMENTS.md using the completed modules. Preserve verify.mjs and expected-report.md. Run node --test and node verify.mjs, report actual outcomes and repair integration issues as needed. No dependency installation, network, staging, commits or publication."
     },
     {
-      "id": "review-cli",
+      "id": "review",
       "agent": "reviewer",
-      "after": ["build-cli"],
-      "reviewOf": "build-cli",
-      "task": "Independently review the cli builder artifact against REQUIREMENTS.md and the original acceptance criteria. Read source and engine-run test evidence. Check interface compatibility, boundary cases, failures, and test quality. Approve only when requirements hold; report concrete defects with file:line.",
-      "acceptance": [
-        "Verdict grounded in actual diff and engine checks; no unresolved substantive defects."
-      ]
-    }
-  ],
-  "approval": "Running this job authorizes the bounded Relay implementation and its Node checks in this disposable repository. Inspect and integrate the reviewed changes separately.",
-  "integratedChecks": [
-    {
-      "id": "all-tests",
-      "argv": ["node", "--test"],
-      "timeoutMs": 30000
-    },
-    {
-      "id": "expected-report",
-      "argv": ["node", "verify.mjs"],
-      "timeoutMs": 30000
+      "after": ["cli"],
+      "task": "Review Relay against REQUIREMENTS.md. Inspect source and tests; report concrete defects and missing evidence. Reported checks are attributed claims. The coordinator decides acceptance and runs final checks."
     }
   ],
   "config": {
-    "models": {
-      "scout": {
-        "provider": "REPLACE_WITH_APPROVED_PROVIDER",
-        "id": "REPLACE_WITH_AVAILABLE_MODEL_ID",
-        "thinking": "medium"
-      },
-      "builder": {
-        "provider": "REPLACE_WITH_APPROVED_PROVIDER",
-        "id": "REPLACE_WITH_AVAILABLE_MODEL_ID",
-        "thinking": "medium"
-      },
-      "reviewer": {
-        "provider": "REPLACE_WITH_APPROVED_PROVIDER",
-        "id": "REPLACE_WITH_AVAILABLE_MODEL_ID",
-        "thinking": "medium"
-      }
-    },
+    "workspace": "shared",
     "setup": false,
     "mode": "observe",
-    "limits": {
-      "concurrency": 3,
-      "costUsd": 2,
-      "taskMs": 300000,
-      "jobMs": 1200000,
-      "maxTurns": 35,
-      "maxToolCalls": 100,
-      "repairs": 2
-    },
-    "fallbacks": {
-      "scout": [],
-      "builder": [],
-      "reviewer": []
-    },
-    "backend": "in-process"
-  },
-  "cwd": ".",
-  "instructions": [
-    "Implement REQUIREMENTS.md using only this exercise repository. Do not install packages, access the network, stage, commit, push, or publish. Preserve verify.mjs and expected-report.md."
-  ]
+    "models": {
+      "scout": { "provider": "APPROVED_PROVIDER", "id": "AVAILABLE_MODEL", "thinking": "medium" },
+      "builder": { "provider": "APPROVED_PROVIDER", "id": "AVAILABLE_MODEL", "thinking": "medium" },
+      "reviewer": { "provider": "APPROVED_PROVIDER", "id": "AVAILABLE_MODEL", "thinking": "medium" }
+    }
+  }
 }

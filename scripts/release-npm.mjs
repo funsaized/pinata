@@ -42,14 +42,18 @@ export function validateRelease(tag, manifest, lock, packed) {
     assert(!file.split("/").some((part) => part.startsWith(".") || part === "node_modules"));
   }
   for (const required of [
+    "engine/index.ts",
     "engine/pi/extension.ts",
+    "engine/backends/supervision/PinataJobLauncher.cs",
+    "engine/backends/supervision/windows-helper.ts",
+    "engine/backends/supervision/windows-job.ts",
     "bin/pinata.mjs",
     "skills/subagents/SKILL.md",
     "agents/scout.md",
     "agents/builder.md",
     "agents/reviewer.md",
-    "examples/agents/planner.md",
-    "examples/agents/researcher.md",
+    "examples/agents/delegator.md",
+    "docs/reference/catalog.json",
   ])
     assert(
       packed.files.some((file) => file.path === required),

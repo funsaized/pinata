@@ -1,89 +1,47 @@
 # Agent definitions
 
-An agent definition is a Markdown file with YAML frontmatter and an instruction
-body. Pinata includes `scout`, `builder`, and `reviewer`; see [create an agent](../how-to/agents.md)
-for file locations, an example, and inspection commands. A definition file may be
-at most 128 KiB. Unknown frontmatter keys are rejected, and the preset names
-`scout`, `builder`, and `reviewer` are reserved.
+Definitions use schema 3 Markdown frontmatter, with the body as `instructions`, or
+trusted TypeScript through `defineAgent` and an explicitly selected host bootstrap.
+Field concepts follow the agent SDK model; this is not a promise of byte-compatible
+configuration grammar with another agent product. Inspect `pinata.definition.v3`
+for exact types and defaults.
 
-## Definition fields
+Definitions are discovered in shipped `agents`, personal `<agentDir>/pinata/agents`
+and project `.pi/pinata/agents`, in that precedence order. Explicit CLI
+`--definitions` directories replace the search list. Invalid higher-precedence
+files fail with path/field errors instead of silently selecting an older definition.
+`pinata agents list|show <name>|validate --json` returns source paths and digests.
+Add `--bootstrap <module>` to include typed definitions. The module exports an
+`agents` array of `defineAgent` results. Typed and Markdown definitions with the
+same name are rejected instead of silently overriding each other.
 
-| Field            | Meaning                                                                                   |
-| ---------------- | ----------------------------------------------------------------------------------------- |
-| `schemaVersion`  | Required; currently `1`.                                                                  |
-| `name`           | Lowercase identifier in the same format as task IDs, up to 32 characters.                 |
-| `description`    | Short description shown when listing agents.                                              |
-| `workspace`      | `live-readonly`, `worktree`, or `review-target`.                                          |
-| `tools`          | Tools the agent may use; can be empty. Pinata adds `submit_result` and optional codemode. |
-| `output.require` | Optional list containing `brief`, `sources`, or both.                                     |
-| `model`          | Optional `{provider, id, thinking}` default using an available Pi model.                  |
-| `fallbacks`      | Optional list of up to five model references.                                             |
-| Markdown body    | The agent's instructions.                                                                 |
+| Field                        | Meaning                                                                                                    |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `schemaVersion`, `name`      | Version 3 and a stable lowercase handle.                                                                   |
+| `handoffDescription`         | Concise discovery description.                                                                             |
+| `instructions`               | Markdown body; project instructions are discovered separately for each assignment.                         |
+| `model`, `modelSettings`     | Optional `provider/id` and reasoning effort.                                                               |
+| `tools`                      | Requested named tools, intersected with host capabilities.                                                 |
+| `handoffs`                   | Allowed child definition names within an explicit delegation grant; not automatic routing.                 |
+| `outputType`                 | Optional registered schema name, or a Zod schema in trusted TypeScript. Ordinary final text remains valid. |
+| `pinata.access`, `workspace` | Read/write capability and independent shared/worktree choice.                                              |
+| `pinata.skills`              | Explicit skill files/directories, resolved relative to the definition source and frozen.                   |
+| `pinata.fallbacks`           | Available-model selection candidates, without automatic failed-effect replay.                              |
+| `pinata.color`               | A semantic accent token or six-digit hex color.                                                            |
+| `pinata.inheritContext`      | `none` or filtered `parent`, requiring host/backend support.                                               |
+| `pinata.memory`              | Opt-in worker/project-agent scope and read/write memory access.                                            |
+| `pinata.delegation.maxDepth` | Remaining authorized child depth; defaults zero.                                                           |
+| `pinata.checkpoint`          | `completion` private ref for normal isolated completion, or `none`.                                        |
 
-The tool list can contain at most 64 unique names. Names starting with `pinata_` and the exact names
-`codemode` and `submit_result` are reserved and cannot be listed in a definition.
-See [customize Pinata](../how-to/customize.md) for custom tool providers.
+New definitions default to read-only shared work, no memory, no parent inheritance
+and no child delegation. Migrated definitions additionally keep completion commits
+off unless explicitly enabled. A selected skill or a model response cannot expand
+tools, memory access, workspace scope or child depth. See [writing an agent](../how-to/agents.md).
 
-The workspace determines what a task needs, regardless of the agent's name:
-
-- For `worktree`, specify the files or directories the task owns, provide `checks`
-  or a `noChecksReason`, and authorize local writes.
-- For `review-target`, provide exactly one of `reviewOf`, `reviewBase`, or `reviewPr`.
-- Agents using `live-readonly` or `review-target` cannot request `bash`, `edit`,
-  `write`, or `powershell`.
-
-Workers are instructed not to delegate, install packages, stage or commit, push,
-publish, deploy, or change global configuration. The coordinator handles authorized
-setup; see [give builders their dependencies](../how-to/dependencies.md). Workers
-still run with your operating-system permissions; see [trust and safety](../explanation/trust.md).
-
-## Models and tools
-
-Pinata chooses a model in this order:
-
-1. Task override
-2. Configured model for the agent
-3. Definition's default model
-4. Configured default model
-5. Current Pi model
-
-Configured fallbacks replace definition fallbacks. Set limits in the run
-[configuration](config.md); choose a backend in configuration or on a task.
-
-Built-in tools need no provider configuration. For custom tools, install the extension
-that supplies them and configure it in `pinata.json`:
-
-```json
-{
-  "toolProviders": {
-    "docs": { "extension": "/absolute/path/to/docs-extension.ts", "tools": ["lookup_docs"] }
-  }
-}
-```
-
-The researcher also supports `webExtension` or pi-web-access loaded in the parent.
-Runs load only the providers they need. Pinata rejects missing or ambiguous providers
-before starting. Relative provider paths are resolved from the repository.
-
-## Results
-
-Every agent returns `status` and `summary` through `submit_result`. It can also return
-`brief`, `findings`, `blockers`, `sources`, `data`, `changedFiles`, and reported `checks`.
-A `worktree` agent must report `changedFiles`; a `review-target` agent must return a
-review verdict.
-
-Results are limited to 128 KiB; reference larger artifacts. Pinata keeps its own
-checks and observed changes separate from what the agent reports.
-
-## Saved runs
-
-Pinata saves each definition once per run, identified by its content hash. Edits
-affect new runs; resume, repair, and rerun use the saved copy.
-
-Before launching an agent, Pinata checks the hash of each extension's entry file,
-including for queued tasks after resuming. Detached agents already running keep their loaded
-extensions. If an extension has changed, restore it or start a new run. These hashes
-cover entry files. Dependencies and external service state remain outside that check.
-
-Pinata limits the combined size of dependency summaries passed to an agent. Full
-results remain on disk.
+Typed Zod schemas must describe JSON input and output; non-JSON types and transforms
+are rejected. Synchronous and asynchronous refinements execute in the original
+validator, while discovery exposes its portable input JSON Schema. A report rejected
+by that validator records a reporting error without preventing ordinary completion.
+Frozen workers retain the selected module's exact source identity and schema
+descriptor; execution refuses source drift. A loaded module edit requires a fresh
+host process and worker. Paths in worker requests cannot load executable definitions.

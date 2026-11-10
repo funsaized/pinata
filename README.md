@@ -1,130 +1,56 @@
-# piñata
+# Pinata
 
-**Pi stays small. Your subagent system should too.**
+An extensible subagent runtime for [Pi](https://github.com/badlogic/pi-mono).
+Start workers, follow their conversations and steer their work as the task develops. The coordinator decides what to delegate, test, review and accept.
 
-Piñata is a fast, extensible subagent framework for
-[Pi](https://github.com/earendil-works/pi). Ask Pi to split a change between builders and reviewers. Pinata coordinates the tasks and brings back
-changes, findings, and checks you can inspect.
-
-piñata ships only three agent definitions: scout, builder, and reviewer. Add your own agents and tools as your workflow grows.
-
-Pi keeps the harness small and lets you make it yours. Pinata follows that lead.
-
-[![piñata: small core, parallel agents](media/pinata-hero-v2.png)](media/pinata-demo.mp4)
-
-## Install
-
-Run in your terminal:
+Workers share the current checkout by default. Choose an isolated Git worktree when
+you want a separate patch; inspect and apply it explicitly with conflict checks.
+Completed, failed and cancelled work stays available. A completion report describes
+execution, not correctness.
 
 ```sh
 pi install npm:pi-pinata
 ```
 
-Reload Pi. You need Pi 1.1.0+, Node 22.19+ (for the `pinata` cli), and Git. [Herdr](https://herdr.dev/) is optional. Piñata works on Linux, macOS, and Windows.
-See [platform setup](docs/how-to/platforms.md) for more detail.
+Restart Pi, then ask it to use Pinata for a task. `@scout Map the parser and its tests`
+addresses a definition directly. Shift+Down opens the fleet tree; Enter opens a worker
+conversation; Shift+Left/Right changes workers; Shift+Up returns. Drafts stay with
+their conversations. `/pinata` and screen commands provide keyboard fallbacks.
 
-By default, Pinata's built-in agents use the current Pi
-model. Agent model definitions can be set in
-`~/.pi/agent/pinata.json` (personal), `.pi/pinata.json` (repository), or a job's
-`config`. Tasks and agent definitions can also specify models; see [model
-configuration](docs/reference/config.md#models) for precedence and fallbacks.
+For a finite headless job:
 
-## Try it
-
-Ask Pi in plain language:
-
-```text
-Send two scouts out in parallel, one on the retry logic and one on its tests.
-Bring back the relevant files, assumptions, and tests.
+```sh
+pinata run examples/job.json --workspace /path/to/project --model provider/model --json
 ```
 
-Or try a focused fix or review:
+Choose an available model and credentials in Pi. Running workers spends provider
+tokens; schema discovery, example validation and the default test suite do not.
 
-```text
-/pinata-fix Correct the seconds-to-milliseconds conversion in src/duration.mjs.
+- [First run](docs/tutorials/first-run.md): one worker, a follow-up and inspection.
+- [Relay](docs/tutorials/relay.md): build a small multi-module CLI in a disposable checkout.
+- [Recipes](examples/README.md): dynamic shared work, isolated follow-ups, and authorized nested/scheduled work.
+- [API and schemas](docs/reference/api.md): tools, CLI, events, hooks and versioned contracts.
+- [Migration](docs/reference/migration.md): preserve old runs and convert inputs explicitly.
+
+Define custom agents in Markdown with validated model settings, tools, skills and
+colors. Parent context, scoped memory, nested delegation and capacity are explicit
+options. Schedules belong to a live session and resume paused after a crash. Pinata
+has no automatic review policy or production token/time budget.
+
+The Pi extension, headless CLI, authenticated IPC and saved-run viewer use one
+runtime and event model. Available backends are in-process, supervised process and
+optional Herdr. Node 22.19+ is required. Windows uses a source-built .NET Framework
+Job Object launcher for supervised workers. See [platform support](docs/how-to/platforms.md)
+for prerequisites and the scripted CI coverage on each platform.
+
+```sh
+npm ci --ignore-scripts
+npm run check
+npm test
+npm run arena -- --offline
 ```
 
-```text
-/pinata-review Focus on the error handling.
-```
-
-Pi can choose agents, write their briefs, and set dependencies. Follow the [first-run
-tutorial](docs/tutorials/first-run.md) for a guided start.
-
-## How it works
-
-A run contains tasks, their agents, dependencies, and any file ownership and checks. Piñata
-orchestrates the DAG: independent tasks run in parallel; dependent tasks wait for their inputs. The
-included agents cover three common roles, and can be tailored to your liking:
-
-- **Scout** maps the relevant code and returns a brief.
-- **Builder** makes an assigned change in a separate Git worktree.
-- **Reviewer** examines a specific change and its evidence.
-
-Pinata jobs have a defined schema, so Pi or another capable coding agent can read the
-[job format](docs/how-to/headless.md#write-a-job-file), inspect your repository, and turn
-a plan for your goal into a job with ownership, dependencies, checks, and independent review.
-Pinata runs the tasks and configured checks and
-records the results; your coordinator agent invoking pinata decides what to do next, including any repairs.
-
-[Build and review](docs/tutorials/build-and-review.md) walks through the process.
-
-Worktrees keep patches separate from your checkout, but they are not security sandboxes.
-Shell commands and custom tools have your operating-system permissions and network
-access. Read [trust and safety](docs/explanation/trust.md) before authorizing work.
-
-Save the plan as a job file and you can run it from a terminal or CI (outside of pi) with
-`pinata run job.json`.
-
-Headless runs (currently) leave builder changes in their worktrees; integrate
-them separately in Pi. See [headless runs](docs/how-to/headless.md), or use the
-[goal-to-job prompt](examples/jobs.md#let-a-coordinator-design-the-job) to have a
-coordinator design a plan for your repository. Browse the
-[job patterns for delivery, research, UX, accessibility, and data pipelines](examples/jobs.md#where-jobs-help).
-
-## Make it yours
-
-Agents are reusable Markdown definitions with instructions, tools, workspace, and
-optional model defaults. For example, save this as `.pi/pinata/agents/api-scout.md`:
-
-```markdown
----
-schemaVersion: 1
-name: api-scout
-description: Map an API and its tests.
-workspace: live-readonly
-tools: [read, grep, find, ls]
-output:
-  require: [brief]
----
-
-Find the API's entry points, callers, error handling, and tests. Return a brief
-with file references and unanswered questions.
-```
-
-Ask Pi to use `api-scout` on a specific API. Personal definitions live in
-the global `.pi` dir or on a per-repo basis in `.pi`.
-
-Set repository limits, fallbacks, backends, and custom
-tool providers in `.pi/pinata.json`. See [creating agents](docs/how-to/agents.md) and the [configuration
-reference](docs/reference/config.md).
-
-Pinata uses Pi's sessions, models, tools, and extensions. You can watch and steer agents
-in Pi, inspect saved runs, and choose process or Herdr backends when they suit your
-setup. [Watching agents](docs/tutorials/watching-agents.md) and
-[backends](docs/how-to/backends.md) show how.
-
-## Documentation
-
-- **Learn:** [First run](docs/tutorials/first-run.md), [build and review](docs/tutorials/build-and-review.md),
-  [Relay walkthrough](docs/tutorials/relay.md)
-- **Do:** [Create agents](docs/how-to/agents.md), [run headless](docs/how-to/headless.md),
-  [recover a run](docs/how-to/recover.md)
-- **Look up:** [Tools](docs/reference/tools.md), [commands](docs/reference/commands.md),
-  [configuration](docs/reference/config.md)
-- **Understand:** [Why Pinata?](docs/explanation/why-pinata.md),
-  [architecture](docs/explanation/architecture.md), [trust and safety](docs/explanation/trust.md)
-
-The [documentation index](docs/README.md) has the full list, including maintainer docs.
-
-MIT licensed.
+Tests and benchmarks use scripted or loopback providers. They establish behavior
+and coordination overhead; they do not establish improved model coding performance.
+See [testing](docs/maintainers/testing.md), [architecture](docs/explanation/architecture.md)
+and [the implementation record](docs/maintainers/rewrite-progress.md).

@@ -8,8 +8,11 @@ arena/results/
 .env.*
 *.log
 
-# Local implementation checklist, not part of the project or release.
-PLAN.md
-
 # Machine-specific arena adapter paths (regenerate with arena:bootstrap).
 arena/local/
+
+# Pinned documentation tools and downloaded upstream styles.
+.vale/bin/
+.vale/styles/Google/
+.vale/styles/ai-tells/
+.vale/styles/config/templates/
