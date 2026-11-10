@@ -312,15 +312,6 @@ export class ScreenRouter {
     else this.collapsed.delete(key);
     this.refreshView();
   }
-  toggleFollow(): void {
-    const view = this.conversation();
-    view.follow = !view.follow;
-    if (view.follow) {
-      view.newOutput = false;
-      void this.loadConversation().catch((error: unknown) => this.fail(error));
-    }
-    this.changed();
-  }
   toggleQueued(): void {
     this.showQueued = !this.showQueued;
     this.fleetRenderedSelection = undefined;
@@ -461,9 +452,15 @@ export class ScreenRouter {
     }
     const view = this.conversation();
     const next = Math.min(view.maxScroll ?? Infinity, Math.max(0, view.scroll + lines));
-    if (next === view.scroll) return;
-    view.follow = false;
+    const atBottom = view.maxScroll !== undefined && next >= view.maxScroll;
+    const resume = !view.follow && lines > 0 && atBottom;
+    if (next === view.scroll && !resume) return;
+    view.follow = atBottom;
     view.scroll = next;
+    if (resume) {
+      view.newOutput = false;
+      void this.loadConversation().catch((error: unknown) => this.fail(error));
+    }
     this.changed();
   }
   async loadConversation(more = false): Promise<void> {

@@ -39,10 +39,11 @@ remain available.
 At the coordinator, use `/pinata`, `/pinata-main`, `/pinata-fleet`,
 `/pinata-conversation <worker> [assignment]`, or `/pinata-palette <name>`.
 Inside a worker screen, `/worker <id> [assignment]`, `/assignment <number>`,
-`/fleet`, and `/main` provide navigation without modifier keys. `/help` lists the
-local controls.
+`/fleet`, and `/main` provide navigation without modifier keys. `?` shows shortcuts
+for the current screen and focus; an existing message draft keeps question marks
+as text. The existing `/help` composer command remains supported.
 `/scroll up` and `/scroll down` are available when the terminal reserves scroll
-keys; Pi's viewport consumes bare PageUp/PageDown before custom components.
+keys. The fleet and conversation capture viewport keys, including PageUp/PageDown.
 
 Ordinary submitted text steers the visible active or queued assignment. After
 settlement it creates a follow-up for completed work, or continues stopped work as
@@ -123,8 +124,8 @@ definition-supplied colors remain explicit overrides.
 `NO_COLOR`, `TERM=dumb`, and `terminal-default` disable palette escape sequences.
 `PINATA_ASCII=1` or `TERM=dumb` uses an ASCII badge and `|` / `-` tree branches. Worker content is sanitized
 before styling, including OSC/APC escape sequences and bidi controls, while
-preserving emoji, combining characters and CJK text. Screens are static in all
-motion modes; reduced/disabled motion does not hide information or change work.
+preserving emoji, combining characters and CJK text. Full motion advances an ASCII activity marker at each tick; reduced/disabled
+motion uses a static marker without hiding information or changing work.
 
 ## Verification and retained evidence
 
@@ -176,7 +177,7 @@ claimed here.
 ## Fleet interaction and presentation
 
 Fleet arrows select rows; Enter opens the selected assignment. Left/Right collapse
-and expand real child branches. Dependencies remain explicit waiting reasons.
+and expand real child branches. Dependencies remain visible as `after:` references even after completion.
 `/` edits a worker/task search; Enter retains it, and reopening search and deleting
 its text clears it. `f` cycles all/active/failed, `h` includes older assignments,
 `Q` shows queued work, and `q` returns to the coordinator. Filtering moves selection
@@ -187,9 +188,10 @@ In conversations, Tab switches composer/transcript focus. A reverse-video badge
 names the active focus (AGENT MESSAGE or TRANSCRIPT) and the selected worker;
 the composer border is accented while typing to the agent. Plain terminals retain
 the explicit labels. The composer retains
-Ctrl+Left/Right, Ctrl+B and Ctrl+R for editing. Transcript focus enables `f` to follow
-latest output, `d` to expand metadata and tool payloads, and `m` to load older pages.
-Scrolling disables follow mode without changing the draft. The composer identifies
+Ctrl+Left/Right, Ctrl+B and Ctrl+R for editing. Transcript focus enables `d` to
+expand metadata and tool payloads, and `m` to load older pages. Scrolling away from
+the bottom enters reading mode without changing the draft. Reaching the bottom
+resumes following automatically; there is no follow toggle. The composer identifies
 whether ordinary text will steer, follow up, or continue.
 
 Full motion animates active markers at four frames per second; reduced/off use
@@ -222,9 +224,19 @@ show up to eight lines. The details toggle expands complete payloads. Recorded
 `submit_result` reports are displayed as worker reports, including findings, even
 when other tools show only previews. These are worker claims, not coordinator acceptance.
 
-Opening or reentering a conversation follows the latest output and read subsequent immutable
+Opening or reentering a conversation follows the latest output and reads subsequent immutable
 pages until they reach the end; scrolling switches to history mode and stops
 automatic paging. Refreshes collect pages before replacing the displayed transcript,
 so loading does not flash the first page or shift content. History stays fixed until
-the user follows new output; scrolling a transcript that already fits does not
+the user scrolls back to the bottom; scrolling a transcript that already fits does not
 disable following. Full tool details remain available through Tab then d.
+
+Visible live conversations refresh saved messages at most once per second while
+following, including when no response observation arrives. Hidden views, reading
+mode, help/actions panels and saved sources do not poll. In-flight reads are not
+overlapped. The existing lifecycle timer is released with the view subscription.
+
+Pinata registers display renderers for completion, assignment, control, memory and
+schema notices. Completion cards show “Subagent result” and the conversation
+command. Persisted custom types and delivery markers stay unchanged for replay
+and consumption tracking. Expanded completion cards include the run identifier.

@@ -73,7 +73,7 @@ function statusToken(phase: string): "success" | "warning" | "error" | "muted" |
 export function activityIndicator(motion: "full" | "reduced" | "off", now: number): string {
   if (motion !== "full") return "--c--";
   const frame = Math.floor(now / 250) % 15;
-  const position = Math.floor(frame / 3);
+  const position = frame % 5;
   return "-".repeat(position) + ["c", "C", "c"][frame % 3] + "-".repeat(4 - position);
 }
 
@@ -471,7 +471,7 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
               view.follow
                 ? "following latest"
                 : view.newOutput
-                  ? "new output · f follows"
+                  ? "new output · scroll to bottom"
                   : "reading history",
             ),
           width,
@@ -499,7 +499,6 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
       : router.transcriptFocus
         ? [
             ["Tab", "message"],
-            ["f", "follow"],
             ["d", "details"],
             ["m", "older"],
             ["?", "help"],

@@ -5,7 +5,7 @@ to executable replacement tests. Test names identify observable behavior, rather
 than assuming that a similarly named module preserves a contract. The tests use
 scripted providers, real local storage and supervised subprocesses; they do not
 establish live coding quality. Milestone and platform results are recorded in
-[rewrite progress](rewrite-progress.md), [UI evidence](rewrite-ui.md) and
+[rewrite progress](https://github.com/funsaized/pinata/blob/9a6d9de/docs/maintainers/rewrite-progress.md), [UI evidence](rewrite-ui.md) and
 [benchmark evidence](rewrite-benchmarks.md).
 
 Replacement tests retain their `rewrite-` filenames after the single package
@@ -81,7 +81,7 @@ result through the actual worker page tool on both backends at capacity two.
 | R18: independent implementation and measured choices   | Frozen M0 evidence, milestone source closures and the replacement suites above; no reference performance or live coding-quality claim follows from scripted gates.                                                                                                         |
 
 Recorded functional and installed-package checks pass for the source snapshots
-identified in [rewrite progress](rewrite-progress.md), including public exports,
+identified in [rewrite progress](https://github.com/funsaized/pinata/blob/9a6d9de/docs/maintainers/rewrite-progress.md), including public exports,
 packaged dependencies/schema resources and Pi/headless behavior. The public typed
 API also passed through process and Herdr workers hosted by compiled Pi/Bun on
 Linux. macOS evidence uses the pinned SDK and installed Pi 1.5 Node CLI; it does

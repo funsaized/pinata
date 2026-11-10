@@ -978,9 +978,7 @@ test("composer editing keys preserve focus and transcript controls are explicit"
   screen.handleInput("\t");
   assert.equal(router.conversation().follow, true);
   screen.handleInput("f");
-  assert.equal(router.conversation().follow, false);
-  screen.handleInput("f");
-  assert.equal(router.conversation().follow, true);
+  assert.equal(router.conversation().follow, true, "f no longer toggles following");
   screen.handleInput("d");
   assert.equal(router.details, true);
   screen.render(100);
@@ -1282,7 +1280,7 @@ test("reading history preserves its transcript until following the newer checkpo
   await router.start();
   let version = 1;
   source.respond = async () => {
-    const reply = conversationReply(ref(), `Checkpoint ${version}`);
+    const reply = conversationReply(ref(), "History line\n".repeat(100) + `Checkpoint ${version}`);
     if (
       reply.status === "ok" &&
       reply.response.method === "query" &&
@@ -1294,12 +1292,13 @@ test("reading history preserves its transcript until following the newer checkpo
   router.navigate("conversation", ref());
   await tick();
   const original = router.conversation().page;
-  router.toggleFollow();
+  renderScreen(router, { width: 100, height: 20, paint: createPaint("terminal-default") });
+  router.scroll(-10);
   version = 2;
   await router.loadConversation();
   assert.equal(router.conversation().page, original);
   assert(router.conversation().newOutput);
-  router.toggleFollow();
+  router.scroll(10000);
   await tick();
   assert.match(JSON.stringify(router.conversation().page?.entries), /Checkpoint 2/);
   assert.equal(router.conversation().newOutput, false);
@@ -1341,7 +1340,7 @@ test("reentering a worker follows the latest output while retaining its draft", 
 test("activity travels across a fixed ASCII track and honors reduced motion", () => {
   assert.deepEqual(
     [0, 250, 500, 750, 3500, 3750].map((now) => activityIndicator("full", now)),
-    ["c----", "C----", "c----", "-c---", "----c", "c----"],
+    ["c----", "-C---", "--c--", "---c-", "----c", "c----"],
   );
   for (const motion of ["reduced", "off"] as const)
     assert.equal(activityIndicator(motion, 900), activityIndicator(motion, 0));
@@ -1440,7 +1439,7 @@ test("lean live following refreshes saved messages without events and stops when
   let latest = "First message";
   source.respond = async () => {
     reads++;
-    return conversationReply(ref(), latest);
+    return conversationReply(ref(), "History line\n".repeat(100) + latest);
   };
   const unsubscribe = router.onChange(() => {});
   router.navigate("conversation", ref());
@@ -1456,10 +1455,11 @@ test("lean live following refreshes saved messages without events and stops when
   assert.equal(reads, 2);
   assert.match(JSON.stringify(router.conversation().page), /New tool output/);
   assert.equal(router.draft, "Keep this draft");
-  router.toggleFollow();
+  renderScreen(router, { width: 100, height: 20, paint: createPaint("terminal-default") });
+  router.scroll(-10);
   await advance();
   assert.equal(reads, 2, "reading history must not poll");
-  router.toggleFollow();
+  router.scroll(10000);
   await tick();
   router.navigate("fleet");
   const hiddenReads = reads;
@@ -1476,4 +1476,49 @@ test("lean live following refreshes saved messages without events and stops when
   router.dispose();
   await advance();
   assert.equal(reads, savedReads);
+});
+
+test("transcript arrows, pages and wheel resume following at the bottom without a toggle", async () => {
+  const source = new UiSource();
+  source.respond = async () => conversationReply(ref(), "History\n".repeat(100));
+  const router = new ScreenRouter(source);
+  await router.start();
+  router.navigate("conversation", ref());
+  await tick();
+  router.transcriptFocus = true;
+  const tui = new TuiAltScreen(new MemoryTerminal());
+  tui.requestRender = () => {};
+  const screen = new PinataScreen({ tui, router, main() {} });
+  for (const [up, down] of [
+    ["\u001b[A", "\u001b[B"],
+    ["\u001b[5~", "\u001b[6~"],
+  ]) {
+    screen.render(100);
+    screen.handleInput(up);
+    assert.equal(router.conversation().follow, false);
+    screen.handleInput(down);
+    assert.equal(router.conversation().follow, true);
+    await tick();
+  }
+  screen.render(100);
+  const mouse = {
+    type: "wheel" as const,
+    button: "none" as const,
+    x: 3,
+    y: 5,
+    screenX: 3,
+    screenY: 5,
+    width: 100,
+    height: 30,
+    shift: false,
+    alt: false,
+    ctrl: false,
+  };
+  screen.handleMouse({ ...mouse, wheelDelta: -5 });
+  assert.equal(router.conversation().follow, false);
+  screen.handleMouse({ ...mouse, wheelDelta: 5 });
+  assert.equal(router.conversation().follow, true);
+  assert.doesNotMatch(screen.render(100).join("\n"), /f follow/);
+  screen.dispose();
+  router.dispose();
 });

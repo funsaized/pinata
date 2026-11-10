@@ -101,7 +101,7 @@ environment handling, descendant-held pipes and nested jobs. Real Pi RPC,
 installed-package and native-host/default-worker smokes run there too. The
 native-worker report and run files are retained as CI artifacts. These targeted
 checks do not replace the full Linux/macOS workspace and terminal suites. The
-[implementation record](rewrite-progress.md) lists actual local versions and
+[implementation record](https://github.com/funsaized/pinata/blob/9a6d9de/docs/maintainers/rewrite-progress.md) lists actual local versions and
 results; planned CI is not a recorded pass.
 
 ## Model-backed evaluation

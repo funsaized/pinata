@@ -15,10 +15,18 @@ The archive includes `PLAN.md`, `HIGH_LEVEL_REQS.md` and these files under
 - `current-state-adversarial-review.md`
 - `rewrite-plan.md` and `rewrite-readiness.md`
 
-The [implementation record](rewrite-progress.md) identifies milestone source
+The archived [implementation record](https://github.com/funsaized/pinata/blob/9a6d9de/docs/maintainers/rewrite-progress.md) identifies milestone source
 archives, verification attempts and their limits. Raw arena and benchmark reports
 remain at their recorded artifact paths, including failed and interrupted runs.
 Historical oracle results and usage claims do not establish current behavior.
+
+The completed milestone record and duplicate positioning notes were removed from
+the maintained documentation after the usability audit. Their last versions remain
+at [the archived record](https://github.com/funsaized/pinata/blob/9a6d9de/docs/maintainers/rewrite-progress.md)
+and [positioning notes](https://github.com/funsaized/pinata/blob/9a6d9de/docs/maintainers/positioning.md).
+Use [testing](testing.md), [platform coverage](../how-to/platforms.md), and the
+[coverage map](rewrite-coverage.md) for current verification scope. Raw reports,
+failed attempts, migration fixtures and recovery evidence remain unchanged.
 
 Final launcher inspection on November 9, 2026 identified the macOS Pi 1.5 path as
 the installed Node CLI. Older macOS artifacts labeled `native` do not establish

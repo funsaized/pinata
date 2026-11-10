@@ -300,7 +300,6 @@ export class PinataScreen implements Component, Focusable {
     }
     if (this.router.screen !== "conversation" || !this.router.selected) return;
     if (this.router.transcriptFocus) {
-      if (data === "f") this.router.toggleFollow();
       if (data === "d") {
         this.router.details = !this.router.details;
         this.requestRender();

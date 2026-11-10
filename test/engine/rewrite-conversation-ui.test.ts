@@ -1,6 +1,12 @@
+import { registerPinataMessageRenderers } from "../../engine/pi/message-renderers.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
-import { initTheme, type Theme } from "@earendil-works/pi-coding-agent";
+import {
+  initTheme,
+  type Theme,
+  type ExtensionAPI,
+  type MessageRenderer,
+} from "@earendil-works/pi-coding-agent";
 import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
 import { piConversationPresentation } from "../../engine/pi/conversation.ts";
 import { renderConversation } from "../../engine/ui/conversation.ts";
@@ -130,4 +136,47 @@ test("Pi tool and report surfaces use native state backgrounds with full-width p
       .join("")
       .includes("\u001b[48;5;"),
   );
+});
+
+test("Pinata notices use readable headings without exposing saved-message versions or delivery markers", () => {
+  const renderers = new Map<string, MessageRenderer>();
+  registerPinataMessageRenderers({
+    registerMessageRenderer: (type: string, renderer: MessageRenderer) => {
+      renderers.set(type, renderer);
+    },
+  } as unknown as ExtensionAPI);
+  const renderer = renderers.get("pinata.completion.v3");
+  assert(renderer);
+  const ref = { run: "retained-run", worker: "tests", assignment: 1 };
+  const content = `tests/1: completed.\nTests passed.\nFull result: ${JSON.stringify(ref)}\n[pinata-notice:delivery-id]`;
+  const message = {
+    role: "custom" as const,
+    customType: "pinata.completion.v3",
+    content,
+    display: true,
+    details: { ref },
+    timestamp: 0,
+  };
+  const theme = {
+    bg: (_key: string, text: string) => text,
+    fg: (_key: string, text: string) => text,
+  } as Theme;
+  for (const expanded of [false, true]) {
+    const component = renderer(
+      message,
+      { expanded, outputPad: 1, keyText: () => "", keyHint: (_key, description) => description },
+      theme,
+    );
+    assert(component);
+    const rows = component.render(80);
+    const output = stripTerminalSequences(rows.join("\n"));
+    assert.match(output, /Subagent result/);
+    assert.match(output, /tests\/1: completed/);
+    assert.match(output, /\/pinata-conversation tests 1/);
+    assert.doesNotMatch(output, /completion\.v3|pinata-notice|Full result: \{/);
+    assert.equal(output.includes("Run: retained-run"), expanded);
+    assert(rows.every((line) => visibleWidth(line) <= 80));
+  }
+  assert.equal(message.content, content, "stored delivery evidence remains unchanged");
+  assert.equal(renderers.size, 5);
 });

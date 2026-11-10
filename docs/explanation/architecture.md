@@ -55,4 +55,4 @@ never revive missed occurrences after a crash.
 The coordinator chooses testing, review and acceptance. There is no production
 budget subsystem, ownership allocation policy, mandatory reviewer or verification
 condition on exposing output. See [trust](trust.md), [API](../reference/api.md) and
-[implementation evidence](../maintainers/rewrite-progress.md).
+[implementation evidence](https://github.com/funsaized/pinata/blob/9a6d9de/docs/maintainers/rewrite-progress.md).

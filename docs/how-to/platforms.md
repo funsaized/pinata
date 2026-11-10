@@ -44,5 +44,5 @@ equivalent through Node on Windows.
 
 Herdr requires its own available session and is conditionally exercised. Network
 filesystems, power-loss durability and universal escaped-process containment are
-outside the demonstrated results. See [implementation evidence](../maintainers/rewrite-progress.md)
+outside the demonstrated results. See [implementation evidence](https://github.com/funsaized/pinata/blob/9a6d9de/docs/maintainers/rewrite-progress.md)
 for the current gate status; a declared support target is not a test pass.

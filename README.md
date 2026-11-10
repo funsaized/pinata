@@ -53,4 +53,4 @@ npm run arena -- --offline
 Tests and benchmarks use scripted or loopback providers. They establish behavior
 and coordination overhead; they do not establish improved model coding performance.
 See [testing](docs/maintainers/testing.md), [architecture](docs/explanation/architecture.md)
-and [the implementation record](docs/maintainers/rewrite-progress.md).
+and [the implementation record](https://github.com/funsaized/pinata/blob/9a6d9de/docs/maintainers/rewrite-progress.md).

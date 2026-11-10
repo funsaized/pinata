@@ -1,7 +1,7 @@
 # Fleet navigation and observation
 
-The main conversation shows a compact Agents tree. Active workers have an indented
-activity line; actual children branch beneath their parent; queued work has a total
+The main conversation shows a compact Agents tree. Active workers have a moving
+ASCII activity marker; actual children branch beneath their parent; queued work has a total
 and can be expanded. Enter the fleet to select an exact worker/assignment and browse
 its conversation. Execution, cleanup, delivery and assessment stay distinct.
 
@@ -11,6 +11,21 @@ foreground wait, Ctrl+R to recover and Ctrl+L to refresh. Mouse wheel and
 Alt+PageUp/PageDown scroll the selected view. Commands offer the same navigation
 when terminal encodings conflict. Parent and worker drafts remain separate, and a
 control draft clears only after durable acceptance.
+
+Press `?` for shortcuts relevant to the current screen and focus. In an empty
+message composer, `?` opens composer help; within a draft it remains punctuation.
+Tab switches between the transcript and the message composer.
+
+Conversations follow the latest saved output by default. Scrolling away from the
+bottom enters reading mode and keeps the displayed history fixed. Scrolling back
+to the bottom resumes following and fetches the latest output. Arrow keys, mouse
+wheel, PageUp/PageDown and Alt+PageUp/PageDown share this behavior. There is no
+follow toggle. Visible live conversations refresh once per second while following.
+
+Completion notices use the heading “Subagent result,” with worker identity,
+execution outcome, summary and a conversation command. Internal versioned message
+identifiers and delivery markers remain in saved session data for replay; they
+are not tool names or normal display labels.
 
 `lean` shows compact activity; `observe` includes activity excerpts. Both retain
 conversation data for explicit inspection. The mode does not select a backend,

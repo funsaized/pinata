@@ -99,7 +99,7 @@ export function helpPanel(
             rows: [
               ["↑ / ↓", "Scroll transcript"],
               ["PageUp / PageDown", "Scroll by page"],
-              ["f", "Toggle following latest"],
+              ["Bottom of transcript", "Resume following automatically"],
               ["d", "Expand / collapse tool output"],
               ["m", "Load older messages"],
               [keys.refresh, "Refresh or reconnect"],
