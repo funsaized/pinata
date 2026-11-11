@@ -280,6 +280,35 @@ export const palettes: Readonly<Record<PaletteName, Palette>> = {
 };
 
 export type Paint = (token: string, text: string) => string;
+const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+export function rainbowText(text: string, paint: Paint): string {
+  const colors = ["pink", "purple", "blue", "cyan", "green", "yellow", "orange", "red"].map(
+    (color) =>
+      Number.parseInt(palettes.pinata.colors[`accent.${color}` as SemanticToken].slice(1), 16),
+  );
+  const segments = Array.from(graphemes.segment(text), ({ segment }) => segment);
+  const period = Math.min(24, Math.max(1, segments.length));
+  return segments
+    .map((segment, index) => {
+      const position = ((index % period) / period) * colors.length;
+      const start = colors[Math.floor(position)];
+      const end = colors[(Math.floor(position) + 1) % colors.length];
+      const fraction = position % 1;
+      const hex = [16, 8, 0]
+        .map((shift) => {
+          const from = (start >> shift) & 255;
+          const to = (end >> shift) & 255;
+          return Math.round(from + (to - from) * fraction)
+            .toString(16)
+            .padStart(2, "0");
+        })
+        .join("");
+      return paint(`#${hex}`, segment);
+    })
+    .join("");
+}
+
 export function createPaint(
   name: PaletteName,
   options: {
@@ -316,17 +345,23 @@ export function createPaint(
   };
 }
 
+const accents: SemanticToken[] = [
+  "accent.blue",
+  "accent.cyan",
+  "accent.green",
+  "accent.yellow",
+  "accent.orange",
+  "accent.red",
+  "accent.pink",
+  "accent.purple",
+];
+
+export function modelAccent(name: string, models: readonly string[]): SemanticToken {
+  const distinct = [...new Set(models)].sort();
+  return accents[Math.max(0, distinct.indexOf(name)) % accents.length];
+}
+
 export function agentAccent(name: string): SemanticToken {
-  const accents: SemanticToken[] = [
-    "accent.blue",
-    "accent.cyan",
-    "accent.green",
-    "accent.yellow",
-    "accent.orange",
-    "accent.red",
-    "accent.pink",
-    "accent.purple",
-  ];
   let hash = 0;
   for (const character of name) hash = (hash * 31 + (character.codePointAt(0) ?? 0)) >>> 0;
   return accents[hash % accents.length];

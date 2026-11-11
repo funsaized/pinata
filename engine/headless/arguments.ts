@@ -120,7 +120,7 @@ export const usage = `Usage:
   pinata agents [list|show <name>|validate]        discover Markdown definitions
   pinata tools --json                            discover coordinator tool schemas
   pinata migrate <input> [--kind job|config|definition] [--output <new-file>]
-  pinata migrate-run <legacy-directory> --workspace <checkout> [--run <new-id>]
+  pinata migrate-run <source-directory> --workspace <checkout> [--run <new-id>]
       [--dry-run | --import --directory <new-store>] [--output <new-manifest>]
 
 Host options: --workspace, --directory, --run, --agent-dir, --definitions (repeatable),

@@ -1,3 +1,5 @@
+import { registerPinataMessageRenderers } from "./message-renderers.ts";
+import { readPersonalGrants } from "./grants.ts";
 import { join } from "node:path";
 import {
   getAgentDir,
@@ -67,6 +69,7 @@ async function modelRuntime(context: ExtensionContext, agentDir: string): Promis
 export function createPinataExtension(options: PiExtensionOptions = {}): ExtensionFactory {
   return (pi) => {
     if (process.env.PINATA_AGENT === "1") return;
+    registerPinataMessageRenderers(pi);
     const bindings = new Map<string, Binding>();
     const pending = new Map<string, Promise<Binding>>();
     const addressedInputs = new WeakMap<InputEvent, Promise<InputEventResult>>();
@@ -106,7 +109,7 @@ export function createPinataExtension(options: PiExtensionOptions = {}): Extensi
           workspace: saved?.workspace ?? options.host?.workspace ?? context.cwd,
           ...(saved ? { directory: saved.directory, run: saved.run } : {}),
           agentDir,
-          grants: configuredGrants,
+          grants: configuredGrants ?? (await readPersonalGrants(agentDir)),
           modelRuntime: options.host?.modelRuntime ?? (await modelRuntime(context, agentDir)),
           parentModel:
             options.host?.parentModel ??

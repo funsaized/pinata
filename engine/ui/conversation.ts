@@ -135,7 +135,10 @@ function renderEntries(entries: unknown[], options: ConversationOptions): string
       output.push(...(expanded ? body : body.slice(0, previewRows)));
       if (!expanded && body.length > previewRows)
         output.push(
-          paint("muted", fit(`… ${body.length - previewRows} more lines · Tab, d expands`, width)),
+          paint(
+            "muted",
+            fit(`… ${body.length - previewRows} more lines · d expands in transcript`, width),
+          ),
         );
       output.push("");
       surface(start, message.isError ? "error" : "success");

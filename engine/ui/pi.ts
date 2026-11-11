@@ -6,7 +6,7 @@ import { paletteSchema } from "../contracts/config.ts";
 import type { RuntimeSource } from "../sources/runtime.ts";
 import { ScreenRouter, type ScreenName } from "./router.ts";
 import { PinataScreen, resolveKeys } from "./screen.ts";
-import { createPaint, type Paint, type SemanticToken } from "./palette.ts";
+import { createPaint, rainbowText, type Paint, type SemanticToken } from "./palette.ts";
 import { fleetWidget } from "./render.ts";
 
 type UiBinding = { session: string; router: ScreenRouter; context: ExtensionContext };
@@ -84,8 +84,29 @@ export function installCoordinatorUi(
   let terminalInput: (() => void) | undefined;
   const errors = (context: ExtensionContext, error: unknown) =>
     context.ui.notify(error instanceof Error ? error.message : String(error), "error");
+  const hint = (
+    context: ExtensionContext,
+    visible: boolean,
+    keys: Record<string, string> = {},
+  ): void => {
+    const shortcutPaint = createPaint("pinata", {
+      noColor: Object.hasOwn(process.env, "NO_COLOR"),
+      terminal: process.env.TERM,
+      mode: context.ui.theme?.getColorMode(),
+    });
+    const shortcut = resolveKeys(keys)
+      .openFleet.split("+")
+      .map((key) => (key === "down" ? "↓" : key.charAt(0).toUpperCase() + key.slice(1)))
+      .join(" + ");
+    if (context.mode === "tui")
+      context.ui.setStatus?.(
+        "pinata.shortcut",
+        visible ? `🤖 ${rainbowText(shortcut, shortcutPaint)}` : undefined,
+      );
+  };
   const widget = (binding: UiBinding): void => {
     if (binding.context.mode !== "tui") return;
+    hint(binding.context, true, binding.router.keys);
     binding.context.ui.setWidget("pinata.fleet.v3", (tui): Component & { dispose(): void } => {
       const unsubscribe = binding.router.onChange(() => tui.requestRender());
       return {
@@ -170,6 +191,7 @@ export function installCoordinatorUi(
       const binding = selected;
       if (!binding) return;
       binding.context.ui.setWidget("pinata.fleet.v3", undefined);
+      hint(binding.context, false);
       openedRouter = router;
       opening = (async () => {
         try {
@@ -229,9 +251,11 @@ export function installCoordinatorUi(
     },
     dispose(context) {
       closeScreen?.();
+      if (context) hint(context, false);
       const session = context?.sessionManager.getSessionId();
       for (const [key, binding] of bindings) {
         if (session && binding.session !== session) continue;
+        hint(binding.context, false);
         binding.router.dispose();
         binding.context.ui.setWidget("pinata.fleet.v3", undefined);
         bindings.delete(key);
@@ -288,6 +312,7 @@ export function installCoordinatorUi(
   pi.on("session_start", (_event, context) => {
     terminalInput?.();
     if (context.mode !== "tui") return;
+    hint(context, true, selected?.router.keys);
     terminalInput = context.ui.onTerminalInput((data) => {
       if (opening) return undefined;
       const keys = resolveKeys(selected?.router.keys ?? {});

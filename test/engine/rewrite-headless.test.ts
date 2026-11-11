@@ -545,6 +545,6 @@ test(
       ...world.hostArgs,
     ]);
     assert.equal(refused.code, 2, refused.stdout);
-    assert.match(refused.stdout, /outside retained legacy/);
+    assert.match(refused.stdout, /outside retained source/);
   },
 );

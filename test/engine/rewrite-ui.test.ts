@@ -15,10 +15,10 @@ import {
 } from "../../engine/contracts/index.ts";
 import { ScreenRouter } from "../../engine/ui/router.ts";
 import { PinataScreen, resolveKeys } from "../../engine/ui/screen.ts";
-import { createPaint, palettes } from "../../engine/ui/palette.ts";
+import { createPaint, modelAccent, palettes } from "../../engine/ui/palette.ts";
 import { displayText, lines } from "../../engine/ui/text.ts";
 import { invokeCoordinatorTool } from "../../engine/pi/tools.ts";
-import { fleetWidget, renderScreen } from "../../engine/ui/render.ts";
+import { activityIndicator, fleetWidget, renderScreen } from "../../engine/ui/render.ts";
 import { openViewer } from "../../engine/viewer/main.ts";
 import { installCoordinatorUi } from "../../engine/ui/pi.ts";
 import { AttachedSource } from "../../engine/sources/attached.ts";
@@ -38,6 +38,41 @@ const ref = (worker = 1, assignment = 1): AssignmentRef => ({
   run: "ui-run",
   worker: `worker-${worker}`,
   assignment,
+});
+
+test("fleet rows identify worker models with distinct colors and thinking levels", async () => {
+  const state = uiState(3);
+  const models = ["gpt-6-luna", "gpt-6.1-terra", "gpt-6-astra"];
+  Object.values(state.workers).forEach((worker, index) => {
+    worker.model = { provider: "fixture", id: models[index], thinking: "high" };
+  });
+  for (const assignment of Object.values(state.assignments))
+    assignment.execution = { phase: "running" };
+  const compact = stripTerminalSequences(
+    fleetWidget(state, {
+      width: 180,
+      paint: createPaint("pinata"),
+    }).join("\n"),
+  );
+  assert(compact.includes("worker-1/1"));
+  for (const model of models) assert(!compact.includes(model));
+  assert(!compact.includes("· high"));
+  const source = new UiSource(state);
+  const router = new ScreenRouter(source);
+  await router.start();
+  router.navigate("fleet", ref());
+  router.showQueued = true;
+  const rendered = stripTerminalSequences(
+    renderScreen(router, {
+      width: 180,
+      height: 24,
+      paint: createPaint("pinata"),
+    }).join("\n"),
+  );
+  for (const model of models) assert(rendered.includes(`[${model} · high]`));
+  assert.equal(new Set(models.map((model) => modelAccent(model, models))).size, 3);
+  assert.equal(modelAccent(models[0], models), modelAccent(models[0], [...models].reverse()));
+  router.dispose();
 });
 function accepted(input: unknown): SurfaceReply {
   const call = surfaceCallSchema.parse(input);
@@ -128,12 +163,12 @@ test("compact trees retain actual ancestry, queued totals and only witnessed ela
       elapsed: (target) => router.observedElapsed(target),
     }).join("\n");
   assert.match(render(), /● Agents/);
-  assert.match(render(), /│  └─ • fixture worker-2\/1/);
+  assert.match(render(), /│  └───────   fixture worker-2\/1/);
   assert.match(render(), /observed 1.7s/);
   assert.match(render(), /└─ ○ 2 queued/);
   assert.match(render(), /Reading retained fixture output/);
   assert(!render().includes("thinking"));
-  assert(render(true).includes("|  `- * fixture worker-2/1"));
+  assert(render(true).includes("|  `-------   fixture worker-2/1"));
   source.epoch = "reconnected-epoch";
   await source.emit(source.snapshot());
   assert.equal(
@@ -646,6 +681,7 @@ test("Pi screens use a full-viewport overlay and preserve parent and worker draf
   let draft = "parent draft 👩🏽‍💻";
   let component: PinataScreen | undefined;
   let widget: { dispose?(): void } | undefined;
+  const statuses = new Map<string, string | undefined>();
   const registered = new Map<string, unknown>();
   const sent: unknown[] = [];
   const customOptions: unknown[] = [];
@@ -672,6 +708,9 @@ test("Pi screens use a full-viewport overlay and preserve parent and worker draf
         draft = text;
       },
       notify() {},
+      setStatus(key: string, text: string | undefined) {
+        statuses.set(key, text);
+      },
       onTerminalInput(handler: (text: string) => unknown) {
         terminalInput = handler;
         return () => {
@@ -704,6 +743,7 @@ test("Pi screens use a full-viewport overlay and preserve parent and worker draf
   const ui = installCoordinatorUi(pi, async () => source);
   const router = await ui.bind(context);
   await events.get("session_start")?.({}, context);
+  assert.equal(stripTerminalSequences(statuses.get("pinata.shortcut") ?? ""), "🤖 Shift + ↓");
   assert.equal(terminalInput?.("\u001b[1;2A"), undefined, "Shift+Up in Pi must not open the fleet");
   assert.deepEqual(terminalInput?.("\u001b[1;2B"), { consume: true });
   await tick();
@@ -713,10 +753,12 @@ test("Pi screens use a full-viewport overlay and preserve parent and worker draf
     "The default main-screen Shift+Down opens the fleet",
   );
   assert.equal(widget, undefined, "interactive fleet replaces the compact list");
+  assert.equal(statuses.get("pinata.shortcut"), undefined);
   component?.handleInput("\u001b[1;2A");
   await tick();
   assert.equal(router.screen, "main", "Shift+Up exits the fleet to Pi");
   assert(widget, "compact widget returns after closing the fleet");
+  assert.equal(stripTerminalSequences(statuses.get("pinata.shortcut") ?? ""), "🤖 Shift + ↓");
   const first = ui.open(context, "conversation", ref());
   await tick();
   assert(component);
@@ -971,9 +1013,7 @@ test("composer editing keys preserve focus and transcript controls are explicit"
   screen.handleInput("\t");
   assert.equal(router.conversation().follow, true);
   screen.handleInput("f");
-  assert.equal(router.conversation().follow, false);
-  screen.handleInput("f");
-  assert.equal(router.conversation().follow, true);
+  assert.equal(router.conversation().follow, true, "f no longer toggles following");
   screen.handleInput("d");
   assert.equal(router.details, true);
   screen.render(100);
@@ -1275,7 +1315,7 @@ test("reading history preserves its transcript until following the newer checkpo
   await router.start();
   let version = 1;
   source.respond = async () => {
-    const reply = conversationReply(ref(), `Checkpoint ${version}`);
+    const reply = conversationReply(ref(), "History line\n".repeat(100) + `Checkpoint ${version}`);
     if (
       reply.status === "ok" &&
       reply.response.method === "query" &&
@@ -1287,12 +1327,13 @@ test("reading history preserves its transcript until following the newer checkpo
   router.navigate("conversation", ref());
   await tick();
   const original = router.conversation().page;
-  router.toggleFollow();
+  renderScreen(router, { width: 100, height: 20, paint: createPaint("terminal-default") });
+  router.scroll(-10);
   version = 2;
   await router.loadConversation();
   assert.equal(router.conversation().page, original);
   assert(router.conversation().newOutput);
-  router.toggleFollow();
+  router.scroll(10000);
   await tick();
   assert.match(JSON.stringify(router.conversation().page?.entries), /Checkpoint 2/);
   assert.equal(router.conversation().newOutput, false);
@@ -1328,5 +1369,226 @@ test("reentering a worker follows the latest output while retaining its draft", 
   await tick();
   assert.equal(router.conversation().follow, true);
   assert.match(renderScreen(router, options).join("\n"), /Latest ending/);
+  router.dispose();
+});
+
+test("selected prompts wrap inside their box without hiding fleet controls", async () => {
+  const source = new UiSource(uiState(1));
+  source.state.assignments[assignmentKey(ref())].task =
+    "Inspect the engine and explain its entry points.\nPreserve this second paragraph.";
+  const router = new ScreenRouter(source);
+  await router.start();
+  router.navigate("fleet", ref());
+  for (const width of [5, 32, 80]) {
+    const rows = renderScreen(router, {
+      width,
+      height: 24,
+      paint: createPaint("terminal-default"),
+    });
+    assert(rows.every((row) => visibleWidth(row) <= width));
+    assert(rows.length <= 24);
+    if (width === 32) {
+      assert(rows.filter((row) => row.startsWith("│ ")).length >= 3);
+      const prompt = rows
+        .filter((row) => row.startsWith("│ "))
+        .map((row) => row.slice(2, -2).trim())
+        .join(" ");
+      assert(prompt.includes("second paragraph."));
+      assert(rows.join("\n").includes("select"));
+    }
+  }
+  router.dispose();
+});
+
+test("activity travels across a fixed ASCII track and honors reduced motion", () => {
+  assert.deepEqual(
+    [0, 250, 500, 750, 3500, 3750].map((now) => activityIndicator("full", now)),
+    ["c o o", "-Co o", "- c o", "- -co", "- - -", "c o o"],
+  );
+  for (const motion of ["reduced", "off"] as const)
+    assert.equal(activityIndicator(motion, 900), activityIndicator(motion, 0));
+  assert.equal(activityIndicator("full", 0, "├─ ", 0, 15, false), "c o o o ");
+  assert.equal(activityIndicator("full", 250, "├─ ", 0, 15, false), "┆Co o o ");
+  assert.equal(activityIndicator("full", 500, "├─ ", 0, 15, false), "┆ c o o ");
+  assert.equal(activityIndicator("full", 3000, "├─ ", 0, 15, false), "┆ - - - ");
+  assert.equal(activityIndicator("full", 3000, "|- ", 0, 15, true), ": - - - ");
+  assert.equal(activityIndicator("full", 250, "└─ ", 1, 15, false), "C o o o ");
+  assert.equal(activityIndicator("off", 250, "└─ ", 1, 15, false), "└───────");
+});
+
+test("fleet retains completed dependency references without inventing ancestry", async () => {
+  const source = new UiSource(uiState(3));
+  for (const assignment of Object.values(source.state.assignments))
+    assignment.execution = { phase: "ended", reason: "completed", cleanup: "confirmed" };
+  source.state.assignments[assignmentKey(ref(3))].after = [ref(), ref(2)];
+  const router = new ScreenRouter(source);
+  await router.start();
+  router.navigate("fleet");
+  const rows = renderScreen(router, {
+    width: 100,
+    height: 30,
+    paint: createPaint("terminal-default"),
+    ascii: true,
+  });
+  assert.match(rows.join("\n"), /after: worker-1\/1, worker-2\/1/);
+  assert(router.fleetNodes(true).every((node) => !node.hasChildren));
+  router.dispose();
+});
+
+test("help and actions fit narrow terminals, scroll to selection and hide the composer", async () => {
+  const router = new ScreenRouter(new UiSource());
+  await router.start();
+  router.navigate("conversation", ref());
+  router.setDraft("preserve this draft");
+  const terminal = new MemoryTerminal();
+  const tui = new TuiAltScreen(terminal);
+  tui.requestRender = () => {};
+  const screen = new PinataScreen({ tui, router, main() {} });
+  for (const width of [24, 80, 150]) {
+    router.help = true;
+    const help = screen.render(width).map(stripTerminalSequences);
+    assert(help.every((line) => visibleWidth(line) <= width));
+    assert(!help.join("\n").includes("preserve this draft"));
+    assert.match(help.join("\n"), /Esc close/);
+    router.help = false;
+    router.actions = true;
+    router.actionIndex = 5;
+    terminal.rows = 12;
+    const actions = screen.render(width).map(stripTerminalSequences);
+    assert(actions.every((line) => visibleWidth(line) <= width));
+    assert.match(actions.join("\n"), /Inspect selected/);
+    assert.match(actions.join("\n"), /saved\s+result/);
+    router.actions = false;
+    terminal.rows = 30;
+  }
+  assert.equal(router.draft, "preserve this draft");
+  screen.dispose();
+  router.dispose();
+});
+
+test("help and footer follow fleet, transcript and composer context without swallowing punctuation", async () => {
+  const router = new ScreenRouter(new UiSource());
+  await router.start();
+  const tui = new TuiAltScreen(new MemoryTerminal());
+  tui.requestRender = () => {};
+  const screen = new PinataScreen({ tui, router, main() {} });
+  const rendered = () => stripTerminalSequences(screen.render(150).join("\n"));
+  router.navigate("fleet");
+  screen.handleInput("?");
+  assert.match(rendered(), /Pinata help · Fleet/);
+  assert.doesNotMatch(rendered(), /Send message|Follow latest|Previous assignment|\/steer/);
+  screen.handleInput("?");
+  router.navigate("conversation", ref());
+  router.transcriptFocus = true;
+  assert.doesNotMatch(rendered(), /\/help/);
+  screen.handleInput("?");
+  assert.match(rendered(), /Pinata help · Transcript/);
+  assert.doesNotMatch(rendered(), /Cycle all|Search worker|Send message/);
+  screen.handleInput("?");
+  screen.handleInput("\t");
+  screen.handleInput("?");
+  assert.match(rendered(), /Pinata help · Message/);
+  assert.doesNotMatch(rendered(), /Expand.*tool output|Cycle all/);
+  screen.handleInput("?");
+  screen.handleInput("Why");
+  screen.handleInput("?");
+  assert.equal(router.draft, "Why?");
+  assert.equal(router.help, false);
+  screen.dispose();
+  router.dispose();
+});
+
+test("lean live following refreshes saved messages without events and stops when hidden or disposed", async (t) => {
+  t.mock.timers.enable({ apis: ["setInterval"] });
+  const source = new UiSource();
+  source.state.assignments[assignmentKey(ref())].execution = { phase: "running" };
+  let now = 0;
+  const router = new ScreenRouter(source, { now: () => now });
+  await router.start();
+  let reads = 0;
+  let latest = "First message";
+  source.respond = async () => {
+    reads++;
+    return conversationReply(ref(), "History line\n".repeat(100) + latest);
+  };
+  const unsubscribe = router.onChange(() => {});
+  router.navigate("conversation", ref());
+  await tick();
+  router.setDraft("Keep this draft");
+  const advance = async () => {
+    now += 1000;
+    t.mock.timers.tick(1000);
+    await tick();
+  };
+  latest = "New tool output without a response event";
+  await advance();
+  assert.equal(reads, 2);
+  assert.match(JSON.stringify(router.conversation().page), /New tool output/);
+  assert.equal(router.draft, "Keep this draft");
+  renderScreen(router, { width: 100, height: 20, paint: createPaint("terminal-default") });
+  router.scroll(-10);
+  await advance();
+  assert.equal(reads, 2, "reading history must not poll");
+  router.scroll(10000);
+  await tick();
+  router.navigate("fleet");
+  const hiddenReads = reads;
+  await advance();
+  assert.equal(reads, hiddenReads);
+  router.navigate("conversation", ref());
+  await tick();
+  source.capabilities.live = false;
+  const savedReads = reads;
+  await advance();
+  assert.equal(reads, savedReads, "saved sources must not poll");
+  source.capabilities.live = true;
+  unsubscribe();
+  router.dispose();
+  await advance();
+  assert.equal(reads, savedReads);
+});
+
+test("transcript arrows, pages and wheel resume following at the bottom without a toggle", async () => {
+  const source = new UiSource();
+  source.respond = async () => conversationReply(ref(), "History\n".repeat(100));
+  const router = new ScreenRouter(source);
+  await router.start();
+  router.navigate("conversation", ref());
+  await tick();
+  router.transcriptFocus = true;
+  const tui = new TuiAltScreen(new MemoryTerminal());
+  tui.requestRender = () => {};
+  const screen = new PinataScreen({ tui, router, main() {} });
+  for (const [up, down] of [
+    ["\u001b[A", "\u001b[B"],
+    ["\u001b[5~", "\u001b[6~"],
+  ]) {
+    screen.render(100);
+    screen.handleInput(up);
+    assert.equal(router.conversation().follow, false);
+    screen.handleInput(down);
+    assert.equal(router.conversation().follow, true);
+    await tick();
+  }
+  screen.render(100);
+  const mouse = {
+    type: "wheel" as const,
+    button: "none" as const,
+    x: 3,
+    y: 5,
+    screenX: 3,
+    screenY: 5,
+    width: 100,
+    height: 30,
+    shift: false,
+    alt: false,
+    ctrl: false,
+  };
+  screen.handleMouse({ ...mouse, wheelDelta: -5 });
+  assert.equal(router.conversation().follow, false);
+  screen.handleMouse({ ...mouse, wheelDelta: 5 });
+  assert.equal(router.conversation().follow, true);
+  assert.doesNotMatch(screen.render(100).join("\n"), /f follow/);
+  screen.dispose();
   router.dispose();
 });

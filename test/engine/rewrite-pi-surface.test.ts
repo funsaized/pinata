@@ -7,6 +7,7 @@ import { fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai";
 import {
   createAgentSession,
   DefaultResourceLoader,
+  initTheme,
   ModelRuntime,
   SessionManager,
   SettingsManager,
@@ -34,6 +35,7 @@ async function fixture(
     recorded?: boolean;
     dropCompletion?: () => boolean | "marker";
     grants?: Grants;
+    personalGrants?: Grants;
     run?: string;
   } = {},
 ) {
@@ -41,6 +43,13 @@ async function fixture(
   const workspace = join(directory, "workspace");
   const agentDir = join(directory, "pi");
   await Promise.all([mkdir(workspace), mkdir(agentDir)]);
+  if (options.personalGrants) {
+    await mkdir(join(agentDir, "pinata"));
+    await writeFile(
+      join(agentDir, "pinata", "grants.json"),
+      JSON.stringify(options.personalGrants),
+    );
+  }
   const modelRuntime = await ModelRuntime.create({
     authPath: join(agentDir, "auth.json"),
     modelsPath: join(agentDir, "models.json"),
@@ -144,6 +153,7 @@ async function fixture(
   const notices: string[] = [];
   let draft = "";
   const errors: string[] = [];
+  initTheme("dark", false);
   await session.bindExtensions({
     mode: "tui",
     uiContext: {
@@ -862,4 +872,29 @@ test("compact discovery exposes launch grants while preserving full definitions 
   assert.equal(index.kind, "schema_index");
   assert(index.names.includes("pinata.command.v1"));
   assert.equal(surfaceReplySchema.parse(schemas.details).status, "ok");
+});
+
+test("Pi uses personal grants globally and explicit grants take precedence", async (t) => {
+  const personalGrants: Grants = {
+    access: "write",
+    tools: ["read", "grep", "find", "ls", "write", "edit", "bash"],
+    workspaces: ["shared", "worktree"],
+    inheritContext: false,
+    memory: { scope: "none", access: "read" },
+    delegation: {
+      maxDepth: 2,
+      agents: ["scout", "builder"],
+      tools: ["read", "write", "edit", "bash"],
+      workspaces: ["shared"],
+    },
+  };
+  const explicit: Grants = {
+    ...personalGrants,
+    delegation: { maxDepth: 0, agents: [], tools: [], workspaces: [] },
+  };
+  for (const grants of [undefined, explicit]) {
+    const f = await fixture(t, { personalGrants, grants });
+    await f.session.prompt("/pinata-new");
+    assert.deepEqual(f.hosts.at(-1)?.caller.grants, grants ?? personalGrants);
+  }
 });

@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing release tag (for example v0.2.0)
+        description: Existing release tag (for example v0.0.1)
         required: true
         type: string
 
@@ -75,6 +75,6 @@ jobs:
             echo "Release $RELEASE_TAG already exists"
           else
             # Prereleases (X.Y.Z-next.N) are GitHub prereleases, as they are npm's `next`.
-            case "$VERSION" in *-*) PRE=--prerelease ;; *) PRE= ;; esac
-            gh release create "$RELEASE_TAG" --verify-tag --title "pi-pinata $VERSION" --generate-notes $PRE
+            case "$VERSION" in *-*) RELEASE_FLAG=--prerelease ;; *) RELEASE_FLAG=--latest ;; esac
+            gh release create "$RELEASE_TAG" --verify-tag --title "pi-pinata $VERSION" --generate-notes "$RELEASE_FLAG"
           fi

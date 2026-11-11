@@ -49,8 +49,9 @@ accepted receipt's `operationId` must be queried to observe application completi
 
 Workers with delegated authority use `pinata_children`, `pinata_child_status` and
 `pinata_child_wait`; they never receive a root source or token. Optional memory
-tools use a bound scope and CAS revision. The complete generated inventory is in
-[the API reference](../../docs/reference/generated.md).
+tools use a bound scope and CAS revision. See
+[the tool reference](../../README.md#tools) for availability and paging, or
+`pinata tools --json` for complete generated schemas.
 
 For report synthesis, `inputs` is the wrong field: it composes workspace snapshots.
 Read upstream `result` or `conversation` queries, then supply the report text in
