@@ -476,7 +476,7 @@ export async function runCli(argv: readonly string[], io: CliIO): Promise<number
         return await runJob(args, io, true);
       case "migrate": {
         const converted = await convertFile({
-          path: requireArgument(args, 0, "legacy input"),
+          path: requireArgument(args, 0, "input"),
           kind: args.options.get("kind"),
           output: args.options.get("output"),
           run: args.options.get("run"),
@@ -486,7 +486,7 @@ export async function runCli(argv: readonly string[], io: CliIO): Promise<number
       }
       case "migrate-run": {
         const plan = await planLegacyMigration({
-          source: requireArgument(args, 0, "legacy directory"),
+          source: requireArgument(args, 0, "source directory"),
           workspace: args.options.get("workspace") ?? process.cwd(),
           run: args.options.get("run") ?? randomUUID(),
         });

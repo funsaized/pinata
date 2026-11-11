@@ -45,7 +45,7 @@ export async function validateMigrationDestination(
   )
     throw new DomainError(
       "conflict",
-      "Migration outputs must remain outside retained legacy stores and workspaces",
+      "Migration outputs must remain outside retained source stores and workspaces",
     );
 }
 

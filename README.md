@@ -64,7 +64,7 @@ agent definitions. Compose your own roles around the work you actually do.
 | Finite jobs, live control and saved-run inspection        | [Headless operation](#headless-operation)                                                                            |
 | Tools, schemas, commands and exports                      | [Tools](#tools), [CLI](#cli-reference), [API](#package-api)                                                          |
 | Authenticated IPC, durable events and usage               | [Events and IPC](#events-and-ipc)                                                                                    |
-| Recovery, trust and historical import                     | [Recovery](#recovery), [trust](#trust-boundaries), [migration](#migration)                                           |
+| Recovery, trust and retained-run import                   | [Recovery](#recovery), [trust](#trust-boundaries), [import](#conversion-and-import)                                  |
 | Source map, platforms and verification                    | [Implementation index](#architecture-and-implementation-index), [platforms](#platforms), [development](#development) |
 
 ## Install
@@ -1020,7 +1020,7 @@ backends and workspace, application port, scheduling owner, notifications and di
 | `subscribe(request, caller, consume)`                 | History/snapshot then live events; returns unsubscribe.                        |
 | `recover(request, caller)`                            | Inspect/reattach original attempts.                                            |
 | `close({reason})`                                     | Close schedules, stop owned work, report cleanup.                              |
-| `importHistory(history, caller)`                      | Import inert validated historical work.                                        |
+| `importHistory(history, caller)`                      | Import inert validated records.                                                |
 | `bindChild(parentRef)`                                | Authority-bound child port.                                                    |
 | `parentCheckpoint(ref, caller)`                       | Supported parent conversation checkpoint.                                      |
 | `scheduleTick()`                                      | Evaluate injected scheduling clock.                                            |
@@ -1136,47 +1136,33 @@ directory fsync is exercised; equivalent Windows directory durability, machine
 power loss and network filesystems are outside demonstrated coverage. Torn or corrupt
 records and ambiguous effects require explicit inspection and reconciliation.
 
-## Migration
+## Conversion and import
 
-Version 3 uses the [current contracts](#errors-and-versions). Older schema-2 agents
-and schema-3 jobs need explicit conversion. Historical readers and import adapters
-preserve originals alongside the current execution engine.
-
-```sh
-pinata migrate old-job.json --kind job --output new-job.json --json
-pinata migrate old-agent.md --kind definition --output new-agent.md --json
-pinata migrate-run OLD_RUN_DIRECTORY --workspace /path/to/project --dry-run --json
-```
-
-Conversion writes stdout or new paths. Notices identify removed ownership, budget,
-check and review policy, along with moved instructions. Read-only grants and worktree choices stay
-intact. New skills, inheritance, memory, nesting and completion commits stay off
-until enabled explicitly. Ambiguous fields and unknown versions fail.
-
-Import is separate:
+Use the installed contracts as the reference for input and output shapes.
+Conversion writes stdout or a new path and preserves its source:
 
 ```sh
-pinata migrate-run OLD_RUN_DIRECTORY --workspace /path/to/project --run NEW_RUN_ID --import --directory NEW_STORE --json
+pinata migrate source-job.json --kind job --output job.json --json
+pinata migrate source-agent.md --kind definition --output agent.md --json
+pinata migrate-run SOURCE_RUN_DIRECTORY --workspace /path/to/project --dry-run --json
 ```
 
-Only quiescent, reconciled sources qualify. Live old owners must finish or stop through
-their matching executable and protocol. A dead leader or old stopped flag does not prove
-descendant cleanup. Automatic support covers never-started stores and a narrow
-in-process case using only built-in file tools, with explicit safe provenance.
-Shell, process, Herdr, setup and custom-tool cases can stay read-only when cleanup
-cannot be proven. Missing or remote owners and unresolved application also block import.
+Inspect the plan before importing a retained run:
 
-Import creates identities and origin hashes while preserving assignment numbers.
-Historical work stays inert. It does not dispatch, send fresh notices or establish
-current usage or verification.
-Ambiguous work imports paused and needs continuation; isolated continuation gets a
-new frozen worktree. Pi session import projects a supported branch without host
-controls or incomplete tool pairs, preserving original bytes and provenance.
+```sh
+pinata migrate-run SOURCE_RUN_DIRECTORY --workspace /path/to/project --run NEW_RUN_ID --import --directory NEW_STORE --json
+```
 
-Before downgrading, stop or reconcile new activity with its matching executable and
-preserve stores, snapshots and user edits. Old binaries must not resume new records.
-Keep tested packages and source for recovery and export patches explicitly when needed.
-Cleanup of inspected old stores remains a separate action.
+Import requires a quiescent source with reconciled ownership and application state.
+A stopped flag or absent process leader does not prove descendant cleanup. An active
+owner must finish or stop through its matching executable and protocol. Missing or
+uncertain cleanup keeps the source read-only.
+
+Imported records preserve assignment numbers and provenance in a new run. They stay
+inert until explicit continuation, without dispatching tools or sending completion
+notices. Session import retains supported conversation data and complete tool pairs,
+excluding host controls. Conversion never expands grants. Keep source files,
+worktrees and recovery evidence until the imported result has been inspected.
 
 ## Platforms
 
@@ -1207,9 +1193,8 @@ sandbox.
 
 Windows tests cover creation crashes, nested jobs, descendant-held pipes, arguments,
 cancellation, reconnect and host loss. Full workspace and application fault matrices
-and terminal navigation run on Linux/macOS. Historical Mac artifacts called `native`
-used the installed Node Pi CLI and do not establish compiled Bun coverage there.
-See [historical evidence](#historical-evidence) for recorded source and runtime identities.
+and terminal navigation run on Linux/macOS. Test reports identify the actual host
+and worker runtimes; an executable label alone does not establish runtime coverage.
 
 ## Architecture and implementation index
 
@@ -1235,7 +1220,6 @@ command serialization. Recovery uses saved launch, session and cleanup evidence 
 reattach the original attempt or report uncertainty.
 
 This source map connects capabilities to implementations and regression suites.
-Tests retain the `rewrite-` prefix for the current runtime.
 
 | Responsibility                               | Implementation                                                                                                                                    | Main regression suites                                                                                                                                                                                                                                                                             |
 | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -1258,7 +1242,7 @@ Tests retain the `rewrite-` prefix for the current runtime.
 | IPC, live/saved sources, paging              | [IPC](engine/ipc), [sources](engine/sources)                                                                                                      | [IPC](test/engine/rewrite-ipc.test.ts), [queries](test/engine/rewrite-queries.test.ts), [pages](test/engine/rewrite-pages.test.ts)                                                                                                                                                                 |
 | Headless commands, standalone viewer         | [CLI](engine/headless), [viewer](engine/viewer), [launcher](bin/pinata.mjs)                                                                       | [headless](test/engine/rewrite-headless.test.ts)                                                                                                                                                                                                                                                   |
 | Fleet, transcripts, palettes, drafts         | [UI](engine/ui)                                                                                                                                   | [UI](test/engine/rewrite-ui.test.ts), [conversation UI](test/engine/rewrite-conversation-ui.test.ts)                                                                                                                                                                                               |
-| Historical codecs, quiescence, import        | [migration](engine/migration)                                                                                                                     | [migration](test/engine/rewrite-migration.test.ts)                                                                                                                                                                                                                                                 |
+| Input conversion, quiescence, run import     | [migration](engine/migration)                                                                                                                     | [migration](test/engine/rewrite-migration.test.ts)                                                                                                                                                                                                                                                 |
 | Recipes, Relay, catalog generation           | [examples](examples), [generator](scripts/reference.ts)                                                                                           | [examples](test/engine/rewrite-examples.test.ts), [links](test/engine/rewrite-docs.test.ts)                                                                                                                                                                                                        |
 | Runtime measurements, coding trials          | [bench](bench), [arena](arena)                                                                                                                    | [benchmarks](test/engine/rewrite-bench.test.ts), [arena](test/engine/rewrite-arena.test.ts)                                                                                                                                                                                                        |
 | Package exports, npm, mirror                 | [scripts](scripts), [workflows](.github/workflows)                                                                                                | [package smoke](test/engine/package-smoke.ts), [release](test/rewrite-release.test.mjs), [mirror](test/github-package.test.mjs)                                                                                                                                                                    |
@@ -1332,8 +1316,8 @@ With token-spend authorization and the key already set, run
 
 This README is the maintained guide and reference. Tools consume the separate JSON
 catalog. Agent definitions, prompts, skills, repository instructions and executable
-example fixtures remain separate functional inputs. Historical records are linked
-at fixed revisions below.
+example fixtures remain separate functional inputs. The checked-in code, contracts,
+tests and evaluation harness define the release behavior.
 
 ```sh
 npm run docs:setup
@@ -1415,19 +1399,19 @@ of its own idle connections before sampling.
 Retain raw cells and incomplete and failed attempts at unique paths. The wrapper forwards
 interrupts and waits to retain files; SIGKILL cannot run the final copy, so synced
 command status identifies the original directory. Match source, lockfile, scripts,
-tools, runtime, hardware, storage and launcher. Historical process measurements with
-different startup boundaries remain incomparable. No Windows latency baseline is accepted.
+tools, runtime, hardware, storage and launcher. Compare measurements only when their
+boundaries and coverage match. No Windows latency baseline is accepted.
 
 Before attributing an arena improvement to runtime optimization, matched profiles
 must show overhead accounts for at least 10% of the affected path. Smaller changes
-remain local improvements. The fixed [measurement record](https://github.com/funsaized/pinata/blob/3aa8b25f0a151d6a811ac08414159276dd905831/docs/maintainers/rewrite-benchmarks.md)
-retains accepted and failed cohorts, source closures and approval scope.
+remain local improvements. Retain source closures, raw attempts and the exact
+measurement profile with each result.
 
 </details>
 
 ### Coding arena
 
-The version-2 arena runs repeatable assignments with independent oracles and complete
+The arena runs repeatable assignments with independent oracles and complete
 trial evidence. Offline controls copy or mutate known solutions to test the harness:
 
 ```sh
@@ -1439,8 +1423,8 @@ npm run arena:doctor
 npm run arena:local -- --agent pinata --preview
 ```
 
-Checkout, Reservations, Incidents and both Team Board scorer versions retain their
-prompts, starters, solutions and oracle cases. Changes require a new version. Bootstrap
+The corpus includes Checkout, Reservations, Incidents and Team Board. Task definitions
+freeze prompts, starters, solutions and oracle cases. Changes require a new task version. Bootstrap
 overwrites generated `arena/local/{codex,pi,pinata}.json`. Doctor checks executable
 startup and configuration; preview prints commands and prompts. Neither establishes model
 authentication or availability or spends tokens.
@@ -1482,8 +1466,8 @@ Source evidence includes declared harness, runtime and corpus roots, untracked s
 package and lockfile configuration, excluding credentials and results. External dependency
 coverage stays partial. Candidate snapshots are immutable and timed, with capture cost
 separate. Match task version, starting files, model and settings, prompts, tools, limits,
-host and workflow; record unmatched differences and order. Version-1 historical batches
-keep original claims through a read-only codec.
+host and workflow; record unmatched differences and order. Results remain bound
+to the exact code, task, conditions and observed execution recorded for that trial.
 
 </details>
 
@@ -1570,22 +1554,6 @@ failures or 404s can mean repository/package access problems, not permission to 
 an existing version.
 
 </details>
-
-### Historical evidence
-
-Pre-rewrite plans, requirements and reviews remain at
-[`c426753291351c9b3b79a44c902cd5db17244c2a`](https://github.com/funsaized/pinata/tree/c426753291351c9b3b79a44c902cd5db17244c2a).
-The [implementation record](https://github.com/funsaized/pinata/blob/9a6d9de/docs/maintainers/rewrite-progress.md)
-identifies milestone archives, test attempts and limits. Fixed
-[maintainer records](https://github.com/funsaized/pinata/tree/3aa8b25f0a151d6a811ac08414159276dd905831/docs/maintainers)
-retain coverage maps, UI captures, migration and backend decisions and benchmark cohorts,
-including failures. Use `git show REVISION:PATH` locally. Raw reports, source archives,
-journals and recovery artifacts stay at recorded paths. Historical scores and approvals
-do not become current evidence.
-
-The old [Relay video](media/pinata-demo.mp4) and `media/` artwork predate this runtime.
-They show a ten-agent workflow with retired policy and verification behavior. Use the
-current six-worker [Relay example](#build-relay) to try Pinata today.
 
 ## License
 

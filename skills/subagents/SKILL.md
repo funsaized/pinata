@@ -77,6 +77,6 @@ child wait requires the parent to finish/yield; repeated polling does not free i
 slot. Schedules start paused, need explicit activation, close with their session and
 remain paused after a crash without catch-up.
 
-Use explicit migration for older inputs/runs. Preserve original work and evidence;
-live old owners must finish or stop through their matching executable. Historical
-review and usage claims do not become current evidence.
+Use explicit conversion and import for retained inputs and runs. Preserve source
+work and evidence; active owners must finish or stop through their matching
+executable. Imported claims remain attributed to their recorded execution.
