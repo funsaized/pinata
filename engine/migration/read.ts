@@ -254,7 +254,7 @@ export async function inspectLegacyRun(source: string): Promise<LegacyInspection
   if (observed) blockers.push(...observed.blockers);
   if (events.some((event) => event.v === 1))
     notices.push(
-      "Schema-1 records without assignment IDs retain their observed first-assignment identity; no missing historical assignments are invented.",
+      "Records without assignment IDs retain their observed first-assignment identity; no missing assignments are invented.",
     );
   let application: LegacyInspection["application"] = "none";
   const applicationFile = files.find((file) => file.path === "integration/journal.json");

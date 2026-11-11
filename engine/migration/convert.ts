@@ -42,8 +42,7 @@ export function convertDefinition(input: unknown): Conversion<AgentDefinition> {
     legacy.schemaVersion === 2
       ? legacy.access
       : (legacy.access ?? (legacy.workspace === "worktree" ? "write" : "read"));
-  if (!access)
-    throw new DomainError("invalid_input", "Schema-2 definitions require explicit access");
+  if (!access) throw new DomainError("invalid_input", "Source definitions require explicit access");
   if (
     access === "read" &&
     legacy.tools.some((tool) => ["bash", "powershell", "write", "edit"].includes(tool))
