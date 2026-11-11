@@ -15,7 +15,7 @@ import {
 } from "../../engine/contracts/index.ts";
 import { ScreenRouter } from "../../engine/ui/router.ts";
 import { PinataScreen, resolveKeys } from "../../engine/ui/screen.ts";
-import { createPaint, palettes } from "../../engine/ui/palette.ts";
+import { createPaint, modelAccent, palettes } from "../../engine/ui/palette.ts";
 import { displayText, lines } from "../../engine/ui/text.ts";
 import { invokeCoordinatorTool } from "../../engine/pi/tools.ts";
 import { activityIndicator, fleetWidget, renderScreen } from "../../engine/ui/render.ts";
@@ -38,6 +38,41 @@ const ref = (worker = 1, assignment = 1): AssignmentRef => ({
   run: "ui-run",
   worker: `worker-${worker}`,
   assignment,
+});
+
+test("fleet rows identify worker models with distinct colors and thinking levels", async () => {
+  const state = uiState(3);
+  const models = ["gpt-6-luna", "gpt-6.1-terra", "gpt-6-astra"];
+  Object.values(state.workers).forEach((worker, index) => {
+    worker.model = { provider: "fixture", id: models[index], thinking: "high" };
+  });
+  for (const assignment of Object.values(state.assignments))
+    assignment.execution = { phase: "running" };
+  const compact = stripTerminalSequences(
+    fleetWidget(state, {
+      width: 180,
+      paint: createPaint("pinata"),
+    }).join("\n"),
+  );
+  assert(compact.includes("worker-1/1"));
+  for (const model of models) assert(!compact.includes(model));
+  assert(!compact.includes("· high"));
+  const source = new UiSource(state);
+  const router = new ScreenRouter(source);
+  await router.start();
+  router.navigate("fleet", ref());
+  router.showQueued = true;
+  const rendered = stripTerminalSequences(
+    renderScreen(router, {
+      width: 180,
+      height: 24,
+      paint: createPaint("pinata"),
+    }).join("\n"),
+  );
+  for (const model of models) assert(rendered.includes(`[${model} · high]`));
+  assert.equal(new Set(models.map((model) => modelAccent(model, models))).size, 3);
+  assert.equal(modelAccent(models[0], models), modelAccent(models[0], [...models].reverse()));
+  router.dispose();
 });
 function accepted(input: unknown): SurfaceReply {
   const call = surfaceCallSchema.parse(input);
@@ -128,12 +163,12 @@ test("compact trees retain actual ancestry, queued totals and only witnessed ela
       elapsed: (target) => router.observedElapsed(target),
     }).join("\n");
   assert.match(render(), /● Agents/);
-  assert.match(render(), /│  └─   --c-- fixture worker-2\/1/);
+  assert.match(render(), /│  └───────   fixture worker-2\/1/);
   assert.match(render(), /observed 1.7s/);
   assert.match(render(), /└─ ○ 2 queued/);
   assert.match(render(), /Reading retained fixture output/);
   assert(!render().includes("thinking"));
-  assert(render(true).includes("|  `-   --c-- fixture worker-2/1"));
+  assert(render(true).includes("|  `-------   fixture worker-2/1"));
   source.epoch = "reconnected-epoch";
   await source.emit(source.snapshot());
   assert.equal(
@@ -708,7 +743,7 @@ test("Pi screens use a full-viewport overlay and preserve parent and worker draf
   const ui = installCoordinatorUi(pi, async () => source);
   const router = await ui.bind(context);
   await events.get("session_start")?.({}, context);
-  assert.equal(statuses.get("pinata.shortcut"), "shift+down to view subagents");
+  assert.equal(stripTerminalSequences(statuses.get("pinata.shortcut") ?? ""), "🤖 Shift + Down");
   assert.equal(terminalInput?.("\u001b[1;2A"), undefined, "Shift+Up in Pi must not open the fleet");
   assert.deepEqual(terminalInput?.("\u001b[1;2B"), { consume: true });
   await tick();
@@ -723,7 +758,7 @@ test("Pi screens use a full-viewport overlay and preserve parent and worker draf
   await tick();
   assert.equal(router.screen, "main", "Shift+Up exits the fleet to Pi");
   assert(widget, "compact widget returns after closing the fleet");
-  assert.equal(statuses.get("pinata.shortcut"), "shift+down to view subagents");
+  assert.equal(stripTerminalSequences(statuses.get("pinata.shortcut") ?? ""), "🤖 Shift + Down");
   const first = ui.open(context, "conversation", ref());
   await tick();
   assert(component);
@@ -1337,13 +1372,46 @@ test("reentering a worker follows the latest output while retaining its draft", 
   router.dispose();
 });
 
+test("selected prompts wrap inside their box without hiding fleet controls", async () => {
+  const source = new UiSource(uiState(1));
+  source.state.assignments[assignmentKey(ref())].task =
+    "Inspect the engine and explain its entry points.\nPreserve this second paragraph.";
+  const router = new ScreenRouter(source);
+  await router.start();
+  router.navigate("fleet", ref());
+  for (const width of [5, 32, 80]) {
+    const rows = renderScreen(router, {
+      width,
+      height: 24,
+      paint: createPaint("terminal-default"),
+    });
+    assert(rows.every((row) => visibleWidth(row) <= width));
+    assert(rows.length <= 24);
+    if (width === 32) {
+      assert(rows.filter((row) => row.startsWith("│ ")).length >= 3);
+      const prompt = rows
+        .filter((row) => row.startsWith("│ "))
+        .map((row) => row.slice(2, -2).trim())
+        .join(" ");
+      assert(prompt.includes("second paragraph."));
+      assert(rows.join("\n").includes("select"));
+    }
+  }
+  router.dispose();
+});
+
 test("activity travels across a fixed ASCII track and honors reduced motion", () => {
   assert.deepEqual(
     [0, 250, 500, 750, 3500, 3750].map((now) => activityIndicator("full", now)),
-    ["c----", "-C---", "--c--", "---c-", "----c", "c----"],
+    ["c o o", "-Co o", "- c o", "- -co", "- - -", "c o o"],
   );
   for (const motion of ["reduced", "off"] as const)
     assert.equal(activityIndicator(motion, 900), activityIndicator(motion, 0));
+  assert.equal(activityIndicator("full", 0, "├─ ", 0, 15, false), "c o o o ");
+  assert.equal(activityIndicator("full", 250, "├─ ", 0, 15, false), "├Co o o ");
+  assert.equal(activityIndicator("full", 500, "├─ ", 0, 15, false), "├ c o o ");
+  assert.equal(activityIndicator("full", 250, "└─ ", 1, 15, false), "C o o o ");
+  assert.equal(activityIndicator("off", 250, "└─ ", 1, 15, false), "└───────");
 });
 
 test("fleet retains completed dependency references without inventing ancestry", async () => {

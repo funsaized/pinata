@@ -6,7 +6,7 @@ import { paletteSchema } from "../contracts/config.ts";
 import type { RuntimeSource } from "../sources/runtime.ts";
 import { ScreenRouter, type ScreenName } from "./router.ts";
 import { PinataScreen, resolveKeys } from "./screen.ts";
-import { createPaint, type Paint, type SemanticToken } from "./palette.ts";
+import { createPaint, rainbowText, type Paint, type SemanticToken } from "./palette.ts";
 import { fleetWidget } from "./render.ts";
 
 type UiBinding = { session: string; router: ScreenRouter; context: ExtensionContext };
@@ -89,10 +89,19 @@ export function installCoordinatorUi(
     visible: boolean,
     keys: Record<string, string> = {},
   ): void => {
+    const shortcutPaint = createPaint("pinata", {
+      noColor: Object.hasOwn(process.env, "NO_COLOR"),
+      terminal: process.env.TERM,
+      mode: context.ui.theme?.getColorMode(),
+    });
+    const shortcut = resolveKeys(keys)
+      .openFleet.split("+")
+      .map((key) => key.charAt(0).toUpperCase() + key.slice(1))
+      .join(" + ");
     if (context.mode === "tui")
       context.ui.setStatus?.(
         "pinata.shortcut",
-        visible ? `${resolveKeys(keys).openFleet} to view subagents` : undefined,
+        visible ? `🤖 ${rainbowText(shortcut, shortcutPaint)}` : undefined,
       );
   };
   const widget = (binding: UiBinding): void => {
