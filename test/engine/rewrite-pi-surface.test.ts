@@ -7,6 +7,7 @@ import { fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai";
 import {
   createAgentSession,
   DefaultResourceLoader,
+  initTheme,
   ModelRuntime,
   SessionManager,
   SettingsManager,
@@ -152,6 +153,7 @@ async function fixture(
   const notices: string[] = [];
   let draft = "";
   const errors: string[] = [];
+  initTheme("dark", false);
   await session.bindExtensions({
     mode: "tui",
     uiContext: {

@@ -62,7 +62,7 @@ if (import.meta.main) {
     console.log(
       "Open that directory and choose your models in job.json. Setup made no model calls; running the job spends tokens.",
     );
-    console.log(`Tutorial: ${resolve(HERE, "../../docs/tutorials/relay.md")}`);
+    console.log(`Guide: ${resolve(HERE, "../../README.md")}#build-relay`);
     console.log(
       "The module stubs are unfinished, so node verify.mjs will fail until you integrate the implementation.",
     );

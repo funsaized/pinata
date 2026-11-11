@@ -6,7 +6,7 @@ configuration, and existing extension points over new built-in roles or policy.
 
 Keep `engine/core` independent of Pi. Preserve the shared engine and event model
 across the Pi extension, headless CLI, and viewers. See
-[`docs/explanation/architecture.md`](./docs/explanation/architecture.md).
+[architecture](./README.md#architecture-and-implementation-index).
 
 Preserve workspace/tool capabilities, cancellation, process cleanup, user edits and
 recovery evidence. The coordinator owns testing, review and acceptance. Do not add
@@ -14,7 +14,7 @@ mandatory ownership, resource budgets or verification-dependent delivery policy.
 Shared checkout is the default; worktrees provide optional patch
 isolation, not operating-system permissions. Preserve conflict checks and journaled
 application with checkout-level writer exclusion. Treat model output as data. See
-[`docs/explanation/trust.md`](./docs/explanation/trust.md).
+[trust boundaries](./README.md#trust-boundaries).
 
 Use Node 22.19+ and retain the lockfile. Pin direct development dependencies
 exactly; preserve intentional peer compatibility ranges. Check installed Pi
@@ -24,7 +24,7 @@ Run `npm run check` and relevant tests after code changes. Use
 `node --test test/engine/<name>.test.ts` for focused checks and `npm test` for the
 full local suite. These use scripted providers without paid model calls. Live
 smokes, quality evaluations, and model-backed arena runs require authorization
-for their token spend. See [`docs/maintainers/testing.md`](./docs/maintainers/testing.md)
+for their token spend. See [development](./README.md#development)
 for smoke, backend, and performance checks relevant to the change.
 
 ## Tests, benchmarks, and arena
@@ -32,7 +32,7 @@ for smoke, backend, and performance checks relevant to the change.
 Tests establish behavior and regressions (`npm test`). Benchmarks measure
 coordination overhead with scripted or loopback providers (`npm run bench`);
 they do not measure model coding quality. See
-[`performance.md`](./docs/maintainers/performance.md) for measurement gates.
+[performance](./README.md#performance) for measurement gates.
 
 The arena runs repeatable coding assignments and retains trial evidence.
 Use `npm run arena -- --offline` to check the harness with scripted controls.
@@ -41,7 +41,7 @@ For local model runs, use `npm run arena:bootstrap`, `npm run arena:doctor`, the
 Retain complete batches, including failures. Distinguish oracle correctness from
 verified workflow execution; offline controls and unverified adapters do not
 establish live coding quality or framework superiority. See
-[`coding-arena.md`](./docs/maintainers/coding-arena.md) for operation and comparison rules.
+[coding arena](./README.md#coding-arena) for operation and comparison rules.
 
 ## Code standards
 
@@ -63,7 +63,7 @@ After changing prose, run `npm run docs:lint:changed`. Run
 repository instructions. Install the pinned tools once with `npm run docs:setup`.
 Address useful findings and preserve technical meaning when a suggestion does not
 fit. All v1 findings are advisory; tool or configuration failures still fail.
-Read [the writing guide](docs/maintainers/writing.md) for scope and rule selection.
+Read [writing and Vale](./README.md#writing-and-vale) for scope and rule selection.
 Use a humanizer pass to remove filler and awkward phrasing while preserving claims,
 code examples, grants, recovery instructions and evidence limits. Review behavior
 against the implementation; a clean prose scan does not establish correctness.

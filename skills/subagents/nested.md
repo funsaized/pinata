@@ -16,7 +16,7 @@ children. `after`, `origin`, names and task prose never establish parentage.
 
 The optional [delegator definition](../../examples/agents/delegator.md) and
 [scoped grant](../../examples/recipes/grants.json) form a complete implementation
-example. [Setup and operation](../../docs/how-to/nested-delegation.md) explains the
+example. [Setup and operation](../../README.md#nested-delegation) explains the
 explicit opt-in. Do not install it or widen grants merely to satisfy a preferred
 workflow. Existing sibling definitions remain unchanged.
 

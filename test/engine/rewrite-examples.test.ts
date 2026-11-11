@@ -46,7 +46,7 @@ test("all published jobs, grants, definitions and generated API boundaries valid
   }
   await checkReference(join(root, "docs/reference"));
   await checkPublicApi();
-  const api = await readFile(join(root, "docs/reference/api.md"), "utf8");
+  const api = await readFile(join(root, "README.md"), "utf8");
   const publicEntry = await readFile(join(root, "engine/index.ts"), "utf8");
   for (const [path, content] of await publicApiFiles())
     for (const [, name] of content.matchAll(/export const ([A-Za-z_$][\w$]*)/g))
