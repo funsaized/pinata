@@ -111,6 +111,44 @@ function output(events: SupervisorEvent[], stream: "stdout" | "stderr" = "stdout
     .join("");
 }
 
+for (const disconnectedStops of [1, 2])
+  test(
+    `supervisor cleanup retries once after ${disconnectedStops} dropped control connections`,
+    {
+      skip: !supported,
+      timeout: 15_000,
+    },
+    async (t) => {
+      const { handle } = await launch(t, "hold");
+      const request = ControlClient.prototype.request;
+      let stops = 0;
+      let pings = 0;
+      const mocked = t.mock.method(
+        ControlClient.prototype,
+        "request",
+        function (this: ControlClient, command: Parameters<ControlClient["request"]>[0]) {
+          if (command.action === "ping") pings++;
+          if (command.action === "stop" && ++stops <= disconnectedStops) this.close();
+          return request.call(this, command);
+        },
+      );
+      try {
+        const receipt = await handle.stop({ reason: "Dropped connection regression", graceMs: 10 });
+        assert.equal(
+          receipt.status,
+          disconnectedStops === 1 ? "stopped" : "unconfirmed",
+          JSON.stringify(receipt),
+        );
+        assert.equal(stops, 2);
+        assert.equal(pings, 1, "the replacement connection must authenticate the guardian");
+        assert.equal(await stopped(handle.identity.process.pid), disconnectedStops === 1);
+      } finally {
+        mocked.mock.restore();
+        await stopSupervisor(handle.identity, { reason: "Regression cleanup", graceMs: 10 });
+      }
+    },
+  );
+
 test(
   "rewrite supervisor: Linux PID stat disappearance is absent while other observation errors propagate",
   { skip: process.platform !== "linux", timeout: 15_000 },

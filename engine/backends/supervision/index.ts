@@ -358,7 +358,7 @@ export class SupervisedProcess {
     return this.cleanup;
   }
 
-  private async confirmStop(options: StopOptions): Promise<CleanupReceipt> {
+  private async confirmStop(options: StopOptions, reconnect = true): Promise<CleanupReceipt> {
     this.detachAbort?.();
     let saved: CleanupReceipt | undefined;
     try {
@@ -398,6 +398,18 @@ export class SupervisedProcess {
         }),
       );
     } catch (error) {
+      if (reconnect && this.client?.disconnected) {
+        try {
+          // Reauthenticate the live guardian; a dead socket is not proof that
+          // its owned processes stopped. Retry only once and retain uncertainty.
+          const recovered = await SupervisedProcess.connect(this.identity);
+          return await recovered.confirmStop(options, false);
+        } catch (reconnectError) {
+          this.errors.push(
+            `Guardian reconnect: ${reconnectError instanceof Error ? reconnectError.message : String(reconnectError)}`,
+          );
+        }
+      }
       this.client?.close();
       return cleanupReceipt(
         this.identity,

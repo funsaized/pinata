@@ -118,6 +118,10 @@ export class ControlClient {
     });
   }
 
+  get disconnected(): boolean {
+    return this.ended;
+  }
+
   close(): void {
     this.fail(new Error("Supervisor observer disconnected"));
   }
