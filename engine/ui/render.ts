@@ -11,13 +11,7 @@ import {
   needsAttention,
   queueLabel,
 } from "./projection.ts";
-import {
-  agentAccent,
-  modelAccent,
-  rainbowText,
-  type Paint,
-  type SemanticToken,
-} from "./palette.ts";
+import { agentAccent, modelAccent, type Paint, type SemanticToken } from "./palette.ts";
 import { displayText, fit, lines, padded } from "./text.ts";
 import type { ConversationView, ScreenRouter } from "./router.ts";
 import { assignmentTree, type TreeNode } from "./tree.ts";
@@ -68,7 +62,7 @@ function promptBox(
       (text) =>
         paint("accent.pink", side) +
         " " +
-        padded(rainbowText(text, paint), width - 4) +
+        padded(paint("muted", text), width - 4) +
         " " +
         paint("accent.red", side),
     ),
@@ -141,7 +135,8 @@ export function activityIndicator(
     if (position === distance) return ["c", "C", "c"][frame % 3];
     if (position < distance) return column % 2 === 0 ? "o" : " ";
     if (character === "─" || character === "-") return column % 2 === 0 ? "-" : " ";
-    if (character === "│") return "┆";
+    if (character === "│" || character === "├") return "┆";
+    if (character === "|") return ":";
     return character;
   }).join("");
 }

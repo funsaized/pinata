@@ -1408,8 +1408,10 @@ test("activity travels across a fixed ASCII track and honors reduced motion", ()
   for (const motion of ["reduced", "off"] as const)
     assert.equal(activityIndicator(motion, 900), activityIndicator(motion, 0));
   assert.equal(activityIndicator("full", 0, "├─ ", 0, 15, false), "c o o o ");
-  assert.equal(activityIndicator("full", 250, "├─ ", 0, 15, false), "├Co o o ");
-  assert.equal(activityIndicator("full", 500, "├─ ", 0, 15, false), "├ c o o ");
+  assert.equal(activityIndicator("full", 250, "├─ ", 0, 15, false), "┆Co o o ");
+  assert.equal(activityIndicator("full", 500, "├─ ", 0, 15, false), "┆ c o o ");
+  assert.equal(activityIndicator("full", 3000, "├─ ", 0, 15, false), "┆ - - - ");
+  assert.equal(activityIndicator("full", 3000, "|- ", 0, 15, true), ": - - - ");
   assert.equal(activityIndicator("full", 250, "└─ ", 1, 15, false), "C o o o ");
   assert.equal(activityIndicator("off", 250, "└─ ", 1, 15, false), "└───────");
 });
