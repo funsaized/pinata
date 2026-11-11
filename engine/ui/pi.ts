@@ -96,7 +96,7 @@ export function installCoordinatorUi(
     });
     const shortcut = resolveKeys(keys)
       .openFleet.split("+")
-      .map((key) => key.charAt(0).toUpperCase() + key.slice(1))
+      .map((key) => (key === "down" ? "↓" : key.charAt(0).toUpperCase() + key.slice(1)))
       .join(" + ");
     if (context.mode === "tui")
       context.ui.setStatus?.(
