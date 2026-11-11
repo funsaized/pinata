@@ -1,163 +1,18 @@
 # Changelog
 
-## 3.0.0 (2026-11-10)
+## 0.0.1
 
-- Replace the core, stores, backends, workspaces, UI and measurement harness with
-  one runtime shared by Pi, the headless CLI and viewers. Versioned schemas and
-  public APIs describe commands, receipts, events and recovery.
-- Default to shared workspaces, with optional isolated worktrees and explicit,
-  conflict-checked application. Keep partial work and user edits through failure
-  and cancellation. Testing, review and acceptance belong to the coordinator;
-  production token, time and repair budgets are removed.
-- Retain exact assignment and message identities, immutable dependencies and
-  durable retry evidence. Supervised process workers support explicit recovery
-  and host survival without silently replaying uncertain effects.
-- Add selected skills and parent context, opt-in scoped memory, authorized nested
-  delegation, optional concurrency and session-owned schedules.
-- Add the compact fleet tree, selectable palettes, conversation drafts, direct
-  user mentions and exact addressed-input retry without a coordinator model turn.
-- Replace the arena and benchmarks while preserving historical evidence. Scripted
-  results establish behavior and runtime overhead, not live coding quality.
-- Provide explicit input conversion and historical inspection for the breaking
-  data transition. Linux and macOS have scripted validation. Windows uses a
-  source-packaged C# Job Object launcher with targeted x64 and ARM64 CI coverage.
-- Render worker conversations and reports with native Pi styling, preserve
-  interrupted assignments, and follow the latest output when opening a conversation.
-- Plan nested delegation from discovered capabilities and host grants.
-- Add pinned, advisory Vale checks for reader documentation and agent instructions,
-  with selected Google and ai-tells rules and Pinata terminology.
-
-## 2.1.1 (2026-11-06)
-
-- Add a reproducible offline coding arena with independent scoring and retained
-  benchmark evidence.
-- Improve process benchmark sampling and bound CI evidence collection across platforms.
-- Guide job planning through installed agent discovery and refresh example jobs.
-- Fix terminal color rendering and preserve Git diagnostics when worktree creation fails.
-
-## 2.0.3 (2026-11-04)
-
-- Repair saved runs from a new Pi session, including finished headless runs. Reuse
-  the original configuration and worktree and collect fresh independent reviews.
-- Preserve repair budgets and cumulative usage across sessions, reject stopped
-  runs, and enforce the job deadline when reopening a run for repair.
-
-## 2.0.2 (2026-11-02)
-
-- Preserve cumulative cost, tokens, turns, and tool calls across repairs, reruns,
-  resume, and reattachment. Reconcile detached usage without double counting and
-  enforce the aggregate cost limit while invalidating stale results and approvals.
-- Replace the coding arena with a Relay starter and editable real-model job, expected
-  output, original evidence, a build/review/integration tutorial, reference, and
-  safeguards explanation. Keep the completed implementation in CI fixtures and
-  make model prerequisites explicit across examples and walkthroughs.
-- Fail quality evaluations after saving reports when thresholds are missed. Require
-  successful benchmark tasks and valid measurements, including on timing retries.
-- Unify run and conversation viewing as `/pinata view [run] [--task <task>]` and
-  `pinata view [run] [--task <task>]`, using the same workspace and controls.
-  Bare views discover new runs; explicit run or task selections stay pinned.
-- Use `/pinata view --external` to enable a terminal viewer or open a Herdr pane.
-  Remove the former `live`, `open`, and `watch` slash commands.
-- Follow recorded output when a socket is unavailable and connect automatically when
-  it appears. Standardize run lookup, validation, completion, and `logs --task` selection.
-- Add Shift+Up/Down conversation shortcuts, preserve steering drafts during navigation,
-  and keep failures and verification limitations visible in compact status output.
-- Prune redundant backend and cosmetic tests, consolidate prompt coverage, and replace
-  misleading timing and filesystem assertions with checks of actual behavior.
-
-## 2.0.1 (2026-10-31)
-
-- Share one rainbow-framed workspace between `/pinata live` and `/pinata open`,
-  with an animated mascot, selectable agents, streaming conversations, and steering.
-  Remove `/pinata live demo` and its synthetic conversations.
-- Store new managed worktrees outside Git metadata by default, with a configurable
-  `worktreeRoot`. Existing runs keep their saved locations.
-- Fix argument forwarding in all shipped prompt templates using Pi’s supported syntax.
-- Refresh tutorials, examples, and references to explain configuration, ownership,
-  engine-run checks, review, and integration without unnecessary ceremony.
-- Replace the README artwork and record a real ten-agent build, review, and integration.
-
-## 2.0.0 (2026-10-30)
-
-Pi stays small. Your subagent system should too.
-
-- Reusable Markdown agent definitions: personal and repository discovery, explicit tools
-  and workspace modes, model defaults, and bounded structured results. `pinata_agents` and
-  `pinata agents list|show|validate` expose what is available.
-- Ship scout, builder, and reviewer presets. The opinionated planner and source-linked
-  researcher are optional examples using the same definition loader. Engineering-management
-  guidance remains available as an opt-in skill.
-- Tasks select a definition with `agent`. Install the planner or researcher example when
-  it fits your workflow.
-- Save resolved definitions once per run by digest. Resume, repair, and rerun retain their
-  original instructions and capabilities. New launches validate required extension entry
-  hashes.
-- Custom names receive the same ownership, authorization, check, review-binding, handoff,
-  integration, and rollback protections as the presets. Compact results distinguish engine
-  checks, artifact reviews, and destination verification.
-- Fair dispatch across runs, bounded worktree preparation, paginated compact results,
-  bounded dependency summaries and viewer queues, and capped definition/context caches.
-  Add 1,000-task queue, dependency fan-in, and repeated-batch benchmark scenarios.
-
-## 2.0.0-next.0 (2026-10-30)
-
-- Preview of the v2 agent-definition refactor. Published to `next` and verified from
-  a fresh registry download before stable promotion.
-
-## 1.1.0 (2026-10-30)
-
-- The orchestrator owns integration into an evolving repository. `pinata_changes`
-  exports reviewed builder artifacts with their actual bases, immutable patches,
-  dependency order and check logs. Unrelated HEAD advancement no longer blocks exact
-  application through `pinata_integrate`.
-- `pinata_verify` checks the current destination independently of application and records
-  its HEAD, content tree, check outcomes and relationship to the original artifacts.
-  Original builder reviews do not become reviews of reconciled changes.
-- Destination checks detect changes to already-dirty and untracked source. Omitted checks
-  report `not_run` or `applied_unverified`; historical verification is identified explicitly.
-- Integration and rollback protect subsequent file, HEAD and index changes and serialize
-  destination operations across Pinata processes. Legacy journals require manual reconciliation.
-- Repaired results are invalidated immediately; reviewers reject a worktree that changes
-  after verification. Private refs retain verified artifacts and handoff logs survive repair.
-- Removed the retired `ENGINE_PLAN.md` and its active references.
-
-## 1.0.0 (2026-10-17)
-
-A new engine. pinata 0.7.0 ran every agent as a separate Pi in a Herdr workspace with a file-based
-coordinator; 1.0 runs agents inside your Pi by default, with the same roles, reviews and
-integration, and works on Linux, macOS and Windows without Herdr.
-
-### Faster and lighter
-
-- Agents run in process by default: on the reference machine an agent sends its first model
-  request about 2 ms after it starts (0.7.0: about 1.4 s) and uses about 1–2 MB (0.7.0:
-  about 218 MB). A dependent starts well under a millisecond after its predecessor settles.
-- Loopback A/B against 0.7.0: every scenario is faster, for example 8 parallel scouts in
-  0.34 s instead of 4.8 s, and a 64-agent mix in 0.64 s instead of 21.6 s.
-- Luna quality eval: 0.94 (0.7.0: 0.69), with no result-format failures.
-
-### New
-
-- Three backends: `in-process` (default), `process` (a `pi --mode rpc` child per agent) and
-  `herdr-pi` (an interactive Pi in its own Herdr pane).
-- `survive: true` runs keep going when Pi exits; the next Pi resumes them, and a headless host
-  finishes them if Pi is closed. `/pinata rerun` restarts tasks lost in a crash.
-- A widget with one row per agent, a footer, `/pinata open` (an agent's conversation, live, with
-  steering), `/pinata live` (the mascot), and `/pinata watch` with `pinata view` (a viewer in
-  another terminal, over an authenticated local socket).
-- Lean and observe modes; observe keeps the full event stream, live transcripts and telemetry.
-- The `pinata` command: `run` (headless jobs with exit codes), `view`, `logs`, `resume`, `gc`.
-- Reviewers see when their builder was steered. Pull request and branch reviews.
-
-### Changed
-
-- Runs log events to `events.jsonl`; results, transcripts and `run.json` sit beside it in
-  `<git common dir>/pinata/<run>`.
-- Configuration adds `mode` and `backend`; `pi`, `herdr`, `session`, `workspaceReuse` and
-  `limits.startupMs` are ignored with a notice. Default concurrency is 16 (at most 64).
-- Requires Pi 1.1.0+ and Node 22.19+.
-
-### Removed
-
-- 0.7.0's helper (`lib/`), its file-based coordinator and Herdr-only supervisor. `pinata gc
---confirm` retires 0.7.0 run directories with 0.7.0's rules and keeps their evidence.
+- Run subagents through one runtime shared by Pi, the headless CLI and viewers.
+  Commands, events, configuration and stored data use version-1 schemas.
+- Use shared workspaces by default, with optional worktrees and conflict-checked,
+  journaled apply and rollback. Preserve partial work and user edits after failure
+  or cancellation.
+- Retain assignment identities, immutable dependencies and recovery evidence.
+  Supervised process workers support explicit recovery and host survival.
+- Configure agents, tools, models, skills, context, scoped memory, nested
+  delegation and session schedules. The coordinator owns testing, review and acceptance.
+- Steer conversations through the fleet UI, worker mentions and addressed-input retry.
+- Measure coordination overhead with scripted and loopback benchmarks. The coding
+  arena retains complete trials and distinguishes correctness from workflow evidence.
+- Target Linux, macOS and Windows, with a packaged C# Job Object launcher for Windows.
+- Include advisory Vale checks for documentation and agent instructions.

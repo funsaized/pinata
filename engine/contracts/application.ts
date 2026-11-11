@@ -48,7 +48,7 @@ export const applicationOperationSchema = z.strictObject({
 });
 export type ApplicationOperation = z.infer<typeof applicationOperationSchema>;
 export const applicationJournalSchema = z.strictObject({
-  schemaVersion: z.literal(4),
+  schemaVersion: z.literal(1),
   kind: z.literal("pinata-application-journal"),
   destination: textSchema,
   revision: revisionSchema,

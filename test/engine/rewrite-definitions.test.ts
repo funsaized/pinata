@@ -56,7 +56,7 @@ const caller: CallerAuthority = {
   },
 };
 const markdown = (header = "", body = "Follow the task.") =>
-  `---\nschemaVersion: 3\nname: reader\nhandoffDescription: Read the workspace.\ntools: [read]\n${header}---\n${body}\n`;
+  `---\nschemaVersion: 1\nname: reader\nhandoffDescription: Read the workspace.\ntools: [read]\n${header}---\n${body}\n`;
 
 async function fixture(t: TestContext) {
   const directory = await realpath(await mkdtemp(join(tmpdir(), "pinata-definitions-")));
@@ -107,14 +107,14 @@ test("definition Markdown uses a strict closed header and rejects invalid select
   );
   for (const input of [
     "No frontmatter",
-    "---\nschemaVersion: 3",
+    "---\nschemaVersion: 1",
     markdown("instructions: another prompt\n"),
     markdown("temperature: 0.3\n"),
     markdown("modelSettings: { reasoning: { effort: impossible } }\n"),
     markdown("pinata: { color: red }\n"),
     markdown("pinata: { unknown: true }\n"),
     markdown("---malformed\n"),
-    markdown("schemaVersion: 3\n"),
+    markdown("schemaVersion: 1\n"),
   ])
     assert.throws(() => parseDefinitionMarkdown(input));
   const f = await fixture(t);

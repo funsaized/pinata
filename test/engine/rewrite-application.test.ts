@@ -7,10 +7,7 @@ import test from "node:test";
 import { promisify } from "node:util";
 import { applicationFixture, FixtureGit } from "./rewrite-application-fixture.ts";
 import { openCheckoutGate } from "../../engine/workspace/gate.ts";
-import {
-  ApplicationStore,
-  decodeLegacyApplicationJournal,
-} from "../../engine/application/index.ts";
+import { ApplicationStore } from "../../engine/application/index.ts";
 
 const after = (content: string) => [
   { path: "file.txt", content },
@@ -257,39 +254,6 @@ test(
     await chmod(join(fixture.root, "unrelated.txt"), 0o644);
   },
 );
-
-test("legacy application codecs retain inspection evidence without granting stale cursor authority", () => {
-  const journal = {
-    schemaVersion: 3,
-    evidenceDigest: "legacy",
-    status: "rolled_back",
-    entries: [
-      {
-        path: "file.txt",
-        before: { mode: "100644", blob: "1".repeat(40) },
-        after: { mode: "100644", blob: "2".repeat(40) },
-      },
-    ],
-    snapshots: { worker: { assignment: 1, tree: "3".repeat(40) } },
-  };
-  assert.equal(decodeLegacyApplicationJournal(journal).authority, "reconstruction_required");
-  assert.throws(
-    () =>
-      decodeLegacyApplicationJournal({
-        ...journal,
-        entries: [{ ...journal.entries[0], path: ".env" }],
-      }),
-    /secret/,
-  );
-  assert.throws(
-    () =>
-      decodeLegacyApplicationJournal({
-        ...journal,
-        entries: [{ ...journal.entries[0], after: { mode: "120000", blob: "2".repeat(40) } }],
-      }),
-    /unsafe/,
-  );
-});
 
 test(
   "fresh processes recover killed destination writes and terminal rollback cursors",

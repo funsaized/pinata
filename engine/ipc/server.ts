@@ -67,7 +67,7 @@ export async function startIpcServer(options: IpcServerOptions): Promise<IpcServ
   if (!address || typeof address === "string")
     throw new Error("IPC server has no loopback endpoint");
   link = ipcLinkSchema.parse({
-    schemaVersion: 2,
+    schemaVersion: 1,
     protocol: IPC_VERSION,
     run: options.viewer.run,
     serverId,

@@ -64,7 +64,7 @@ export async function inspectAdapter(
     timeoutMs: 10000,
   });
   const record = await options.store.json({
-    schemaVersion: 2,
+    schemaVersion: 1,
     executable,
     binary,
     versionOutput: execution.stdout.toString().trim(),

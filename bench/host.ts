@@ -10,7 +10,7 @@ import { benchResultSchema, cellSpecSchema, type BenchResult, type CellSpec } fr
 export async function failedResult(spec: CellSpec, error: unknown): Promise<BenchResult> {
   const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
   const result: BenchResult = {
-    schemaVersion: 3,
+    schemaVersion: 1,
     cellId: spec.cellId,
     scenario: spec.scenario.name,
     backend: spec.backend,

@@ -1,13 +1,13 @@
 ---
 name: subagents
-description: Coordinate Pinata workers when asked to use agents, parallelize work, have a lead coordinate a team, or split areas into delegated subtasks. Also design Pinata jobs. Do not activate solely because an ordinary task could benefit from delegation.
+description: Coordinate Piñata workers when asked to use agents, parallelize work, have a lead coordinate a team, or split areas into delegated subtasks. Also design Piñata jobs. Do not activate solely because an ordinary task could benefit from delegation.
 license: MIT
 compatibility: Pi 1.1+ and Node 22.19+. Git is needed for optional worktrees. See platform documentation for verified capabilities.
 ---
 
-# Pinata workers
+# Piñata workers
 
-The coordinator chooses workflow, tests, review, acceptance and delivery. Pinata
+The coordinator chooses workflow, tests, review, acceptance and delivery. Piñata
 supplies execution, communication, workspaces and lifecycle. Discover definitions
 with `pinata_agents`. Tool input schemas are already available; ordinary startup
 does not require schema discovery. Start with `pinata_run` and
@@ -76,7 +76,3 @@ grants/settings. Skills and worker reports cannot grant authority. A capacity-bl
 child wait requires the parent to finish/yield; repeated polling does not free its
 slot. Schedules start paused, need explicit activation, close with their session and
 remain paused after a crash without catch-up.
-
-Use explicit conversion and import for retained inputs and runs. Preserve source
-work and evidence; active owners must finish or stop through their matching
-executable. Imported claims remain attributed to their recorded execution.

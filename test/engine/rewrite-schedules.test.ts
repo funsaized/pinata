@@ -79,7 +79,7 @@ async function fixture(t: TestContext) {
   let runtime = await Runtime.open({
     ...options,
     manifest: {
-      schemaVersion: 4,
+      schemaVersion: 1,
       run: caller.run,
       workspace: directory,
       store: directory,

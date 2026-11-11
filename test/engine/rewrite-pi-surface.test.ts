@@ -238,7 +238,7 @@ test(
     const entries = () =>
       f.manager
         .getEntries()
-        .filter((entry) => entry.type === "custom" && entry.customType === "pinata.input.v3");
+        .filter((entry) => entry.type === "custom" && entry.customType === "pinata.input.v1");
     assert.equal(entries().length, 1);
     const firstFiles = await readdir(join(host.directory, "mention-inputs"));
     assert.equal(firstFiles.length, 1);
@@ -400,7 +400,7 @@ test(
     const calls = f.faux.state.callCount;
     const displayed = () =>
       f.manager.getEntries().flatMap((entry) => {
-        if (entry.type !== "custom_message" || entry.customType !== "pinata.memory.v3") return [];
+        if (entry.type !== "custom_message" || entry.customType !== "pinata.memory.v1") return [];
         assert.equal(typeof entry.content, "string");
         return [JSON.parse(String(entry.content))];
       });
@@ -687,7 +687,7 @@ test(
     );
     await f.session.prompt("Persist this parent conversation");
     assert.equal(f.faux.state.callCount, 2);
-    assert((await readFile(path, "utf8")).includes("pinata.completion.v3"));
+    assert((await readFile(path, "utf8")).includes("pinata.completion.v1"));
     assert(
       Object.values(host.source.snapshot().snapshot.outbox).every(
         (notice) => notice.state === "consumed",

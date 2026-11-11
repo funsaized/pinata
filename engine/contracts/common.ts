@@ -1,13 +1,13 @@
 import { z } from "zod";
 
 export const versions = Object.freeze({
-  job: 4,
-  config: 4,
-  definition: 3,
-  manifest: 4,
+  job: 1,
+  config: 1,
+  definition: 1,
+  manifest: 1,
   journal: 1,
-  event: 3,
-  ipc: 2,
+  event: 1,
+  ipc: 1,
 });
 export const textSchema = z
   .string()

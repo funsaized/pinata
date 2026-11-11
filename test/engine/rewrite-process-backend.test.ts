@@ -55,7 +55,7 @@ async function fixture(
     Buffer.from(
       canonicalJson(
         definitionSchema.parse({
-          schemaVersion: 3,
+          schemaVersion: 1,
           name: "fixture",
           handoffDescription: "Process fixture",
           instructions: "Exercise process transport.",
@@ -281,7 +281,7 @@ for (const afterCleanup of [false, true])
       const runtime = await Runtime.open({
         directory: world.storeDirectory,
         manifest: {
-          schemaVersion: 4,
+          schemaVersion: 1,
           run: caller.run,
           workspace: world.workspace,
           store: world.storeDirectory,

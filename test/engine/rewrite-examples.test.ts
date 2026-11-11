@@ -78,7 +78,7 @@ async function runNode(cwd: string, args: string[]) {
 }
 
 async function relay(t: TestContext, wrong = false) {
-  const directory = await realpath(await mkdtemp(join(tmpdir(), "pinata-relay-v3-")));
+  const directory = await realpath(await mkdtemp(join(tmpdir(), "pinata-relay-v1-")));
   const workspace = join(directory, "exercise with spaces");
   await setup(workspace);
   const agentDir = join(directory, "agent");

@@ -101,7 +101,7 @@ export async function piFixture(
   const runtime = await Runtime.open({
     directory: storeDirectory,
     manifest: {
-      schemaVersion: 4,
+      schemaVersion: 1,
       run,
       workspace,
       store: storeDirectory,
@@ -112,7 +112,7 @@ export async function piFixture(
       Promise.all(
         requests.map(async (request) => {
           const definition = definitionSchema.parse({
-            schemaVersion: 3,
+            schemaVersion: 1,
             name: request.agent,
             handoffDescription: "Deterministic test agent",
             instructions: options.instructions ?? "Perform the requested fixture action.",

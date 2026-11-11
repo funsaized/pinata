@@ -129,7 +129,7 @@ async function fixture(t: TestContext, port?: RuntimeApplicationPort) {
   let runtime = await Runtime.open({
     directory,
     manifest: {
-      schemaVersion: 4,
+      schemaVersion: 1,
       run: caller.run,
       workspace: f.root,
       store: directory,

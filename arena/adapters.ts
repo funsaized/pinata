@@ -37,13 +37,13 @@ export const adapterSchema = z.discriminatedUnion("kind", [
 ]);
 export type Adapter = z.infer<typeof adapterSchema>;
 export const adapterConfigSchema = z.strictObject({
-  schemaVersion: z.literal(2),
+  schemaVersion: z.literal(1),
   adapter: adapterSchema,
   condition: conditionSchema,
   limits: limitsSchema.optional(),
 });
 export const adapterResponseSchema = z.strictObject({
-  schemaVersion: z.literal(2),
+  schemaVersion: z.literal(1),
   completed: z.boolean(),
   observed: conditionSchema.nullable(),
   observations: z.array(z.unknown()),
@@ -443,7 +443,7 @@ export async function runAdapter(context: AdapterContext): Promise<AdapterResult
     "supervisor",
   );
   const request = {
-    schemaVersion: 2,
+    schemaVersion: 1,
     cell: context.cell,
     attempt: context.attempt,
     candidate: context.candidate,

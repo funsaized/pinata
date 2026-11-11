@@ -99,7 +99,7 @@ test("conversation pagination binds an immutable snapshot to its assignment and 
 test("definition queries expose validated discovery metadata without mutating returned objects", async (t) => {
   const directory = await realpath(await mkdtemp(join(tmpdir(), "pinata-query-definitions-")));
   const definition = definitionSchema.parse({
-    schemaVersion: 3,
+    schemaVersion: 1,
     name: "fixture",
     handoffDescription: "Scripted fixture",
     instructions: "Read the task.",
@@ -125,7 +125,7 @@ test("definition queries expose validated discovery metadata without mutating re
   const runtime = await Runtime.open({
     directory,
     manifest: {
-      schemaVersion: 4,
+      schemaVersion: 1,
       run: caller.run,
       workspace: directory,
       store: directory,

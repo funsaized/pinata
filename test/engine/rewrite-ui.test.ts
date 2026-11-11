@@ -143,7 +143,7 @@ test("compact trees retain actual ancestry, queued totals and only witnessed ela
     source.state.assignments[assignmentKey(target)].execution = { phase: "running" };
     source.state.revision++;
     await source.emit({
-      schemaVersion: 3,
+      schemaVersion: 1,
       kind: "committed",
       id: `start/${target.worker}`,
       ownerEpoch: source.epoch,

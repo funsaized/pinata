@@ -264,7 +264,7 @@ test("typed authoring and bootstrap discovery reject malformed or ambiguous defi
   assert.equal(JSON.parse(output).definitions[0].outputSchema.type, "object");
   await writeFile(
     join(world.definitions, "typed.md"),
-    "---\nschemaVersion: 3\nname: typed\nhandoffDescription: Markdown collision\n---\nInstructions\n",
+    "---\nschemaVersion: 1\nname: typed\nhandoffDescription: Markdown collision\n---\nInstructions\n",
   );
   await assert.rejects(
     availableDefinitions([world.definitions], await loadBootstrap(world.module)),

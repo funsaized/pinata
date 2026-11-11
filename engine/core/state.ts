@@ -8,7 +8,6 @@ import {
   type CoreState,
   type Transition,
 } from "../contracts/index.ts";
-import { importHistory } from "./history.ts";
 import { reduceApplication } from "./application.ts";
 import { validateAcceptance } from "./invariants.ts";
 import { reduceLifecycle } from "./lifecycle.ts";
@@ -71,8 +70,6 @@ export function reduce(state: CoreState, value: Transition, revision: number): C
     case "application_accepted":
     case "application_observed":
       return reduceApplication(state, transition, revision);
-    case "history_imported":
-      return importHistory(state, transition, revision);
     case "accepted": {
       validateAcceptance(state, transition, revision);
       next.workers = { ...state.workers };

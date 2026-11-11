@@ -19,7 +19,7 @@ export function steerTarget(state: CoreState, worker: string): AssignmentRef | u
 }
 export function executionLabel(assignment: Assignment): string {
   const execution = assignment.execution;
-  return `${assignment.historical ? "historical " : ""}${execution.phase === "ended" ? execution.reason : execution.phase}`;
+  return execution.phase === "ended" ? execution.reason : execution.phase;
 }
 export function usageLabel(usage: UsageCoverage): string {
   const total = usage.total ?? usage.observedTotal;

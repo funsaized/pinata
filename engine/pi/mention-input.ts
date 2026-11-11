@@ -13,7 +13,7 @@ import {
 } from "../contracts/index.ts";
 import { digestBytes, publishImmutable } from "../storage/io.ts";
 
-const inputType = "pinata.input.v3";
+const inputType = "pinata.input.v1";
 const intentSchema = z.strictObject({
   schemaVersion: z.literal(1),
   session: identitySchema,

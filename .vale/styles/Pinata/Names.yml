@@ -3,7 +3,7 @@ message: "Use '%s' instead of '%s'."
 level: warning
 ignorecase: false
 swap:
-  'Piñata|PinAta|PINATA': Pinata
+  'Pinata|PinAta|PINATA': Piñata
   'HerDR|HERDR': Herdr
   'OxFmt|OXFmt': Oxfmt
   'OxLint|OXLint': Oxlint

@@ -201,9 +201,9 @@ export function comparison(
     !previous ||
     typeof previous !== "object" ||
     !("schemaVersion" in previous) ||
-    previous.schemaVersion !== 3 ||
+    previous.schemaVersion !== 1 ||
     !("measurement" in previous) ||
-    previous.measurement !== "pinata-scripted-runtime-v3" ||
+    previous.measurement !== "pinata-scripted-runtime-v1" ||
     !("status" in previous) ||
     previous.status !== "completed" ||
     !("provenance" in previous) ||
@@ -212,9 +212,7 @@ export function comparison(
   )
     return {
       comparable: false,
-      reasons: [
-        "The baseline is historical, partial, failed, or from another measurement protocol",
-      ],
+      reasons: ["The baseline is partial, failed, or from another measurement protocol"],
     };
   const reasons: string[] = [];
   const storage = (value: unknown) => {

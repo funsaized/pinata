@@ -120,7 +120,7 @@ test(
       world.server.link.endpoint,
       JSON.stringify({
         type: "hello",
-        versions: [1],
+        versions: [2],
         run: world.run,
         serverId: world.server.link.serverId,
         role: "viewer",
@@ -161,7 +161,7 @@ test(
                 encodeFrame(
                   {
                     type: "welcome",
-                    version: 2,
+                    version: 1,
                     run: world.run,
                     serverId: world.server.link.serverId,
                     ownerEpoch: world.server.link.ownerEpoch,

@@ -105,9 +105,9 @@ test("arena adapter workflow claims never become independent attestation", () =>
 });
 
 async function source(store: EvidenceStore): Promise<Source> {
-  const closure = await store.json({ schemaVersion: 2, roots: [], files: [] });
+  const closure = await store.json({ schemaVersion: 1, roots: [], files: [] });
   return {
-    schemaVersion: 2,
+    schemaVersion: 1,
     revision: null,
     diff: null,
     lockfile: null,
@@ -327,44 +327,4 @@ test("arena process deadline keeps a timed-out attempt and confirmed cleanup evi
   assert.equal(result.cleanup.status, "stopped", JSON.stringify(result.cleanup));
   assert.ok(result.evidence.length > 0);
   for (const reference of result.evidence) await store.read(reference);
-});
-
-test("arena historical reader retains all v1 cells without upgrading verification", async (t) => {
-  const root = await directory(t);
-  const manifest = {
-    schemaVersion: 1,
-    batchId: "historical-fixture",
-    trials: 2,
-    workflows: ["native"],
-    tasks: [{ id: "checkout", version: 1 }],
-  };
-  await writeFile(join(root, "manifest.json"), JSON.stringify(manifest));
-  for (let trial = 1; trial <= 2; trial++) {
-    const runId = `checkout-native-trial-${trial}`;
-    const directory = join(root, "runs", runId);
-    await mkdir(directory, { recursive: true });
-    await writeFile(
-      join(directory, "result.json"),
-      JSON.stringify({
-        schemaVersion: 1,
-        batchId: manifest.batchId,
-        runId,
-        trial,
-        order: trial,
-        task: { id: "checkout", version: 1, title: "Checkout" },
-        workflow: "native",
-        status: trial === 1 ? "failed" : "pending",
-        candidateCorrect: null,
-        comparisonEligible: true,
-        errors: [],
-        oracle: null,
-      }),
-    );
-  }
-  const report = await reportBatches([root]);
-  assert.match(report, /without upgrading workflow verification/);
-  assert.match(report, /checkout-native-trial-1/);
-  assert.match(report, /checkout-native-trial-2/);
-  await rm(join(root, "runs", "checkout-native-trial-2", "result.json"));
-  await assert.rejects(reportBatches([root]));
 });

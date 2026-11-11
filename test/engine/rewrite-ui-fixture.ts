@@ -109,7 +109,7 @@ export class UiSource implements RuntimeSource {
   }
   snapshot(): SnapshotEvent {
     return {
-      schemaVersion: 3,
+      schemaVersion: 1,
       kind: "snapshot",
       id: "snapshot",
       revision: this.state.revision,
@@ -135,7 +135,7 @@ export class UiSource implements RuntimeSource {
   }
   async activity(index: number, ordinal: number, text: string): Promise<void> {
     await this.emit({
-      schemaVersion: 3,
+      schemaVersion: 1,
       kind: "activity",
       source: `stream-${index}`,
       ordinal,

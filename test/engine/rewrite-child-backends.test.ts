@@ -45,7 +45,7 @@ for (const backend of ["in-process", "process"] as const)
         await writeFile(
           join(definitions, "parent.md"),
           `---
-schemaVersion: 3
+schemaVersion: 1
 name: parent
 handoffDescription: Delegate the fixture.
 tools: [read]
@@ -61,7 +61,7 @@ Delegate the requested work.
         await writeFile(
           join(definitions, "leaf.md"),
           `---
-schemaVersion: 3
+schemaVersion: 1
 name: leaf
 handoffDescription: Complete the fixture.
 tools: [read, write]

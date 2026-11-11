@@ -8,10 +8,10 @@ import { completionMessageType } from "./notifications.ts";
 export function registerPinataMessageRenderers(pi: ExtensionAPI): void {
   const labels = {
     [completionMessageType]: "Subagent result",
-    "pinata.control.v3": "Subagent control",
-    "pinata.addressed.v3": "Subagent assignment",
-    "pinata.memory.v3": "Pinata memory",
-    "pinata.schema.v3": "Pinata schema",
+    "pinata.control.v1": "Subagent control",
+    "pinata.addressed.v1": "Subagent assignment",
+    "pinata.memory.v1": "Pinata memory",
+    "pinata.schema.v1": "Pinata schema",
   };
   for (const [type, label] of Object.entries(labels))
     pi.registerMessageRenderer(type, (message, options, theme) => {

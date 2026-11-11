@@ -1,15 +1,6 @@
 import { DomainError } from "../contracts/common.ts";
 
-const booleanOptions = new Set([
-  "json",
-  "watch",
-  "control",
-  "saved",
-  "import",
-  "dry-run",
-  "next",
-  "help",
-]);
+const booleanOptions = new Set(["json", "watch", "control", "saved", "next", "help"]);
 const valueOptions = new Set([
   "directory",
   "workspace",
@@ -30,8 +21,6 @@ const valueOptions = new Set([
   "scope",
   "worker",
   "assignment",
-  "output",
-  "kind",
   "since",
   "palette",
 ]);
@@ -88,8 +77,6 @@ export function parseArguments(argv: readonly string[]): CliArguments {
   if (result.flags.has("help")) result.command = "help";
   if (result.flags.has("saved") && result.flags.has("control"))
     throw new DomainError("invalid_input", "Saved sources cannot grant control");
-  if (result.flags.has("import") && result.flags.has("dry-run"))
-    throw new DomainError("invalid_input", "Choose --import or --dry-run");
   return result;
 }
 
@@ -100,7 +87,7 @@ export function requireArgument(args: CliArguments, index: number, name: string)
 }
 
 export const usage = `Usage:
-  pinata run <job.json|-> [--json] [--watch]       run a finite schema-4 job
+  pinata run <job.json|-> [--json] [--watch]       run a finite schema-1 job
   pinata serve [job.json] [--directory <run>]     own a runtime and serve authenticated control
   pinata attach <run-directory> [--watch]         browse in a terminal; otherwise print status
   pinata view <run-directory> [--control] [--palette name]  open the live/saved viewer
@@ -119,9 +106,6 @@ export const usage = `Usage:
   pinata schema [name] --json                    generated canonical JSON Schema
   pinata agents [list|show <name>|validate]        discover Markdown definitions
   pinata tools --json                            discover coordinator tool schemas
-  pinata migrate <input> [--kind job|config|definition] [--output <new-file>]
-  pinata migrate-run <source-directory> --workspace <checkout> [--run <new-id>]
-      [--dry-run | --import --directory <new-store>] [--output <new-manifest>]
 
 Host options: --workspace, --directory, --run, --agent-dir, --definitions (repeatable),
 --config <json>, --grants <json>, --model <provider/id>, --thinking <level>, --bootstrap <module>.

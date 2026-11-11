@@ -1,6 +1,5 @@
 import { scheduleStateSchema, scheduleOccurrenceSchema } from "./schedule.ts";
 import { z } from "zod";
-import { historicalProvenanceSchema } from "./history.ts";
 import { applicationIntentSchema, applicationStateSchema } from "./application.ts";
 import {
   artifactRefSchema,
@@ -49,7 +48,6 @@ export const assignmentSchema = z.strictObject({
   inputs: z.array(assignmentRefSchema),
   context: z.array(z.string()),
   execution: executionSchema,
-  historical: historicalProvenanceSchema.optional(),
 });
 export type Assignment = z.infer<typeof assignmentSchema>;
 export const inboxMessageSchema = z.strictObject({
@@ -140,7 +138,6 @@ export const resultSchema = z.strictObject({
   session: artifactRefSchema.optional(),
   snapshot: artifactRefSchema.optional(),
   usage: usageCoverageSchema,
-  historical: historicalProvenanceSchema.optional(),
 });
 export type AssignmentResult = z.infer<typeof resultSchema>;
 export const controlActionSchema = z.discriminatedUnion("kind", [
@@ -173,37 +170,6 @@ export const outboxObservationStateSchema = z.enum([
   "consumed",
   "uncertain",
 ]);
-export const historyImportSchema = z.strictObject({
-  requestId: identitySchema,
-  source: artifactRefSchema,
-  quiescence: artifactRefSchema,
-  evidence: z.array(artifactRefSchema).default([]),
-  workers: z
-    .array(
-      z.strictObject({
-        worker: frozenWorkerSchema,
-        sourceGrants: grantsSchema,
-        provenance: historicalProvenanceSchema,
-      }),
-    )
-    .min(1),
-  assignments: z
-    .array(
-      z.strictObject({
-        assignment: assignmentSchema,
-        result: resultSchema,
-        resultArtifact: artifactRefSchema,
-      }),
-    )
-    .min(1),
-  sessions: z.array(sessionCheckpointSchema).default([]),
-});
-export type HistoryImport = z.infer<typeof historyImportSchema>;
-export const historyImportedTransitionSchema = historyImportSchema.extend({
-  kind: z.literal("history_imported"),
-  payloadDigest: digestSchema,
-  receipt: acceptedReceiptSchema,
-});
 export const transitionSchema = z.discriminatedUnion("kind", [
   acceptedTransitionSchema,
   z.strictObject({
@@ -225,7 +191,6 @@ export const transitionSchema = z.discriminatedUnion("kind", [
     lastLocalKey: textSchema.optional(),
     acceptance: acceptedTransitionSchema.optional(),
   }),
-  historyImportedTransitionSchema,
   controlTransitionSchema,
   z.strictObject({
     kind: z.literal("application_accepted"),
@@ -451,34 +416,6 @@ export function transitionArtifacts(transition: Transition): z.infer<typeof arti
           worker.context,
           worker.workspacePlan,
         );
-      break;
-    case "history_imported":
-      artifacts.push(transition.source, transition.quiescence, ...transition.evidence);
-      for (const { worker, provenance } of transition.workers)
-        artifacts.push(
-          worker.definition,
-          worker.loadout,
-          worker.config,
-          worker.context,
-          worker.workspacePlan,
-          provenance.manifest,
-          provenance.source,
-        );
-      for (const { assignment, result, resultArtifact } of transition.assignments)
-        artifacts.push(
-          resultArtifact,
-          result.report,
-          result.transcript,
-          result.session,
-          result.snapshot,
-          ...result.artifacts,
-          assignment.historical?.manifest,
-          assignment.historical?.source,
-          result.historical?.manifest,
-          result.historical?.source,
-        );
-      for (const session of transition.sessions)
-        artifacts.push(session.artifact, session.transcript);
       break;
     case "effect_intent":
       artifacts.push(transition.effect.input);

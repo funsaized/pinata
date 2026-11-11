@@ -9,7 +9,7 @@ export const artifactSchema = z.strictObject({ digest: hashSchema, bytes: count 
 export type Artifact = z.infer<typeof artifactSchema>;
 export const fileSchema = z.strictObject({ path: text, mode: count, artifact: artifactSchema });
 export const snapshotSchema = z.strictObject({
-  schemaVersion: z.literal(2),
+  schemaVersion: z.literal(1),
   capturedAt: z.iso.datetime(),
   elapsedMs: z.number().nonnegative(),
   captureMs: z.number().nonnegative(),
@@ -24,7 +24,7 @@ export const unitSchema = z.strictObject({
   after: z.array(z.string()).optional(),
 });
 export const taskEvidenceSchema = z.strictObject({
-  schemaVersion: z.literal(2),
+  schemaVersion: z.literal(1),
   id: text,
   version: count.positive(),
   units: z.array(unitSchema),
@@ -35,13 +35,13 @@ export const taskEvidenceSchema = z.strictObject({
   oracleCaseCount: count.positive(),
 });
 export const sourceClosureSchema = z.strictObject({
-  schemaVersion: z.literal(2),
+  schemaVersion: z.literal(1),
   roots: z.array(text),
   files: z.array(fileSchema),
 });
 
 export const sourceSchema = z.strictObject({
-  schemaVersion: z.literal(2),
+  schemaVersion: z.literal(1),
   revision: text.nullable(),
   diff: artifactSchema.nullable(),
   lockfile: artifactSchema.nullable(),
@@ -104,8 +104,8 @@ export const cellSchema = z.strictObject({
 export type Cell = z.infer<typeof cellSchema>;
 export const manifestSchema = z
   .strictObject({
-    schemaVersion: z.literal(2),
-    analyzerVersion: z.literal(2),
+    schemaVersion: z.literal(1),
+    analyzerVersion: z.literal(1),
     batch: z.uuid(),
     allocatedAt: z.iso.datetime(),
     source: sourceSchema,
@@ -197,7 +197,7 @@ export const observationSchema = z.discriminatedUnion("kind", [
 ]);
 export type Observation = z.infer<typeof observationSchema>;
 export const recordedObservationSchema = z.strictObject({
-  schemaVersion: z.literal(2),
+  schemaVersion: z.literal(1),
   sequence: count.positive(),
   receiptNs: z.string().regex(/^\d+$/),
   receivedAt: z.iso.datetime(),
@@ -212,7 +212,7 @@ export const treatmentSchema = z.strictObject({
   evidence: z.array(artifactSchema),
 });
 export const resultSchema = z.strictObject({
-  schemaVersion: z.literal(2),
+  schemaVersion: z.literal(1),
   batch: z.uuid(),
   cell: z.uuid(),
   attempt: z.uuid(),
@@ -232,7 +232,7 @@ export const resultSchema = z.strictObject({
 export type Result = z.infer<typeof resultSchema>;
 export const cellEventSchema = z.discriminatedUnion("kind", [
   z.strictObject({
-    schemaVersion: z.literal(2),
+    schemaVersion: z.literal(1),
     kind: z.literal("started"),
     sequence: count.positive(),
     batch: z.uuid(),
@@ -241,7 +241,7 @@ export const cellEventSchema = z.discriminatedUnion("kind", [
     startedAt: z.iso.datetime(),
   }),
   z.strictObject({
-    schemaVersion: z.literal(2),
+    schemaVersion: z.literal(1),
     kind: z.literal("finished"),
     sequence: count.positive(),
     batch: z.uuid(),

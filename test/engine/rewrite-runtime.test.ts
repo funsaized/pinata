@@ -67,7 +67,7 @@ const create = { requestId: "create", command: { kind: "create", workers: [worke
 async function fixture(t: TestContext, options: Partial<RuntimeOptions> = {}) {
   const directory = await realpath(await mkdtemp(join(tmpdir(), "pinata-rewrite-runtime-")));
   const manifest: Manifest = {
-    schemaVersion: 4,
+    schemaVersion: 1,
     run: caller.run,
     workspace: directory,
     store: directory,

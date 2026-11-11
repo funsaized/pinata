@@ -184,7 +184,7 @@ export const help = `Scripted Pinata runtime benchmark (no paid provider calls).
 --token-delay MS      Local provider streaming delay (default 1)
 --timeout MS          External cell execution bound, not a production policy
 --out FILE            Exclusive JSON/Markdown output reservation
---baseline FILE       Compare only matching v3 measurement cohorts
+--baseline FILE       Compare only matching v1 measurement cohorts
 `;
 function environment(spec: CellSpec): Record<string, string> {
   return Object.fromEntries(
@@ -391,8 +391,8 @@ export async function main(argv = process.argv.slice(2), run = runAllocated): Pr
   const { budgets } = selectedBudgets;
   meta.budgetProfile = selectedBudgets.profile;
   const report: BenchReport = {
-    schemaVersion: 3,
-    measurement: "pinata-scripted-runtime-v3",
+    schemaVersion: 1,
+    measurement: "pinata-scripted-runtime-v1",
     batchId: randomUUID(),
     status: "running",
     createdAt: new Date().toISOString(),
@@ -422,8 +422,7 @@ export async function main(argv = process.argv.slice(2), run = runAllocated): Pr
         "Reducer/graph/full-log replay are separate profiling passes after execution, not added to worker startup.",
       io: "Logical artifact transfers and retained bytes everywhere; Linux host rchar/wchar additionally covers file/pipe traffic.",
       ui: "Render requests and navigation CPU are measured; terminal paint is not asserted.",
-      processComparison:
-        "Process protocol v3 startup includes guardian enrollment; it is advisory and incomparable with historical v1/v2 child-spawn startup.",
+      processComparison: "Process startup includes guardian enrollment; timing is advisory.",
     },
   };
   if (args.baseline) {
@@ -453,7 +452,7 @@ export async function main(argv = process.argv.slice(2), run = runAllocated): Pr
           const attempt = (attempts.get(scenario.name) ?? 0) + 1;
           attempts.set(scenario.name, attempt);
           const allocated = await allocateCell(output.directory, {
-            schemaVersion: 3,
+            schemaVersion: 1,
             batchId: report.batchId,
             attempt,
             scenario,

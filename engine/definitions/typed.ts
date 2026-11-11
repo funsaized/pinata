@@ -16,7 +16,7 @@ export type AgentDefinitionInput = Omit<
   z.input<typeof definitionSchema>,
   "schemaVersion" | "outputType"
 > & {
-  schemaVersion?: 3;
+  schemaVersion?: 1;
   outputType?: string | z.ZodType;
 };
 export type DefinedAgent = Readonly<{
@@ -67,7 +67,7 @@ export function defineAgent(input: AgentDefinitionInput): DefinedAgent {
   }
   const parsed = definitionSchema.safeParse({
     ...input,
-    schemaVersion: input.schemaVersion ?? 3,
+    schemaVersion: input.schemaVersion ?? 1,
     ...(outputSchema ? { outputType: `trusted:${input.name}` } : {}),
   });
   if (!parsed.success) {

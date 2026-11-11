@@ -73,7 +73,7 @@ export const subscriptionSchema = z.strictObject({ since: revisionSchema.optiona
 export type Subscription = z.infer<typeof subscriptionSchema>;
 export const runtimeEventSchema = z.discriminatedUnion("kind", [
   z.strictObject({
-    schemaVersion: z.literal(3),
+    schemaVersion: z.literal(1),
     kind: z.literal("committed"),
     id: identitySchema,
     revision: revisionSchema.positive(),
@@ -81,7 +81,7 @@ export const runtimeEventSchema = z.discriminatedUnion("kind", [
     transition: transitionSchema,
   }),
   z.strictObject({
-    schemaVersion: z.literal(3),
+    schemaVersion: z.literal(1),
     kind: z.literal("snapshot"),
     id: identitySchema,
     revision: revisionSchema,
@@ -89,7 +89,7 @@ export const runtimeEventSchema = z.discriminatedUnion("kind", [
     snapshot: coreStateSchema,
   }),
   z.strictObject({
-    schemaVersion: z.literal(3),
+    schemaVersion: z.literal(1),
     kind: z.literal("activity"),
     source: identitySchema,
     ordinal: revisionSchema,

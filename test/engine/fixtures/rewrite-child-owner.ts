@@ -41,7 +41,7 @@ async function main(directory: string, lifetime: "attached" | "surviving"): Prom
   await writeFile(
     join(directory, "definitions", "parent.md"),
     `---
-schemaVersion: 3
+schemaVersion: 1
 name: parent
 handoffDescription: Delegate the held recovery fixture.
 tools: [read]
@@ -56,7 +56,7 @@ Delegate the requested work.
   await writeFile(
     join(directory, "definitions", "leaf.md"),
     `---
-schemaVersion: 3
+schemaVersion: 1
 name: leaf
 handoffDescription: Hold the recovery fixture until cancellation.
 tools: [read]

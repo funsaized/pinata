@@ -107,7 +107,7 @@ export default function rewriteUiCapture(pi: ExtensionAPI): void {
         source.state.assignments[assignmentKey(ref)].execution = { phase };
         source.state.revision++;
         await source.emit({
-          schemaVersion: 3,
+          schemaVersion: 1,
           kind: "committed",
           id: `capture/${source.state.revision}`,
           revision: source.state.revision,

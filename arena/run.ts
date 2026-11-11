@@ -25,7 +25,7 @@ export async function main(args: string[]): Promise<number> {
     switch (args[index]) {
       case "--help":
         console.log(
-          "arena --offline [--mode known-good|noop|broken|repair-control] [--task checkout,reservations,incidents,team-board@2] [--workflow sequential,parallel,sequential-review,parallel-review] [--trials N] [--out DIR]\narena --adapter CONFIG --allow-external [--workflow native]\nExternal configs: {schemaVersion:2,adapter:{kind:external|native,...},condition:{...}}. External/native calls can spend model tokens. Results remain unverified until independently attested.",
+          "arena --offline [--mode known-good|noop|broken|repair-control] [--task checkout,reservations,incidents,team-board@1] [--workflow sequential,parallel,sequential-review,parallel-review] [--trials N] [--out DIR]\narena --adapter CONFIG --allow-external [--workflow native]\nExternal configs: {schemaVersion:1,adapter:{kind:external|native,...},condition:{...}}. External/native calls can spend model tokens. Results remain unverified until independently attested.",
         );
         return 0;
       case "--offline":

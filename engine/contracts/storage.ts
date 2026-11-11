@@ -9,14 +9,11 @@ import {
 import { transitionArtifacts, transitionSchema } from "./lifecycle.ts";
 
 export const manifestSchema = z.strictObject({
-  schemaVersion: z.literal(4),
+  schemaVersion: z.literal(1),
   run: identitySchema,
   workspace: textSchema,
   store: textSchema,
   createdAt: z.iso.datetime({ offset: true }),
-  origin: z
-    .strictObject({ run: identitySchema, store: textSchema, manifestDigest: digestSchema })
-    .optional(),
 });
 export type Manifest = z.infer<typeof manifestSchema>;
 export const journalRecordSchema = z
@@ -36,7 +33,6 @@ export const journalRecordSchema = z
         transition.kind === "control_accepted" ||
         transition.kind === "schedule_changed" ||
         transition.kind === "schedule_occurrence" ||
-        transition.kind === "history_imported" ||
         transition.kind === "application_accepted") &&
       (transition.requestId !== record.requestId ||
         transition.receipt.requestId !== record.requestId ||

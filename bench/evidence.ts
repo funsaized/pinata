@@ -286,7 +286,7 @@ export async function reserveOutput(
         root,
         "bench",
         "results",
-        `runtime-v3-${new Date().toISOString().replace(/[:.]/g, "-")}-${randomUUID()}.json`,
+        `runtime-v1-${new Date().toISOString().replace(/[:.]/g, "-")}-${randomUUID()}.json`,
       ),
   );
   await mkdir(dirname(path), { recursive: true });
@@ -370,17 +370,15 @@ export async function publishReport(
 }
 export async function readReport(
   path: string,
-): Promise<{ format: "runtime-v3" | "historical"; comparable: boolean; report: unknown }> {
+): Promise<{ format: "runtime-v1"; comparable: boolean; report: unknown }> {
   const report: unknown = JSON.parse(await readFile(path, "utf8"));
   if (!report || typeof report !== "object") throw new Error("Benchmark report must be an object");
   if (
     "schemaVersion" in report &&
-    report.schemaVersion === 3 &&
+    report.schemaVersion === 1 &&
     "measurement" in report &&
-    report.measurement === "pinata-scripted-runtime-v3"
+    report.measurement === "pinata-scripted-runtime-v1"
   )
-    return { format: "runtime-v3", comparable: true, report };
-  if ("schemaVersion" in report && (report.schemaVersion === 1 || report.schemaVersion === 2))
-    return { format: "historical", comparable: false, report };
+    return { format: "runtime-v1", comparable: true, report };
   throw new Error("Unsupported benchmark report version");
 }

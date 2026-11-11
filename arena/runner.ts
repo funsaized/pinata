@@ -34,7 +34,7 @@ export function defaultCondition(adapter: Adapter, workflow: Workflow): Conditio
         : adapter.kind === "native"
           ? adapter.system
           : adapter.name,
-    adapterVersion: "2",
+    adapterVersion: "1",
     workflow,
     model: null,
     backend: adapter.kind === "offline" ? "scripted" : "in-process",
@@ -125,7 +125,7 @@ export async function runArena(options: ArenaOptions): Promise<Batch> {
     const task = tasks.find((entry) => entry.digest === cell.cell.taskDigest);
     if (!task) throw new Error("Scheduled task evidence is missing");
     const result: Result = {
-      schemaVersion: 2,
+      schemaVersion: 1,
       batch: batch.manifest.batch,
       cell: cell.cell.id,
       attempt: started.attempt,

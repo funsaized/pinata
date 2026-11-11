@@ -31,7 +31,7 @@ export async function openSavedSource(directory: string): Promise<RuntimeSource>
   const ownerEpoch =
     inspected.owner?.epoch ?? `saved/${inspected.frames.at(-1)?.digest ?? "empty"}`;
   const current: SnapshotEvent = {
-    schemaVersion: 3,
+    schemaVersion: 1,
     kind: "snapshot",
     id: `${state.run}/saved/${state.revision}`,
     revision: state.revision,
@@ -39,7 +39,7 @@ export async function openSavedSource(directory: string): Promise<RuntimeSource>
     snapshot: state,
   };
   const events: RuntimeEvent[] = inspected.frames.map((frame) => ({
-    schemaVersion: 3,
+    schemaVersion: 1,
     kind: "committed",
     id: `${state.run}/transaction/${frame.record.revision}/${frame.digest}`,
     revision: frame.record.revision,

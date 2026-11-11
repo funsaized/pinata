@@ -1,5 +1,5 @@
 ---
-schemaVersion: 3
+schemaVersion: 1
 name: builder
 handoffDescription: Implement a coding assignment and report actual changes and checks.
 tools: [read, bash, edit, write]

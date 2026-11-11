@@ -2,7 +2,6 @@ import { join } from "node:path";
 import { readMatrix } from "./matrix.ts";
 import { isMissing } from "../engine/storage/io.ts";
 import { regularBytes } from "./evidence.ts";
-import { readHistoricalBatch, renderHistoricalReport, type HistoricalBatch } from "./legacy.ts";
 import { pathToFileURL } from "node:url";
 import { cellState, readBatch, type Batch } from "./ledger.ts";
 
@@ -11,7 +10,7 @@ export function renderReport(batches: readonly Batch[]): string {
   const identities = new Set<string>();
   const cellIds = new Set<string>();
   const lines = [
-    "# Coding arena — analysis version 2",
+    "# Coding arena — analysis version 1",
     "",
     "Every requested cell is retained. Oracle correctness and workflow verification are separate. Offline controls establish harness behavior only.",
     "",
@@ -71,7 +70,6 @@ export function renderReport(batches: readonly Batch[]): string {
 export async function reportBatches(paths: readonly string[]): Promise<string> {
   if (!paths.length) throw new Error("Supply complete batch directories");
   const batches: Batch[] = [];
-  const historical: HistoricalBatch[] = [];
   const matrixReports: string[] = [];
   const identities = new Set<string>();
   for (const path of paths) {
@@ -105,15 +103,12 @@ export async function reportBatches(paths: readonly string[]): Promise<string> {
       matrixReports.push(rows.join("\n"));
       continue;
     }
-    const id = manifest.schemaVersion === 1 ? manifest.batchId : manifest.batch;
+    const id = manifest.batch;
     if (identities.has(id)) throw new Error("Duplicate batch identity");
     identities.add(id);
-    if (manifest.schemaVersion === 1) historical.push(await readHistoricalBatch(path));
-    else batches.push(await readBatch(path));
+    batches.push(await readBatch(path));
   }
-  return [...matrixReports, renderReport(batches), ...historical.map(renderHistoricalReport)].join(
-    "\n",
-  );
+  return [...matrixReports, renderReport(batches)].join("\n");
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {

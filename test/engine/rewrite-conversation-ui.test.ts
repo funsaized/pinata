@@ -145,13 +145,13 @@ test("Pinata notices use readable headings without exposing saved-message versio
       renderers.set(type, renderer);
     },
   } as unknown as ExtensionAPI);
-  const renderer = renderers.get("pinata.completion.v3");
+  const renderer = renderers.get("pinata.completion.v1");
   assert(renderer);
   const ref = { run: "retained-run", worker: "tests", assignment: 1 };
   const content = `tests/1: completed.\nTests passed.\nFull result: ${JSON.stringify(ref)}\n[pinata-notice:delivery-id]`;
   const message = {
     role: "custom" as const,
-    customType: "pinata.completion.v3",
+    customType: "pinata.completion.v1",
     content,
     display: true,
     details: { ref },
@@ -173,7 +173,7 @@ test("Pinata notices use readable headings without exposing saved-message versio
     assert.match(output, /Subagent result/);
     assert.match(output, /tests\/1: completed/);
     assert.match(output, /\/pinata-conversation tests 1/);
-    assert.doesNotMatch(output, /completion\.v3|pinata-notice|Full result: \{/);
+    assert.doesNotMatch(output, /completion\.v1|pinata-notice|Full result: \{/);
     assert.equal(output.includes("Run: retained-run"), expanded);
     assert(rows.every((line) => visibleWidth(line) <= 80));
   }

@@ -28,7 +28,7 @@ export const agentColorSchema = z.union([
 ]);
 
 export const definitionSchema = z.strictObject({
-  schemaVersion: z.literal(3),
+  schemaVersion: z.literal(1),
   name: idSchema,
   instructions: z.string(),
   handoffDescription: textSchema,

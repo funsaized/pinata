@@ -12,7 +12,7 @@ import { readBatch, type Batch } from "./ledger.ts";
 import { runArena } from "./runner.ts";
 
 export const matrixSchema = z.strictObject({
-  schemaVersion: z.literal(2),
+  schemaVersion: z.literal(1),
   rounds: z.number().int().positive(),
   tasks: z
     .array(
@@ -48,7 +48,7 @@ export function balancedOrder(names: readonly string[], rounds: number): string[
   });
 }
 export const matrixScheduleSchema = z.strictObject({
-  schemaVersion: z.literal(2),
+  schemaVersion: z.literal(1),
   matrix: z.uuid(),
   allocatedAt: z.iso.datetime(),
   input: matrixSchema,
@@ -97,7 +97,7 @@ export async function runMatrix(
     )
     .map((cell, order) => ({ ...cell, order }));
   const schedule = matrixScheduleSchema.parse({
-    schemaVersion: 2,
+    schemaVersion: 1,
     matrix: randomUUID(),
     allocatedAt: new Date().toISOString(),
     input: config,
@@ -175,12 +175,12 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   try {
     if (args.includes("--help"))
       console.log(
-        "node arena/matrix.ts CONFIG.json [--out DIR] [--allow-external]. The version 2 schedule is durably allocated before execution.",
+        "node arena/matrix.ts CONFIG.json [--out DIR] [--allow-external]. The version 1 schedule is durably allocated before execution.",
       );
     else {
       const file = args[0];
       if (!file || file.startsWith("--"))
-        throw new Error("A version 2 matrix configuration is required");
+        throw new Error("A version 1 matrix configuration is required");
       let out = "arena/results";
       let allowExternal = false;
       for (let index = 1; index < args.length; index++) {

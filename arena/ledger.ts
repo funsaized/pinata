@@ -51,8 +51,8 @@ export async function allocateBatch(
   const directory = join(await realpath(parent), `arena-${batch}`);
   const manifest = manifestSchema.parse({
     ...input,
-    schemaVersion: 2,
-    analyzerVersion: 2,
+    schemaVersion: 1,
+    analyzerVersion: 1,
     batch,
     allocatedAt: new Date().toISOString(),
     cells: input.cells.map((cell, order) => ({ ...cell, id: randomUUID(), order })),
@@ -216,7 +216,7 @@ export async function startCell(
   if (cell.results.at(-1)?.cleanup?.status === "unconfirmed")
     throw new Error("Retry requires confirmed cleanup of the previous attempt");
   const started = cellEventSchema.parse({
-    schemaVersion: 2,
+    schemaVersion: 1,
     kind: "started",
     sequence: cell.events.length + 1,
     batch: batch.manifest.batch,
@@ -241,7 +241,7 @@ export async function finishCell(batch: Batch, resultInput: Result): Promise<voi
     throw new Error("Result does not complete this cell's current attempt");
   const reference = await batch.store.json(result);
   await append(batch, cell, {
-    schemaVersion: 2,
+    schemaVersion: 1,
     kind: "finished",
     batch: result.batch,
     cell: result.cell,
@@ -256,7 +256,7 @@ export function cellState(cell: CellHistory): string {
   return cell.results.at(-1)?.state ?? "pending";
 }
 export async function publishReport(batch: Batch, markdown: string): Promise<string> {
-  const file = join(batch.directory, `report-v2-${randomUUID()}.md`);
+  const file = join(batch.directory, `report-v1-${randomUUID()}.md`);
   await publishImmutable(file, Buffer.from(markdown), "arena.report");
   return resolve(file);
 }
@@ -271,7 +271,7 @@ export async function reconcileInterrupted(
   if (!cell?.active) throw new Error("Cell has no uncertain active attempt");
   const active = cell.active;
   await finishCell(batch, {
-    schemaVersion: 2,
+    schemaVersion: 1,
     batch: batch.manifest.batch,
     cell: id,
     attempt: active.attempt,

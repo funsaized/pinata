@@ -1,5 +1,5 @@
 ---
-schemaVersion: 3
+schemaVersion: 1
 name: delegator
 handoffDescription: Delegate explicitly authorized independent changes to builder children.
 tools: [read, write, edit, bash]

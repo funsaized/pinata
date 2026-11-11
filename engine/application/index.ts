@@ -44,7 +44,6 @@ import {
 } from "./files.ts";
 
 export * from "../contracts/application.ts";
-export { decodeLegacyApplicationJournal } from "./legacy.ts";
 
 export type ApplicationOptions = {
   destination: string;
@@ -137,7 +136,7 @@ export class ApplicationStore {
     } catch (error) {
       if (!isMissing(error)) throw error;
       return {
-        schemaVersion: 4,
+        schemaVersion: 1,
         kind: "pinata-application-journal",
         destination: this.destination,
         revision: 0,
