@@ -40,7 +40,7 @@ export function workerExtension(options: {
       name: reportTool,
       label: "Report result",
       description:
-        "Optionally report your result and observed evidence. Checks and assessments are attributed claims; the coordinator decides acceptance.",
+        "Optionally report your result and observed evidence. Use only summary, data, and assessment at the top level. Put task-specific fields inside data, following its schema. Checks and assessments are attributed claims; the coordinator decides acceptance.",
       parameters: piParameters(reportSchema),
       executionMode: "sequential",
       async execute(
