@@ -26,9 +26,9 @@ pi install npm:pi-pinata
 [Tools](#tools) · [CLI](#cli-reference) · [API](#package-api) ·
 [Implementation](#architecture-and-implementation-index) · [Development](#development)
 
-![A live Piñata fleet with a lead, two nested builder children, a scout and a queued reviewer.](media/pinata-fleet.png)
+![A live Piñata fleet with nine agents, two levels of delegation, a scout and a queued reviewer.](media/pinata-fleet.png)
 
-[Watch the fleet run (6× speed)](media/pinata-fleet.mp4)
+[Watch the fleet run (6× speed)](media/pinata-fleet.mp4) · [Recording details](media/README.md)
 
 ## Why Piñata
 
