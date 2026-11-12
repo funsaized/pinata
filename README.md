@@ -932,6 +932,7 @@ Use `-` for stdin where a file argument is accepted.
 | `apply`                                                | `<directory> <worker> <assignment> --destination <checkout>`.                            |
 | `rollback`                                             | `<directory> <operation> --destination <checkout>`.                                      |
 | `reconcile`                                            | `<directory> <operation> --owner <epoch>`.                                               |
+| `bind-checkout`                                        | `<checkout> <retained-manifest.json> --reason <reason>`; bind verified legacy metadata.  |
 | `schema [name]`, `tools`                               | Discover canonical schemas and tool contracts.                                           |
 | `agents list`, `agents show <name>`, `agents validate` | Discover/validate definitions.                                                           |
 
@@ -1121,6 +1122,27 @@ needs current proof the selected owner is inactive. Live, remote or uncertain ow
 stay blocked for their matching host. Preserve before and after blobs, journals, worktrees
 and cleanup receipts. Deleting ownership files or resetting the checkout discards
 recovery evidence.
+
+Checkout gates retain a directory creation-time binding when the filesystem provides
+one. This allows a device number to change after reboot while preserving the original
+manifest and leases. Each running gate still checks the current device, `inode` and
+creation time. Filesystems without creation times retain strict device checks.
+
+Older gates acquire a binding when reopened with their original directory identity.
+If the device number already changed, inspect the retained manifest and activity and
+verify that the path still names the original checkout. Then run:
+
+```sh
+pinata bind-checkout /path/to/project /path/to/project/.pinata/checkout-gate/manifest.json \
+  --reason "Verified original checkout after device renumbering"
+```
+
+This command requires the exact retained manifest, matching path and `inode`, an
+available creation time, and inactive local owners. It records evidence and preserves
+every lease. Retained writers still require normal cleanup reconciliation before
+application. An interrupted binding retains a reconciliation fence for inspection.
+On Linux, an owner from a different recorded boot is inactive even if its PID has
+been reused; a live PID from the same boot remains blocked.
 
 ## Trust boundaries
 

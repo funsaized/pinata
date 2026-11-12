@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { mkdir, readFile, rmdir, stat, unlink } from "node:fs/promises";
 import { hostname } from "node:os";
 import { join } from "node:path";
@@ -156,6 +157,25 @@ export async function releaseOwner(directory: string, owner: OwnerClaim): Promis
 export function assertOwnerDead(owner: OwnerClaim): void {
   if (owner.host !== hostname())
     throw new StorageError("owner_unconfirmed", "Remote owner requires reconciliation on its host");
+  if (process.platform === "linux") {
+    const bootPattern = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
+    const previousBoot = new RegExp(`^linux:(${bootPattern}):[0-9]+$`).exec(
+      owner.startIdentity,
+    )?.[1];
+    if (previousBoot) {
+      let currentBoot: string;
+      try {
+        currentBoot = readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim();
+      } catch (cause) {
+        throw new StorageError("owner_unconfirmed", "Cannot confirm the owner's boot identity", {
+          cause,
+        });
+      }
+      // A process from a different boot cannot survive. This exact identity also
+      // avoids confusing its PID with an unrelated live process after a reboot.
+      if (new RegExp(`^${bootPattern}$`).test(currentBoot) && previousBoot !== currentBoot) return;
+    }
+  }
   try {
     process.kill(owner.pid, 0);
   } catch (cause) {

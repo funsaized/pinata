@@ -15,6 +15,8 @@ import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import {
   checkoutIdentitySchema,
+  checkoutDirectoryBindingSchema,
+  checkoutGateManifestSchema,
   exclusiveLeaseSchema,
   writerLeaseSchema,
   type CheckoutIdentity,
@@ -56,6 +58,7 @@ export type CheckoutGateState = {
   mutex?: Owner;
 };
 type Mutation = { owner: Owner; retainOnFailure(): void };
+type CheckoutObservation = { checkout: CheckoutIdentity; birthtimeNs?: string };
 
 // This process-local authority prevents a reused PID/coarse OS start timestamp
 // from inheriting a live lease. Reopening a gate in this process retains it.
@@ -90,52 +93,181 @@ async function readRecord(path: string): Promise<unknown | undefined> {
   }
 }
 
-async function identifyCheckout(root: string): Promise<CheckoutIdentity> {
+async function identifyCheckout(root: string): Promise<CheckoutObservation> {
   const canonical = await realpath(root);
   const info = await stat(canonical, { bigint: true });
   if (!info.isDirectory() || info.ino === 0n)
     throw new StorageError("conflict", "Checkout root lacks a stable directory identity");
-  return { root: canonical, device: String(info.dev), inode: String(info.ino) };
+  return {
+    checkout: { root: canonical, device: String(info.dev), inode: String(info.ino) },
+    ...(info.birthtimeNs > 0n ? { birthtimeNs: String(info.birthtimeNs) } : {}),
+  };
 }
 
 export async function openCheckoutGate(
   root: string,
   options: CheckoutGateOptions = {},
 ): Promise<CheckoutGate> {
-  const checkout = await identifyCheckout(root);
+  const observed = await identifyCheckout(root);
+  let checkout = observed.checkout;
   const metadata = join(checkout.root, ".pinata");
   await ensureDirectory(metadata);
   const directory = join(metadata, "checkout-gate");
   await ensureDirectory(directory);
   for (const name of ["writers", "released", "evidence", "owners"])
     await ensureDirectory(join(directory, name));
-  const manifest = { schemaVersion: 1, checkout };
   const previous = await readRecord(join(directory, "manifest.json"));
-  if (previous !== undefined && digestValue(previous) !== digestValue(manifest))
-    throw new StorageError("conflict", "Checkout gate belongs to a different directory identity");
+  const bindingRecord = await readRecord(join(directory, "directory-binding.json"));
+  const binding =
+    bindingRecord === undefined ? undefined : checkoutDirectoryBindingSchema.parse(bindingRecord);
+  if (previous !== undefined) {
+    checkout = checkoutGateManifestSchema.parse(previous).checkout;
+    if (
+      checkout.root !== observed.checkout.root ||
+      checkout.inode !== observed.checkout.inode ||
+      (binding &&
+        (digestValue(binding.checkout) !== digestValue(checkout) ||
+          binding.birthtimeNs !== observed.birthtimeNs))
+    )
+      throw new StorageError("conflict", "Checkout gate belongs to a different directory identity");
+    if (!binding && checkout.device !== observed.checkout.device)
+      throw new StorageError(
+        "conflict",
+        "Checkout gate belongs to a different directory identity; legacy metadata has no directory binding. Inspect the retained manifest and activity, then use pinata bind-checkout <checkout> <manifest.json> --reason <reason> to bind the verified directory without discarding leases",
+      );
+  } else if (binding) {
+    throw new StorageError("conflict", "Checkout directory binding has no retained manifest");
+  }
+  // Keep the manifest and lease identities immutable. The directory's creation
+  // time binds them across device-number changes (notably Btrfs after reboot),
+  // while each open gate checks its current physical identity on every mutation.
+  const manifest = { schemaVersion: 1, checkout };
   await publishImmutable(
     join(directory, "manifest.json"),
     Buffer.from(canonicalJson(manifest)),
     "gate-manifest",
+    options.fault,
   );
+  if (!binding && observed.birthtimeNs)
+    await publishImmutable(
+      join(directory, "directory-binding.json"),
+      Buffer.from(canonicalJson({ schemaVersion: 1, checkout, birthtimeNs: observed.birthtimeNs })),
+      "gate-directory-binding",
+      options.fault,
+    );
   await syncDirectory(metadata);
   await syncDirectory(checkout.root);
-  return new CheckoutGate(checkout, directory, options);
+  return new CheckoutGate(checkout, directory, options, observed);
+}
+
+export async function bindCheckoutGate(request: {
+  root: string;
+  expected: CheckoutIdentity;
+  reason: string;
+  fault?: FaultHook;
+}): Promise<{ evidence: string }> {
+  if (!request.reason.trim())
+    throw new StorageError("conflict", "Checkout directory binding requires an audit reason");
+  const expected = checkoutIdentitySchema.parse(request.expected);
+  const observed = await identifyCheckout(request.root);
+  if (
+    expected.root !== observed.checkout.root ||
+    expected.inode !== observed.checkout.inode ||
+    !observed.birthtimeNs
+  )
+    throw new StorageError(
+      "conflict",
+      "Checkout directory binding requires the retained path and inode and an available creation time",
+    );
+  const directory = join(observed.checkout.root, ".pinata", "checkout-gate");
+  await ensureDirectory(join(observed.checkout.root, ".pinata"));
+  await ensureDirectory(directory);
+  const gate = new CheckoutGate(expected, directory, { fault: request.fault }, observed);
+  const fence = join(directory, "reconciling");
+  // Existing mutations check this fence before and after taking their owner claim.
+  await mkdir(fence, { mode: 0o700 });
+  let mutated = false;
+  try {
+    const manifest = checkoutGateManifestSchema.parse(
+      await readRecord(join(directory, "manifest.json")),
+    );
+    if (digestValue(manifest.checkout) !== digestValue(expected))
+      throw new StorageError("conflict", "Checkout directory binding requires the exact manifest");
+    if ((await readRecord(join(directory, "directory-binding.json"))) !== undefined)
+      throw new StorageError("conflict", "Checkout directory already has a binding; inspect it");
+    const state = await gate.inspect();
+    try {
+      await lstat(join(directory, "owner"));
+      if (!state.mutex)
+        throw new StorageError(
+          "owner_unconfirmed",
+          "Checkout has an incomplete owner claim; inspect it before binding",
+        );
+    } catch (error) {
+      if (!isMissing(error)) throw error;
+    }
+    // Binding does not release claims or certify descendant cleanup. Retained leases
+    // continue to exclude application until their normal recovery protocol completes.
+    for (const owner of [state.mutex, state.exclusive?.owner, ...state.writers.map((w) => w.owner)])
+      if (owner) assertOwnerDead(owner);
+    const evidence = join(directory, "evidence", `${randomUUID()}.json`);
+    mutated = true;
+    await publishImmutable(
+      evidence,
+      Buffer.from(
+        canonicalJson({
+          kind: "checkout-directory-binding",
+          manifest,
+          observed,
+          reason: request.reason,
+          state,
+        }),
+      ),
+      "gate-directory-binding-evidence",
+      request.fault,
+    );
+    await publishImmutable(
+      join(directory, "directory-binding.json"),
+      Buffer.from(
+        canonicalJson({ schemaVersion: 1, checkout: expected, birthtimeNs: observed.birthtimeNs }),
+      ),
+      "gate-directory-binding",
+      request.fault,
+    );
+    await gate.inspect();
+    await rmdir(fence);
+    await syncDirectory(directory);
+    return { evidence };
+  } catch (error) {
+    if (!mutated) await rmdir(fence);
+    throw error;
+  }
 }
 
 export class CheckoutGate {
   readonly checkout: CheckoutIdentity;
   readonly directory: string;
   private readonly options: CheckoutGateOptions;
+  private readonly observed: CheckoutObservation;
 
-  constructor(checkout: CheckoutIdentity, directory: string, options: CheckoutGateOptions) {
+  constructor(
+    checkout: CheckoutIdentity,
+    directory: string,
+    options: CheckoutGateOptions,
+    observed: CheckoutObservation = { checkout },
+  ) {
     this.checkout = Object.freeze(checkoutIdentitySchema.parse(checkout));
     this.directory = directory;
     this.options = options;
+    this.observed = structuredClone(observed);
   }
 
   private async assertCheckout(): Promise<void> {
-    if (digestValue(await identifyCheckout(this.checkout.root)) !== digestValue(this.checkout))
+    const current = await identifyCheckout(this.checkout.root);
+    if (
+      digestValue(current.checkout) !== digestValue(this.observed.checkout) ||
+      (this.observed.birthtimeNs !== undefined && current.birthtimeNs !== this.observed.birthtimeNs)
+    )
       throw new StorageError("conflict", "Checkout directory changed while its gate was open");
     await ensureDirectory(join(this.checkout.root, ".pinata"));
     await ensureDirectory(this.directory);

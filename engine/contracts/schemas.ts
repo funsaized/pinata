@@ -66,7 +66,13 @@ import {
   reportToolResultSchema,
   sessionCheckpointSchema,
 } from "./backend.ts";
-import { checkoutIdentitySchema, exclusiveLeaseSchema, writerLeaseSchema } from "./gate.ts";
+import {
+  checkoutIdentitySchema,
+  checkoutGateManifestSchema,
+  checkoutDirectoryBindingSchema,
+  exclusiveLeaseSchema,
+  writerLeaseSchema,
+} from "./gate.ts";
 import { surfaceCallSchema, surfaceReplySchema, surfaceCapabilitiesSchema } from "./surface.ts";
 import { loadoutSchema } from "./loadout.ts";
 import { conversationSeedSchema, instructionSnapshotSchema } from "./context.ts";
@@ -141,6 +147,8 @@ export const schemaRegistry = {
   "pinata.cleanup-receipt.v1": cleanupReceiptSchema,
   "pinata.session-checkpoint.v1": sessionCheckpointSchema,
   "pinata.checkout-identity.v1": checkoutIdentitySchema,
+  "pinata.checkout-gate-manifest.v1": checkoutGateManifestSchema,
+  "pinata.checkout-directory-binding.v1": checkoutDirectoryBindingSchema,
   "pinata.writer-lease.v1": writerLeaseSchema,
   "pinata.exclusive-lease.v1": exclusiveLeaseSchema,
 } as const;

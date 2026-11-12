@@ -23,6 +23,7 @@ const valueOptions = new Set([
   "assignment",
   "since",
   "palette",
+  "reason",
 ]);
 
 export type CliArguments = {
@@ -103,6 +104,7 @@ export const usage = `Usage:
   pinata apply <run-directory> <worker> <assignment> --destination <checkout>
   pinata rollback <run-directory> <operation> --destination <checkout>
   pinata reconcile <run-directory> <operation> --owner <epoch>
+  pinata bind-checkout <checkout> <manifest.json> --reason <reason>
   pinata schema [name] --json                    generated canonical JSON Schema
   pinata agents [list|show <name>|validate]        discover Markdown definitions
   pinata tools --json                            discover coordinator tool schemas
