@@ -12,6 +12,7 @@ import { reduceApplication } from "./application.ts";
 import { validateAcceptance } from "./invariants.ts";
 import { reduceLifecycle } from "./lifecycle.ts";
 import { validateExecutionTransition, validateSettlement } from "./execution.ts";
+import { indexTransition } from "./indexes.ts";
 
 export type { CoreState, EffectState } from "../contracts/index.ts";
 export type State = CoreState;
@@ -58,6 +59,10 @@ function requireAssignment(state: CoreState, key: string): Assignment {
 
 // Transition validation happens once at the journal boundary. The reducer never performs IO.
 export function reduce(state: CoreState, value: Transition, revision: number): CoreState {
+  return indexTransition(state, reduceTransition(state, value, revision), value);
+}
+
+function reduceTransition(state: CoreState, value: Transition, revision: number): CoreState {
   if (revision !== state.revision + 1)
     throw new DomainError("conflict", "Journal revision is not contiguous");
   const next = { ...state };

@@ -9,6 +9,7 @@ import {
   type UsageCoverage,
   type UsageObservation,
 } from "../contracts/index.ts";
+import { assignmentAttempts } from "./indexes.ts";
 
 export type UsageOptions = {
   incompleteAttempts?: readonly string[];
@@ -134,9 +135,7 @@ export function reconcileUsage(
 }
 
 export function assignmentUsage(state: CoreState, ref: AssignmentRef): UsageCoverage {
-  const attempts = Object.values(state.attempts).filter(
-    (entry) => assignmentKey(entry.attempt.ref) === assignmentKey(ref),
-  );
+  const attempts = assignmentAttempts(state, assignmentKey(ref));
   const observations: UsageObservation[] = [];
   const incompleteAttempts: string[] = [];
   const malformed: string[] = [];

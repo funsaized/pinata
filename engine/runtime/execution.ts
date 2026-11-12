@@ -39,6 +39,14 @@ import type {
 } from "../contracts/lifecycle.ts";
 import type { RecoveryReceipt } from "../contracts/runtime.ts";
 import { readyAssignments } from "../core/readiness.ts";
+import {
+  assignmentAttempts,
+  assignmentEffects,
+  hasQueuedAssignments,
+  occupiedAssignments,
+  occupiedCount,
+  queuedAssignments,
+} from "../core/indexes.ts";
 import { dependencyResults } from "../core/state.ts";
 import { assignmentUsage } from "../core/usage.ts";
 import { immutable } from "./immutable.ts";
@@ -227,10 +235,7 @@ export class ExecutionCoordinator {
     }
     // A replayed in-flight assignment has no live handle here. Its persisted phase
     // continues to occupy capacity until explicit backend reconciliation.
-    if (
-      Object.values(state.assignments).some((assignment) => assignment.execution.phase === "queued")
-    )
-      this.wake();
+    if (hasQueuedAssignments(state)) this.wake();
   }
 
   wake(): void {
@@ -262,13 +267,10 @@ export class ExecutionCoordinator {
       while (!this.closing && !this.halted) {
         const selected = await this.host.transaction(async (transaction) => {
           const state = transaction.state();
-          const cancelled = Object.values(state.assignments).find(
-            (assignment) =>
-              assignment.execution.phase === "queued" &&
-              Object.hasOwn(state.cancelled, assignmentKey(assignment.ref)) &&
-              !this.active.has(assignmentKey(assignment.ref)),
+          const cancelled = queuedAssignments(state, true).find(
+            (assignment) => !this.active.has(assignmentKey(assignment.ref)),
           );
-          const assignment = cancelled ?? readyAssignments(state)[0];
+          const assignment = cancelled ?? readyAssignments(state, 1)[0];
           if (!assignment) return undefined;
           const key = assignmentKey(assignment.ref);
           if (this.active.has(key)) return undefined;
@@ -337,24 +339,13 @@ export class ExecutionCoordinator {
       throw new DomainError("conflict", "Runtime execution is closing or halted");
     const selected = await this.host.transaction(async (transaction) => {
       const state = transaction.state();
-      const refs =
-        targets ??
-        Object.values(state.assignments)
-          .filter(
-            (assignment) =>
-              assignment.execution.phase !== "queued" &&
-              (assignment.execution.phase !== "ended" ||
-                assignment.execution.cleanup === "unconfirmed"),
-          )
-          .map((assignment) => assignment.ref);
+      const refs = targets ?? occupiedAssignments(state).map((assignment) => assignment.ref);
       return refs.map((ref) => {
         const key = assignmentKey(ref);
         const assignment = state.assignments[key];
         if (!assignment)
           throw new DomainError("dependency_missing", "Recovery assignment does not exist");
-        const entry = Object.values(state.attempts)
-          .filter((attempt) => assignmentKey(attempt.attempt.ref) === key)
-          .sort((left, right) => right.attempt.ordinal - left.attempt.ordinal)[0];
+        const entry = assignmentAttempts(state, key).at(-1);
         if (this.active.has(key))
           return { receipt: { ref, attemptId: entry?.attempt.id, status: "active" as const } };
         if (
@@ -975,11 +966,11 @@ export class ExecutionCoordinator {
       const ref = active.assignment.ref;
       // A recovery may prove cleanup after an interrupted result was already delivered.
       // Preserve that immutable result and its stable completion notification.
-      if (Object.hasOwn(state.results, assignmentKey(ref))) return;
-      const failedFinalization = Object.values(state.effects)
+      const key = assignmentKey(ref);
+      if (Object.hasOwn(state.results, key)) return;
+      const failedFinalization = assignmentEffects(state, key)
         .filter(
           (entry) =>
-            assignmentKey(entry.effect.ref) === assignmentKey(ref) &&
             (entry.effect.kind === "checkpoint" || entry.effect.kind === "capture") &&
             entry.status === "failed",
         )
@@ -987,7 +978,7 @@ export class ExecutionCoordinator {
       const finalizationErrors = [
         ...new Set([...completion.finalizationErrors, ...failedFinalization]),
       ];
-      const cancelled = Object.hasOwn(state.cancelled, assignmentKey(ref));
+      const cancelled = Object.hasOwn(state.cancelled, key);
       const reason =
         completion.cleanup.status === "unconfirmed"
           ? "interrupted"
@@ -1358,15 +1349,7 @@ export class ExecutionCoordinator {
     while (this.tasks.size) await Promise.all(this.tasks);
     return this.host.transaction(async (transaction) => {
       const state = transaction.state();
-      return (
-        !this.halted &&
-        !Object.values(state.assignments).some(
-          (assignment) =>
-            assignment.execution.phase !== "queued" &&
-            (assignment.execution.phase !== "ended" ||
-              assignment.execution.cleanup === "unconfirmed"),
-        )
-      );
+      return !this.halted && occupiedCount(state) === 0;
     });
   }
 }

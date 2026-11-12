@@ -16,11 +16,24 @@ import {
   type CallerAuthority,
   type Transition,
   type UsageObservation,
+  type CoreState,
 } from "../../engine/contracts/index.ts";
 import { prepareCommand } from "../../engine/core/accept.ts";
 import { prepareControl } from "../../engine/core/control.ts";
 import { initialState, reduce } from "../../engine/core/state.ts";
-import { occupiedAssignments, readiness, readyAssignments } from "../../engine/core/readiness.ts";
+import {
+  occupiedAssignments,
+  readiness,
+  readinessFor,
+  readyAssignments,
+  type ReadinessReason,
+} from "../../engine/core/readiness.ts";
+import {
+  assignmentAttempts,
+  assignmentEffects,
+  occupiedCount,
+  queuedAssignments,
+} from "../../engine/core/indexes.ts";
 import { assignmentUsage, reconcileUsage } from "../../engine/core/usage.ts";
 
 const ref = (worker: string, assignment = 1): AssignmentRef => ({ run: "run", worker, assignment });
@@ -706,4 +719,140 @@ test("replacement unobserved compaction usage remains unknown without becoming a
   const result = world.state.results[assignmentKey(ref("base"))].result;
   assert.equal(result.execution.phase === "ended" && result.execution.reason, "completed");
   assert.equal(result.usage.complete, false);
+});
+
+// The original scan remains an independent oracle for the incremental selectors.
+function scannedReadiness(state: CoreState): Record<string, ReadinessReason> {
+  const reasons: Record<string, ReadinessReason> = {};
+  const active = Object.values(state.assignments).filter(
+    (assignment) =>
+      assignment.execution.phase !== "queued" &&
+      (assignment.execution.phase !== "ended" || assignment.execution.cleanup === "unconfirmed"),
+  );
+  let available =
+    state.maxConcurrent === null ? Infinity : Math.max(0, state.maxConcurrent - active.length);
+  const unresolved = new Set(
+    Object.values(state.effects)
+      .filter((effect) => effect.status === "intent" || effect.status === "uncertain")
+      .map((effect) => assignmentKey(effect.effect.ref)),
+  );
+  for (const assignment of Object.values(state.assignments).sort(
+    (a, b) => a.sequence - b.sequence,
+  )) {
+    const key = assignmentKey(assignment.ref);
+    if (assignment.execution.phase === "ended")
+      reasons[key] = assignment.execution.cleanup === "confirmed" ? "ended" : "cleanup_unconfirmed";
+    else if (Object.hasOwn(state.cancelled, key)) reasons[key] = "cancelled";
+    else if (assignment.execution.phase !== "queued") reasons[key] = "active";
+    else if (unresolved.has(key)) reasons[key] = "effect_unconfirmed";
+    else if (
+      assignment.after.some((ref) => {
+        const dependency = state.assignments[assignmentKey(ref)];
+        return (
+          dependency?.execution.phase !== "ended" || dependency.execution.cleanup !== "confirmed"
+        );
+      })
+    )
+      reasons[key] = "dependency";
+    else if (available === 0) reasons[key] = "capacity";
+    else {
+      reasons[key] = "ready";
+      available--;
+    }
+  }
+  return reasons;
+}
+
+test("assignment indexes match scans across generated histories, cancellation and cleanup recovery", () => {
+  let seed = 1701;
+  const random = (limit: number) => {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    return seed % limit;
+  };
+  const workers = Array.from({ length: 40 }, (_, index) => ({
+    id: `node-${index}`,
+    after: index
+      ? [...new Set(Array.from({ length: random(4) }, () => `node-${random(index)}`))]
+      : [],
+  }));
+  const world = fixture(workers, 4);
+  let step = 0;
+  while (readyAssignments(world.state).length) {
+    const ready = readyAssignments(world.state);
+    const target = ready[random(ready.length)].ref;
+    if (step++ % 9 === 0) {
+      world.command(`cancel-${step}`, { kind: "cancel", scope: "worker", worker: target.worker });
+      world.settle(target, "cancelled");
+      continue;
+    }
+    const effectId = `probe-${step}`;
+    world.commit({ kind: "effect_intent", effect: { id: effectId, kind: "prepare", ref: target } });
+    world.commit({ kind: "effect_observed", effectId, status: "uncertain" });
+    world.commit({ kind: "effect_observed", effectId, status: "completed" });
+    world.start(target);
+    world.outcome(target);
+    const uncertain = step % 7 === 0;
+    world.cleanup(target, uncertain ? "unconfirmed" : "stopped");
+    world.settle(
+      target,
+      uncertain ? "interrupted" : "completed",
+      uncertain ? "unconfirmed" : "confirmed",
+    );
+    if (uncertain) world.cleanup(target);
+    if (step % 10 === 0) world.commit({ kind: "capacity_changed", maxConcurrent: random(6) + 1 });
+    if (step <= 40 && step % 8 === 0)
+      world.command(`follow-${step}`, {
+        kind: "follow_up",
+        worker: target.worker,
+        messageId: `next-${step}`,
+        text: "Continue",
+      });
+  }
+  assert.equal(
+    Object.keys(world.state.results).length,
+    Object.keys(world.state.assignments).length,
+  );
+  let replay = initialState("run");
+  for (const transition of world.history) {
+    const original = structuredClone(replay);
+    const previousReasons = scannedReadiness(replay);
+    const next = reduce(replay, transition, replay.revision + 1);
+    assert.deepEqual(replay, original, "Index maintenance cannot mutate a prior state");
+    assert.deepEqual(readiness(replay), previousReasons);
+    const expected = scannedReadiness(next);
+    assert.deepEqual(readiness(next), expected);
+    assert.deepEqual(
+      readiness(structuredClone(next)),
+      expected,
+      "A wire snapshot rebuilds its indexes",
+    );
+    assert.deepEqual(
+      readyAssignments(next).map((assignment) => assignmentKey(assignment.ref)),
+      Object.keys(expected).filter((key) => expected[key] === "ready"),
+    );
+    assert.equal(occupiedCount(next), occupiedAssignments(next).length);
+    for (const key of Object.keys(next.assignments)) {
+      assert.equal(readinessFor(next, key), expected[key]);
+      assert.deepEqual(
+        assignmentAttempts(next, key),
+        Object.values(next.attempts)
+          .filter((entry) => assignmentKey(entry.attempt.ref) === key)
+          .sort((a, b) => a.attempt.ordinal - b.attempt.ordinal),
+      );
+      assert.deepEqual(
+        assignmentEffects(next, key),
+        Object.values(next.effects).filter((entry) => assignmentKey(entry.effect.ref) === key),
+      );
+    }
+    assert.deepEqual(
+      queuedAssignments(next, true),
+      Object.values(next.assignments).filter(
+        (assignment) =>
+          assignment.execution.phase === "queued" &&
+          Object.hasOwn(next.cancelled, assignmentKey(assignment.ref)),
+      ),
+    );
+    replay = next;
+  }
+  assert.deepEqual(replay, world.state);
 });
