@@ -517,6 +517,9 @@ renamed files in non-Git projects.
 Only explicitly selected skills load. Piñata freezes source and resources and materializes
 those bytes for execution. Skills cannot broaden tools or grants. Custom extension
 providers are trusted host code; their frozen source identity is checked before load.
+`pinata agents validate` also checks selected skill files and resources without
+opening a runtime or making model calls. Missing skills report the resolved path
+and `pinata.skills` field. Validation does not establish model or tool availability.
 
 ### Typed definitions and reports
 

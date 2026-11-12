@@ -85,7 +85,7 @@ export const coordinatorTools: readonly ToolOperation[] = [
   {
     name: "pinata_run",
     description:
-      'Create or extend a run, queue a follow-up, explicitly continue stopped work, change optional capacity, or release a foreground wait. Start with command: {kind: "create", workers: [{id: "worker", agent: "builder", task: "Your assignment"}]}. Omit inheritContext unless parent conversation import is explicitly granted; include needed context in task. Workers use frozen definitions and grants; the coordinator decides testing and acceptance.',
+      'Create or extend a run, queue a follow-up, explicitly continue stopped work, change optional capacity, or release a foreground wait. Start with command: {kind: "create", workers: [{id: "worker", agent: "builder", task: "Your assignment"}]}. Put workspace, backend, lifetime, observeWorkspace and context in each worker entry; optional run configuration belongs in command.config. Omit inheritContext unless parent conversation import is explicitly granted; include needed context in task. Workers use frozen definitions and grants; the coordinator decides testing and acceptance.',
     schema: z.strictObject({ requestId: identitySchema.optional(), command: z.union(runCommands) }),
     request: ({ requestId, command }, callId) => ({
       method: "execute",

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { z } from "zod";
 import type { Terminal } from "@earendil-works/pi-tui";
@@ -17,7 +17,8 @@ import {
   type SurfaceReply,
   type WaitResult,
 } from "../contracts/index.ts";
-import { availableDefinitions } from "../definitions/index.ts";
+import { availableDefinitions, freezeSkills } from "../definitions/index.ts";
+import { digestBytes } from "../storage/io.ts";
 import { loadBootstrap } from "../definitions/typed.ts";
 import { type Host, type HostOptions } from "../host/index.ts";
 import { AttachedSource } from "../sources/attached.ts";
@@ -425,11 +426,12 @@ async function discovery(args: CliArguments, io: CliIO): Promise<number> {
     return 0;
   }
   const { getAgentDir } = await import("@earendil-works/pi-coding-agent");
+  const agentDir = args.options.get("agent-dir") ?? getAgentDir();
   const directories = args.definitions.length
     ? args.definitions.map((path) => resolve(path))
     : [
         fileURLToPath(new URL("../../agents", import.meta.url)),
-        join(args.options.get("agent-dir") ?? getAgentDir(), "pinata", "agents"),
+        join(agentDir, "pinata", "agents"),
         join(resolve(args.options.get("workspace") ?? process.cwd()), ".pi", "pinata", "agents"),
       ];
   const action = args.positional[0] ?? "list";
@@ -446,6 +448,15 @@ async function discovery(args: CliArguments, io: CliIO): Promise<number> {
     : available;
   if (!definitions.length && name)
     throw new DomainError("invalid_input", `No definition found for ${name}`, "agent");
+  if (action === "validate")
+    for (const { definition, path } of definitions)
+      await freezeSkills(definition.pinata.skills, {
+        cwd: dirname(path),
+        agentDir,
+        artifacts: {
+          put: async (bytes) => ({ digest: digestBytes(bytes), size: bytes.byteLength }),
+        },
+      });
   output(args, io, {
     kind: "definitions",
     definitions: definitions.map(({ definition, path, digest, outputSchema }) => ({

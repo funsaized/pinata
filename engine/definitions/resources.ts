@@ -11,7 +11,13 @@ import {
   type FrozenLoadout,
   type FrozenSkill,
 } from "../contracts/loadout.ts";
-import { digestBytes, isExisting, publishImmutable, syncDirectory } from "../storage/io.ts";
+import {
+  digestBytes,
+  isExisting,
+  isMissing,
+  publishImmutable,
+  syncDirectory,
+} from "../storage/io.ts";
 import { validateManifestPath } from "../workspace/paths.ts";
 
 async function resource(path: string): Promise<{ bytes: Buffer; executable: boolean }> {
@@ -45,6 +51,30 @@ async function resource(path: string): Promise<{ bytes: Buffer; executable: bool
   }
 }
 
+async function skillSource(selected: string, cwd: string): Promise<string> {
+  const requested = resolve(cwd, selected);
+  try {
+    const resolved = await realpath(requested);
+    return (await lstat(resolved)).isDirectory()
+      ? await realpath(join(resolved, "SKILL.md"))
+      : resolved;
+  } catch (cause) {
+    if (
+      isMissing(cause) ||
+      (cause instanceof Error && "code" in cause && cause.code === "ENOTDIR")
+    ) {
+      const error = new DomainError(
+        "invalid_input",
+        `Selected skill is missing: ${requested}. Correct pinata.skills or install the skill file or directory containing SKILL.md before starting a new worker.`,
+        "pinata.skills",
+      );
+      error.cause = cause;
+      throw error;
+    }
+    throw cause;
+  }
+}
+
 export async function freezeSkills(
   paths: readonly string[],
   options: { cwd: string; agentDir: string; artifacts: Pick<ArtifactPort, "put"> },
@@ -52,10 +82,7 @@ export async function freezeSkills(
   const frozen: FrozenSkill[] = [];
   const names = new Set<string>();
   for (const selected of paths) {
-    const resolved = await realpath(resolve(options.cwd, selected));
-    const sourcePath = (await lstat(resolved)).isDirectory()
-      ? await realpath(join(resolved, "SKILL.md"))
-      : resolved;
+    const sourcePath = await skillSource(selected, options.cwd);
     const root = dirname(sourcePath);
     const initial = await resource(sourcePath);
     const loaded = loadSkills({

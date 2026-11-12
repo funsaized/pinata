@@ -413,8 +413,15 @@ export function createWorkerResolver(options: WorkerResolverOptions): WorkerReso
           worker = await options.freezeWorker(worker, request, caller, { put });
         workers.push(worker);
       } catch (error) {
-        if (error instanceof DomainError)
-          throw new DomainError(error.code, `Worker ${request.id}: ${error.message}`, error.field);
+        if (error instanceof DomainError) {
+          const detail = new DomainError(
+            error.code,
+            `Worker ${request.id}: ${error.message}`,
+            error.field,
+          );
+          detail.cause = error;
+          throw detail;
+        }
         throw error;
       }
     }

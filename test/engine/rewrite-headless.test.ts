@@ -1,7 +1,17 @@
 import assert from "node:assert/strict";
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { createServer } from "node:http";
-import { cp, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  cp,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  realpath,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test, { type TestContext } from "node:test";
@@ -80,6 +90,38 @@ async function fixture(t: TestContext) {
   };
   return { directory, workspace, definitions, agentDir, hostArgs, job };
 }
+
+test("agents validate checks selected skill resources without opening a runtime", async (t) => {
+  const f = await fixture(t);
+  const path = join(f.definitions, "fixture.md");
+  await writeFile(
+    path,
+    "---\nschemaVersion: 1\nname: fixture\nhandoffDescription: Fixture\ntools: [read]\npinata: { skills: [./missing-skill] }\n---\nRead the fixture.\n",
+  );
+  const args = [
+    "agents",
+    "validate",
+    "--definitions",
+    f.definitions,
+    "--workspace",
+    f.workspace,
+    "--agent-dir",
+    f.agentDir,
+  ];
+  const rejected = await invoke(args);
+  assert.equal(rejected.code, 2);
+  assert.match(rejected.stdout, /pinata.skills/);
+  assert.match(rejected.stdout, /missing-skill/);
+  await mkdir(join(f.definitions, "missing-skill"));
+  await writeFile(
+    join(f.definitions, "missing-skill", "SKILL.md"),
+    "---\nname: missing-skill\ndescription: Repaired explicit resource\n---\nRead the fixture.\n",
+  );
+  const accepted = await invoke(args);
+  assert.equal(accepted.code, 0, accepted.stderr);
+  assert.equal((await readdir(f.workspace)).length, 0);
+  assert.equal((await readdir(f.agentDir)).length, 0);
+});
 
 function launch(args: string[]) {
   const child = spawn(process.execPath, [cli, ...args, "--json"], {
