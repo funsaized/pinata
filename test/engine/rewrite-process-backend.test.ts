@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -15,6 +15,7 @@ import {
   type HerdrControl,
 } from "../../engine/backends/herdr-control.ts";
 import { processArtifacts, readCommands } from "../../engine/backends/process-transport.ts";
+import { ProcessSignals } from "../../engine/backends/process-signals.ts";
 import {
   assignmentKey,
   canonicalJson,
@@ -153,7 +154,28 @@ test(
       ),
     );
     assert(world.observed.some(({ observation }) => observation.kind === "usage"));
-    assert(world.observed.every(({ source }) => source?.sourceId === first.identity.id));
+    const transport = join(world.storeDirectory, "workers", digestValue(world.launch.attemptId));
+    const names = (await readdir(join(transport, "observations"))).sort();
+    const records = await Promise.all(
+      names.map(
+        async (name) =>
+          JSON.parse(await readFile(join(transport, "observations", name), "utf8")).payload,
+      ),
+    );
+    assert(records.every((record) => record.observation.kind !== "activity"));
+    assert.deepEqual(
+      records.map((record) => record.ordinal),
+      records.map((_, index) => index + 1),
+    );
+    assert.equal(
+      JSON.parse(await readFile(join(transport, "outcome.json"), "utf8")).payload.throughOrdinal,
+      records.length,
+    );
+    assert(
+      world.observed.every(({ observation, source }) =>
+        observation.kind === "activity" ? !source : source?.sourceId === first.identity.id,
+      ),
+    );
     const stopped = await first.stop("First complete");
     assert.equal(stopped.cleanup.status, "stopped", JSON.stringify(stopped.cleanup));
     const secondRef = { ...world.launch.ref, assignment: 2 };
@@ -195,6 +217,10 @@ test(
     };
     const receipt = await original.input(message);
     assert.deepEqual(await original.input({ ...message, state: "transport_handled" }), receipt);
+    await assert.rejects(
+      original.input({ ...message, text: "different payload" }),
+      /different input/,
+    );
     const nextEpoch = randomUUID();
     await original.handoff(nextEpoch);
     const replay: typeof world.observed = [];
@@ -222,10 +248,11 @@ test(
           observation.kind === "input_consumed" && observation.messageId === "steer",
       ),
     );
-    assert(replay.every(({ source }) => source?.sourceId === original.identity.id));
+    const durable = replay.filter(({ observation }) => observation.kind !== "activity");
+    assert(durable.every(({ source }) => source?.sourceId === original.identity.id));
     assert.deepEqual(
-      replay.map(({ source }) => source?.ordinal),
-      replay.map((_, index) => index + 1),
+      durable.map(({ source }) => source?.ordinal),
+      durable.map((_, index) => index + 1),
     );
     assert.deepEqual(await recovered.input(message), receipt);
     const commands = await readCommands(
@@ -239,10 +266,11 @@ test(
 );
 
 test(
-  "replacement process cancellation keeps partial outcome and confirms shell descendants",
+  "replacement process cancellation reconciles dropped wake notifications and keeps its partial outcome",
   { skip: !supported, timeout: 40_000 },
   async (t) => {
     const world = await fixture(t, { task: "cancel" });
+    t.mock.method(ProcessSignals.prototype, "notify", () => {});
     const handle = await world.start();
     await delay(100);
     const stopped = await handle.stop("Cancel fixture");

@@ -23,6 +23,7 @@ import {
 } from "../../engine/backends/supervision/index.ts";
 import { supervisorIdentitySchema } from "../../engine/backends/supervision/contracts.ts";
 import { ControlClient } from "../../engine/backends/supervision/client.ts";
+import { ProcessSignals } from "../../engine/backends/process-signals.ts";
 
 const fixtureFile = fileURLToPath(
   new URL("./fixtures/rewrite-supervision-child.ts", import.meta.url),
@@ -110,6 +111,57 @@ function output(events: SupervisorEvent[], stream: "stdout" | "stderr" = "stdout
     )
     .join("");
 }
+
+test(
+  "supervisor relay coalesces activity and supplies a bounded snapshot after reconnect",
+  {
+    skip: !supported,
+    timeout: 15_000,
+  },
+  async (t) => {
+    const { handle, directory } = await launch(t, "hold");
+    const publisher = new ProcessSignals(handle.identity, "worker");
+    t.after(() => publisher.close());
+    await publisher.connect();
+    for (let ordinal = 1; ordinal <= 1000; ordinal++)
+      publisher.publishActivity({ kind: "activity", source: "fixture", ordinal, text: "token" });
+    await publisher.flush();
+    for (let connection = 0; connection < 2; connection++) {
+      const observer = new ProcessSignals(handle.identity, "coordinator");
+      try {
+        await observer.connect();
+        assert.deepEqual(observer.activity, {
+          source: "fixture",
+          ordinal: 1000,
+          offset: 5000,
+          text: "token".repeat(1000).slice(-4096),
+        });
+        const version = observer.version;
+        const controller = new AbortController();
+        const waiting = observer.wait(version, controller.signal);
+        controller.abort(new Error("Cancelled relay wait"));
+        await assert.rejects(waiting, /Cancelled relay wait/);
+      } finally {
+        observer.close();
+      }
+    }
+    assert.doesNotMatch(await readFile(join(directory, "events.jsonl"), "utf8"), /token/);
+    const client = await ControlClient.open(handle.identity, () => {});
+    try {
+      await assert.rejects(
+        client.request({ action: "relay", topic: "large", value: "x".repeat(33 * 1024) }),
+        /exceeded/,
+      );
+      assert.deepEqual(await client.request({ action: "relay", topic: "hint", value: null }), {
+        relayed: true,
+      });
+    } finally {
+      client.close();
+    }
+    const receipt = await handle.stop({ reason: "Relay complete", graceMs: 10 });
+    assert.equal(receipt.status, "stopped", JSON.stringify(receipt));
+  },
+);
 
 for (const disconnectedStops of [1, 2])
   test(

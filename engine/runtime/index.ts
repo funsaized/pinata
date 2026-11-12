@@ -776,6 +776,7 @@ export class Runtime {
       revision: this.state.revision,
       ref,
       text: observation.text,
+      ...(observation.snapshot ? { snapshot: true as const } : {}),
     };
     const subscribers = [...this.subscribers];
     for (const subscriber of subscribers) this.deliver(subscriber, event);

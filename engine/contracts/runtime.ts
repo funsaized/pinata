@@ -97,6 +97,7 @@ export const runtimeEventSchema = z.discriminatedUnion("kind", [
     revision: revisionSchema,
     ref: assignmentRefSchema,
     text: z.string(),
+    snapshot: z.literal(true).optional(),
   }),
 ]);
 export type RuntimeEvent = z.infer<typeof runtimeEventSchema>;

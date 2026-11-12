@@ -125,3 +125,29 @@ test("UI ignores stale snapshots and clears elapsed evidence across snapshot res
   assert.equal(source.reads, reads);
   assert.equal(router.observedElapsed(selected), undefined);
 });
+
+test("UI replaces coalesced activity snapshots and ignores their replay", async (t) => {
+  const source = new CountedSource();
+  const router = new ScreenRouter(source, { mode: "observe" });
+  t.after(() => router.dispose());
+  await router.start();
+  const ref = router.selected;
+  assert(ref);
+  await source.activity(1, 1, "older text");
+  const event: RuntimeEvent = {
+    schemaVersion: 1,
+    kind: "activity",
+    source: "stream-1",
+    ordinal: 10,
+    ownerEpoch: source.epoch,
+    revision: source.state.revision,
+    ref,
+    text: "current tail",
+    snapshot: true,
+  };
+  await source.emit(event);
+  await source.emit(event);
+  assert.equal(router.activity.get(assignmentKey(ref)), "current tail");
+  await source.activity(1, 11, " plus delta");
+  assert.equal(router.activity.get(assignmentKey(ref)), "current tail plus delta");
+});

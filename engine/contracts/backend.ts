@@ -134,6 +134,7 @@ export const backendObservationSchema = z.discriminatedUnion("kind", [
     source: identitySchema,
     ordinal: revisionSchema,
     text: z.string(),
+    snapshot: z.literal(true).optional(),
   }),
 ]);
 export type BackendObservation = z.infer<typeof backendObservationSchema>;

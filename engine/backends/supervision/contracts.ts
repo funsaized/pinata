@@ -147,10 +147,22 @@ export const statusSchema = z.strictObject({
 });
 export type SupervisorStatus = z.infer<typeof statusSchema>;
 
+// Relay messages are disposable hints or display snapshots, never durable evidence.
+export const relayMessageSchema = z.strictObject({
+  topic: z.string().min(1).max(64),
+  value: z.json(),
+});
+export type RelayMessage = z.infer<typeof relayMessageSchema>;
+
 export const controlActionSchema = z.discriminatedUnion("action", [
   z.strictObject({ action: z.literal("ping") }),
   z.strictObject({ action: z.literal("inspect") }),
   z.strictObject({ action: z.literal("observe") }),
+  z.strictObject({
+    action: z.literal("subscribe"),
+    topics: z.array(z.string().min(1).max(64)).max(16),
+  }),
+  relayMessageSchema.extend({ action: z.literal("relay") }),
   z.strictObject({ action: z.literal("start"), payload: payloadSchema }),
   z.strictObject({ action: z.literal("input"), text: z.string().max(1_048_576) }),
   z.strictObject({ action: z.literal("input_end") }),
@@ -183,6 +195,7 @@ export const controlPacketSchema = z.union([
     error: textSchema,
   }),
   z.strictObject({ kind: z.literal("event"), event: supervisorEventSchema }),
+  relayMessageSchema.extend({ kind: z.literal("relay") }),
 ]);
 export const stopResponseSchema = z.strictObject({ stopId: z.uuid(), evidence: artifactRefSchema });
 export const savedCleanupSchema = z.strictObject({

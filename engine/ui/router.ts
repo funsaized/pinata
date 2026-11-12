@@ -167,7 +167,10 @@ export class ScreenRouter {
       this.activityOrdinals.set(source, event.ordinal);
       if (this.activityOrdinals.size > 256)
         this.activityOrdinals.delete(this.activityOrdinals.keys().next().value ?? "");
-      this.activity.set(key, `${this.activity.get(key) ?? ""}${event.text}`.slice(-4096));
+      this.activity.set(
+        key,
+        `${event.snapshot ? "" : (this.activity.get(key) ?? "")}${event.text}`.slice(-4096),
+      );
       if (this.activity.size > 64) this.activity.delete(this.activity.keys().next().value ?? "");
       this.changed();
       return;
