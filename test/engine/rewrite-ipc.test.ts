@@ -6,8 +6,9 @@ import test from "node:test";
 import { surfaceFixture, createRequest } from "./rewrite-surface-fixture.ts";
 import { IpcClient } from "../../engine/ipc/client.ts";
 import { readIpcCredentials } from "../../engine/ipc/credentials.ts";
-import { encodeFrame, LineDecoder } from "../../engine/ipc/framing.ts";
-import { clientFrameSchema, DEFAULT_LIMITS } from "../../engine/ipc/protocol.ts";
+import { encodeFrame, LineDecoder, MessageDecoder } from "../../engine/ipc/framing.ts";
+import { clientFrameSchema, DEFAULT_LIMITS, serverFrameSchema } from "../../engine/ipc/protocol.ts";
+import { MessageWriter } from "../../engine/ipc/writer.ts";
 import { SurfaceFailure } from "../../engine/sources/runtime.ts";
 import { openSavedSource } from "../../engine/sources/saved.ts";
 import { processArtifacts } from "../../engine/backends/process-transport.ts";
@@ -120,7 +121,7 @@ test(
       world.server.link.endpoint,
       JSON.stringify({
         type: "hello",
-        versions: [2],
+        versions: [99],
         run: world.run,
         serverId: world.server.link.serverId,
         role: "viewer",
@@ -385,5 +386,166 @@ test(
     );
     const state = await world.runtime.query({ kind: "status" }, world.caller);
     assert.equal(state.kind === "status" && state.state.outbox[id].state, "consumed");
+  },
+);
+
+test("IPC decoder assembles byte-fragmented UTF-8 and changes limits between coalesced frames", () => {
+  const value = { text: "🌲é".repeat(20_000) };
+  const bytes = encodeFrame(value, 200_000);
+  const decoder = new LineDecoder(200_000);
+  const frames: unknown[] = [];
+  for (const byte of bytes) frames.push(...decoder.push(Uint8Array.of(byte)));
+  assert.deepEqual(frames, [value]);
+  decoder.finish();
+  const negotiated = new LineDecoder(32);
+  const collected: unknown[] = [];
+  for (const frame of negotiated.frames(Buffer.concat([Buffer.from('"hello"\n'), bytes]))) {
+    collected.push(frame);
+    negotiated.setLimit(200_000);
+  }
+  assert.deepEqual(collected, ["hello", value]);
+  assert.throws(() => new LineDecoder(32).push(bytes), /byte limit/);
+  const truncated = new LineDecoder(32);
+  truncated.push(Buffer.from('{"unfinished":'));
+  assert.throws(() => truncated.finish(), /inside a JSON frame/);
+});
+
+test("IPC server serves v1 base64 snapshots to legacy clients", { timeout: 10_000 }, async (t) => {
+  const world = await surfaceFixture(t, { limits: { frameBytes: 1024 } });
+  await world.control.request(createRequest("legacy", "🌲".repeat(2000)));
+  const credentials = await readIpcCredentials(world.directory, "viewer");
+  const socket = createConnection(credentials.link.endpoint);
+  t.after(() => socket.destroy());
+  const messages = new MessageDecoder(DEFAULT_LIMITS.messageBytes);
+  const decoder = new LineDecoder(DEFAULT_LIMITS.frameBytes);
+  const snapshot = await new Promise<unknown>((resolve, reject) => {
+    socket.once("error", reject);
+    socket.once("connect", () =>
+      socket.write(
+        encodeFrame(
+          {
+            type: "hello",
+            versions: [1],
+            run: world.run,
+            serverId: credentials.link.serverId,
+            role: "viewer",
+            token: credentials.token,
+          },
+          DEFAULT_LIMITS.frameBytes,
+        ),
+      ),
+    );
+    socket.on("data", (bytes) => {
+      try {
+        for (const value of decoder.push(bytes)) {
+          const frame = serverFrameSchema.parse(value);
+          if (frame.type === "welcome") {
+            assert.equal(frame.version, 1);
+            socket.write(encodeFrame({ type: "subscribe", id: "legacy" }, 1024));
+          } else if (frame.type === "part") {
+            const message = messages.push(frame);
+            if (message?.type === "event") resolve(message.event);
+          } else reject(new Error(JSON.stringify(frame)));
+        }
+      } catch (error) {
+        reject(error);
+      }
+    });
+  });
+  assert.deepEqual(snapshot, world.readonly.snapshot());
+});
+
+test(
+  "IPC client accepts a v1-only server and v2 large messages coalesced with welcome",
+  { timeout: 10_000 },
+  async (t) => {
+    const world = await surfaceFixture(t);
+    await world.control.request(createRequest("compatibility", "🌲".repeat(100_000)));
+    const failure = { code: "context_unavailable", message: "🌲".repeat(100_000) };
+    for (const version of [1, 2] as const) {
+      const limits = { ...DEFAULT_LIMITS, frameBytes: 1024 };
+      const connections = new Set<Socket>();
+      const server = createServer((socket) => {
+        connections.add(socket);
+        const writer = new MessageWriter(socket, limits, () => socket.destroy());
+        writer.setVersion(version);
+        socket.on("close", () => {
+          writer.close();
+          connections.delete(socket);
+        });
+        const decoder = new LineDecoder(DEFAULT_LIMITS.frameBytes);
+        socket.on("data", (bytes) => {
+          for (const input of decoder.push(bytes)) {
+            const frame = clientFrameSchema.parse(input);
+            if (frame.type === "hello") {
+              assert(frame.versions.includes(version));
+              const welcome = encodeFrame(
+                {
+                  type: "welcome",
+                  version,
+                  run: world.run,
+                  serverId: world.server.link.serverId,
+                  ownerEpoch: world.server.link.ownerEpoch,
+                  role: "viewer",
+                  capabilities: world.readonly.capabilities,
+                  limits,
+                },
+                limits.frameBytes,
+              );
+              if (version === 1) socket.write(welcome);
+              else {
+                // The client must negotiate before bounding the following line.
+                socket.write(
+                  Buffer.concat([
+                    welcome,
+                    encodeFrame({ type: "error", error: failure }, limits.messageBytes),
+                  ]),
+                );
+              }
+            }
+            if (frame.type === "subscribe" && version === 1)
+              void writer
+                .send({
+                  type: "subscribed",
+                  id: frame.id,
+                  cursor: {
+                    ownerEpoch: world.server.link.ownerEpoch,
+                    revision: world.readonly.snapshot().revision,
+                  },
+                  reset: true,
+                })
+                .then(() =>
+                  writer.event(frame.id, world.readonly.snapshot(), () =>
+                    world.readonly.snapshot(),
+                  ),
+                );
+          }
+        });
+      });
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const address = server.address();
+      assert(address && typeof address !== "string");
+      t.after(async () => {
+        for (const socket of connections) socket.destroy();
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      });
+      const connection = IpcClient.connect({
+        credentials: {
+          link: { ...world.server.link, endpoint: { host: "127.0.0.1", port: address.port } },
+          token: "0".repeat(64),
+        },
+      });
+      if (version === 2) {
+        await assert.rejects(connection, (error: unknown) => {
+          assert(error instanceof SurfaceFailure);
+          assert.deepEqual(error.detail, failure);
+          return true;
+        });
+      } else {
+        const client = await connection;
+        t.after(() => client.close());
+        assert.deepEqual(client.snapshot(), world.readonly.snapshot());
+      }
+    }
   },
 );

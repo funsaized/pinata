@@ -9,6 +9,7 @@ import {
   clientFrameSchema,
   DEFAULT_LIMITS,
   IPC_VERSION,
+  IPC_VERSIONS,
   ipcLimitsSchema,
   ipcLinkSchema,
   type ClientFrame,
@@ -210,13 +211,14 @@ class Connection {
     }
   }
   private authenticate(frame: Extract<ClientFrame, { type: "hello" }>): void {
-    if (!frame.versions.includes(IPC_VERSION)) {
+    const version = IPC_VERSIONS.find((candidate) => frame.versions.includes(candidate));
+    if (!version) {
       this.fail(
         {
           code: "protocol_version",
-          message: `IPC protocol ${IPC_VERSION} is required; use a matching Pinata executable`,
+          message: `IPC protocol ${IPC_VERSIONS.join(" or ")} is required; use a matching Pinata executable`,
         },
-        [IPC_VERSION],
+        [...IPC_VERSIONS],
       );
       return;
     }
@@ -241,13 +243,14 @@ class Connection {
         code: "capability_denied",
         message: "This IPC connection cannot receive parent notifications",
       });
+    this.writer.setVersion(version);
     this.source = source;
     clearTimeout(this.helloTimeout);
     this.socket.write(
       encodeFrame(
         {
           type: "welcome",
-          version: IPC_VERSION,
+          version,
           run: link.run,
           serverId: link.serverId,
           ownerEpoch: link.ownerEpoch,

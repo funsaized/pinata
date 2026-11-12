@@ -19,7 +19,9 @@ import { readIpcCredentials } from "./credentials.ts";
 import { encodeFrame, LineDecoder, MessageDecoder } from "./framing.ts";
 import {
   DEFAULT_LIMITS,
-  IPC_VERSION,
+  IPC_VERSIONS,
+  serverMessageSchema,
+  type IpcVersion,
   serverFrameSchema,
   type ClientFrame,
   type IpcLimits,
@@ -77,6 +79,7 @@ export class IpcClient implements RuntimeSource {
   private readonly failures: SurfaceError[] = [];
   private readonly controller = new AbortController();
   private welcomed = false;
+  private version: IpcVersion = 1;
   private closed = false;
   private readonly ready: Promise<void>;
   private resolveReady: () => void = () => {};
@@ -110,7 +113,7 @@ export class IpcClient implements RuntimeSource {
       try {
         this.send({
           type: "hello",
-          versions: [IPC_VERSION],
+          versions: [...IPC_VERSIONS],
           run: this.run,
           serverId: this.link.serverId,
           role: this.role,
@@ -123,7 +126,14 @@ export class IpcClient implements RuntimeSource {
     });
     this.socket.on("data", (bytes: Buffer) => {
       try {
-        for (const value of this.lines.push(bytes)) {
+        for (const value of this.lines.frames(bytes)) {
+          if (this.welcomed && this.version === 2) {
+            const message = serverMessageSchema.safeParse(value);
+            if (message.success) {
+              this.receive(message.data);
+              continue;
+            }
+          }
           const frame = serverFrameSchema.parse(value);
           if (frame.type === "error") {
             this.fail(new SurfaceFailure(frame.error));
@@ -144,7 +154,10 @@ export class IpcClient implements RuntimeSource {
             this.welcomed = true;
             this.capabilities = frame.capabilities;
             this.limits = frame.limits;
-            this.lines.setLimit(this.limits.frameBytes);
+            this.version = frame.version;
+            this.lines.setLimit(
+              this.version === 2 ? this.limits.messageBytes : this.limits.frameBytes,
+            );
             this.messages = new MessageDecoder(this.limits.messageBytes);
             this.send({
               type: "subscribe",
@@ -157,6 +170,11 @@ export class IpcClient implements RuntimeSource {
             throw new SurfaceFailure({
               code: "unauthenticated",
               message: "IPC data preceded protocol negotiation",
+            });
+          if (this.version !== 1)
+            throw new SurfaceFailure({
+              code: "invalid_input",
+              message: "IPC v2 requires direct JSON messages",
             });
           const message = this.messages.push(frame);
           if (message) this.receive(message);

@@ -15,7 +15,11 @@ import {
   surfaceReplySchema,
 } from "./surface.ts";
 
+// Discovery remains readable by v1 clients; the authenticated hello selects
+// v2 direct JSONL or v1 base64 parts for this connection.
 export const IPC_VERSION = 1;
+export const IPC_VERSIONS = [2, 1] as const;
+export type IpcVersion = (typeof IPC_VERSIONS)[number];
 export const DEFAULT_LIMITS = Object.freeze({
   frameBytes: 256 * 1024,
   messageBytes: 64 * 1024 * 1024,
@@ -135,7 +139,7 @@ export type ServerMessage = z.infer<typeof serverMessageSchema>;
 export const serverFrameSchema = z.discriminatedUnion("type", [
   z.strictObject({
     type: z.literal("welcome"),
-    version: z.literal(1),
+    version: z.union([z.literal(1), z.literal(2)]),
     run: identitySchema,
     serverId: z.uuid(),
     ownerEpoch: identitySchema,
