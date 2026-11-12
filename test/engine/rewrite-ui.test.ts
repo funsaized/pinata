@@ -1802,6 +1802,7 @@ test("fleet retains completed dependency references without inventing ancestry",
   source.state.assignments[assignmentKey(ref(3))].after = [ref(), ref(2)];
   const router = new ScreenRouter(source);
   await router.start();
+  router.history = true;
   router.navigate("fleet", ref(3));
   const rows = renderScreen(router, {
     width: 100,

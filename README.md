@@ -147,8 +147,11 @@ and exact assignments. `pinata status RUN_DIRECTORY --saved --json` reads retain
 
 The coordinator shows a compact Agents tree while work is active or queued.
 Workers have activity markers, model labels and execution state; real children
-branch beneath their parent. Dependencies appear as `after:` references. Failed
-or interrupted work that needs attention stays visible. `/pinata` opens an idle fleet.
+branch beneath their parent. Dependencies appear as `after:` references. Finished
+work disappears from the compact widget and is hidden in the fleet by default.
+Use `h` in the fleet to show finished work and older assignments. Work awaiting
+cleanup stays visible, and active children retain their parent branch for context.
+Results and recovery evidence remain available. `/pinata` opens an idle fleet.
 
 Fleet and conversation screens fill the terminal. Pi renders user cards, Markdown,
 syntax highlighting and tool output using its theme. Completion cards show
@@ -158,7 +161,7 @@ Backend and context metadata remain available through the details control.
 The fleet keeps the animated tree, with one aligned row per assignment and status
 near the agent name. The animation travels along active branches; reduced and off
 motion settings keep the branches still.
-Queued stages are visible by default and show what they are waiting for. `Q` hides
+Queued stages are visible by default and show what they are waiting for. `w` hides
 other queued stages while keeping the selected agent visible. Search with `/`,
 apply with Enter, cancel with Escape, or clear with Ctrl+U. Cancelling restores the
 previous query and selected agent. Dependency edges do not create parent/child
@@ -180,7 +183,9 @@ the start is unknown. It is not an estimate of total execution time.
 | Mouse click/double click                          | Select/open a fleet row.                                    |
 | Mouse wheel, PageUp/PageDown, Alt+PageUp/PageDown | Scroll the selected view.                                   |
 | `/` in the fleet                                  | Search workers/tasks; Enter keeps the filter.               |
-| `f`, `h`, `Q` in the fleet                        | Cycle all/active/failed, include history, show queued work. |
+| `f` in the fleet                                  | Cycle all/unfinished/failed.                                |
+| `h` in the fleet                                  | Show/hide finished work and assignment history.             |
+| `w` in the fleet                                  | Show/hide waiting and queued work.                          |
 | `a` in the fleet                                  | Show stop actions for an assignment, agent or entire fleet. |
 | `d` in the fleet                                  | Expand details for the selected assignment.                 |
 | Tab in a conversation                             | Switch composer/transcript focus.                           |

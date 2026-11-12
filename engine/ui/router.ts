@@ -14,7 +14,7 @@ import {
   type SurfaceReply,
 } from "../contracts/index.ts";
 import { type RuntimeSource, surfaceError } from "../sources/runtime.ts";
-import { assignments, steerTarget } from "./projection.ts";
+import { assignments, isFinished, steerTarget } from "./projection.ts";
 import { type PaletteName } from "./palette.ts";
 import { assignmentTree } from "./tree.ts";
 
@@ -226,9 +226,15 @@ export class ScreenRouter {
       this.selected = { ...ref };
       this.definition = undefined;
     }
-    if (screen === "fleet" && this.definition) {
+    if (screen === "fleet") {
       this.definition = undefined;
-      this.selected = this.fleetAssignments()[0]?.ref;
+      const rows = this.fleetAssignments();
+      if (
+        !rows.some(
+          (row) => this.selected && assignmentKey(row.ref) === assignmentKey(this.selected),
+        )
+      )
+        this.selected = rows[0]?.ref;
     }
     this.screen = screen;
     if (screen === "conversation" && this.selected) {
@@ -249,14 +255,19 @@ export class ScreenRouter {
     );
   }
   cycleWorker(direction: number): void {
-    const workers = Object.keys(this.state.workers);
+    const visible = this.screen === "fleet" ? this.fleetAssignments() : undefined;
+    const workers = visible
+      ? [...new Set(visible.map((assignment) => assignment.ref.worker))]
+      : Object.keys(this.state.workers);
     if (!workers.length) return;
     const selected = this.selected ? workers.indexOf(this.selected.worker) : 0;
     const worker = workers[(selected + direction + workers.length) % workers.length];
     this.navigate(this.screen, {
       run: this.state.run,
       worker,
-      assignment: this.state.latest[worker],
+      assignment:
+        visible?.filter((assignment) => assignment.ref.worker === worker).at(-1)?.ref.assignment ??
+        this.state.latest[worker],
     });
   }
   cycleAssignment(direction: number): void {
@@ -285,6 +296,7 @@ export class ScreenRouter {
       ascii,
       selected: this.selected,
       queued: this.showQueued,
+      finished: this.history,
     });
     const hidden = new Set<string>();
     return nodes.filter((node) => {
@@ -296,13 +308,7 @@ export class ScreenRouter {
         hidden.add(key);
         return false;
       }
-      if (
-        !this.history &&
-        assignment.execution.phase === "ended" &&
-        this.state.latest[worker.id] !== assignment.ref.assignment
-      )
-        return false;
-      if (this.filter === "active" && assignment.execution.phase === "ended") return false;
+      if (this.filter === "active" && isFinished(assignment)) return false;
       if (
         this.filter === "failed" &&
         !(

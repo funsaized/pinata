@@ -58,6 +58,7 @@ export function resolveKeys(config: Record<string, string>): UiKeys {
         "right",
         "q",
         "h",
+        "w",
         "f",
         "a",
         "d",
@@ -69,7 +70,6 @@ export function resolveKeys(config: Record<string, string>): UiKeys {
         "pageDown",
         "shift+enter",
         "ctrl+enter",
-        "shift+q",
       ].includes(key)
     )
       throw new Error(`Pinata key is reserved by navigation: ${key}`);

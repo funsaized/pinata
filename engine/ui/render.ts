@@ -10,6 +10,7 @@ import {
   executionLabel,
   contextLabel,
   needsAttention,
+  isFinished,
   queueLabel,
   steerTarget,
 } from "./projection.ts";
@@ -233,11 +234,14 @@ export function fleetWidget(state: CoreState, options: TreeOptions): string[] {
     (assignment) => !["queued", "ended"].includes(assignment.execution.phase),
   ).length;
   const queued = all.filter((assignment) => assignment.execution.phase === "queued").length;
-  const attention = all.filter((assignment) => needsAttention(state, assignment)).length;
+  const attention = all.filter(
+    (assignment) => !isFinished(assignment) && needsAttention(state, assignment),
+  ).length;
   if (!active && !queued && !attention) return [];
   const nodes = assignmentTree(state, {
     ascii: options.ascii,
     activeOnly: true,
+    finished: false,
     attention: true,
     limit: 4,
     trailing: queued > 0 || active > 4,
@@ -503,12 +507,13 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
       ]
     : router.screen === "fleet"
       ? [
-          ["Enter", "open"],
+          ...(router.selected ? [["Enter", "open"] as Shortcut] : []),
           ["d", router.details ? "less" : "details"],
           ...(hasBranches ? [["←→", "branches"] as Shortcut] : []),
           ["/", "search"],
           ["f", "filter"],
-          ["h", "history"],
+          ["h", "finished/history"],
+          ["w", "queued"],
         ]
       : preview
         ? [

@@ -4,7 +4,7 @@ import {
   type AssignmentRef,
   type CoreState,
 } from "../contracts/index.ts";
-import { assignments, needsAttention } from "./projection.ts";
+import { assignments, isFinished, needsAttention } from "./projection.ts";
 
 export function activityIndicator(
   motion: "full" | "reduced" | "off",
@@ -47,6 +47,7 @@ export function assignmentTree(
     ascii?: boolean;
     selected?: AssignmentRef;
     queued?: boolean;
+    finished?: boolean;
     activeOnly?: boolean;
     attention?: boolean;
     limit?: number;
@@ -57,6 +58,7 @@ export function assignmentTree(
   const selected = options.selected ? assignmentKey(options.selected) : undefined;
   let chosen = all.filter((assignment) => {
     const phase = assignment.execution.phase;
+    if (options.finished === false && isFinished(assignment)) return false;
     if (assignmentKey(assignment.ref) === selected) return true;
     if (options.activeOnly)
       return (

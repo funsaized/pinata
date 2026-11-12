@@ -6,6 +6,7 @@ import {
   assignments,
   executionLabel,
   needsAttention,
+  isFinished,
   queueLabel,
 } from "./projection.ts";
 import { agentAccent, modelAccent, type Paint } from "./palette.ts";
@@ -143,17 +144,25 @@ export function renderFleet(router: ScreenRouter, options: FleetOptions): string
     (assignment) => !["ended", "queued"].includes(assignment.execution.phase),
   ).length;
   const queued = all.filter((assignment) => assignment.execution.phase === "queued").length;
-  const attention = all.filter((assignment) => needsAttention(state, assignment)).length;
+  const nodes = router.fleetNodes(options.ascii);
+  const finished = all.filter(isFinished).length;
+  const visibleKeys = new Set(nodes.map((node) => assignmentKey(node.assignment.ref)));
+  const hiddenFinished = all.filter(
+    (assignment) => isFinished(assignment) && !visibleKeys.has(assignmentKey(assignment.ref)),
+  ).length;
+  const attention = all.filter(
+    (assignment) =>
+      (router.history || !isFinished(assignment)) && needsAttention(state, assignment),
+  ).length;
   const completed = all.filter(
     (assignment) =>
       assignment.execution.phase === "ended" &&
       assignment.execution.reason === "completed" &&
-      assignment.execution.cleanup === "confirmed" &&
-      state.latest[assignment.ref.worker] === assignment.ref.assignment,
+      assignment.execution.cleanup === "confirmed",
   ).length;
   const summary =
     `${active} active · ${queued} queued` +
-    (completed ? ` · ${completed} completed` : "") +
+    (router.history && completed ? ` · ${completed} completed` : "") +
     (attention ? ` · ${attention} need attention` : "");
   const output =
     width >= 50
@@ -169,7 +178,7 @@ export function renderFleet(router: ScreenRouter, options: FleetOptions): string
     fit(
       paint(
         "muted",
-        `${router.source.capabilities.live ? "Live" : "Saved"} · ${router.source.capabilities.control ? "control connected" : "read-only"} · ${state.attachment} · ${filterLabel} · ${router.history ? "history" : "latest"}`,
+        `${router.source.capabilities.live ? "Live" : "Saved"} · ${router.source.capabilities.control ? "control connected" : "read-only"} · ${state.attachment} · ${filterLabel} · ${router.history ? "finished/history shown" : "finished hidden"}`,
       ),
       width,
     ),
@@ -181,22 +190,22 @@ export function renderFleet(router: ScreenRouter, options: FleetOptions): string
         width,
       ),
     );
-  const models = Object.values(state.workers).map((worker) =>
+  const workers = [...new Set(nodes.map((node) => node.assignment.ref.worker))].map(
+    (id) => state.workers[id],
+  );
+  const models = workers.map((worker) =>
     worker.model
       ? JSON.stringify([worker.model.provider, worker.model.id, worker.model.thinking])
       : "unknown",
   );
-  const modelKeys = Object.values(state.workers).flatMap((worker) =>
+  const modelKeys = workers.flatMap((worker) =>
     worker.model ? [`${worker.model.provider}/${worker.model.id}`] : [],
   );
   const commonModel = models.length > 0 && models[0] !== "unknown" && new Set(models).size === 1;
   if (commonModel)
     output.push(
       fit(
-        paint(
-          "muted",
-          "Model: " + modelLabel(router, Object.keys(state.workers)[0]) + " · all agents",
-        ),
+        paint("muted", "Model: " + modelLabel(router, workers[0].id) + " · visible agents"),
         width,
       ),
     );
@@ -220,7 +229,6 @@ export function renderFleet(router: ScreenRouter, options: FleetOptions): string
         width,
       ),
     );
-  const nodes = router.fleetNodes(options.ascii);
   const trackWidth = Math.min(
     Math.max(8, ...nodes.map((node) => node.prefix.length + 5)),
     Math.max(3, Math.floor(width / 5)),
@@ -349,21 +357,28 @@ export function renderFleet(router: ScreenRouter, options: FleetOptions): string
       fit(
         paint(
           "muted",
-          all.length
-            ? "No matching agents · / search · f filter · Q queued"
-            : "No agents yet. Start one with @agent <task>.",
+          !all.length
+            ? "No agents yet. Start one with @agent <task>."
+            : !router.history && finished && !active && !queued && !router.search
+              ? "No unfinished work · h show finished"
+              : "No matching agents · h finished · / search · f filter · w queued",
         ),
         width,
       ),
     );
   let queuedHint = "";
-  if (queued) queuedHint = router.showQueued ? "Q hide queued" : "Q show queued";
+  if (queued) queuedHint = router.showQueued ? "w hide queued" : "w show queued";
   const paging =
     nodes.length > available
       ? `Agents ${first + 1}–${Math.min(nodes.length, first + available)} of ${nodes.length}`
       : "";
   const capacity = state.maxConcurrent === null ? "" : `Capacity ${state.maxConcurrent}`;
-  const hints = [paging, queuedHint, capacity].filter(Boolean).join(" · ");
+  const finishedHint = router.history
+    ? "h hide finished"
+    : hiddenFinished
+      ? `h show finished · ${hiddenFinished} hidden`
+      : "";
+  const hints = [finishedHint, paging, queuedHint, capacity].filter(Boolean).join(" · ");
   if (hints) output.push(fit(paint("muted", hints), width));
   return [
     ...output,

@@ -70,13 +70,14 @@ export function assignmentDetails(state: CoreState, assignment: Assignment): str
   ];
 }
 
+export function isFinished(assignment: Assignment): boolean {
+  return assignment.execution.phase === "ended" && assignment.execution.cleanup === "confirmed";
+}
+
 export function needsAttention(state: CoreState, assignment: Assignment): boolean {
   if (assignment.execution.phase !== "ended") return false;
-  if (
-    !["failed", "interrupted"].includes(assignment.execution.reason) &&
-    assignment.execution.cleanup !== "unconfirmed"
-  )
-    return false;
+  if (assignment.execution.cleanup === "unconfirmed") return true;
+  if (!["failed", "interrupted"].includes(assignment.execution.reason)) return false;
   return (
     state.latest[assignment.ref.worker] === assignment.ref.assignment ||
     Object.values(state.assignments).some(

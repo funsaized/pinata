@@ -303,7 +303,7 @@ export class PinataScreen implements Component, Focusable {
         this.options.main();
         return;
       }
-      if (data === "Q") return this.router.toggleQueued();
+      if (data === "w") return this.router.toggleQueued();
       if (data === "d") {
         this.router.details = !this.router.details;
         this.requestRender();
@@ -335,7 +335,8 @@ export class PinataScreen implements Component, Focusable {
       if (matchesKey(data, "right")) return this.router.collapse(false);
       if (matchesKey(data, "up")) this.moveRow(-1);
       else if (matchesKey(data, "down")) this.moveRow(1);
-      else if (matchesKey(data, "enter")) this.router.navigate("conversation");
+      else if (matchesKey(data, "enter") && this.router.selected)
+        this.router.navigate("conversation");
       return;
     }
     if (this.router.screen === "conversation" && this.router.definition && !this.router.selected) {
