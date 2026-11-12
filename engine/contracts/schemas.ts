@@ -1,6 +1,8 @@
 import { scheduleStateSchema, scheduleOccurrenceSchema } from "./schedule.ts";
 import { toolPageRequestSchema, toolPageSchema, toolPageReplySchema } from "./pages.ts";
-import { z } from "zod";
+import type { z } from "zod";
+import { DomainError } from "./common.ts";
+import { jsonSchema } from "./json-schema.ts";
 import { dependencyQuerySchema, dependencyPageSchema } from "./dependencies.ts";
 import { grantsSchema, commandErrorSchema } from "./common.ts";
 import {
@@ -156,13 +158,15 @@ export type SchemaName = keyof typeof schemaRegistry;
 
 // Cross-field grants, graph references, receipt/journal consistency and NUL rejection
 // require canonical validation after transport normalization; JSON Schema is not authority.
-export function exportSchemas(): Record<string, z.core.JSONSchema.JSONSchema> {
-  return Object.fromEntries(
-    Object.entries(schemaRegistry).map(([name, schema]) => [
-      name,
-      z.toJSONSchema(schema, { target: "draft-07", io: "input" }),
-    ]),
-  );
+export function exportSchemas(name?: string): Record<string, z.core.JSONSchema.JSONSchema> {
+  if (name && !Object.hasOwn(schemaRegistry, name))
+    throw new DomainError(
+      "invalid_input",
+      `Unknown schema: ${name}. Available names: ${Object.keys(schemaRegistry).join(", ")}`,
+      "name",
+    );
+  const names = name ? [name as SchemaName] : (Object.keys(schemaRegistry) as SchemaName[]);
+  return Object.fromEntries(names.map((key) => [key, jsonSchema(schemaRegistry[key])]));
 }
 
 export function parseSchema(

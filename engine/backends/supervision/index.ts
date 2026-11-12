@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { mkdir, open, readFile, realpath } from "node:fs/promises";
+import * as nodeModule from "node:module";
 import { hostname } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -653,6 +654,7 @@ export async function launchSupervised(options: LaunchOptions): Promise<Supervis
     "supervisor-bootstrap",
   );
   const nodeCommand = options.nodeCommand ?? (process.versions.bun ? "node" : process.execPath);
+  if (!process.versions.bun) nodeModule.flushCompileCache();
   const child = spawn(
     nodeCommand,
     [

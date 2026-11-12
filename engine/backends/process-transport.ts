@@ -124,9 +124,11 @@ const transportFrameSchema = z.strictObject({
   payload: z.unknown(),
 });
 export async function writeRecord(path: string, value: unknown): Promise<void> {
+  const payload = canonicalJson(value);
+  const digest = digestBytes(Buffer.from(payload));
   await publishImmutable(
     path,
-    Buffer.from(canonicalJson({ schemaVersion: 1, digest: digestValue(value), payload: value })),
+    Buffer.from(`{"digest":"${digest}","payload":${payload},"schemaVersion":1}`),
     "process-transport",
   );
 }

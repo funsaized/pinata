@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { z } from "zod";
+import { jsonSchema } from "../contracts/json-schema.ts";
 import type { Terminal } from "@earendil-works/pi-tui";
 import {
   canonicalJson,
@@ -17,7 +17,6 @@ import {
   type SurfaceReply,
   type WaitResult,
 } from "../contracts/index.ts";
-import { availableDefinitions, freezeSkills } from "../definitions/index.ts";
 import { digestBytes } from "../storage/io.ts";
 import { loadBootstrap } from "../definitions/typed.ts";
 import { type Host, type HostOptions } from "../host/index.ts";
@@ -25,10 +24,7 @@ import { AttachedSource } from "../sources/attached.ts";
 import { startIpcServer } from "../ipc/server.ts";
 import { bindRuntime, type RuntimeSource, surfaceError } from "../sources/runtime.ts";
 import { openSavedSource } from "../sources/saved.ts";
-import { coordinatorTools } from "../pi/tools.ts";
-import { workerToolSchemas } from "../agent/tool-schemas.ts";
 import { parseArguments, requireArgument, usage, type CliArguments } from "./arguments.ts";
-import { openViewer } from "../viewer/main.ts";
 import { paletteSchema } from "../contracts/config.ts";
 import { bindCheckoutGate } from "../workspace/gate.ts";
 
@@ -251,6 +247,7 @@ async function surfaceCommand(args: CliArguments, io: CliIO): Promise<number> {
           "invalid_input",
           "The viewer requires an interactive terminal; use status --json for structured output",
         );
+      const { openViewer } = await import("../viewer/main.ts");
       await openViewer({
         source,
         terminal: io.terminal,
@@ -399,32 +396,33 @@ async function surfaceCommand(args: CliArguments, io: CliIO): Promise<number> {
 
 async function discovery(args: CliArguments, io: CliIO): Promise<number> {
   if (args.command === "schema") {
-    const schemas = exportSchemas();
     const name = args.positional[0];
-    if (name && !Object.hasOwn(schemas, name))
-      throw new DomainError("invalid_input", `Unknown schema: ${name}`);
+    const schemas = exportSchemas(name);
     output(args, io, name ? schemas[name] : schemas);
     return 0;
   }
   if (args.command === "tools") {
+    const { coordinatorTools } = await import("../pi/tools.ts");
+    const { workerToolSchemas } = await import("../agent/tool-schemas.ts");
     output(args, io, [
       ...coordinatorTools.map((tool) => ({
         name: tool.name,
         scope: "coordinator",
         description: tool.description,
-        input: z.toJSONSchema(tool.schema, { target: "draft-07", io: "input" }),
+        input: jsonSchema(tool.schema),
         output: tool.output ?? "pinata.surface-reply.v1",
       })),
       ...Object.entries(workerToolSchemas).map(([name, tool]) => ({
         name,
         scope: "worker",
         description: tool.availability,
-        input: z.toJSONSchema(tool.input, { target: "draft-07", io: "input" }),
+        input: jsonSchema(tool.input),
         output: tool.output,
       })),
     ]);
     return 0;
   }
+  const { availableDefinitions, freezeSkills } = await import("../definitions/index.ts");
   const { getAgentDir } = await import("@earendil-works/pi-coding-agent");
   const agentDir = args.options.get("agent-dir") ?? getAgentDir();
   const directories = args.definitions.length

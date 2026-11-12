@@ -563,17 +563,11 @@ export class Runtime {
             cursor: this.state.revision,
           });
         case "schemas": {
-          const schemas = exportSchemas();
-          if (request.name && !Object.hasOwn(schemas, request.name))
-            throw new DomainError(
-              "invalid_input",
-              `Unknown schema: ${request.name}. Available names: ${Object.keys(schemas).join(", ")}`,
-              "name",
-            );
+          const schemas = exportSchemas(request.name);
           return immutable(
             queryResultSchema.parse({
               kind: "schemas",
-              schemas: request.name ? { [request.name]: schemas[request.name] } : schemas,
+              schemas,
             }),
           );
         }
