@@ -40,6 +40,8 @@ seen = 0
 opens = 0
 stages = {}
 frames = []
+history_steps = 0
+history_scroll = 0
 deadline = time.monotonic() + 30
 
 
@@ -143,6 +145,21 @@ try:
                     elif stage == 1.5 and visit == 1 and any("TRANSCRIPT" in line for line in event["output"]):
                         frames.append(event)
                         assert any("\x1b[1;7m TRANSCRIPT " in line for line in event["output"]), "Transcript focus must be visibly highlighted"
+                        stages[visit] = 1.6
+                        history_scroll = event["scroll"]
+                        send(b"\x1b[A")
+                    elif stage == 1.6 and visit == 1:
+                        # Live excerpts can move a particular retained line just
+                        # above the viewport. Read history before asserting it.
+                        if event["scroll"] >= history_scroll:
+                            continue
+                        history_scroll = event["scroll"]
+                        frames.append(event)
+                        if not any("Full retained conversation line 100" in plain(line) for line in event["output"]):
+                            history_steps += 1
+                            assert history_steps < 10, "Retained transcript history did not become visible"
+                            send(b"\x1b[A")
+                            continue
                         stages[visit] = 2
                         send(b"d\t")
                         send(b"\x1b[<65;10;20M")
