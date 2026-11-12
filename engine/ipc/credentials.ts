@@ -29,7 +29,7 @@ export async function publishIpcLink(
     throw new DomainError("conflict", "IPC credential directory cannot be a symbolic link");
   await chmod(privateDirectory, 0o700);
   const credentials = ipcCredentialsSchema.parse({
-    schemaVersion: 2,
+    schemaVersion: 1,
     run: link.run,
     serverId: link.serverId,
     ownerEpoch: link.ownerEpoch,

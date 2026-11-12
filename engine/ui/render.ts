@@ -1,6 +1,7 @@
+import { renderFleet } from "./fleet.ts";
 import { actionsPanel, helpPanel } from "./panels.ts";
 import { renderConversation, type ConversationPresentation } from "./conversation.ts";
-import { resolveKeys } from "./keys.ts";
+import { resolveConversationKeys, type ConversationKeys } from "./keys.ts";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { assignmentKey, type AssignmentRef, type CoreState } from "../contracts/index.ts";
 import {
@@ -10,11 +11,12 @@ import {
   contextLabel,
   needsAttention,
   queueLabel,
+  steerTarget,
 } from "./projection.ts";
-import { agentAccent, modelAccent, type Paint, type SemanticToken } from "./palette.ts";
+import { agentAccent, modelAccent, type Paint } from "./palette.ts";
 import { displayText, fit, lines, padded } from "./text.ts";
 import type { ConversationView, ScreenRouter } from "./router.ts";
-import { assignmentTree, type TreeNode } from "./tree.ts";
+import { activityIndicator, assignmentTree, type TreeNode } from "./tree.ts";
 
 export type RenderOptions = {
   width: number;
@@ -23,52 +25,8 @@ export type RenderOptions = {
   ascii?: boolean;
   hitRows?: Map<number, AssignmentRef>;
   presentation?: ConversationPresentation;
+  conversationKeys?: ConversationKeys;
 };
-function promptBox(
-  task: string,
-  width: number,
-  paint: Paint,
-  ascii?: boolean,
-  maxLines = 1,
-): string[] {
-  if (width < 5) return [fit(paint("muted", displayText(task)), width)];
-  const colors: SemanticToken[] = [
-    "accent.pink",
-    "accent.purple",
-    "accent.blue",
-    "accent.cyan",
-    "accent.green",
-    "accent.yellow",
-    "accent.orange",
-    "accent.red",
-  ];
-  const colorAt = (column: number): SemanticToken =>
-    colors[Math.min(colors.length - 1, Math.floor((column * colors.length) / width))];
-  const edge = (left: string, right: string): string =>
-    Array.from({ length: width }, (_, column) =>
-      paint(
-        colorAt(column),
-        column === 0 ? left : column === width - 1 ? right : ascii ? "-" : "─",
-      ),
-    ).join("");
-  const side = ascii ? "|" : "│";
-  const wrapped = lines(task, width - 4);
-  const body = wrapped.slice(0, maxLines);
-  if (wrapped.length > maxLines)
-    body[body.length - 1] = (width > 5 ? fit(body[body.length - 1], width - 5) : "") + "…";
-  return [
-    edge(ascii ? "+" : "╭", ascii ? "+" : "╮"),
-    ...body.map(
-      (text) =>
-        paint("accent.pink", side) +
-        " " +
-        padded(paint("muted", text), width - 4) +
-        " " +
-        paint("accent.red", side),
-    ),
-    edge(ascii ? "+" : "╰", ascii ? "+" : "╯"),
-  ];
-}
 function record(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -115,31 +73,6 @@ function statusToken(phase: string): "success" | "warning" | "error" | "muted" |
   if (phase.includes("queued")) return "muted";
   return "accent";
 }
-export function activityIndicator(
-  motion: "full" | "reduced" | "off",
-  now: number,
-  prefix = "",
-  row = 0,
-  cycle = 15,
-  ascii = true,
-): string {
-  const rail = ascii ? "-" : "─";
-  const branch = prefix.replace(/[-─] $/, rail + rail) + rail.repeat(5);
-  if (motion !== "full") return branch;
-  const frame = Math.floor(now / 250);
-  const position = (frame % cycle) - row;
-  return Array.from(branch, (character, column) => {
-    if (character === " ") return character;
-    // A shared wave descends the trunk, then forks along each connected branch.
-    const distance = column < prefix.length - 3 ? 0 : column;
-    if (position === distance) return ["c", "C", "c"][frame % 3];
-    if (position < distance) return column % 2 === 0 ? "o" : " ";
-    if (character === "─" || character === "-") return column % 2 === 0 ? "-" : " ";
-    if (character === "│" || character === "├") return "┆";
-    if (character === "|") return ":";
-    return character;
-  }).join("");
-}
 
 type TreeOptions = {
   width: number;
@@ -161,8 +94,16 @@ function treeLines(state: CoreState, nodes: TreeNode[], options: TreeOptions): T
   const models = Object.values(state.workers).flatMap((worker) =>
     worker.model ? [`${worker.model.provider}/${worker.model.id}`] : [],
   );
-  const cycle = nodes.length + Math.max(0, ...nodes.map((node) => node.prefix.length)) + 8;
-  for (const [row, node] of nodes.entries()) {
+  // Completed and queued rows must not lengthen the animated wave.
+  const activeNodes = nodes.filter(
+    (node) => !["ended", "queued"].includes(node.assignment.execution.phase),
+  );
+  const cycle = Math.max(
+    1,
+    ...activeNodes.map((node, row) => row + Math.min(node.prefix.length, 3) + 5),
+  );
+  let activeRow = 0;
+  for (const node of nodes) {
     const assignment = node.assignment;
     const worker = state.workers[assignment.ref.worker];
     const status = executionLabel(assignment);
@@ -179,7 +120,7 @@ function treeLines(state: CoreState, nodes: TreeNode[], options: TreeOptions): T
           options.motion ?? "off",
           now,
           node.prefix,
-          row,
+          activeRow++,
           cycle,
           options.ascii ?? false,
         )
@@ -317,25 +258,49 @@ export function fleetWidget(state: CoreState, options: TreeOptions): string[] {
   return output.map((line) => options.paint("background", padded(line, options.width)));
 }
 
+type Shortcut = [key: string, label: string];
+
+function shortcutLine(primary: Shortcut[], extra: Shortcut[], width: number, paint: Paint): string {
+  const pinned = primary.map(([key, label]): Shortcut => [key, label]);
+  const plain = (items: Shortcut[]) =>
+    items.map(([key, label]) => key + (label ? " " + label : "")).join(" · ");
+  for (let index = pinned.length - 1; index >= 0 && visibleWidth(plain(pinned)) > width; index--)
+    pinned[index][1] = "";
+  const chosen: Shortcut[] = [];
+  for (const hint of extra)
+    if (visibleWidth(plain([...chosen, hint, ...pinned])) <= width) chosen.push(hint);
+  return fit(
+    [...chosen, ...pinned]
+      .map(([key, label]) => paint("accent.cyan", key) + (label ? paint("muted", " " + label) : ""))
+      .join(paint("border", " · ")),
+    width,
+  );
+}
+
 export function renderScreen(router: ScreenRouter, options: RenderOptions): string[] {
   const width = Math.max(1, options.width);
   const height = Math.max(1, options.height);
   const { paint } = options;
+  const conversationKeys = options.conversationKeys ?? resolveConversationKeys(router.keys);
   options.hitRows?.clear();
   if (router.actions || router.help)
     return (
       router.actions
         ? actionsPanel(router, width, height, paint)
-        : helpPanel(router, width, height, paint)
+        : helpPanel(router, width, height, paint, conversationKeys)
     ).map((line) => paint("background", padded(line, width)));
 
   const header =
     paint("accent.pink", options.ascii ? "[P] Pinata" : "✦ Pinata") +
     paint("border", " › ") +
     paint("strong", paint("accent.blue", router.screen)) +
-    paint("muted", ` · ${router.source.capabilities.live ? "live" : "saved"} · ${router.mode}`) +
+    paint(
+      "muted",
+      ` · ${router.source.capabilities.live ? "live" : "saved"} · ${router.mode}${router.source.capabilities.control ? "" : " · read-only"}`,
+    ) +
     (router.details ? paint("muted", ` · ${displayText(router.state.run)}`) : "");
   const output = [fit(header, width)];
+  const footer: string[] = [];
   if (router.screen === "main")
     return fleetWidget(router.state, {
       ...options,
@@ -345,126 +310,35 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
       elapsed: (ref) => router.observedElapsed(ref),
     }).slice(0, height);
   if (router.screen === "fleet") {
-    output[0] =
-      paint("strong", paint("accent.blue", `${options.ascii ? "*" : "●"} Agents`)) +
-      paint("border", " › ") +
-      paint(
-        router.source.capabilities.live ? "success" : "muted",
-        router.source.capabilities.live ? "live" : "saved",
-      ) +
-      paint("muted", ` · ${router.mode} · `) +
-      paint(
-        "accent.purple",
-        router.source.capabilities.control ? "control connected" : "read-only",
-      );
-    const schedules = Object.values(router.state.schedules);
-    if (schedules.length)
-      output.push(
-        fit(
-          `Schedules ${schedules.map((schedule) => `${schedule.id}: ${schedule.status} → ${schedule.target.worker} (${schedule.nextAt ?? "no next occurrence"})`).join(" · ")}`,
-          width,
-        ),
-      );
-    const queued = assignments(router.state).filter(
-      (assignment) => assignment.execution.phase === "queued",
-    ).length;
-    const nodes = router.fleetNodes(options.ascii);
-    const rows = treeLines(router.state, nodes, {
-      ...options,
-      width,
-      mode: router.mode,
-      activity: router.activity,
-      elapsed: (ref) => router.observedElapsed(ref),
-      selected: router.selected,
-      motion: router.motion,
-      collapsed: router.collapsed,
-      dependencies: true,
-      showModels: true,
-    });
-    output.push(
-      fit(
-        paint("muted", "View ") +
-          paint("accent.cyan", router.filter) +
-          paint("border", " · ") +
-          paint("accent.purple", router.history ? "history" : "latest") +
-          (router.search || router.searching
-            ? paint("muted", " · search: ") +
-              paint("text", `${displayText(router.search)}${router.searching ? "_" : ""}`)
-            : ""),
+    output.splice(
+      0,
+      output.length,
+      ...renderFleet(router, {
+        ...options,
         width,
-      ),
-    );
-    const selectedTask =
-      router.selected && router.state.assignments[assignmentKey(router.selected)]?.task;
-    const prompt = selectedTask
-      ? promptBox(
-          selectedTask,
-          width,
-          paint,
-          options.ascii,
-          Math.max(1, Math.floor((height - output.length - 5) / 2)),
-        )
-      : [];
-    const available = Math.max(
-      1,
-      height - output.length - 4 - prompt.length - (router.notice ? 1 : 0),
-    );
-    router.fleetPageSize = available;
-    let first = Math.min(router.fleetScroll, Math.max(0, rows.length - available));
-    const selected = router.selected ? assignmentKey(router.selected) : undefined;
-    if (selected !== router.fleetRenderedSelection) {
-      const index = rows.findIndex((row) => row.worker && assignmentKey(row.ref) === selected);
-      if (index >= 0 && index < first) first = index;
-      if (index >= first + available) first = index - available + 1;
-      router.fleetRenderedSelection = selected;
-    }
-    router.fleetScroll = first;
-    for (const row of rows.slice(first, first + available)) {
-      options.hitRows?.set(output.length, row.ref);
-      output.push(fit(row.text, width));
-    }
-    if (!rows.length)
-      output.push(
-        fit(
-          Object.keys(router.state.assignments).length
-            ? "No matching rows · / search · f filter · Q queued · h history"
-            : "No assignments accepted. Start a named definition with @handle message.",
-          width,
-        ),
-      );
-    if (queued)
-      output.push(
-        paint("muted", `${queued} queued · Q ${router.showQueued ? "collapse" : "expand"}`),
-      );
-    if (rows.length > available)
-      output.push(
-        paint(
-          "muted",
-          `Rows ${first + 1}–${Math.min(rows.length, first + available)} of ${rows.length}`,
-        ),
-      );
-    output.push(...prompt);
-    output.push(
-      paint(
-        "muted",
-        `${router.state.attachment}${router.state.maxConcurrent === null ? "" : ` · capacity ${router.state.maxConcurrent}`}`,
-      ),
+        height: Math.max(0, height - (router.notice ? 2 : 1)),
+      }),
     );
   } else {
     const selected = router.selected;
     const assignment = selected ? router.state.assignments[assignmentKey(selected)] : undefined;
     if (!assignment && router.definition) {
       const { definition, path, digest } = router.definition;
-      output.push(
-        ...[
-          `Definition @${definition.name} · ${path} · ${digest}`,
-          definition.handoffDescription,
-          `${definition.pinata.access} · ${definition.pinata.workspace} · tools: ${definition.tools.join(", ") || "none"}`,
-          `Return to main and send @${definition.name} <task> to start a worker.`,
-          "",
-          definition.instructions,
-        ].flatMap((line) => lines(line, width)),
+      const body = [
+        `Definition @${definition.name}`,
+        definition.handoffDescription,
+        `${definition.pinata.access} · ${definition.pinata.workspace} · tools: ${definition.tools.join(", ") || "none"}`,
+        `Return to main and send @${definition.name} <task> to start an agent.`,
+        `Source: ${path} · ${digest}`,
+        "",
+        definition.instructions,
+      ].flatMap((line) => lines(line, width));
+      const available = Math.max(0, height - output.length - 2);
+      router.definitionScroll = Math.min(
+        router.definitionScroll,
+        Math.max(0, body.length - available),
       );
+      output.push(...body.slice(router.definitionScroll, router.definitionScroll + available));
     } else if (!assignment)
       output.push(fit("Select a worker in the fleet to browse its assignments.", width));
     else {
@@ -527,7 +401,11 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
               renderConversation(view.page.entries, {
                 width,
                 paint,
-                expanded: router.details,
+                expanded: router.expandedTools,
+                showThinking: router.showThinking,
+                details: router.details,
+                toolShortcut: conversationKeys.expandTools.join(" / "),
+                thinkingShortcut: conversationKeys.toggleThinking.join(" / "),
                 presentation: options.presentation,
               }),
             ]
@@ -546,25 +424,32 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
           : []),
         ...(view.inspection ? ["Retained result", JSON.stringify(view.inspection, null, 2)] : []),
       ].flatMap((line) => (Array.isArray(line) ? line : conversationLines(view, line, width)));
-      const available = Math.max(1, height - output.length - 3 - (router.notice ? 1 : 0));
+      // Reserve the focus, feedback and shortcut rows even when feedback is empty.
+      const available = Math.max(0, height - output.length - 3);
       view.maxScroll = Math.max(0, body.length - available);
       if (view.follow) view.scroll = view.maxScroll;
       view.scroll = Math.min(view.scroll, view.maxScroll);
-      output.push(...body.slice(view.scroll, view.scroll + available));
-      const action =
-        assignment.execution.phase !== "ended"
-          ? "Steer"
-          : assignment.execution.reason === "completed"
-            ? "Follow up"
-            : "Continue";
-      output.push(
+      const visible = body.slice(view.scroll, view.scroll + available);
+      output.push(...Array.from({ length: available - visible.length }, () => ""), ...visible);
+      const current =
+        assignment.execution.phase === "ended"
+          ? router.state.latest[assignment.ref.worker] === assignment.ref.assignment
+          : steerTarget(router.state, assignment.ref.worker)?.assignment ===
+            assignment.ref.assignment;
+      const action = !router.source.capabilities.control
+        ? "read-only · commands only"
+        : !current
+          ? "earlier assignment · select latest to message"
+          : assignment.execution.phase !== "ended"
+            ? "Steer"
+            : assignment.execution.reason === "completed"
+              ? "Follow up"
+              : "Continue";
+      footer.push(
         fit(
           paint("focus", router.transcriptFocus ? " TRANSCRIPT " : " AGENT MESSAGE ") +
             paint("accent.blue", ` ${displayText(assignment.ref.worker)}`) +
-            paint(
-              "muted",
-              ` · ${router.transcriptFocus ? "↑↓ scroll · Tab to message" : `${action} · Enter sends · Tab to transcript`} · `,
-            ) +
+            paint("muted", ` · ${router.transcriptFocus ? "↑↓ scroll" : action} · `) +
             paint(
               view.follow ? "success" : view.newOutput ? "warning" : "accent.cyan",
               view.follow
@@ -578,45 +463,79 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
       );
     }
   }
-  if (router.notice) output.push(fit(paint("warning", displayText(router.notice)), width));
-  const controls =
-    router.screen === "fleet"
+  if (router.notice || router.screen === "conversation")
+    footer.push(fit(paint(router.noticeTone, displayText(router.notice)), width));
+  const hasBranches = Object.values(router.state.workers).some((worker) => worker.parentAssignment);
+  const preview = router.screen === "conversation" && !router.selected;
+  const primary: Shortcut[] = router.searching
+    ? [
+        ["Enter", "apply"],
+        ["Esc", "cancel"],
+      ]
+    : router.screen === "fleet"
       ? [
-          ["↑↓", "select"],
-          ["Enter", "open"],
-          ...(width < 70
-            ? []
-            : [
-                ["←→", "branches"],
-                ["/", "search"],
-                ["f", "filter"],
-                ["h", "history"],
-                ["a", "actions"],
-              ]),
+          ...(width >= 30 ? [["↑↓", "select"] as Shortcut] : []),
+          ["a", "actions"],
           ["?", "help"],
+          ["Esc", "back"],
         ]
-      : router.transcriptFocus
+      : preview
         ? [
-            ["Tab", "message"],
-            ["d", "details"],
-            ["m", "older"],
             ["?", "help"],
+            ["Esc", "back"],
+          ]
+        : router.transcriptFocus
+          ? [
+              ["Tab", "message"],
+              ["?", "help"],
+              ["Esc", "back"],
+            ]
+          : [
+              ["Enter", router.source.capabilities.control ? "send" : "command"],
+              ["Tab", "transcript"],
+              ["?", "help (empty message)"],
+              ["Esc", "back"],
+            ];
+  const extra: Shortcut[] = router.searching
+    ? [
+        ["Ctrl+U", "clear"],
+        ["Backspace", "delete"],
+      ]
+    : router.screen === "fleet"
+      ? [
+          ["Enter", "open"],
+          ["d", router.details ? "less" : "details"],
+          ...(hasBranches ? [["←→", "branches"] as Shortcut] : []),
+          ["/", "search"],
+          ["f", "filter"],
+          ["h", "history"],
+        ]
+      : preview
+        ? [
+            ["↑↓", "scroll"],
+            ["PageUp/PageDown", "page"],
           ]
         : [
-            ["Tab", "transcript"],
-            ["Enter", "send"],
-            ["?", "help (empty message)"],
+            ...(router.transcriptFocus
+              ? ([
+                  ["↑↓", "scroll"],
+                  ["a", "actions"],
+                  ["d", "details"],
+                  ["m", "older"],
+                ] as Shortcut[])
+              : []),
+            [conversationKeys.expandTools.join(" / "), "tools"],
+            [conversationKeys.toggleThinking.join(" / "), "thinking"],
           ];
-  controls.push([resolveKeys(router.keys).parentScreen, "back"]);
-  output.push(
-    fit(
-      controls
-        .map(([key, label]) => paint("accent.cyan", key) + paint("muted", ` ${label}`))
-        .join(paint("border", " · ")),
-      width,
-    ),
-  );
-  return output.slice(0, height).map((line) => paint("background", padded(line, width)));
+  footer.push(shortcutLine(primary, extra, width, paint));
+  const bodyHeight = Math.max(0, height - footer.length);
+  return [
+    ...output.slice(0, bodyHeight),
+    ...Array.from({ length: Math.max(0, bodyHeight - output.length) }, () => ""),
+    ...footer,
+  ]
+    .slice(0, height)
+    .map((line) => paint("background", padded(line, width)));
 }
 
 // Cache wrapping per view, not globally across sessions. Eviction bounds retained text.

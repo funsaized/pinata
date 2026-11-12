@@ -141,7 +141,7 @@ export async function runPiSmoke(options: { packageRoot?: string; installed?: bo
     assert.equal(schemaReply.success, true, JSON.stringify(schemaReply));
     await pi.wait(
       (event) =>
-        event.type === "message_end" && JSON.stringify(event.message).includes("pinata.schema.v3"),
+        event.type === "message_end" && JSON.stringify(event.message).includes("pinata.schema.v1"),
       direct,
     );
     assert(
@@ -157,7 +157,7 @@ export async function runPiSmoke(options: { packageRoot?: string; installed?: bo
     assert.equal(addressedReply.success, true, JSON.stringify(addressedReply));
     const addressed = await pi.wait(
       (event) =>
-        event.type === "message_end" && record(event.message).customType === "pinata.addressed.v3",
+        event.type === "message_end" && record(event.message).customType === "pinata.addressed.v1",
       addressedFrom,
     );
     const addressedMessage = record(addressed.message);
@@ -178,14 +178,14 @@ export async function runPiSmoke(options: { packageRoot?: string; installed?: bo
     assert.equal(retryReply.success, true, JSON.stringify(retryReply));
     const retried = await pi.wait(
       (event) =>
-        event.type === "message_end" && record(event.message).customType === "pinata.addressed.v3",
+        event.type === "message_end" && record(event.message).customType === "pinata.addressed.v1",
       retriedFrom,
     );
     assert.deepEqual(commandReceiptSchema.parse(record(retried.message).details), followUp);
     await pi.wait(
       (event) =>
         event.type === "message_end" &&
-        record(event.message).customType === "pinata.completion.v3" &&
+        record(event.message).customType === "pinata.completion.v1" &&
         String(record(event.message).content).includes("scout-1/2: completed."),
       addressedFrom,
     );
@@ -194,8 +194,8 @@ export async function runPiSmoke(options: { packageRoot?: string; installed?: bo
       "Addressing or retry requested a coordinator turn",
     );
     const parent = await readFile(join(directory, "parent.jsonl"), "utf8");
-    assert.match(parent, /pinata.runtime.v3/);
-    assert.match(parent, /pinata.input.v3/);
+    assert.match(parent, /pinata.runtime.v1/);
+    assert.match(parent, /pinata.input.v1/);
     return {
       ok: true,
       assignments: 5,

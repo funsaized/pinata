@@ -19,7 +19,7 @@ export const scenarioSchema = z.strictObject({
 });
 export type Scenario = z.infer<typeof scenarioSchema>;
 export const cellSpecSchema = z.strictObject({
-  schemaVersion: z.literal(3),
+  schemaVersion: z.literal(1),
   batchId: z.uuid(),
   cellId: z.uuid(),
   attempt: z.number().int().positive(),
@@ -81,7 +81,7 @@ export type ComponentProfile = {
   idle: { samples: IdleSample[]; resourcePlateau: boolean; cleanup: string; assignments: number };
 };
 export type BenchResult = {
-  schemaVersion: 3;
+  schemaVersion: 1;
   cellId: string;
   scenario: string;
   backend: CellSpec["backend"];
@@ -185,8 +185,8 @@ export type CellRecord = {
   executionFailures: string[];
 };
 export type BenchReport = {
-  schemaVersion: 3;
-  measurement: "pinata-scripted-runtime-v3";
+  schemaVersion: 1;
+  measurement: "pinata-scripted-runtime-v1";
   batchId: string;
   status: "running" | "completed" | "failed";
   createdAt: string;
@@ -261,7 +261,7 @@ const componentProfileSchema = z.strictObject({
   }),
 });
 export const benchResultSchema = z.strictObject({
-  schemaVersion: z.literal(3),
+  schemaVersion: z.literal(1),
   cellId: z.uuid(),
   scenario: z.string(),
   backend: backendSchema,

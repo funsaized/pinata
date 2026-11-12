@@ -142,14 +142,15 @@ function settle(
 
 test("rewrite contracts freeze independent format versions and strict authority-free command inputs", () => {
   assert.deepEqual(versions, {
-    job: 4,
-    config: 4,
-    definition: 3,
-    manifest: 4,
+    job: 1,
+    config: 1,
+    definition: 1,
+    manifest: 1,
     journal: 1,
-    event: 3,
-    ipc: 2,
+    event: 1,
+    ipc: 1,
   });
+  for (const name of Object.keys(exportSchemas())) assert.match(name, /\.v1$/);
   const config = configSchema.parse({});
   assert.equal(config.workspace, "shared");
   assert.equal(config.execution.maxConcurrent, null);

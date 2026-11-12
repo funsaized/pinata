@@ -26,7 +26,7 @@ export const paletteSchema = z.enum([
   "terminal-default",
 ]);
 export const configSchema = z.strictObject({
-  schemaVersion: z.literal(4).default(4),
+  schemaVersion: z.literal(1).default(1),
   workspace: workspaceSchema.default("shared"),
   models: z.record(z.string(), modelSchema).default({}),
   fallbacks: z.record(z.string(), z.array(modelSchema).max(5)).default({}),

@@ -62,7 +62,7 @@ async function fixture(
     Buffer.from(
       canonicalJson(
         definitionSchema.parse({
-          schemaVersion: 3,
+          schemaVersion: 1,
           name: "fixture",
           handoffDescription: "Setup fixture",
           instructions: "Preserve edits.",

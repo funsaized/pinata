@@ -498,7 +498,13 @@ await runOracle(
             'document.querySelector("article h3")?.textContent === "Browser task"',
           );
           await browser.evaluate('document.querySelector("[data-action=advance]").click()');
-          await browser.waitFor('document.querySelector("[data-status]")?.textContent === "doing"');
+          await browser.waitFor(`(async () => {
+            const response = await fetch('/api/tickets/t1');
+            const payload = await response.json();
+            const label = document.querySelector('article[data-id="t1"] [data-status]');
+            return payload.ticket?.status === 'doing' &&
+              (label?.textContent ?? '').toLowerCase().split(/[^a-z]+/).includes('doing');
+          })()`);
           await browser.evaluate(
             'const filter=document.querySelector("#status-filter");filter.value="done";filter.dispatchEvent(new Event("change",{bubbles:true}))',
           );

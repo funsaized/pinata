@@ -118,7 +118,7 @@ export async function captureTree(
   await walk(root, "");
   if (canonicalJson(files) !== first) throw new Error("Snapshot changed during capture");
   const snapshot = snapshotSchema.parse({
-    schemaVersion: 2,
+    schemaVersion: 1,
     capturedAt: new Date().toISOString(),
     elapsedMs: options.elapsedMs,
     captureMs: performance.now() - start,
@@ -240,11 +240,11 @@ export async function captureSource(root: string, store: EvidenceStore): Promise
     "Closure covers declared runtime/harness/corpus roots, including untracked files; external adapter imports and installed dependency bytes are not fully captured",
   );
   return sourceSchema.parse({
-    schemaVersion: 2,
+    schemaVersion: 1,
     revision,
     diff,
     lockfile,
-    closure: await store.json({ schemaVersion: 2, roots: paths, files }),
+    closure: await store.json({ schemaVersion: 1, roots: paths, files }),
     dependencyCoverage: "partial",
     limitations,
     node: process.version,

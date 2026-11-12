@@ -29,6 +29,7 @@ import {
 } from "../../engine/contracts/index.ts";
 import { digestBytes } from "../../engine/storage/io.ts";
 import { checkResolvedWorker } from "../../engine/core/accept.ts";
+import { surfaceError } from "../../engine/sources/runtime.ts";
 
 const model = (id: string) => ({ provider: "fixture", id, thinking: "off" as const });
 const capabilities: BackendCapabilities = {
@@ -56,7 +57,7 @@ const caller: CallerAuthority = {
   },
 };
 const markdown = (header = "", body = "Follow the task.") =>
-  `---\nschemaVersion: 3\nname: reader\nhandoffDescription: Read the workspace.\ntools: [read]\n${header}---\n${body}\n`;
+  `---\nschemaVersion: 1\nname: reader\nhandoffDescription: Read the workspace.\ntools: [read]\n${header}---\n${body}\n`;
 
 async function fixture(t: TestContext) {
   const directory = await realpath(await mkdtemp(join(tmpdir(), "pinata-definitions-")));
@@ -107,14 +108,14 @@ test("definition Markdown uses a strict closed header and rejects invalid select
   );
   for (const input of [
     "No frontmatter",
-    "---\nschemaVersion: 3",
+    "---\nschemaVersion: 1",
     markdown("instructions: another prompt\n"),
     markdown("temperature: 0.3\n"),
     markdown("modelSettings: { reasoning: { effort: impossible } }\n"),
     markdown("pinata: { color: red }\n"),
     markdown("pinata: { unknown: true }\n"),
     markdown("---malformed\n"),
-    markdown("schemaVersion: 3\n"),
+    markdown("schemaVersion: 1\n"),
   ])
     assert.throws(() => parseDefinitionMarkdown(input));
   const f = await fixture(t);
@@ -352,6 +353,23 @@ test("explicit skill snapshots retain resource bytes without broadening tools or
   await writeFile(join(f.project, "reader.md"), markdown("pinata: { skills: [skills/example] }\n"));
   await symlink(join(f.directory, "missing"), join(skill, "linked"));
   await assert.rejects(f.resolve(), /traverses a link/);
+});
+
+test("missing selected skills report their resolved path before worker acceptance", async (t) => {
+  const f = await fixture(t);
+  await mkdir(join(f.project, "empty-skill"));
+  await writeFile(join(f.project, "plain-file"), "not a directory");
+  for (const selected of ["missing-skill", "empty-skill", "plain-file/SKILL.md"]) {
+    await writeFile(join(f.project, "reader.md"), markdown(`pinata: { skills: [${selected}] }\n`));
+    await assert.rejects(f.resolve(), (error: unknown) => {
+      const detail = surfaceError(error);
+      assert.equal(detail.code, "invalid_input");
+      assert.equal(detail.field, "pinata.skills");
+      assert(detail.message.includes(join(f.project, selected)));
+      assert(error instanceof Error && error.cause instanceof Error);
+      return true;
+    });
+  }
 });
 
 test("batch resolution captures definitions once, deduplicates artifacts, and sees later edits", async (t) => {

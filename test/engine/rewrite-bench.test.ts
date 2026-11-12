@@ -35,7 +35,7 @@ async function directory(t: TestContext) {
 }
 function spec(path: string): CellSpec {
   return {
-    schemaVersion: 3,
+    schemaVersion: 1,
     batchId: randomUUID(),
     cellId: randomUUID(),
     attempt: 1,
@@ -57,7 +57,7 @@ function spec(path: string): CellSpec {
 function measured(cell: CellSpec): BenchResult {
   const one = { n: 1, p50: 1, p95: 1, p99: 1, max: 1 };
   return {
-    schemaVersion: 3,
+    schemaVersion: 1,
     cellId: cell.cellId,
     scenario: cell.scenario.name,
     backend: cell.backend,
@@ -436,8 +436,8 @@ test("Darwin APFS CI profile changes only four latency thresholds", async (t) =>
       budgets: [],
     });
   const previous = {
-    schemaVersion: 3,
-    measurement: "pinata-scripted-runtime-v3",
+    schemaVersion: 1,
+    measurement: "pinata-scripted-runtime-v1",
     status: "completed",
     provenance: { storage, budgetProfile: "default-v1" },
   };
@@ -468,28 +468,6 @@ test("benchmark cells and output reservations are durable before launch and neve
   assert.deepEqual(await readFile(output.path), original);
 });
 
-test("historical reports remain readable but are explicitly incomparable with replacement measurements", async (t) => {
-  const path = join(await directory(t), "legacy.json");
-  const historical = { schemaVersion: 2, results: [{ status: "historical" }] };
-  await writeFile(path, JSON.stringify(historical));
-  const read = await readReport(path);
-  assert.equal(read.comparable, false);
-  assert.deepEqual(read.report, historical);
-  assert.equal(comparison(historical, { provenance: {} }).comparable, false);
-  assert.equal(
-    comparison(
-      {
-        schemaVersion: 3,
-        measurement: "pinata-scripted-runtime-v3",
-        status: "failed",
-        provenance: {},
-      },
-      { provenance: {} },
-    ).comparable,
-    false,
-  );
-});
-
 test("benchmark comparisons require observed matching storage media without binding report paths", async (t) => {
   const directory = await realpath(
     await mkdtemp(join(tmpdir(), "pinata-bench-storage-provenance-")),
@@ -504,8 +482,8 @@ test("benchmark comparisons require observed matching storage media without bind
   );
   const storage = { ...observed, filesystemType: "0x1021994" };
   const previous = {
-    schemaVersion: 3,
-    measurement: "pinata-scripted-runtime-v3",
+    schemaVersion: 1,
+    measurement: "pinata-scripted-runtime-v1",
     status: "completed",
     provenance: { storage },
   };
@@ -612,3 +590,14 @@ test(
     assert.equal(runs, 1);
   },
 );
+
+test("benchmark report reader accepts the v1 format and rejects unsupported versions", async (t) => {
+  const path = join(await directory(t), "report.json");
+  const report = { schemaVersion: 1, measurement: "pinata-scripted-runtime-v1" };
+  await writeFile(path, JSON.stringify(report));
+  assert.deepEqual(await readReport(path), { format: "runtime-v1", comparable: true, report });
+  for (const schemaVersion of [2, 3, 4, 99]) {
+    await writeFile(path, JSON.stringify({ ...report, schemaVersion }));
+    await assert.rejects(readReport(path), /Unsupported benchmark report version/);
+  }
+});

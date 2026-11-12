@@ -8,6 +8,15 @@ export const checkoutIdentitySchema = z.strictObject({
   inode: textSchema,
 });
 export type CheckoutIdentity = z.infer<typeof checkoutIdentitySchema>;
+export const checkoutGateManifestSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  checkout: checkoutIdentitySchema,
+});
+export const checkoutDirectoryBindingSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  checkout: checkoutIdentitySchema,
+  birthtimeNs: z.string().regex(/^[1-9][0-9]*$/),
+});
 const leaseFields = {
   schemaVersion: z.literal(1),
   id: identitySchema,

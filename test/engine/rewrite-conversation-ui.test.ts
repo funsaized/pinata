@@ -49,6 +49,59 @@ test("Pi conversations use native user cards, Markdown styles and syntax highlig
   assert(output.every((line) => visibleWidth(line) <= 80));
 });
 
+test("conversation display toggles keep thinking, tool output and assignment metadata independent", () => {
+  initTheme("dark", false);
+  const entries = [
+    {
+      message: {
+        role: "assistant",
+        content: [
+          { type: "thinking", thinking: "Inspect the boundary carefully." },
+          { type: "text", text: "I will read the file." },
+          { type: "toolCall", id: "read", name: "read", arguments: { path: "fixture.ts" } },
+        ],
+      },
+    },
+    {
+      message: {
+        role: "toolResult",
+        toolCallId: "read",
+        toolName: "read",
+        content: Array.from({ length: 15 }, (_, index) => `output ${index + 1}`).join("\n"),
+      },
+    },
+  ];
+  const options = {
+    width: 80,
+    paint: createPaint("terminal-default"),
+    expanded: false,
+    presentation: piConversationPresentation(),
+  };
+  const render = (expanded: boolean, showThinking: boolean) =>
+    stripTerminalSequences(
+      renderConversation(entries, { ...options, expanded, showThinking }).join("\n"),
+    );
+  const compact = render(false, false);
+  assert.doesNotMatch(compact, /Inspect the boundary|output 15/);
+  assert.match(compact, /ctrl\+o to expand/);
+  assert.match(compact, /ctrl\+t to show/);
+  assert.equal(compact.match(/read fixture.ts/g)?.length, 1);
+  const thinking = render(false, true);
+  assert(thinking.indexOf("Inspect the boundary") < thinking.indexOf("I will read"));
+  assert.doesNotMatch(thinking, /output 15/);
+  const tools = render(true, false);
+  assert.match(tools, /output 15/);
+  assert.doesNotMatch(tools, /Inspect the boundary/);
+  assert.match(render(true, true), /Inspect the boundary/);
+  assert.match(render(true, true), /output 15/);
+  for (const width of [1, 2, 30, 80])
+    assert(
+      renderConversation(entries, { ...options, width, showThinking: true, expanded: true }).every(
+        (line) => visibleWidth(line) <= width,
+      ),
+    );
+});
+
 test("Pi tool and report surfaces use native state backgrounds with full-width padding", () => {
   initTheme("dark", false);
   const colors: Record<string, number> = {
@@ -145,13 +198,13 @@ test("Pinata notices use readable headings without exposing saved-message versio
       renderers.set(type, renderer);
     },
   } as unknown as ExtensionAPI);
-  const renderer = renderers.get("pinata.completion.v3");
+  const renderer = renderers.get("pinata.completion.v1");
   assert(renderer);
   const ref = { run: "retained-run", worker: "tests", assignment: 1 };
   const content = `tests/1: completed.\nTests passed.\nFull result: ${JSON.stringify(ref)}\n[pinata-notice:delivery-id]`;
   const message = {
     role: "custom" as const,
-    customType: "pinata.completion.v3",
+    customType: "pinata.completion.v1",
     content,
     display: true,
     details: { ref },
@@ -173,10 +226,62 @@ test("Pinata notices use readable headings without exposing saved-message versio
     assert.match(output, /Subagent result/);
     assert.match(output, /tests\/1: completed/);
     assert.match(output, /\/pinata-conversation tests 1/);
-    assert.doesNotMatch(output, /completion\.v3|pinata-notice|Full result: \{/);
+    assert.doesNotMatch(output, /completion\.v1|pinata-notice|Full result: \{/);
     assert.equal(output.includes("Run: retained-run"), expanded);
     assert(rows.every((line) => visibleWidth(line) <= 80));
   }
   assert.equal(message.content, content, "stored delivery evidence remains unchanged");
   assert.equal(renderers.size, 5);
+});
+
+test("control cards summarize queued updates and keep the full receipt in expanded details", () => {
+  const renderers = new Map<string, MessageRenderer>();
+  registerPinataMessageRenderers({
+    registerMessageRenderer: (type: string, renderer: MessageRenderer) => {
+      renderers.set(type, renderer);
+    },
+  } as unknown as ExtensionAPI);
+  const renderer = renderers.get("pinata.control.v1");
+  assert(renderer);
+  const receipt = {
+    status: "accepted",
+    requestId: "ui/request-id",
+    revision: 1,
+    assignments: [{ run: "retained-run", worker: "data-map", assignment: 3 }],
+    resolved: [],
+  };
+  const content = JSON.stringify({ ...receipt, messageId: "ui/message/message-id" });
+  const message = {
+    role: "custom" as const,
+    customType: "pinata.control.v1",
+    content,
+    display: true,
+    details: receipt,
+    timestamp: 0,
+  };
+  const theme = {
+    bg: (_key: string, text: string) => text,
+    fg: (_key: string, text: string) => text,
+  } as Theme;
+  for (const expanded of [false, true]) {
+    const component = renderer(
+      message,
+      {
+        expanded,
+        outputPad: 1,
+        keyText: () => "",
+        keyHint: (_key, description) => description,
+      },
+      theme,
+    );
+    assert(component);
+    const output = stripTerminalSequences(component.render(120).join("\n"));
+    assert.match(output, /Subagent update/);
+    assert(output.includes("data-map"));
+    assert.equal(output.includes("ui/message/message-id"), expanded);
+    assert.equal(output.includes("retained-run"), expanded);
+    if (!expanded) assert.match(output, /Update queued for data-map/);
+  }
+  assert.equal(message.content, content);
+  assert.deepEqual(message.details, receipt);
 });

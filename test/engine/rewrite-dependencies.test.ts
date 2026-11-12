@@ -230,7 +230,7 @@ test(
     await Promise.all([mkdir(workspace), mkdir(agentDir), mkdir(definitions)]);
     await writeFile(
       join(definitions, "reader.md"),
-      "---\nschemaVersion: 3\nname: reader\nhandoffDescription: Inspect dependency results.\ntools: [read]\npinata:\n  access: read\n---\nRead only the assigned dependency results.\n",
+      "---\nschemaVersion: 1\nname: reader\nhandoffDescription: Inspect dependency results.\ntools: [read]\npinata:\n  access: read\n---\nRead only the assigned dependency results.\n",
     );
     const modelRuntime = await ModelRuntime.create({
       authPath: join(agentDir, "auth.json"),

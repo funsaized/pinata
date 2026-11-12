@@ -1,14 +1,26 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { spawn, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
-import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  cp,
+  mkdtemp,
+  mkdir,
+  readFile,
+  readdir,
+  rename,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
-import { digestValue } from "../../engine/contracts/digest.ts";
+import { canonicalJson, digestValue } from "../../engine/contracts/digest.ts";
 import { type CleanupReceipt } from "../../engine/contracts/backend.ts";
-import { openCheckoutGate } from "../../engine/workspace/gate.ts";
+import { bindCheckoutGate, openCheckoutGate } from "../../engine/workspace/gate.ts";
+import { runCli } from "../../engine/headless/main.ts";
 
 const childPath = fileURLToPath(new URL("./fixtures/rewrite-gate-child.ts", import.meta.url));
 const cleanup = (ownerEpoch = "epoch"): CleanupReceipt => ({
@@ -200,4 +212,214 @@ test("one application operation cannot hold gates on two checkout destinations",
   await first.releaseExclusive(held.id);
   const next = await second.acquireExclusive(application);
   await second.releaseExclusive(next.id);
+});
+
+async function renumberedGate(t: TestContext, legacy = false) {
+  const root = await fixture(t);
+  const gate = await openCheckoutGate(root);
+  const bindingPath = join(gate.directory, "directory-binding.json");
+  const binding = JSON.parse(await readFile(bindingPath, "utf8"));
+  const checkout = { ...gate.checkout, device: `${gate.checkout.device}0` };
+  const manifest = { schemaVersion: 1, checkout };
+  await writeFile(join(gate.directory, "manifest.json"), canonicalJson(manifest));
+  if (legacy) await rm(bindingPath);
+  else await writeFile(bindingPath, canonicalJson({ ...binding, checkout }));
+  return { root, directory: gate.directory, checkout, manifest };
+}
+
+test("device renumbering retains lease identities and writer exclusion across processes", async (t) => {
+  const { root, checkout, directory, manifest } = await renumberedGate(t);
+  const gate = await openCheckoutGate(root);
+  assert.deepEqual(gate.checkout, checkout);
+  const writer = child(t, root, "writer");
+  await enrolled(writer);
+  const before = (await gate.inspect()).writers[0];
+  assert.deepEqual(before.checkout, checkout);
+  await assert.rejects(gate.acquireExclusive(application), { code: "owner_unconfirmed" });
+  assert.deepEqual((await (await openCheckoutGate(root)).inspect()).writers, [before]);
+  const exited = once(writer, "exit");
+  writer.send("release");
+  await exited;
+  const exclusive = await gate.acquireExclusive(application);
+  await gate.releaseExclusive(exclusive.id);
+  assert.deepEqual(JSON.parse(await readFile(join(directory, "manifest.json"), "utf8")), manifest);
+});
+
+test("device renumbering preserves exclusive operation recovery without an unlocked gap", async (t) => {
+  const { root, checkout } = await renumberedGate(t);
+  const holder = child(t, root, "exclusive");
+  await enrolled(holder);
+  const gate = await openCheckoutGate(root);
+  const lease = (await gate.inspect()).exclusive;
+  assert(lease);
+  assert.deepEqual(lease.checkout, checkout);
+  await assert.rejects(gate.recoverExclusive(lease), /PID is live/);
+  const exited = once(holder, "exit");
+  holder.kill("SIGKILL");
+  await exited;
+  await assert.rejects(gate.acquireExclusive(application), { code: "owner_unconfirmed" });
+  const recovered = await gate.recoverExclusive(lease);
+  assert.deepEqual(recovered.checkout, checkout);
+  assert.equal(recovered.operationId, lease.operationId);
+  await assert.rejects(gate.acquireExclusive(application), { code: "owner_unconfirmed" });
+  await gate.releaseExclusive(recovered.id);
+});
+
+test("directory bindings reject copied metadata, changed creation time and mismatched manifests", async (t) => {
+  const { root, directory } = await renumberedGate(t);
+  const bindingPath = join(directory, "directory-binding.json");
+  const original = await readFile(bindingPath, "utf8");
+  const binding = JSON.parse(original);
+  await writeFile(bindingPath, JSON.stringify({ ...binding, birthtimeNs: "1" }));
+  await assert.rejects(openCheckoutGate(root), /different directory identity/);
+  await writeFile(
+    bindingPath,
+    JSON.stringify({ ...binding, checkout: { ...binding.checkout, device: "wrong" } }),
+  );
+  await assert.rejects(openCheckoutGate(root), /different directory identity/);
+  await writeFile(bindingPath, original);
+  const gate = await openCheckoutGate(root);
+  const parent = await fixture(t);
+  const moved = join(parent, "moved");
+  await rename(root, moved);
+  await assert.rejects(gate.inspect(), /ENOENT|directory changed/);
+  await assert.rejects(openCheckoutGate(moved), /different directory identity/);
+  await mkdir(root);
+  await cp(join(moved, ".pinata"), join(root, ".pinata"), { recursive: true });
+  await assert.rejects(gate.inspect(), /directory changed/);
+  await assert.rejects(openCheckoutGate(root), /different directory identity/);
+});
+
+test("legacy gates gain bindings only while their original identity still matches", async (t) => {
+  const root = await fixture(t);
+  const gate = await openCheckoutGate(root);
+  const binding = join(gate.directory, "directory-binding.json");
+  await rm(binding);
+  await openCheckoutGate(root);
+  assert.equal(JSON.parse(await readFile(binding, "utf8")).checkout.device, gate.checkout.device);
+  const legacy = await renumberedGate(t, true);
+  await assert.rejects(openCheckoutGate(legacy.root), /pinata bind-checkout/);
+  await assert.rejects(readFile(join(legacy.directory, "directory-binding.json")), {
+    code: "ENOENT",
+  });
+});
+
+test("explicit legacy binding preserves dead writer evidence and normal reconciliation", async (t) => {
+  const { root, directory, checkout, manifest } = await renumberedGate(t, true);
+  const holder = child(t, await fixture(t), "writer");
+  // Use a real retained lease from a stopped process, with the legacy checkout.
+  const [message] = await once(holder, "message");
+  const lease = { ...message.lease, checkout };
+  const exited = once(holder, "exit");
+  holder.kill("SIGKILL");
+  await exited;
+  if (process.platform === "linux") {
+    lease.owner.pid = process.pid;
+    lease.owner.startIdentity = `linux:${randomUUID()}:0`;
+  }
+  const path = join(directory, "writers", `${digestValue(lease.id)}.json`);
+  const bytes = JSON.stringify(lease);
+  await writeFile(path, bytes);
+  await assert.rejects(
+    bindCheckoutGate({
+      root,
+      expected: { ...checkout, device: "wrong" },
+      reason: "wrong identity",
+    }),
+    /exact manifest/,
+  );
+  await assert.rejects(bindCheckoutGate({ root, expected: checkout, reason: " " }), /audit reason/);
+  const { evidence } = await bindCheckoutGate({
+    root,
+    expected: checkout,
+    reason: "Verified device renumbering after reboot",
+  });
+  assert.equal(await readFile(path, "utf8"), bytes);
+  assert.deepEqual(JSON.parse(await readFile(join(directory, "manifest.json"), "utf8")), manifest);
+  assert.equal(JSON.parse(await readFile(evidence, "utf8")).state.writers[0].id, lease.id);
+  const reopened = await openCheckoutGate(root);
+  await assert.rejects(reopened.acquireExclusive(application), { code: "owner_unconfirmed" });
+  await assert.rejects(reopened.reconcileWriter(lease, cleanup("child-epoch")), /cleanup evidence/);
+  await reopened.reconcileWriter(lease, {
+    ...cleanup("child-epoch"),
+    evidence: [{ digest: digestValue("stopped evidence"), size: 16 }],
+  });
+  const exclusive = await reopened.acquireExclusive(application);
+  await reopened.releaseExclusive(exclusive.id);
+});
+
+test("explicit legacy binding refuses live owners and retains its fence after interruption", async (t) => {
+  const root = await fixture(t);
+  const gate = await openCheckoutGate(root);
+  const lease = await gate.registerWriter(request("live"));
+  await rm(join(gate.directory, "directory-binding.json"));
+  await assert.rejects(
+    bindCheckoutGate({ root, expected: gate.checkout, reason: "must not steal live activity" }),
+    /PID is live/,
+  );
+  await gate.releaseWriter(lease.id, cleanup());
+  await assert.rejects(
+    bindCheckoutGate({
+      root,
+      expected: gate.checkout,
+      reason: "interrupted binding",
+      fault: (point) => {
+        if (point === "gate-directory-binding.publish.after") throw new Error("interrupted");
+      },
+    }),
+    /interrupted/,
+  );
+  assert((await readdir(join(gate.directory, "evidence"))).length > 0);
+  const reopened = await openCheckoutGate(root);
+  await assert.rejects(reopened.registerWriter(request("blocked")), /reconciliation/);
+  await assert.rejects(
+    bindCheckoutGate({ root, expected: gate.checkout, reason: "cannot override fence" }),
+    { code: "EEXIST" },
+  );
+});
+
+test("legacy binding refuses incomplete owner claims and an existing directory binding", async (t) => {
+  const { root, directory, checkout } = await renumberedGate(t, true);
+  await mkdir(join(directory, "owner"));
+  await assert.rejects(
+    bindCheckoutGate({ root, expected: checkout, reason: "incomplete claim" }),
+    /incomplete owner claim/,
+  );
+  await assert.rejects(readFile(join(directory, "directory-binding.json")), { code: "ENOENT" });
+  await rm(join(directory, "owner"), { recursive: true });
+  await bindCheckoutGate({ root, expected: checkout, reason: "Verified original directory" });
+  const bytes = await readFile(join(directory, "directory-binding.json"));
+  await assert.rejects(
+    bindCheckoutGate({ root, expected: checkout, reason: "must not replace binding" }),
+    /already has a binding/,
+  );
+  assert.deepEqual(await readFile(join(directory, "directory-binding.json")), bytes);
+});
+
+test("CLI binds verified legacy checkout metadata without starting a runtime", async (t) => {
+  const { root, directory } = await renumberedGate(t, true);
+  const output: string[] = [];
+  const errors: string[] = [];
+  const code = await runCli(
+    [
+      "bind-checkout",
+      root,
+      join(directory, "manifest.json"),
+      "--reason",
+      "Verified original directory after reboot",
+      "--json",
+    ],
+    {
+      out: (value) => output.push(value),
+      error: (value) => errors.push(value),
+      input: async () => "",
+      signal: new AbortController().signal,
+    },
+  );
+  assert.equal(code, 0, errors.join(""));
+  assert.equal(output.length, 1);
+  assert.equal(typeof JSON.parse(output[0]).evidence, "string");
+  const reopened = await openCheckoutGate(root);
+  const lease = await reopened.registerWriter(request("ready"));
+  await reopened.releaseWriter(lease.id, cleanup());
 });

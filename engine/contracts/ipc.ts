@@ -15,7 +15,7 @@ import {
   surfaceReplySchema,
 } from "./surface.ts";
 
-export const IPC_VERSION = 2;
+export const IPC_VERSION = 1;
 export const DEFAULT_LIMITS = Object.freeze({
   frameBytes: 256 * 1024,
   messageBytes: 64 * 1024 * 1024,
@@ -52,8 +52,8 @@ const transportIdSchema = z
   .regex(/^[A-Za-z0-9:/._-]+$/);
 export const tokenSchema = z.string().regex(/^[a-f0-9]{64}$/);
 export const ipcLinkSchema = z.strictObject({
-  schemaVersion: z.literal(2),
-  protocol: z.literal(2),
+  schemaVersion: z.literal(1),
+  protocol: z.literal(1),
   run: identitySchema,
   serverId: z.uuid(),
   ownerEpoch: identitySchema,
@@ -65,7 +65,7 @@ export const ipcLinkSchema = z.strictObject({
 });
 export type IpcLink = z.infer<typeof ipcLinkSchema>;
 export const ipcCredentialsSchema = z.strictObject({
-  schemaVersion: z.literal(2),
+  schemaVersion: z.literal(1),
   run: identitySchema,
   serverId: z.uuid(),
   ownerEpoch: identitySchema,
@@ -135,7 +135,7 @@ export type ServerMessage = z.infer<typeof serverMessageSchema>;
 export const serverFrameSchema = z.discriminatedUnion("type", [
   z.strictObject({
     type: z.literal("welcome"),
-    version: z.literal(2),
+    version: z.literal(1),
     run: identitySchema,
     serverId: z.uuid(),
     ownerEpoch: identitySchema,

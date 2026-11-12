@@ -1,4 +1,4 @@
-# Pinata
+# Piñata
 
 **Subagents for Pi, with conversations you can steer and work you can recover.**
 
@@ -6,7 +6,7 @@
 [![CI](https://github.com/funsaized/pinata/actions/workflows/ci.yml/badge.svg)](https://github.com/funsaized/pinata/actions/workflows/ci.yml)
 [![MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-Pinata turns one [Pi](https://pi.dev) conversation into a working team. Send a scout
+Piñata turns one [Pi](https://pi.dev) conversation into a working team. Send a scout
 to trace an unfamiliar API, put builders on independent changes, and bring a
 reviewer into the conversation when the diff is ready. Open any worker's transcript,
 ask a follow-up, or redirect it while it works. You keep the context and decide
@@ -26,7 +26,7 @@ pi install npm:pi-pinata
 [Tools](#tools) · [CLI](#cli-reference) · [API](#package-api) ·
 [Implementation](#architecture-and-implementation-index) · [Development](#development)
 
-## Why Pinata
+## Why Piñata
 
 - Delegate independent work in parallel and add workers as the task develops.
   Dependency graphs stage investigation, implementation and synthesis in one request.
@@ -42,7 +42,7 @@ pi install npm:pi-pinata
   reconcile interrupted patch application with its journal intact.
 - Use one command and event model from Pi, the headless CLI or your own host.
 
-Pinata handles orchestration. Your coordinator owns the workflow, including testing,
+Piñata handles orchestration. Your coordinator owns the workflow, including testing,
 review and acceptance. The shipped scout, builder and reviewer are editable
 agent definitions. Compose your own roles around the work you actually do.
 
@@ -64,7 +64,7 @@ agent definitions. Compose your own roles around the work you actually do.
 | Finite jobs, live control and saved-run inspection        | [Headless operation](#headless-operation)                                                                            |
 | Tools, schemas, commands and exports                      | [Tools](#tools), [CLI](#cli-reference), [API](#package-api)                                                          |
 | Authenticated IPC, durable events and usage               | [Events and IPC](#events-and-ipc)                                                                                    |
-| Recovery, trust and retained-run import                   | [Recovery](#recovery), [trust](#trust-boundaries), [import](#conversion-and-import)                                  |
+| Recovery and trust                                        | [Recovery](#recovery), [trust](#trust-boundaries)                                                                    |
 | Source map, platforms and verification                    | [Implementation index](#architecture-and-implementation-index), [platforms](#platforms), [development](#development) |
 
 ## Install
@@ -92,7 +92,7 @@ Pi's managed extension install supplies host APIs inside Pi; it does not add the
 standalone CLI to your shell's `PATH`. From this checkout, use
 `node bin/pinata.mjs` instead of `pinata` after `npm ci --ignore-scripts`.
 
-Pinata targets Linux, macOS and Windows. See [platform prerequisites](#platforms)
+Piñata targets Linux, macOS and Windows. See [platform prerequisites](#platforms)
 for worker launchers and the Windows compiler requirement. Running workers uses
 provider tokens. Schema discovery, input validation, ordinary tests and offline
 arena controls make no model calls.
@@ -110,7 +110,7 @@ Open a project in Pi and type:
 @scout Map this project's entry points, data flow and tests.
 ```
 
-Pinata starts the read-only scout and reports its assignment. Shift+Down opens the
+Piñata starts the read-only scout and reports its assignment. Shift+Down opens the
 fleet; Enter opens the selected conversation. Shift+Left/Right changes workers;
 Shift+Up returns to the fleet and then to Pi.
 
@@ -126,7 +126,7 @@ available. During active work, addressed input steers the current assignment ins
 For implementation, ask the coordinator for a concrete change:
 
 ```text
-Use Pinata builders to implement the parser and command help in parallel.
+Use Piñata builders to implement the parser and command help in parallel.
 Agree on the parser interface first. Inspect the diff and run the project checks.
 ```
 
@@ -155,6 +155,20 @@ syntax highlighting and tool output using its theme. Completion cards show
 "Subagent result" with the worker, outcome, summary and conversation command.
 Backend and context metadata remain available through the details control.
 
+The fleet keeps the animated tree, with one aligned row per assignment and status
+near the agent name. The animation travels along active branches; reduced and off
+motion settings keep the branches still.
+Queued stages are visible by default and show what they are waiting for. `Q` hides
+other queued stages while keeping the selected agent visible. Search with `/`,
+apply with Enter, cancel with Escape, or clear with Ctrl+U. Cancelling restores the
+previous query and selected agent. Dependency edges do not create parent/child
+branches. Shared model settings appear once;
+mixed models get their own column when there is room. The selected agent's task
+and waiting reason appear in a separate panel, with `d` for execution details.
+Task previews and the selected panel expand to the terminal width. The Observed
+column measures time since this viewer witnessed an assignment start; a dash means
+the start is unknown. It is not an estimate of total execution time.
+
 | Input                                             | Action                                                      |
 | ------------------------------------------------- | ----------------------------------------------------------- |
 | Shift+Down                                        | Open the fleet, including from a worker conversation.       |
@@ -167,11 +181,14 @@ Backend and context metadata remain available through the details control.
 | Mouse wheel, PageUp/PageDown, Alt+PageUp/PageDown | Scroll the selected view.                                   |
 | `/` in the fleet                                  | Search workers/tasks; Enter keeps the filter.               |
 | `f`, `h`, `Q` in the fleet                        | Cycle all/active/failed, include history, show queued work. |
-| `a` in the fleet                                  | Show actions with assignment, worker and run scopes.        |
+| `a` in the fleet                                  | Show stop actions for an assignment, agent or entire fleet. |
+| `d` in the fleet                                  | Expand details for the selected assignment.                 |
 | Tab in a conversation                             | Switch composer/transcript focus.                           |
+| Ctrl+O in a conversation                          | Expand/collapse tool output.                                |
+| Ctrl+T in a conversation                          | Show/hide thinking output.                                  |
 | `d`, `m` with transcript focus                    | Expand details, load older pages.                           |
-| Ctrl+X                                            | Stop the selected worker's pending work.                    |
-| Ctrl+B                                            | Release a foreground wait.                                  |
+| Ctrl+X                                            | Stop this agent's active/queued work, including children.   |
+| Ctrl+B                                            | Release a foreground wait; agents keep working.             |
 | Ctrl+R                                            | Recover the selected original assignment.                   |
 | Ctrl+L                                            | Refresh, or reconnect a disconnected attachment.            |
 | Ctrl+Left/Right                                   | Cycle main, fleet and conversation screens.                 |
@@ -182,18 +199,43 @@ history still; reaching the bottom resumes following. Visible live conversations
 refresh once per second while following. Reading mode, hidden views and saved
 sources do not poll. There is no separate follow toggle.
 
+Short conversations sit above the composer. Message controls stay at the bottom
+when output, send feedback or terminal size changes. "Message queued" means the
+runtime saved your message; it does not confirm the worker has read it. Receipt
+IDs remain in the expanded Subagent update card in the coordinator conversation.
+
 Each worker keeps its own message draft, separate from the coordinator draft.
+Tool and thinking toggles work from either focus and use Pi's configured shortcuts.
+They leave the message draft and assignment details unchanged. Standalone viewers
+use Ctrl+O and Ctrl+T; `ui.keys.expandTools` and `ui.keys.toggleThinking` override them.
 A control draft clears only after durable acceptance. The composer labels whether
 text will steer, follow up or continue. Question marks inside a draft remain text.
 Ctrl+Left/Right, Ctrl+B and Ctrl+R retain editor behavior while composing; use Tab
-for transcript controls or the commands below.
+for transcript controls or the commands below. Help and back controls stay visible
+on narrow terminals; less common shortcuts remain in `?` help. Help and definition
+previews support arrow and page scrolling. Shortcut overrides must use a modifier
+or function key and preserve the reserved navigation and editing keys.
+
+Saved and disconnected views label their control limits. The actions menu explains
+unavailable controls and keeps inspection available. Message drafts remain editable
+for local commands; messages require a control connection. Earlier assignments
+identify when you need to select the latest assignment to send a message. Invalid
+navigation and replacement commands keep the draft and show usage or target errors.
 
 Inside a worker screen, `/worker <id> [assignment]`, `/assignment <number>`,
 `/fleet` and `/main` navigate. `/steer <text>`, `/follow-up <text>` and
 `/continue <text>` select the message action. `/stop`, `/stop-assignment` and
-`/stop-run` have distinct scopes. Other controls are `/inspect`, `/more`, `/refresh`,
+`/stop-run` stop the selected agent, one assignment, or the entire fleet in the
+current run, respectively. Stops include child agents, interrupt active work and
+cancel queued work. The fleet action includes hidden and filtered agents and works
+without a selected row. Stop requests retain output and file edits; cleanup may take
+time. Active schedules can still start new work. `/background` releases the
+coordinator's foreground wait while agents keep working. `Esc` closes the actions
+menu or leaves the view without stopping work.
+
+Other controls are `/inspect`, `/more`, `/refresh`,
 `/recover`, `/reconnect`, `/background`, `/queued`, `/scroll up|down|N`,
-`/palette <name>` and `/help`. `/replace <definition> <task>` creates a worker
+`/palette <name>` and `/help`. `/replace <new-worker-id> <task>` creates a worker
 with the selected assignment recorded as origin.
 
 ### Agent mentions
@@ -209,11 +251,11 @@ matches, an exact definition name starts one.
 | An ambiguous handle/prefix                             | Show candidates and retain the draft.                                   |
 | Embedded handles, quoted text, paths and file suffixes | Ordinary Pi input handling.                                             |
 
-The selected run wins when it contains that worker; otherwise Pinata looks for a
+The selected run wins when it contains that worker; otherwise Piñata looks for a
 unique visible match. Unknown definitions produce an error. Model output never
 becomes a mention command.
 
-Pinata records the routed envelope before dispatch. If its reply is uncertain,
+Piñata records the routed envelope before dispatch. If its reply is uncertain,
 use the displayed `/pinata-retry run-prefix:input-token` in the original Pi session
 and run. It reuses the request, message and target. Repeated callbacks for one
 input deduplicate; submitting identical text again is a new request.
@@ -364,7 +406,7 @@ One scout maps interfaces, three builders implement modules, a CLI builder integ
 those exact assignments, and a reviewer reports findings. These are example choices.
 The coordinator chooses checks and follow-ups. Preserve the independent expected
 report and verifier while repairing implementation. Shared work needs no apply step;
-Pinata does not automatically commit it.
+Piñata does not automatically commit it.
 
 ## Workspaces
 
@@ -395,7 +437,7 @@ Pair it with appropriate `after` ordering. Missing requested snapshots fail prep
 with retained evidence. For reports, use the dependency tool or quoted `context`.
 
 The source checkout's `.worktreeinclude` selects ignored local regular files, such as
-`.env.local` or `local/**`. Pinata freezes their identities at acceptance and copies
+`.env.local` or `local/**`. Piñata freezes their identities at acceptance and copies
 them during initial preparation. Changed sources, links and unsafe paths are refused
 or recorded as omitted; existing destination files and follow-up edits are preserved.
 Included contents are excluded from snapshots and application even if ignore rules
@@ -450,7 +492,7 @@ Save a specialist as `.pi/pinata/agents/api-scout.md`:
 
 ```markdown
 ---
-schemaVersion: 3
+schemaVersion: 1
 name: api-scout
 handoffDescription: Map API behavior and compatibility risks.
 tools: [read, grep, find, ls]
@@ -481,7 +523,7 @@ a lowercase letter followed by up to 31 lowercase letters, digits or hyphens.
 
 | Field                            | Type/default and meaning                                                 |
 | -------------------------------- | ------------------------------------------------------------------------ |
-| `schemaVersion`                  | Required `3` in Markdown.                                                |
+| `schemaVersion`                  | Required `1` in Markdown.                                                |
 | `name`, `handoffDescription`     | Stable handle and discovery description.                                 |
 | Markdown body                    | Instructions; project instructions are discovered each assignment.       |
 | `model`                          | Optional exact `provider/id`.                                            |
@@ -504,9 +546,12 @@ plan. A new worker adopts edited frozen resources; follow-ups preserve the accep
 worker. Project `AGENTS.md` discovery refreshes each assignment, including new or
 renamed files in non-Git projects.
 
-Only explicitly selected skills load. Pinata freezes source and resources and materializes
+Only explicitly selected skills load. Piñata freezes source and resources and materializes
 those bytes for execution. Skills cannot broaden tools or grants. Custom extension
 providers are trusted host code; their frozen source identity is checked before load.
+`pinata agents validate` also checks selected skill files and resources without
+opening a runtime or making model calls. Missing skills report the resolved path
+and `pinata.skills` field. Validation does not establish model or tool availability.
 
 ### Typed definitions and reports
 
@@ -535,7 +580,7 @@ pinata agents show api-auditor --bootstrap ./pinata-agents.ts --json
 pinata run job.json --bootstrap ./pinata-agents.ts
 ```
 
-`defineAgent` defaults `schemaVersion` to 3. Typed and Markdown definitions cannot
+`defineAgent` defaults `schemaVersion` to 1. Typed and Markdown definitions cannot
 share a name. The optional `submit_result` worker tool accepts:
 
 ```json
@@ -569,7 +614,7 @@ corresponding field. Worker overrides resolve into frozen launch data.
 
 ```json
 {
-  "schemaVersion": 4,
+  "schemaVersion": 1,
   "workspace": "shared",
   "backend": "in-process",
   "mode": "observe",
@@ -583,7 +628,7 @@ corresponding field. Worker overrides resolve into frozen launch data.
 
 | Field                                | Default/behavior                                                                         |
 | ------------------------------------ | ---------------------------------------------------------------------------------------- |
-| `schemaVersion`                      | `4`.                                                                                     |
+| `schemaVersion`                      | `1`.                                                                                     |
 | `workspace`                          | `shared`; optional `worktree`.                                                           |
 | `backend`                            | `in-process`; optional `process`, `herdr-pi`.                                            |
 | `models`                             | `{}`; per-agent model objects and optional `default`.                                    |
@@ -638,7 +683,7 @@ grant authority.
 `pinata.inheritContext: parent` requests a filtered parent conversation. It requires
 a host grant, supporting backend and available checkpoint. Pi can supply the current
 parent branch; an independent headless host without parent context reports unavailable.
-Pinata retains supported messages, complete tool pairs and compaction provenance,
+Piñata retains supported messages, complete tool pairs and compaction provenance,
 excluding host controls and incomplete pairs. Import does not replay tools. Use task
 text or `context` for explicit quoted background.
 
@@ -764,11 +809,11 @@ completion latency.
 
 ## Headless operation
 
-A schema-4 job has `workers` and optional layered `config`:
+A schema-1 job has `workers` and optional layered `config`:
 
 ```json
 {
-  "schemaVersion": 4,
+  "schemaVersion": 1,
   "workers": [{ "id": "map", "agent": "scout", "task": "Map project entry points and tests." }]
 }
 ```
@@ -885,13 +930,13 @@ Surface errors also include `internal_error`, `protocol_version`, `unauthenticat
 
 | Contract                          | Version/schema                                                      |
 | --------------------------------- | ------------------------------------------------------------------- |
-| Job/config                        | `4`: `pinata.job.v4`, `pinata.config.v4`, `pinata.config-layer.v4`. |
-| Definition                        | `3`: `pinata.definition.v3`.                                        |
-| Manifest                          | `4`: `pinata.manifest.v4`.                                          |
+| Job/config                        | `1`: `pinata.job.v1`, `pinata.config.v1`, `pinata.config-layer.v1`. |
+| Definition                        | `1`: `pinata.definition.v1`.                                        |
+| Manifest                          | `1`: `pinata.manifest.v1`.                                          |
 | Journal                           | `1`: `pinata.journal.v1`.                                           |
-| Event                             | `3`: `pinata.event.v3`.                                             |
-| IPC                               | `2`: `pinata.ipc-*.v2`.                                             |
-| Application journal               | `4`: `pinata.application-journal.v4`.                               |
+| Event                             | `1`: `pinata.event.v1`.                                             |
+| IPC                               | `1`: `pinata.ipc-*.v1`.                                             |
+| Application journal               | `1`: `pinata.application-journal.v1`.                               |
 | Commands/workers/results/surfaces | Named version-1 schemas in the catalog.                             |
 
 Package and data versions are independent; unknown versions fail explicitly.
@@ -922,10 +967,9 @@ Use `-` for stdin where a file argument is accepted.
 | `apply`                                                | `<directory> <worker> <assignment> --destination <checkout>`.                            |
 | `rollback`                                             | `<directory> <operation> --destination <checkout>`.                                      |
 | `reconcile`                                            | `<directory> <operation> --owner <epoch>`.                                               |
+| `bind-checkout`                                        | `<checkout> <retained-manifest.json> --reason <reason>`; bind verified legacy metadata.  |
 | `schema [name]`, `tools`                               | Discover canonical schemas and tool contracts.                                           |
 | `agents list`, `agents show <name>`, `agents validate` | Discover/validate definitions.                                                           |
-| `migrate <input>`                                      | Convert job/config/definition to stdout/new `--output`.                                  |
-| `migrate-run <directory>`                              | Read-only plan; `--import --directory <new-store>` imports eligible work.                |
 
 Host options: `--workspace`, `--directory`, `--run`, `--agent-dir`, repeatable
 `--definitions`, `--config <json-file>`, `--grants <json-file>`, `--model provider/id`,
@@ -997,7 +1041,7 @@ returns `runtime`, `caller`, `source`, `workspace`, `directory`, resolved `confi
 and asynchronous `close(reason)`. Retained manifests must match the workspace/run.
 Close records cleanup, including unconfirmed ownership.
 
-`HostOptions` accepts `workspace`, `directory`, `run`, `sessionId`, import `origin`,
+`HostOptions` accepts `workspace`, `directory`, `run`, `sessionId`,
 `agentDir`, ordered `definitionDirectories`, layered `config`, `parentModel`,
 `parentContext`, `grants`, `modelRuntime`, `bootstrapModule`, `nodeCommand`, `backends`,
 `tools`, `notifications`, `onDiagnostic`. These are trusted integration inputs.
@@ -1020,7 +1064,6 @@ backends and workspace, application port, scheduling owner, notifications and di
 | `subscribe(request, caller, consume)`                 | History/snapshot then live events; returns unsubscribe.                        |
 | `recover(request, caller)`                            | Inspect/reattach original attempts.                                            |
 | `close({reason})`                                     | Close schedules, stop owned work, report cleanup.                              |
-| `importHistory(history, caller)`                      | Import inert validated records.                                                |
 | `bindChild(parentRef)`                                | Authority-bound child port.                                                    |
 | `parentCheckpoint(ref, caller)`                       | Supported parent conversation checkpoint.                                      |
 | `scheduleTick()`                                      | Evaluate injected scheduling clock.                                            |
@@ -1059,7 +1102,7 @@ and preserve cancellation, context and recovery through these ports.
 
 ## Events and IPC
 
-`pinata.event.v3` distinguishes durable `committed` transitions, replay `snapshot`
+`pinata.event.v1` distinguishes durable `committed` transitions, replay `snapshot`
 projections and transient `activity`. Revisions order history; `ownerEpoch` identifies
 ownership generations. Activity source and ordinal support deduplication. Subscribers
 can coalesce activity or reset to snapshots; activity gaps do not imply missing commits.
@@ -1076,7 +1119,7 @@ partial observations. Price estimates, invoices and context utilization are sepa
 IPC protocol 2 binds loopback and records run, server and owner identities with separate
 viewer and control credentials. A versioned hello supplies role and token. Root control
 credentials must stay outside worker transports and model prompts. Exact handshakes,
-frames and limits are in `pinata.ipc-*.v2`.
+frames and limits are in `pinata.ipc-*.v1`.
 
 Transport IDs and durable mutation IDs serve different purposes. After disconnect,
 query the mutation receipt. Chunking preserves full replies; bounded queues and
@@ -1115,6 +1158,27 @@ stay blocked for their matching host. Preserve before and after blobs, journals,
 and cleanup receipts. Deleting ownership files or resetting the checkout discards
 recovery evidence.
 
+Checkout gates retain a directory creation-time binding when the filesystem provides
+one. This allows a device number to change after reboot while preserving the original
+manifest and leases. Each running gate still checks the current device, `inode` and
+creation time. Filesystems without creation times retain strict device checks.
+
+Older gates acquire a binding when reopened with their original directory identity.
+If the device number already changed, inspect the retained manifest and activity and
+verify that the path still names the original checkout. Then run:
+
+```sh
+pinata bind-checkout /path/to/project /path/to/project/.pinata/checkout-gate/manifest.json \
+  --reason "Verified original checkout after device renumbering"
+```
+
+This command requires the exact retained manifest, matching path and `inode`, an
+available creation time, and inactive local owners. It records evidence and preserves
+every lease. Retained writers still require normal cleanup reconciliation before
+application. An interrupted binding retains a reconciliation fence for inspection.
+On Linux, an owner from a different recorded boot is inactive even if its PID has
+been reused; a live PID from the same boot remains blocked.
+
 ## Trust boundaries
 
 The host binds caller identity, workspace roots, tools and grants. Model requests,
@@ -1128,41 +1192,13 @@ mutation.
 
 Durable recording, transport delivery, consumption, execution, worker assessments,
 reported checks, coordinator acceptance, application and oracle correctness remain
-distinct. Pinata imposes no automatic reviewer, mandatory ownership allocation,
+distinct. Piñata imposes no automatic reviewer, mandatory ownership allocation,
 production token or time budget, or verification-dependent access to completed work.
 
 Durability assumes local atomic create and link operations and file fsync. POSIX
 directory fsync is exercised; equivalent Windows directory durability, machine
 power loss and network filesystems are outside demonstrated coverage. Torn or corrupt
 records and ambiguous effects require explicit inspection and reconciliation.
-
-## Conversion and import
-
-Use the installed contracts as the reference for input and output shapes.
-Conversion writes stdout or a new path and preserves its source:
-
-```sh
-pinata migrate source-job.json --kind job --output job.json --json
-pinata migrate source-agent.md --kind definition --output agent.md --json
-pinata migrate-run SOURCE_RUN_DIRECTORY --workspace /path/to/project --dry-run --json
-```
-
-Inspect the plan before importing a retained run:
-
-```sh
-pinata migrate-run SOURCE_RUN_DIRECTORY --workspace /path/to/project --run NEW_RUN_ID --import --directory NEW_STORE --json
-```
-
-Import requires a quiescent source with reconciled ownership and application state.
-A stopped flag or absent process leader does not prove descendant cleanup. An active
-owner must finish or stop through its matching executable and protocol. Missing or
-uncertain cleanup keeps the source read-only.
-
-Imported records preserve assignment numbers and provenance in a new run. They stay
-inert until explicit continuation, without dispatching tools or sending completion
-notices. Session import retains supported conversation data and complete tool pairs,
-excluding host controls. Conversion never expands grants. Keep source files,
-worktrees and recovery evidence until the imported result has been inspected.
 
 ## Platforms
 
@@ -1219,33 +1255,45 @@ history stays authoritative. Long workspace and application operations stay outs
 command serialization. Recovery uses saved launch, session and cleanup evidence to
 reattach the original attempt or report uncertainty.
 
-This source map connects capabilities to implementations and regression suites.
+The source tree groups implementation by responsibility. Regression suites live in
+`test/engine/` alongside scripted fixtures.
 
-| Responsibility                               | Implementation                                                                                                                                    | Main regression suites                                                                                                                                                                                                                                                                             |
-| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Schemas, versions, boundaries                | [contracts](engine/contracts), [registry](engine/contracts/schemas.ts)                                                                            | [contracts](test/engine/rewrite-contracts.test.ts)                                                                                                                                                                                                                                                 |
-| Atomic batches, immutable graphs, FIFO       | [acceptance](engine/core/accept.ts), [graph](engine/core/graph.ts), [readiness](engine/core/readiness.ts)                                         | [runtime](test/engine/rewrite-runtime.test.ts), [lifecycle](test/engine/rewrite-lifecycle.test.ts)                                                                                                                                                                                                 |
-| Execution, controls, accounting              | [runtime](engine/runtime), [core](engine/core)                                                                                                    | [execution](test/engine/rewrite-execution.test.ts), [Pi accounting](test/engine/rewrite-pi-accounting.test.ts)                                                                                                                                                                                     |
-| Journal, replay, claims, reconciliation      | [storage](engine/storage)                                                                                                                         | [storage](test/engine/rewrite-storage.test.ts)                                                                                                                                                                                                                                                     |
-| Agents, models, frozen resources             | [definitions](engine/definitions), [host](engine/host)                                                                                            | [definitions](test/engine/rewrite-definitions.test.ts), [typed agents](test/engine/rewrite-typed-definitions.test.ts), [loadouts](test/engine/rewrite-loadout.test.ts)                                                                                                                             |
-| Pi sessions, tools, reports, guards          | [in-process](engine/backends/in-process.ts), [agent adapter](engine/agent)                                                                        | [backends](test/engine/rewrite-backends.test.ts), [guards](test/engine/rewrite-agent-guard.test.ts)                                                                                                                                                                                                |
-| Process transport, Herdr ownership           | [process](engine/backends/process.ts), [Herdr](engine/backends/herdr.ts)                                                                          | [process backend](test/engine/rewrite-process-backend.test.ts)                                                                                                                                                                                                                                     |
-| Supervision, output, Job Objects             | [supervision](engine/backends/supervision)                                                                                                        | [supervision](test/engine/rewrite-supervision.test.ts), [Windows](test/engine/windows-supervision.test.ts)                                                                                                                                                                                         |
-| Worktrees, snapshots, ignored inputs, setup  | [workspace](engine/workspace)                                                                                                                     | [provisioning](test/engine/rewrite-provisioning.test.ts), [workspaces](test/engine/rewrite-workspace.test.ts), [include](test/engine/rewrite-include.test.ts), [setup](test/engine/rewrite-setup.test.ts)                                                                                          |
-| Snapshot inputs, dependency result pages     | [workspace operations](engine/workspace/operations.ts), [dependency tool](engine/agent/dependencies.ts)                                           | [dependencies](test/engine/rewrite-dependencies.test.ts)                                                                                                                                                                                                                                           |
-| Writer exclusion, apply/rollback journals    | [gate](engine/workspace/gate.ts), [application](engine/application)                                                                               | [gate](test/engine/rewrite-gate.test.ts), [application](test/engine/rewrite-application.test.ts), [apply](test/engine/rewrite-application-apply.test.ts), [rollback](test/engine/rewrite-application-rollback.test.ts)                                                                             |
-| Instructions, context filtering, restoration | [context](engine/context), [conversation](engine/agent/conversation.ts)                                                                           | [context](test/engine/rewrite-context.test.ts), [conversation](test/engine/rewrite-conversation.test.ts)                                                                                                                                                                                           |
-| Scoped memory, revision history              | [memory](engine/memory), [Pi controls](engine/pi/memory.ts)                                                                                       | [memory](test/engine/rewrite-memory.test.ts), [Pi surface](test/engine/rewrite-pi-surface.test.ts)                                                                                                                                                                                                 |
-| Child authority, transport, recovery         | [core delegation](engine/core/delegation.ts), [child runtime](engine/runtime/delegation.ts), [transport](engine/backends/delegation-transport.ts) | [authority](test/engine/rewrite-child-authority.test.ts), [transport](test/engine/rewrite-child-transport.test.ts), [backends](test/engine/rewrite-child-backends.test.ts), [recovery](test/engine/rewrite-child-recovery.test.ts), [nested workflow](test/engine/rewrite-nested-workflow.test.ts) |
-| Session schedules, DST, overlap              | [schedules](engine/schedules)                                                                                                                     | [schedules](test/engine/rewrite-schedules.test.ts)                                                                                                                                                                                                                                                 |
-| Pi tools, mentions, grants, notices          | [Pi extension](engine/pi)                                                                                                                         | [Pi surface](test/engine/rewrite-pi-surface.test.ts), [personal grants](test/engine/rewrite-personal-grants.test.ts)                                                                                                                                                                               |
-| IPC, live/saved sources, paging              | [IPC](engine/ipc), [sources](engine/sources)                                                                                                      | [IPC](test/engine/rewrite-ipc.test.ts), [queries](test/engine/rewrite-queries.test.ts), [pages](test/engine/rewrite-pages.test.ts)                                                                                                                                                                 |
-| Headless commands, standalone viewer         | [CLI](engine/headless), [viewer](engine/viewer), [launcher](bin/pinata.mjs)                                                                       | [headless](test/engine/rewrite-headless.test.ts)                                                                                                                                                                                                                                                   |
-| Fleet, transcripts, palettes, drafts         | [UI](engine/ui)                                                                                                                                   | [UI](test/engine/rewrite-ui.test.ts), [conversation UI](test/engine/rewrite-conversation-ui.test.ts)                                                                                                                                                                                               |
-| Input conversion, quiescence, run import     | [migration](engine/migration)                                                                                                                     | [migration](test/engine/rewrite-migration.test.ts)                                                                                                                                                                                                                                                 |
-| Recipes, Relay, catalog generation           | [examples](examples), [generator](scripts/reference.ts)                                                                                           | [examples](test/engine/rewrite-examples.test.ts), [links](test/engine/rewrite-docs.test.ts)                                                                                                                                                                                                        |
-| Runtime measurements, coding trials          | [bench](bench), [arena](arena)                                                                                                                    | [benchmarks](test/engine/rewrite-bench.test.ts), [arena](test/engine/rewrite-arena.test.ts)                                                                                                                                                                                                        |
-| Package exports, npm, mirror                 | [scripts](scripts), [workflows](.github/workflows)                                                                                                | [package smoke](test/engine/package-smoke.ts), [release](test/rewrite-release.test.mjs), [mirror](test/github-package.test.mjs)                                                                                                                                                                    |
+```text
+pinata/
+|-- engine/
+|   |-- contracts/       # Schemas, versions, events and public boundaries
+|   |   `-- schemas.ts   # Named schema registry
+|   |-- core/            # Pure acceptance, graph, readiness and lifecycle rules
+|   |-- runtime/         # Command authority, execution and controls
+|   |-- storage/         # Journal, replay, artifacts and owner claims
+|   |-- definitions/     # Markdown and typed agent definitions, frozen loadouts
+|   |-- host/            # Workspace, models, adapters and grants
+|   |-- agent/           # Pi sessions, tools, reporting and guards
+|   |-- backends/        # In-process, process and Herdr execution
+|   |   `-- supervision/ # Process ownership, output and Windows Job Objects
+|   |-- workspace/       # Worktrees, snapshots, setup and writer exclusion
+|   |-- application/     # Journaled apply, rollback and reconciliation
+|   |-- context/         # Instructions, filtering and restoration
+|   |-- memory/          # Scoped memory and revision history
+|   |-- schedules/       # Session schedules, DST and overlap handling
+|   |-- pi/              # Extension tools, mentions, grants and notices
+|   |-- ipc/             # Authenticated transport and protocol negotiation
+|   |-- sources/         # Live and saved runtime access, paging
+|   |-- headless/        # CLI arguments, commands and output
+|   |-- viewer/          # Standalone terminal viewer
+|   `-- ui/              # Fleet, transcripts, palettes and drafts
+|-- bin/pinata.mjs       # CLI launcher
+|-- agents/              # Shipped agent definitions
+|-- prompts/             # Coordinator and workflow prompts
+|-- skills/              # Pi subagent skill
+|-- examples/            # Jobs, recipes and Relay integration
+|-- docs/reference/      # Generated schema and tool catalog
+|-- test/engine/         # Contract, runtime and integration regressions
+|-- bench/               # Scripted and loopback overhead measurements
+|-- arena/               # Repeatable coding trials and retained evidence
+|-- scripts/             # Catalog generation, checks and package releases
+`-- .github/workflows/   # CI, npm publishing and package mirror
+```
 
 ## Development
 
@@ -1416,7 +1464,7 @@ trial evidence. Offline controls copy or mutate known solutions to test the harn
 
 ```sh
 npm run arena -- --offline
-npm run arena -- --offline --task team-board@2 --workflow parallel-review
+npm run arena -- --offline --task team-board@1 --workflow parallel-review
 node arena/report.ts COMPLETE_BATCH_OR_MATRIX_DIRECTORY
 npm run arena:bootstrap
 npm run arena:doctor
@@ -1459,7 +1507,7 @@ External configs contain `schemaVersion`, `adapter`, `condition`, optional `limi
 validated by [adapter schemas](arena/adapters.ts). Commands run in the candidate
 checkout with an absolute request-file argument. Return one JSON response on stdout;
 Stderr and raw streams remain. Requests disclose no private oracle or reference solution
-paths. The native Pinata adapter loads the extension with ordinary coding tools
+paths. The native Piñata adapter loads the extension with ordinary coding tools
 and the shared command API.
 
 Source evidence includes declared harness, runtime and corpus roots, untracked source and

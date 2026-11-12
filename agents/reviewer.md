@@ -1,5 +1,5 @@
 ---
-schemaVersion: 3
+schemaVersion: 1
 name: reviewer
 handoffDescription: Review a supplied change for concrete defects and missing evidence.
 tools: [read, grep, find, ls]

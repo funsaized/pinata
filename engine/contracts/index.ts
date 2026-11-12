@@ -16,8 +16,6 @@ export * from "./surface.ts";
 export * from "./loadout.ts";
 export * from "./context.ts";
 export * from "./memory.ts";
-export * from "./history.ts";
-export * from "./migration.ts";
 export * from "./delegation.ts";
 
 export * from "./schedule.ts";

@@ -13,7 +13,7 @@ export async function bootstrap(args: string[]): Promise<void> {
     const flag = args[index];
     if (flag === "--help") {
       console.log(
-        "arena:bootstrap [--out DIR] [--provider ID] [--model ID] [--thinking LEVEL]. Overwrites generated v2 native configs; makes no model calls.",
+        "arena:bootstrap [--out DIR] [--provider ID] [--model ID] [--thinking LEVEL]. Overwrites generated v1 native configs; makes no model calls.",
       );
       return;
     }
@@ -37,7 +37,7 @@ export async function bootstrap(args: string[]): Promise<void> {
       model: { provider, id: model, version: null, settings: { thinking, concurrency: 4 } },
     };
     const config = {
-      schemaVersion: 2,
+      schemaVersion: 1,
       adapter,
       condition: requested,
       limits: { ...defaultLimits, timeoutMs: 1200000, oracleTimeoutMs: 60000 },

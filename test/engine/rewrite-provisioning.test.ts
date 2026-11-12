@@ -60,7 +60,7 @@ async function fixture(t: TestContext, options: { git?: boolean; fault?: FaultHo
       Buffer.from(
         canonicalJson(
           definitionSchema.parse({
-            schemaVersion: 3,
+            schemaVersion: 1,
             name: "fixture",
             handoffDescription: "Scripted workspace fixture",
             instructions: "Preserve edits.",
@@ -721,7 +721,7 @@ test(
           Buffer.from(
             canonicalJson(
               definitionSchema.parse({
-                schemaVersion: 3,
+                schemaVersion: 1,
                 name: "fixture",
                 handoffDescription: "Scripted workspace fixture",
                 instructions: "Preserve edits.",

@@ -158,7 +158,7 @@ export const commandEnvelopeSchema = z.strictObject({
 });
 export type CommandEnvelope = z.infer<typeof commandEnvelopeSchema>;
 export const jobSchema = z.strictObject({
-  schemaVersion: z.literal(4),
+  schemaVersion: z.literal(1),
   workers: z.array(workerRequestSchema).min(1),
   config: configLayerSchema.optional(),
 });

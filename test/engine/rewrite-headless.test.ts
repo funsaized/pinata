@@ -1,8 +1,17 @@
 import assert from "node:assert/strict";
 import { execFile, spawn, type ChildProcess } from "node:child_process";
-import { createHash } from "node:crypto";
 import { createServer } from "node:http";
-import { cp, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  cp,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  realpath,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test, { type TestContext } from "node:test";
@@ -55,7 +64,7 @@ async function fixture(t: TestContext) {
   await Promise.all([mkdir(workspace), mkdir(definitions), mkdir(agentDir)]);
   await writeFile(
     join(definitions, "fixture.md"),
-    "---\nschemaVersion: 3\nname: fixture\nhandoffDescription: Scripted CLI fixture\ntools: [read]\n---\nRead the scripted assignment.\n",
+    "---\nschemaVersion: 1\nname: fixture\nhandoffDescription: Scripted CLI fixture\ntools: [read]\n---\nRead the scripted assignment.\n",
   );
   t.after(() => rm(directory, { recursive: true, force: true }));
   const hostArgs = [
@@ -73,7 +82,7 @@ async function fixture(t: TestContext) {
     await writeFile(
       path,
       JSON.stringify({
-        schemaVersion: 4,
+        schemaVersion: 1,
         workers: [{ id: "worker", agent: "fixture", task, backend }],
       }),
     );
@@ -81,6 +90,38 @@ async function fixture(t: TestContext) {
   };
   return { directory, workspace, definitions, agentDir, hostArgs, job };
 }
+
+test("agents validate checks selected skill resources without opening a runtime", async (t) => {
+  const f = await fixture(t);
+  const path = join(f.definitions, "fixture.md");
+  await writeFile(
+    path,
+    "---\nschemaVersion: 1\nname: fixture\nhandoffDescription: Fixture\ntools: [read]\npinata: { skills: [./missing-skill] }\n---\nRead the fixture.\n",
+  );
+  const args = [
+    "agents",
+    "validate",
+    "--definitions",
+    f.definitions,
+    "--workspace",
+    f.workspace,
+    "--agent-dir",
+    f.agentDir,
+  ];
+  const rejected = await invoke(args);
+  assert.equal(rejected.code, 2);
+  assert.match(rejected.stdout, /pinata.skills/);
+  assert.match(rejected.stdout, /missing-skill/);
+  await mkdir(join(f.definitions, "missing-skill"));
+  await writeFile(
+    join(f.definitions, "missing-skill", "SKILL.md"),
+    "---\nname: missing-skill\ndescription: Repaired explicit resource\n---\nRead the fixture.\n",
+  );
+  const accepted = await invoke(args);
+  assert.equal(accepted.code, 0, accepted.stderr);
+  assert.equal((await readdir(f.workspace)).length, 0);
+  assert.equal((await readdir(f.agentDir)).length, 0);
+});
 
 function launch(args: string[]) {
   const child = spawn(process.execPath, [cli, ...args, "--json"], {
@@ -195,7 +236,7 @@ test(
       assert.doesNotMatch(result.stdout, /checked|review complete|verified/i);
     }
     const invalid = join(world.directory, "invalid.json");
-    await writeFile(invalid, '{"schemaVersion":4,"workers":[]}');
+    await writeFile(invalid, '{"schemaVersion":1,"workers":[]}');
     assert.equal((await invoke(["run", invalid, ...world.hostArgs])).code, 2);
   },
 );
@@ -224,7 +265,7 @@ test(
       await execute("git", ["-C", world.workspace, ...args]);
     await writeFile(
       join(world.definitions, "fixture.md"),
-      "---\nschemaVersion: 3\nname: fixture\nhandoffDescription: Isolated writer\ntools: [read, write]\npinata:\n  access: write\n  workspace: worktree\n---\nMake the scripted change.\n",
+      "---\nschemaVersion: 1\nname: fixture\nhandoffDescription: Isolated writer\ntools: [read, write]\npinata:\n  access: write\n  workspace: worktree\n---\nMake the scripted change.\n",
     );
     const grants = join(world.directory, "writer-grants.json");
     await writeFile(
@@ -475,76 +516,5 @@ test(
     }
     t.diagnostic(JSON.stringify(requestPaths));
     assert.equal(providerRequests, 2, JSON.stringify(requestPaths));
-  },
-);
-
-test(
-  "replacement CLI migration is dry by default and preserves historical inputs during explicit import",
-  { timeout: 30_000 },
-  async (t) => {
-    const world = await fixture(t);
-    const source = join(world.directory, "legacy");
-    await mkdir(source);
-    const definition = {
-      schemaVersion: 2,
-      access: "read",
-      name: "fixture",
-      description: "Legacy fixture",
-      workspace: "shared",
-      tools: ["read"],
-      prompt: "Keep historical evidence",
-      output: { require: [] },
-      source: "built-in:fixture",
-    };
-    const digest = createHash("sha256").update(JSON.stringify(definition)).digest("hex");
-    const original = JSON.stringify({
-      schemaVersion: 3,
-      id: "legacy",
-      root: world.workspace,
-      head: "a".repeat(40),
-      tasks: [{ id: "worker", agent: "fixture", task: "Historical task", definition: digest }],
-      allowWrites: false,
-      passEnv: [],
-      definitions: { [digest]: { ...definition, digest } },
-    });
-    await writeFile(join(source, "run.json"), original);
-    const planned = await invoke([
-      "migrate-run",
-      source,
-      "--workspace",
-      world.workspace,
-      "--run",
-      "imported",
-    ]);
-    assert.equal(planned.code, 0, planned.stdout + planned.stderr);
-    const destination = join(world.directory, "imported");
-    const imported = await invoke([
-      "migrate-run",
-      source,
-      "--import",
-      "--directory",
-      destination,
-      "--run",
-      "imported",
-      ...world.hostArgs,
-    ]);
-    assert.equal(imported.code, 0, imported.stdout + imported.stderr);
-    assert.match(imported.stdout, /migration-import/);
-    assert.equal(await readFile(join(source, "run.json"), "utf8"), original);
-    const status = await invoke(["status", destination, "--saved"]);
-    assert.match(status.stdout, /historical/);
-    assert.match(status.stdout, /interrupted/);
-    const refused = await invoke([
-      "migrate-run",
-      source,
-      "--import",
-      "--directory",
-      join(source, "nested"),
-      "--run",
-      "nested",
-      ...world.hostArgs,
-    ]);
-    assert.equal(refused.code, 2, refused.stdout);
-    assert.match(refused.stdout, /outside retained source/);
   },
 );

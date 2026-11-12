@@ -83,7 +83,7 @@ export function registerMemoryCommand(
         const result = { action: command.action, worker: worker.id, ...snapshot };
         pi.sendMessage(
           {
-            customType: "pinata.memory.v3",
+            customType: "pinata.memory.v1",
             content: canonicalJson(result),
             display: true,
             details: result,

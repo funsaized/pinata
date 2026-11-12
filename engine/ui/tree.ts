@@ -6,6 +6,32 @@ import {
 } from "../contracts/index.ts";
 import { assignments, needsAttention } from "./projection.ts";
 
+export function activityIndicator(
+  motion: "full" | "reduced" | "off",
+  now: number,
+  prefix = "",
+  row = 0,
+  cycle = row + Math.min(prefix.length, 3) + 5,
+  ascii = true,
+): string {
+  const rail = ascii ? "-" : "─";
+  const branch = prefix.replace(/[-─] $/, rail + rail) + rail.repeat(5);
+  if (motion !== "full") return branch;
+  const frame = Math.floor(now / 250);
+  const position = (frame % cycle) - row;
+  return Array.from(branch, (character, column) => {
+    if (character === " ") return character;
+    // Indentation does not add empty travel frames before a connected branch.
+    const distance = Math.max(0, column - Math.max(0, prefix.length - 3));
+    if (position === distance) return ["c", "C", "c"][frame % 3];
+    if (position < distance) return column % 2 === 0 ? "o" : " ";
+    if (character === "─" || character === "-") return column % 2 === 0 ? "-" : " ";
+    if (character === "│" || character === "├") return "┆";
+    if (character === "|") return ":";
+    return character;
+  }).join("");
+}
+
 export type TreeNode = {
   assignment: Assignment;
   prefix: string;

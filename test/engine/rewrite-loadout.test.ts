@@ -35,7 +35,7 @@ for (const backend of ["in-process", "process"] as const)
       await writeFile(
         join(definitions, "reader.md"),
         `---
-schemaVersion: 3
+schemaVersion: 1
 name: reader
 handoffDescription: Exercise resolved resources.
 tools: [read]

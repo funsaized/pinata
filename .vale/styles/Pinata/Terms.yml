@@ -1,5 +1,5 @@
 extends: substitution
-message: "Use '%s' instead of '%s' for Pinata terminology."
+message: "Use '%s' instead of '%s' for Piñata terminology."
 level: warning
 ignorecase: true
 swap:

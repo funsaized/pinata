@@ -18,7 +18,8 @@ import { PinataScreen, resolveKeys } from "../../engine/ui/screen.ts";
 import { createPaint, modelAccent, palettes } from "../../engine/ui/palette.ts";
 import { displayText, lines } from "../../engine/ui/text.ts";
 import { invokeCoordinatorTool } from "../../engine/pi/tools.ts";
-import { activityIndicator, fleetWidget, renderScreen } from "../../engine/ui/render.ts";
+import { activityIndicator } from "../../engine/ui/tree.ts";
+import { fleetWidget, renderScreen } from "../../engine/ui/render.ts";
 import { openViewer } from "../../engine/viewer/main.ts";
 import { installCoordinatorUi } from "../../engine/ui/pi.ts";
 import { AttachedSource } from "../../engine/sources/attached.ts";
@@ -72,6 +73,115 @@ test("fleet rows identify worker models with distinct colors and thinking levels
   for (const model of models) assert(rendered.includes(`[${model} · high]`));
   assert.equal(new Set(models.map((model) => modelAccent(model, models))).size, 3);
   assert.equal(modelAccent(models[0], models), modelAccent(models[0], [...models].reverse()));
+  router.dispose();
+});
+
+test("staged fleets use aligned rows, one shared model, and keep the selected agent visible on resize", async () => {
+  const state = uiState(5);
+  for (const [index, assignment] of Object.values(state.assignments).entries()) {
+    const worker = state.workers[assignment.ref.worker];
+    worker.agent = ["discovery", "evidence", "quant", "critic", "synthesis"][index];
+    worker.model = { provider: "fixture", id: "shared-model", thinking: "high" };
+    assignment.execution = { phase: index < 2 ? "running" : "queued" };
+    assignment.task =
+      `Research task ${index + 1}. ` + "Keep exact evidence and references. ".repeat(30);
+  }
+  state.assignments[assignmentKey(ref(3))].after = [ref(), ref(2)];
+  state.assignments[assignmentKey(ref(4))].after = [ref(3)];
+  state.assignments[assignmentKey(ref(5))].after = [ref(), ref(2), ref(3), ref(4)];
+  const source = new UiSource(state);
+  const router = new ScreenRouter(source);
+  await router.start();
+  router.navigate("fleet", ref(4));
+  assert.equal(router.fleetAssignments().length, 5, "queued stages are visible by default");
+  for (const [width, height] of [
+    [320, 40],
+    [140, 32],
+    [80, 24],
+    [40, 20],
+    [24, 12],
+  ]) {
+    const hitRows = new Map<number, AssignmentRef>();
+    const rows = renderScreen(router, {
+      width,
+      height,
+      paint: createPaint("terminal-default"),
+      hitRows,
+    });
+    const output = rows.map(stripTerminalSequences).join("\n");
+    assert.equal(rows.length, height);
+    assert(rows.every((row) => visibleWidth(row) <= width));
+    assert(
+      [...hitRows.values()].some((target) => target.worker === "worker-4"),
+      "resize must not hide the selected agent",
+    );
+    assert.match(output, /2 active · 3 queued/);
+    assert.doesNotMatch(output, /waiting: dependency|after:/);
+    if (width >= 80) {
+      assert.equal(output.match(/shared-model/g)?.length, 1);
+      assert.equal(hitRows.size, 5, "each stage occupies one selectable row");
+      const activeRows = [...hitRows]
+        .filter(([, target]) => ["worker-1", "worker-2"].includes(target.worker))
+        .map(([row]) => stripTerminalSequences(rows[row]));
+      assert.equal(activeRows[0].indexOf("Running"), activeRows[1].indexOf("Running"));
+      assert.match(output, /Waiting for worker-3\/1/);
+      if (width >= 300) {
+        assert.equal(visibleWidth(activeRows[0].trimEnd()), width);
+        const divider = rows.map(stripTerminalSequences).find((row) => /^─+$/.test(row.trimEnd()));
+        assert.equal(visibleWidth(divider?.trimEnd() ?? ""), width);
+        const task = rows.map(stripTerminalSequences).find((row) => row.startsWith("Task:"));
+        assert(visibleWidth(task?.trimEnd() ?? "") > 300, "selected task uses the viewport width");
+      }
+    }
+  }
+  const terminal = new MemoryTerminal();
+  terminal.rows = 50;
+  const tui = new TuiAltScreen(terminal);
+  tui.requestRender = () => {};
+  const screen = new PinataScreen({ tui, router, main() {} });
+  router.setDraft("keep this draft");
+  screen.handleInput("d");
+  assert.equal(router.details, true);
+  assert.match(stripTerminalSequences(screen.render(120).join("\n")), /After: worker-3\/1/);
+  assert.match(stripTerminalSequences(screen.render(120).join("\n")), /in-process/);
+  screen.handleInput("d");
+  assert.equal(router.details, false);
+  assert.equal(router.draft, "keep this draft");
+  assert.equal(source.calls.length, 0, "fleet presentation never launches or controls work");
+  screen.dispose();
+  router.dispose();
+});
+
+test("fleet rows preserve actual parent branches and unconfirmed cleanup blockers", async () => {
+  const state = uiState(3);
+  state.workers["worker-2"].parentAssignment = ref();
+  state.workers["worker-2"].depth = 1;
+  state.assignments[assignmentKey(ref())].execution = {
+    phase: "ended",
+    reason: "failed",
+    cleanup: "unconfirmed",
+  };
+  state.assignments[assignmentKey(ref(2))].execution = { phase: "running" };
+  state.assignments[assignmentKey(ref(3))].after = [ref()];
+  const router = new ScreenRouter(new UiSource(state));
+  await router.start();
+  router.navigate("fleet", ref(3));
+  router.motion = "off";
+  const render = () =>
+    stripTerminalSequences(
+      renderScreen(router, { width: 140, height: 32, paint: createPaint("terminal-default") }).join(
+        "\n",
+      ),
+    );
+  assert.match(render(), /1 need attention/);
+  assert.match(render(), /Failed !/);
+  assert.match(render(), /└───────\s+worker-2\/1/);
+  assert.match(render(), /Waiting for worker-1\/1 \(failed; cleanup unconfirmed\)/);
+  router.navigate("fleet", ref());
+  router.collapse(true);
+  assert.doesNotMatch(render(), /└───────\s+worker-2\/1/);
+  router.collapse(false);
+  assert.match(render(), /└───────\s+worker-2\/1/);
   router.dispose();
 });
 function accepted(input: unknown): SurfaceReply {
@@ -143,7 +253,7 @@ test("compact trees retain actual ancestry, queued totals and only witnessed ela
     source.state.assignments[assignmentKey(target)].execution = { phase: "running" };
     source.state.revision++;
     await source.emit({
-      schemaVersion: 3,
+      schemaVersion: 1,
       kind: "committed",
       id: `start/${target.worker}`,
       ownerEpoch: source.epoch,
@@ -319,11 +429,13 @@ test("wheel and click act on the visible fleet or conversation, and mismatched c
   };
   assert.equal(screen.handleMouse({ ...mouse, type: "wheel", wheelDelta: 4 })?.handled, true);
   assert.equal(router.fleetScroll, 4);
-  screen.render(80);
+  const scrolled = screen.render(80).map(stripTerminalSequences);
   assert.equal(router.fleetScroll, 4, "Rendering does not snap scrolling back to the selected row");
-  screen.handleMouse({ ...mouse, y: 3, type: "click", button: "left", clickCount: 2 });
+  const clickedRow = scrolled.findIndex((line) => line.includes("worker-5/1"));
+  assert(clickedRow >= 0, "the scrolled-to agent must be visible");
+  screen.handleMouse({ ...mouse, y: clickedRow, type: "click", button: "left", clickCount: 2 });
   await tick();
-  assert.equal(router.selected?.worker, "worker-3");
+  assert.equal(router.selected?.worker, "worker-5");
   assert.equal(router.screen, "conversation");
   assert.match(router.conversation().error ?? "", /different assignment/);
   assert.equal(router.conversation().page, undefined);
@@ -987,9 +1099,66 @@ test("fleet help, search, filtering and actions are usable without a composer", 
   screen.handleInput("h");
   assert.equal(router.history, true);
   screen.handleInput("a");
-  assert.match(screen.render(80).join("\n"), /Stop entire run/);
+  assert.match(screen.render(80).join("\n"), /Stop entire fleet/);
   screen.handleInput("\u001b");
   assert.equal(source.calls.length, 0, "browsing actions does not execute them");
+  screen.dispose();
+  router.dispose();
+});
+
+test("fleet stop actions preserve their scope and background only releases the wait", async () => {
+  const source = new UiSource(uiState(3));
+  for (const assignment of Object.values(source.state.assignments))
+    assignment.execution = { phase: "running" };
+  const router = new ScreenRouter(source);
+  await router.start();
+  router.navigate("fleet", ref(2));
+  source.respond = async (input) => accepted(input);
+  const terminal = new MemoryTerminal();
+  terminal.rows = 40;
+  const tui = new TuiAltScreen(terminal);
+  tui.requestRender = () => {};
+  const screen = new PinataScreen({ tui, router, main() {} });
+  for (const [index, scope] of ["assignment", "worker", "run", "background"].entries()) {
+    screen.handleInput("a");
+    router.actionIndex = index;
+    const menu = stripTerminalSequences(screen.render(100).join("\n"));
+    assert.match(menu, /Selected: worker-2\/1/);
+    assert.match(menu, /Stops keep output and edits/);
+    assert.match(menu, /Esc close menu/);
+    screen.handleInput("\r");
+    await tick();
+    const call = surfaceCallSchema.parse(source.calls.at(-1));
+    assert.equal(call.method, "execute");
+    if (call.method !== "execute") throw new Error("Expected control");
+    const { command } = commandEnvelopeSchema.parse(call.input);
+    if (scope === "background") {
+      assert.equal(command.kind, "background");
+      assert.match(router.notice, /agents keep working/);
+    } else {
+      assert.equal(command.kind, "cancel");
+      if (command.kind !== "cancel") throw new Error("Expected cancellation");
+      assert.equal(command.scope, scope);
+      assert.equal(command.worker, scope === "run" ? undefined : "worker-2");
+      assert.equal(command.assignment, scope === "assignment" ? 1 : undefined);
+      assert.equal(command.descendants, true);
+      assert.match(router.notice, /Stop requested/);
+    }
+  }
+  router.search = "no matching agent";
+  router.refreshView();
+  assert.equal(router.selected, undefined);
+  assert.equal((await router.control("cancel", "worker")).status, "error");
+  assert.equal((await router.control("cancel", "run")).status, "ok");
+  const call = surfaceCallSchema.parse(source.calls.at(-1));
+  assert(call.method === "execute");
+  const { command } = commandEnvelopeSchema.parse(call.input);
+  assert(command.kind === "cancel" && command.scope === "run");
+  for (const width of [24, 50, 80])
+    assert.match(
+      stripTerminalSequences(screen.render(width).at(-2) ?? ""),
+      /a\s+(?:stop\/)?actions/,
+    );
   screen.dispose();
   router.dispose();
 });
@@ -1022,6 +1191,62 @@ test("composer editing keys preserve focus and transcript controls are explicit"
   assert.equal(router.draft, "hello world");
   screen.dispose();
   router.dispose();
+});
+
+test("Pi conversation shortcuts toggle tools and thinking independently without changing drafts", async (t) => {
+  for (const custom of [false, true]) {
+    await t.test(custom ? "configured Pi shortcuts" : "default shortcuts", async () => {
+      const source = new UiSource();
+      const router = new ScreenRouter(source);
+      await router.start();
+      const tui = new TuiAltScreen(new MemoryTerminal());
+      tui.requestRender = () => {};
+      const screen = new PinataScreen({
+        tui,
+        router,
+        main() {},
+        keybindings: custom
+          ? { getKeys: (key) => (key === "app.tools.expand" ? ["alt+o"] : ["alt+t"]) }
+          : undefined,
+      });
+      try {
+        router.navigate("conversation", ref());
+        await tick();
+        screen.handleInput("Keep this draft");
+        const calls = source.calls.length;
+        if (custom) {
+          screen.handleInput("\u000f");
+          screen.handleInput("\u0014");
+          assert.equal(router.expandedTools, false);
+          assert.equal(router.showThinking, false);
+        }
+        const tools = custom ? "\u001bo" : "\u000f";
+        const thinking = custom ? "\u001bt" : "\u0014";
+        screen.handleInput(tools);
+        assert.equal(router.expandedTools, true);
+        assert.equal(router.showThinking, false);
+        screen.handleInput(thinking);
+        assert.equal(router.expandedTools, true);
+        assert.equal(router.showThinking, true);
+        assert.equal(router.details, false);
+        const rows = stripTerminalSequences(screen.render(120).join("\n"));
+        assert(rows.includes(custom ? "alt+o tools" : "ctrl+o tools"));
+        assert(rows.includes(custom ? "alt+t thinking" : "ctrl+t thinking"));
+        screen.handleInput("\t");
+        screen.handleInput(tools);
+        screen.handleInput(thinking);
+        screen.handleInput("d");
+        assert.equal(router.expandedTools, false);
+        assert.equal(router.showThinking, false);
+        assert.equal(router.details, true);
+        assert.equal(router.draft, "Keep this draft");
+        assert.equal(source.calls.length, calls);
+      } finally {
+        screen.dispose();
+        router.dispose();
+      }
+    });
+  }
 });
 
 test("queued-only compact trees never resurrect completed rows and narrow rows retain status", () => {
@@ -1098,9 +1323,9 @@ test("conversation renders Markdown messages and tool previews without hiding er
   ];
   const options = { width: 100, paint: createPaint("terminal-default"), expanded: false };
   const compact = stripTerminalSequences(renderConversation(entries, options).join("\n"));
-  assert.match(compact, /Tool call · read parser.ts/);
   assert.match(compact, /read parser.ts/);
-  assert.match(compact, /Tool error · read test.ts/);
+  assert.equal(compact.match(/read parser.ts/g)?.length, 1);
+  assert.match(compact, /read test.ts · failed/);
   assert.match(compact, /File missing/);
   assert.match(compact, /Findings/);
   assert(!compact.includes("**One issue**"));
@@ -1232,6 +1457,104 @@ test("worker detail fills the viewport and anchors the composer through resize",
     assert.equal(screen.render(30).length, height);
   }
   screen.dispose();
+  router.dispose();
+});
+
+test("short conversations and send feedback stay beside the composer without shifting controls", async () => {
+  const source = new UiSource(uiState(1));
+  let answer = "A short reply";
+  source.respond = async (input) => {
+    const call = surfaceCallSchema.parse(input);
+    return call.method === "execute" ? accepted(input) : conversationReply(ref(), answer);
+  };
+  let retainedMessageId: string | undefined;
+  const router = new ScreenRouter(source, {
+    accepted(_receipt, messageId) {
+      retainedMessageId = messageId;
+    },
+  });
+  await router.start();
+  router.navigate("conversation", ref());
+  await tick();
+  const terminal = new MemoryTerminal();
+  const tui = new TuiAltScreen(terminal);
+  tui.requestRender = () => {};
+  const screen = new PinataScreen({ tui, router, main() {} });
+  const render = (width: number) => screen.render(width).map(stripTerminalSequences);
+  const initial = render(100);
+  const focusRow = initial.findIndex((line) => line.includes("AGENT MESSAGE"));
+  const replyRow = initial.findIndex((line) => line.includes(answer));
+  assert(focusRow > terminal.rows - 10);
+  assert(focusRow - replyRow <= 3, "Short replies stay near the message controls");
+  assert.equal(initial[focusRow + 1].trim(), "");
+
+  screen.handleInput("cool");
+  screen.handleInput("\r");
+  await tick();
+  assert.equal(router.draft, "");
+  assert.equal(router.notice, "Message queued for worker-1");
+  assert.equal(router.noticeTone, "success");
+  assert.match(retainedMessageId ?? "", /^ui\/message\//);
+  let output = render(100);
+  assert.equal(
+    output.findIndex((line) => line.includes("AGENT MESSAGE")),
+    focusRow,
+  );
+  assert.match(output[focusRow + 1], /Message queued for worker-1/);
+  assert.doesNotMatch(output.join("\n"), /ui\/message\/|Accepted ui-run|recorded/);
+
+  screen.handleInput("another message");
+  assert.equal(router.notice, "", "Starting a new draft clears old success feedback");
+  router.notice = "Connection unavailable; your draft is retained";
+  assert.equal(router.noticeTone, "warning");
+  output = render(100);
+  assert.equal(
+    output.findIndex((line) => line.includes("AGENT MESSAGE")),
+    focusRow,
+  );
+  assert.match(output[focusRow + 1], /Connection unavailable/);
+  assert.equal(router.draft, "another message");
+
+  router.notice = "";
+  answer = "Earlier output\n".repeat(100) + "Latest answer";
+  await router.loadConversation();
+  for (const [width, height] of [
+    [120, 40],
+    [60, 24],
+    [30, 12],
+    [80, 40],
+  ]) {
+    terminal.columns = width;
+    terminal.rows = height;
+    output = render(width);
+    assert.equal(output.length, height);
+    assert(output.every((line) => visibleWidth(line) === width));
+    assert(output.some((line) => line.includes("Latest answer")));
+    assert(output.findIndex((line) => line.includes("AGENT MESSAGE")) > height - 10);
+  }
+  screen.dispose();
+  router.dispose();
+});
+
+test("a send finishing after switching workers does not show feedback for the previous worker", async () => {
+  const source = new UiSource();
+  const router = new ScreenRouter(source);
+  await router.start();
+  router.navigate("fleet", ref());
+  router.setDraft("message for worker one");
+  let finish!: (reply: SurfaceReply) => void;
+  source.respond = () =>
+    new Promise((resolve) => {
+      finish = resolve;
+    });
+  const sending = router.submit();
+  const input = source.calls.at(-1);
+  router.cycleWorker(1);
+  router.setDraft("draft for worker two");
+  finish(accepted(input));
+  await sending;
+  assert.equal(router.notice, "");
+  assert.equal(router.draft, "draft for worker two");
   router.dispose();
 });
 
@@ -1372,7 +1695,7 @@ test("reentering a worker follows the latest output while retaining its draft", 
   router.dispose();
 });
 
-test("selected prompts wrap inside their box without hiding fleet controls", async () => {
+test("selected task details wrap without hiding fleet controls", async () => {
   const source = new UiSource(uiState(1));
   source.state.assignments[assignmentKey(ref())].task =
     "Inspect the engine and explain its entry points.\nPreserve this second paragraph.";
@@ -1388,11 +1711,8 @@ test("selected prompts wrap inside their box without hiding fleet controls", asy
     assert(rows.every((row) => visibleWidth(row) <= width));
     assert(rows.length <= 24);
     if (width === 32) {
-      assert(rows.filter((row) => row.startsWith("│ ")).length >= 3);
-      const prompt = rows
-        .filter((row) => row.startsWith("│ "))
-        .map((row) => row.slice(2, -2).trim())
-        .join(" ");
+      const prompt = rows.map(stripTerminalSequences).join(" ");
+      assert(prompt.includes("Selected: worker-1/1"));
       assert(prompt.includes("second paragraph."));
       assert(rows.join("\n").includes("select"));
     }
@@ -1402,18 +1722,77 @@ test("selected prompts wrap inside their box without hiding fleet controls", asy
 
 test("activity travels across a fixed ASCII track and honors reduced motion", () => {
   assert.deepEqual(
-    [0, 250, 500, 750, 3500, 3750].map((now) => activityIndicator("full", now)),
-    ["c o o", "-Co o", "- c o", "- -co", "- - -", "c o o"],
+    [0, 250, 500, 750, 1000, 1250].map((now) => activityIndicator("full", now)),
+    ["c o o", "-Co o", "- c o", "- -co", "- - C", "c o o"],
   );
   for (const motion of ["reduced", "off"] as const)
     assert.equal(activityIndicator(motion, 900), activityIndicator(motion, 0));
-  assert.equal(activityIndicator("full", 0, "├─ ", 0, 15, false), "c o o o ");
-  assert.equal(activityIndicator("full", 250, "├─ ", 0, 15, false), "┆Co o o ");
-  assert.equal(activityIndicator("full", 500, "├─ ", 0, 15, false), "┆ c o o ");
-  assert.equal(activityIndicator("full", 3000, "├─ ", 0, 15, false), "┆ - - - ");
-  assert.equal(activityIndicator("full", 3000, "|- ", 0, 15, true), ": - - - ");
+  assert.equal(activityIndicator("full", 0, "├─ ", 0, 8, false), "c o o o ");
+  assert.equal(activityIndicator("full", 250, "├─ ", 0, 8, false), "┆Co o o ");
+  assert.equal(activityIndicator("full", 500, "├─ ", 0, 8, false), "┆ c o o ");
+  assert.equal(activityIndicator("full", 1750, "├─ ", 0, 8, false), "┆ - - -C");
+  assert.equal(activityIndicator("full", 2000, "├─ ", 0, 8, false), "c o o o ");
   assert.equal(activityIndicator("full", 250, "└─ ", 1, 15, false), "C o o o ");
   assert.equal(activityIndicator("off", 250, "└─ ", 1, 15, false), "└───────");
+});
+
+test("tree activity loops without idle frames around completed ancestors and queued rows", async (t) => {
+  let now = 0;
+  t.mock.method(performance, "now", () => now);
+  const state = uiState(5);
+  for (const assignment of Object.values(state.assignments))
+    assignment.execution = { phase: "ended", reason: "completed", cleanup: "confirmed" };
+  state.assignments[assignmentKey(ref())].execution = { phase: "queued" };
+  for (const worker of [3, 5])
+    state.assignments[assignmentKey(ref(worker))].execution = { phase: "running" };
+  state.workers["worker-4"].parentAssignment = ref(2);
+  state.workers["worker-5"].parentAssignment = ref(4);
+  const router = new ScreenRouter(new UiSource(state));
+  t.after(() => router.dispose());
+  await router.start();
+  router.navigate("fleet");
+  router.showQueued = true;
+  const paint = createPaint("terminal-default");
+  for (const ascii of [false, true]) {
+    const tracks = new Set<string>();
+    for (let frame = 0; frame < 30; frame++) {
+      now = frame * 250;
+      const markers = fleetWidget(state, { width: 100, paint, ascii, motion: "full" })
+        .map(stripTerminalSequences)
+        .filter((line) => /worker-(3|5)\/1/.test(line))
+        .map((line) => line.split("fixture")[0]);
+      assert(
+        markers.some((marker) => /[cC]/.test(marker)),
+        `idle frame ${frame}`,
+      );
+      const activeRows = renderScreen(router, { width: 100, height: 30, paint, ascii })
+        .map(stripTerminalSequences)
+        .filter((line) => /worker-(3|5)\/1/.test(line));
+      tracks.add(activeRows[0].split("worker-")[0]);
+      assert(
+        activeRows.some((line) => /[cC]/.test(line.split("worker-")[0])),
+        `idle fleet frame ${frame}`,
+      );
+    }
+    assert(
+      tracks.size > 4,
+      "fleet animation travels across the branch instead of pulsing in place",
+    );
+    for (const motion of ["reduced", "off"] as const) {
+      router.motion = motion;
+      const track = () =>
+        renderScreen(router, { width: 100, height: 30, paint, ascii })
+          .map(stripTerminalSequences)
+          .filter((line) => /worker-(3|5)\/1/.test(line))
+          .map((line) => line.split("worker-")[0]);
+      now = 0;
+      const initial = track();
+      now = 750;
+      assert.deepEqual(track(), initial, `${motion} motion keeps fleet branches still`);
+      assert(initial.every((line) => line.includes(ascii ? "-----" : "─────")));
+    }
+    router.motion = "full";
+  }
 });
 
 test("fleet retains completed dependency references without inventing ancestry", async () => {
@@ -1423,14 +1802,14 @@ test("fleet retains completed dependency references without inventing ancestry",
   source.state.assignments[assignmentKey(ref(3))].after = [ref(), ref(2)];
   const router = new ScreenRouter(source);
   await router.start();
-  router.navigate("fleet");
+  router.navigate("fleet", ref(3));
   const rows = renderScreen(router, {
     width: 100,
     height: 30,
     paint: createPaint("terminal-default"),
     ascii: true,
   });
-  assert.match(rows.join("\n"), /after: worker-1\/1, worker-2\/1/);
+  assert.match(rows.join("\n"), /After: worker-1\/1, worker-2\/1/);
   assert(router.fleetNodes(true).every((node) => !node.hasChildren));
   router.dispose();
 });
@@ -1476,7 +1855,8 @@ test("help and footer follow fleet, transcript and composer context without swal
   router.navigate("fleet");
   screen.handleInput("?");
   assert.match(rendered(), /Pinata help · Fleet/);
-  assert.doesNotMatch(rendered(), /Send message|Follow latest|Previous assignment|\/steer/);
+  assert.match(rendered(), /alt\+left\s+Previous assignment/);
+  assert.doesNotMatch(rendered(), /Send message|Follow latest|\/steer/);
   screen.handleInput("?");
   router.navigate("conversation", ref());
   router.transcriptFocus = true;
@@ -1488,7 +1868,9 @@ test("help and footer follow fleet, transcript and composer context without swal
   screen.handleInput("\t");
   screen.handleInput("?");
   assert.match(rendered(), /Pinata help · Message/);
-  assert.doesNotMatch(rendered(), /Expand.*tool output|Cycle all/);
+  assert.match(rendered(), /Expand[\s\S]*tool[\s\S]*output/);
+  assert.match(rendered(), /Show.*thinking/);
+  assert.doesNotMatch(rendered(), /Cycle all/);
   screen.handleInput("?");
   screen.handleInput("Why");
   screen.handleInput("?");

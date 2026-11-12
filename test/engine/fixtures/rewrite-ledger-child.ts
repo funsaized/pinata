@@ -6,7 +6,7 @@ const [mode, directory, crashAt] = process.argv.slice(2);
 if (!mode || !directory) throw new Error("Expected mode and store directory");
 
 const manifest = {
-  schemaVersion: 4 as const,
+  schemaVersion: 1 as const,
   run: "storage-run",
   workspace: directory,
   store: directory,

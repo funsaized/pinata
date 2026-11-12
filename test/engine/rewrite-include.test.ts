@@ -71,7 +71,7 @@ async function fixture(t: TestContext) {
     Buffer.from(
       canonicalJson(
         definitionSchema.parse({
-          schemaVersion: 3,
+          schemaVersion: 1,
           name: "fixture",
           handoffDescription: "Included files",
           instructions: "Preserve local data.",

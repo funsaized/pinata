@@ -108,9 +108,8 @@ const definitions = [
 export async function loadTask(id: string, version?: number): Promise<Task> {
   const definition = definitions.find((entry) => entry.id === id);
   if (!definition && id !== "team-board") throw new Error(`Unknown corpus task: ${id}`);
-  const selectedVersion = version ?? (id === "team-board" ? 2 : 1);
-  if ((!definition && ![1, 2].includes(selectedVersion)) || (definition && selectedVersion !== 1))
-    throw new Error("Unknown task version");
+  const selectedVersion = version ?? 1;
+  if (selectedVersion !== 1) throw new Error("Unknown task version");
   const directory = join(root, `v${selectedVersion}`, id);
   return {
     id,
@@ -141,7 +140,7 @@ export async function freezeTask(task: Task, store: EvidenceStore): Promise<Froz
   const oracle = await store.put(await regularBytes(join(task.directory, "oracle.mjs")));
   const prompt = await store.put(Buffer.from(task.prompt));
   const value = {
-    schemaVersion: 2,
+    schemaVersion: 1,
     id: task.id,
     version: task.version,
     units: task.units,

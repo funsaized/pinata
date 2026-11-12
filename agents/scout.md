@@ -1,5 +1,5 @@
 ---
-schemaVersion: 3
+schemaVersion: 1
 name: scout
 handoffDescription: Map relevant code, data flow and risks for the coordinator.
 tools: [read, grep, find, ls]

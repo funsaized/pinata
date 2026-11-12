@@ -5,7 +5,7 @@ import { type NotificationPort } from "../runtime/delivery.ts";
 import { validateConversation } from "../agent/conversation.ts";
 import { isMissing } from "../storage/io.ts";
 
-export const completionMessageType = "pinata.completion.v3";
+export const completionMessageType = "pinata.completion.v1";
 export function noticeMarker(id: string): string {
   return `[pinata-notice:${id}]`;
 }

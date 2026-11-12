@@ -107,7 +107,7 @@ export function installCoordinatorUi(
   const widget = (binding: UiBinding): void => {
     if (binding.context.mode !== "tui") return;
     hint(binding.context, true, binding.router.keys);
-    binding.context.ui.setWidget("pinata.fleet.v3", (tui): Component & { dispose(): void } => {
+    binding.context.ui.setWidget("pinata.fleet.v1", (tui): Component & { dispose(): void } => {
       const unsubscribe = binding.router.onChange(() => tui.requestRender());
       return {
         render: (width) =>
@@ -138,7 +138,7 @@ export function installCoordinatorUi(
           accepted(receipt, messageId) {
             pi.sendMessage(
               {
-                customType: "pinata.control.v3",
+                customType: "pinata.control.v1",
                 content: canonicalJson({
                   assignments: receipt.assignments,
                   requestId: receipt.requestId,
@@ -190,17 +190,18 @@ export function installCoordinatorUi(
       const parentDraft = context.ui.getEditorText();
       const binding = selected;
       if (!binding) return;
-      binding.context.ui.setWidget("pinata.fleet.v3", undefined);
+      binding.context.ui.setWidget("pinata.fleet.v1", undefined);
       hint(binding.context, false);
       openedRouter = router;
       opening = (async () => {
         try {
           await context.ui.custom<void>(
-            (tui, _theme, _keys, done) => {
+            (tui, _theme, keys, done) => {
               closeScreen = () => done();
               return new PinataScreen({
                 tui,
                 router,
+                keybindings: keys,
                 main: () => done(),
                 paint: () => paint(binding),
                 presentation: () => {
@@ -257,7 +258,7 @@ export function installCoordinatorUi(
         if (session && binding.session !== session) continue;
         hint(binding.context, false);
         binding.router.dispose();
-        binding.context.ui.setWidget("pinata.fleet.v3", undefined);
+        binding.context.ui.setWidget("pinata.fleet.v1", undefined);
         bindings.delete(key);
         if (selected === binding) selected = undefined;
       }

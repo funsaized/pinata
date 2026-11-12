@@ -108,7 +108,7 @@ export async function surfaceFixture(
   const runtime = await Runtime.open({
     directory,
     manifest: {
-      schemaVersion: 4,
+      schemaVersion: 1,
       run,
       workspace,
       store: directory,

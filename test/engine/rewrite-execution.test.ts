@@ -383,7 +383,7 @@ async function world(
     ...options,
     ...(configuration.execution === false ? { execution: undefined } : {}),
     manifest: {
-      schemaVersion: 4,
+      schemaVersion: 1,
       run: caller.run,
       workspace: directory,
       store: directory,

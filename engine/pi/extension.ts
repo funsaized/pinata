@@ -29,7 +29,7 @@ import { installCoordinatorUi } from "../ui/pi.ts";
 import { ToolPages } from "../sources/pages.ts";
 import { registerMemoryCommand } from "./memory.ts";
 
-const bindingType = "pinata.runtime.v3";
+const bindingType = "pinata.runtime.v1";
 const bindingSchema = z.strictObject({
   session: z.string(),
   run: z.string(),
@@ -232,7 +232,7 @@ export function createPinataExtension(options: PiExtensionOptions = {}): Extensi
       if (!draft.trim() || draft === input) context.ui.setEditorText("");
       pi.sendMessage(
         {
-          customType: "pinata.addressed.v3",
+          customType: "pinata.addressed.v1",
           content: canonicalJson({
             assignments: result.receipt.assignments,
             messageId: result.messageId,
@@ -438,7 +438,7 @@ export function createPinataExtension(options: PiExtensionOptions = {}): Extensi
           input: { kind: "schemas", ...(name.trim() ? { name: name.trim() } : {}) },
         });
         pi.sendMessage(
-          { customType: "pinata.schema.v3", content: canonicalJson(response), display: true },
+          { customType: "pinata.schema.v1", content: canonicalJson(response), display: true },
           { triggerTurn: false },
         );
       },

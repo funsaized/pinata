@@ -1,4 +1,4 @@
-import type { KeyId } from "@earendil-works/pi-tui";
+import type { KeyId, KeybindingsManager } from "@earendil-works/pi-tui";
 
 const defaults = {
   openFleet: "shift+down",
@@ -15,8 +15,28 @@ const defaults = {
   refresh: "ctrl+l",
   scrollUp: "alt+pageUp",
   scrollDown: "alt+pageDown",
+  expandTools: "ctrl+o",
+  toggleThinking: "ctrl+t",
 } as const;
 export type UiKeys = Record<keyof typeof defaults, KeyId>;
+export type ConversationKeys = { expandTools: KeyId[]; toggleThinking: KeyId[] };
+
+export function resolveConversationKeys(
+  config: Record<string, string>,
+  host?: Pick<KeybindingsManager, "getKeys">,
+): ConversationKeys {
+  const keys = resolveKeys(config);
+  return {
+    expandTools:
+      host && !Object.hasOwn(config, "expandTools")
+        ? host.getKeys("app.tools.expand")
+        : [keys.expandTools],
+    toggleThinking:
+      host && !Object.hasOwn(config, "toggleThinking")
+        ? host.getKeys("app.thinking.toggle")
+        : [keys.toggleThinking],
+  };
+}
 export function resolveKeys(config: Record<string, string>): UiKeys {
   const keys = { ...defaults } as UiKeys;
   for (const [name, key] of Object.entries(config)) {
@@ -42,9 +62,21 @@ export function resolveKeys(config: Record<string, string>): UiKeys {
         "a",
         "d",
         "m",
+        "space",
+        "home",
+        "end",
+        "pageUp",
+        "pageDown",
+        "shift+enter",
+        "ctrl+enter",
+        "shift+q",
       ].includes(key)
     )
       throw new Error(`Pinata key is reserved by navigation: ${key}`);
+    if (/^(?:shift\+)?(?:[a-z0-9]|space)$/.test(key))
+      throw new Error(
+        `Pinata shortcut would intercept message text: ${key}; use a modifier or function key`,
+      );
     keys[name as keyof UiKeys] = key as KeyId;
   }
   if (new Set(Object.values(keys)).size !== Object.values(keys).length)

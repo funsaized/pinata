@@ -72,7 +72,7 @@ export async function prepareFixture(directory: string): Promise<Fixture> {
   );
   for (const role of ["scout", "planner", "builder", "reviewer"]) {
     const header = {
-      schemaVersion: 3,
+      schemaVersion: 1,
       name: role,
       handoffDescription: "Scripted benchmark fixture",
       tools: role === "builder" ? ["read", "grep", "ls", "write"] : ["read", "grep", "ls"],
@@ -168,7 +168,7 @@ async function runWorkload(
   runtime = await Runtime.open({
     directory,
     manifest: {
-      schemaVersion: 4,
+      schemaVersion: 1,
       run,
       workspace: fixture.repository,
       store: directory,
@@ -564,7 +564,7 @@ export async function runCell(
     const sdk: unknown = JSON.parse(await readFile(packageFile, "utf8"));
     const pi = sdk && typeof sdk === "object" && "version" in sdk ? String(sdk.version) : "unknown";
     return {
-      schemaVersion: 3,
+      schemaVersion: 1,
       cellId: spec.cellId,
       scenario: spec.scenario.name,
       backend: spec.backend,
@@ -615,12 +615,12 @@ export async function runCell(
           ? null
           : {
               startupDefinition:
-                "Backend invocation to first ordinary workload provider request; includes guardian enrollment and any preceding compaction. Not comparable with historical child-spawn timing.",
+                "Backend invocation to first ordinary workload provider request; includes guardian enrollment and any preceding compaction.",
               startupMs: stat(Object.values(samples.setupMs)),
               childPeakRssMB: stat(Object.values(peaks)),
               peakRssByAssignmentMB: peaks,
               loadedSamplesByAssignment: loaded,
-              rssMethod: `provider-workload-request-loaded-rss-v4:${process.platform}`,
+              rssMethod: `provider-workload-request-loaded-rss-v1:${process.platform}`,
             },
       io: {
         artifactBytesRead: observer.artifactBytesRead,

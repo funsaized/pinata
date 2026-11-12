@@ -13,7 +13,7 @@ export class Observer {
   record(value: unknown, authority: RecordedObservation["authority"] = "adapter"): void {
     this.records.push(
       recordedObservationSchema.parse({
-        schemaVersion: 2,
+        schemaVersion: 1,
         sequence: this.records.length + 1,
         receiptNs: process.hrtime.bigint().toString(),
         receivedAt: new Date().toISOString(),

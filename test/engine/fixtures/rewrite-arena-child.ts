@@ -5,7 +5,7 @@ import { startCell } from "../../../arena/ledger.ts";
 const adapter = { kind: "offline", mode: "known-good" } as const;
 await runMatrix(
   {
-    schemaVersion: 2,
+    schemaVersion: 1,
     rounds: 2,
     tasks: [{ id: "checkout" }],
     conditions: [{ name: "control", adapter, requested: defaultCondition(adapter, "sequential") }],

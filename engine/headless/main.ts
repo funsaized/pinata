@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { readFile } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { z } from "zod";
 import type { Terminal } from "@earendil-works/pi-tui";
 import {
   canonicalJson,
+  checkoutGateManifestSchema,
   DomainError,
   exportSchemas,
   grantsSchema,
@@ -16,20 +17,20 @@ import {
   type SurfaceReply,
   type WaitResult,
 } from "../contracts/index.ts";
-import { availableDefinitions } from "../definitions/index.ts";
+import { availableDefinitions, freezeSkills } from "../definitions/index.ts";
+import { digestBytes } from "../storage/io.ts";
 import { loadBootstrap } from "../definitions/typed.ts";
 import { type Host, type HostOptions } from "../host/index.ts";
 import { AttachedSource } from "../sources/attached.ts";
 import { startIpcServer } from "../ipc/server.ts";
 import { bindRuntime, type RuntimeSource, surfaceError } from "../sources/runtime.ts";
 import { openSavedSource } from "../sources/saved.ts";
-import { planLegacyMigration } from "../migration/index.ts";
 import { coordinatorTools } from "../pi/tools.ts";
 import { workerToolSchemas } from "../agent/tool-schemas.ts";
 import { parseArguments, requireArgument, usage, type CliArguments } from "./arguments.ts";
-import { convertFile, importPlannedRun, validateMigrationDestination } from "./migration.ts";
 import { openViewer } from "../viewer/main.ts";
 import { paletteSchema } from "../contracts/config.ts";
+import { bindCheckoutGate } from "../workspace/gate.ts";
 
 export type CliIO = {
   out(text: string): void;
@@ -425,11 +426,12 @@ async function discovery(args: CliArguments, io: CliIO): Promise<number> {
     return 0;
   }
   const { getAgentDir } = await import("@earendil-works/pi-coding-agent");
+  const agentDir = args.options.get("agent-dir") ?? getAgentDir();
   const directories = args.definitions.length
     ? args.definitions.map((path) => resolve(path))
     : [
         fileURLToPath(new URL("../../agents", import.meta.url)),
-        join(args.options.get("agent-dir") ?? getAgentDir(), "pinata", "agents"),
+        join(agentDir, "pinata", "agents"),
         join(resolve(args.options.get("workspace") ?? process.cwd()), ".pi", "pinata", "agents"),
       ];
   const action = args.positional[0] ?? "list";
@@ -446,6 +448,15 @@ async function discovery(args: CliArguments, io: CliIO): Promise<number> {
     : available;
   if (!definitions.length && name)
     throw new DomainError("invalid_input", `No definition found for ${name}`, "agent");
+  if (action === "validate")
+    for (const { definition, path } of definitions)
+      await freezeSkills(definition.pinata.skills, {
+        cwd: dirname(path),
+        agentDir,
+        artifacts: {
+          put: async (bytes) => ({ digest: digestBytes(bytes), size: bytes.byteLength }),
+        },
+      });
   output(args, io, {
     kind: "definitions",
     definitions: definitions.map(({ definition, path, digest, outputSchema }) => ({
@@ -474,63 +485,20 @@ export async function runCli(argv: readonly string[], io: CliIO): Promise<number
         return await runJob(args, io, false);
       case "serve":
         return await runJob(args, io, true);
-      case "migrate": {
-        const converted = await convertFile({
-          path: requireArgument(args, 0, "input"),
-          kind: args.options.get("kind"),
-          output: args.options.get("output"),
-          run: args.options.get("run"),
-        });
-        output(args, io, converted);
+      case "bind-checkout": {
+        const manifest = checkoutGateManifestSchema.parse(
+          await jsonFile(requireArgument(args, 1, "retained manifest file or -"), io),
+        );
+        output(
+          args,
+          io,
+          await bindCheckoutGate({
+            root: resolve(requireArgument(args, 0, "checkout")),
+            expected: manifest.checkout,
+            reason: args.options.get("reason") ?? "",
+          }),
+        );
         return 0;
-      }
-      case "migrate-run": {
-        const plan = await planLegacyMigration({
-          source: requireArgument(args, 0, "source directory"),
-          workspace: args.options.get("workspace") ?? process.cwd(),
-          run: args.options.get("run") ?? randomUUID(),
-        });
-        if (args.options.has("output")) {
-          await validateMigrationDestination(plan, args.options.get("output") ?? "");
-          await writeFile(
-            resolve(args.options.get("output") ?? ""),
-            `${canonicalJson(plan.manifest)}\n`,
-            { flag: "wx", mode: 0o600 },
-          );
-        }
-        output(args, io, {
-          kind: "migration-plan",
-          manifest: plan.manifest,
-          blockers: plan.blockers,
-        });
-        if (!args.flags.has("import")) return plan.blockers.length ? 2 : 0;
-        if (plan.blockers.length)
-          throw new DomainError("conflict", "Resolve migration blockers before import");
-        if (!args.options.has("directory"))
-          throw new DomainError("invalid_input", "--import requires a new --directory");
-        await validateMigrationDestination(plan, args.options.get("directory") ?? "");
-        const open = await factory(args);
-        const host = await open({
-          ...(await hostOptions(args, io)),
-          run: plan.manifest.destination.run,
-          workspace: plan.manifest.destination.workspace,
-          origin: {
-            run: plan.manifest.source.run,
-            store: plan.manifest.source.directory,
-            manifestDigest: plan.manifest.source.manifest.digest,
-          },
-        });
-        try {
-          const receipt = await importPlannedRun(
-            plan,
-            host,
-            args.options.get("request-id") ?? `migration/${plan.manifest.source.manifest.digest}`,
-          );
-          output(args, io, { kind: "migration-import", receipt, directory: host.directory });
-          return receipt.status === "accepted" ? 0 : 2;
-        } finally {
-          await host.close("Historical import finished; no work was launched");
-        }
       }
       default:
         return await surfaceCommand(args, io);

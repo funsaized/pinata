@@ -14,7 +14,6 @@ import {
   type Config,
   type Grants,
   type ModelRef,
-  type Manifest,
   type ShutdownReceipt,
   type AssignmentRef,
   type FrozenWorker,
@@ -61,7 +60,6 @@ export type HostOptions = {
   directory?: string;
   run?: string;
   sessionId?: string;
-  origin?: Manifest["origin"];
   agentDir?: string;
   definitionDirectories?: readonly string[];
   config?: WorkerResolverOptions["config"];
@@ -240,12 +238,11 @@ export async function openHost(options: HostOptions): Promise<Host> {
       ? {}
       : {
           manifest: {
-            schemaVersion: 4,
+            schemaVersion: 1,
             run,
             workspace,
             store: directory,
             createdAt: new Date().toISOString(),
-            ...(options.origin ? { origin: options.origin } : {}),
           },
         }),
     launchInfo: (authority, current = config) => ({

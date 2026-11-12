@@ -37,7 +37,7 @@ async function temporaryStore(t: TestContext): Promise<string> {
 
 function manifest(directory: string) {
   return {
-    schemaVersion: 4 as const,
+    schemaVersion: 1 as const,
     run: "storage-run",
     workspace: directory,
     store: directory,

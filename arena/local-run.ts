@@ -101,7 +101,7 @@ export async function localRun(args: string[]): Promise<string | undefined> {
   process.once("SIGTERM", abort);
   try {
     return await runMatrix(
-      { schemaVersion: 2, rounds: trials, tasks, conditions, limits },
+      { schemaVersion: 1, rounds: trials, tasks, conditions, limits },
       { out, repositoryRoot: process.cwd(), allowExternal, signal: controller.signal },
     );
   } finally {

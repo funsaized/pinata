@@ -57,22 +57,28 @@ export class ScreenRouter {
   mode: Config["mode"];
   motion: Config["ui"]["motion"];
   readonly keys: Record<string, string>;
-  notice = "";
+  private noticeText = "";
+  noticeTone: "success" | "warning" = "warning";
   fleetScroll = 0;
   fleetPageSize = 1;
   fleetRenderedSelection?: string;
-  showQueued = false;
+  showQueued = true;
   help = false;
   helpScroll = 0;
   actions = false;
   actionIndex = 0;
   search = "";
+  searchBeforeEdit = "";
+  searchSelected?: AssignmentRef;
+  definitionScroll = 0;
   searching = false;
   history = false;
   filter: "all" | "active" | "failed" = "all";
   readonly collapsed = new Set<string>();
   transcriptFocus = false;
   details = false;
+  expandedTools = false;
+  showThinking = false;
   readonly activity = new Map<string, string>();
   private readonly drafts = new Map<string, string>();
   private readonly conversations = new Map<string, ConversationView>();
@@ -102,6 +108,14 @@ export class ScreenRouter {
     this.motion = options.ui?.motion ?? "full";
     this.keys = { ...options.ui?.keys };
     this.selected = assignments(this.state)[0]?.ref;
+  }
+
+  get notice(): string {
+    return this.noticeText;
+  }
+  set notice(text: string) {
+    this.noticeText = text;
+    this.noticeTone = "warning";
   }
 
   async start(): Promise<void> {
@@ -174,7 +188,7 @@ export class ScreenRouter {
       event.transition.config
     )
       void this.loadSettings().catch((error: unknown) => this.fail(error));
-    if (!this.selected) this.selected = assignments(this.state)[0]?.ref;
+    if (!this.selected && !this.definition) this.selected = assignments(this.state)[0]?.ref;
     if (this.screen === "fleet") {
       const rows = this.fleetAssignments();
       if (
@@ -198,18 +212,23 @@ export class ScreenRouter {
     this.changed();
   }
 
-  navigate(screen: ScreenName, ref?: AssignmentRef): void {
+  navigate(screen: ScreenName, ref?: AssignmentRef): boolean {
     if (
       ref &&
       (ref.run !== this.state.run || !Object.hasOwn(this.state.assignments, assignmentKey(ref)))
     ) {
       this.notice = "That assignment is unavailable in this run";
       this.changed();
-      return;
+      return false;
     }
+    if (this.noticeTone === "success") this.notice = "";
     if (ref) {
       this.selected = { ...ref };
       this.definition = undefined;
+    }
+    if (screen === "fleet" && this.definition) {
+      this.definition = undefined;
+      this.selected = this.fleetAssignments()[0]?.ref;
     }
     this.screen = screen;
     if (screen === "conversation" && this.selected) {
@@ -221,6 +240,7 @@ export class ScreenRouter {
     this.changed();
     if (screen === "conversation" && this.selected)
       void this.loadConversation().catch((error: unknown) => this.fail(error));
+    return true;
   }
   cycleScreen(direction: number): void {
     const screens: ScreenName[] = ["main", "fleet", "conversation"];
@@ -417,6 +437,7 @@ export class ScreenRouter {
       return;
     }
     this.definition = definition;
+    this.definitionScroll = 0;
     this.selected = undefined;
     this.screen = "conversation";
     this.generation++;
@@ -426,6 +447,7 @@ export class ScreenRouter {
     return this.selected ? (this.drafts.get(this.selected.worker) ?? "") : "";
   }
   setDraft(text: string): void {
+    if (text !== this.draft && this.noticeTone === "success") this.notice = "";
     if (this.selected) this.drafts.set(this.selected.worker, text);
     this.changed();
   }
@@ -445,6 +467,11 @@ export class ScreenRouter {
     return view;
   }
   scroll(lines: number): void {
+    if (this.screen === "conversation" && this.definition && !this.selected) {
+      this.definitionScroll = Math.max(0, this.definitionScroll + lines);
+      this.changed();
+      return;
+    }
     if (this.screen === "fleet") {
       this.fleetScroll = Math.max(0, this.fleetScroll + lines);
       this.changed();
@@ -539,6 +566,16 @@ export class ScreenRouter {
     }
   }
 
+  async refresh(): Promise<void> {
+    if (!this.source.capabilities.live && this.source.reconnect) {
+      await this.reconnect();
+      return;
+    }
+    this.state = this.source.snapshot().snapshot;
+    if (this.screen === "conversation" && this.selected) await this.loadConversation();
+    else this.refreshView();
+  }
+
   async reconnect(): Promise<void> {
     if (!this.source.reconnect) {
       this.notice =
@@ -616,7 +653,6 @@ export class ScreenRouter {
       const target = receipt.assignments[0];
       const messageId =
         "messageId" in pending.envelope.command ? pending.envelope.command.messageId : undefined;
-      this.notice = `Accepted ${target?.run}/${target?.worker}/${target?.assignment} · message ${messageId} recorded`;
       this.options.accepted?.(receipt, messageId);
       if (
         target &&
@@ -625,6 +661,10 @@ export class ScreenRouter {
         assignmentKey(this.selected) === assignmentKey(ref)
       )
         this.navigate(this.screen, target);
+      if (this.selected?.worker === ref.worker) {
+        this.notice = `Message queued for ${target?.worker ?? ref.worker}`;
+        this.noticeTone = "success";
+      }
     } else {
       const error =
         reply.status === "error"
@@ -644,9 +684,12 @@ export class ScreenRouter {
     scope: "assignment" | "worker" | "run" = "worker",
   ): Promise<SurfaceReply> {
     const ref = this.selected;
-    if (!ref && kind !== "background") return this.unavailable("Select an assignment first");
+    if (!ref && kind !== "background" && !(kind === "cancel" && scope === "run"))
+      return this.unavailable("Select an assignment first");
     if (kind !== "inspect" && !this.source.capabilities.control)
       return this.unavailable("This source is read-only; control requires the owning runtime");
+    if (kind === "recover" && !this.source.capabilities.recover)
+      return this.unavailable("Recovery is unavailable from this source");
     const call =
       kind === "inspect"
         ? { method: "query", input: { kind: "result", ref } }
@@ -676,10 +719,16 @@ export class ScreenRouter {
       this.notice = "Retained assignment result";
     } else if (reply.response.method === "execute") {
       const receipt = reply.response.result;
-      this.notice =
-        receipt.status === "accepted"
-          ? `${kind} accepted at revision ${receipt.revision}`
-          : receipt.error.message;
+      if (receipt.status !== "accepted") this.notice = receipt.error.message;
+      else if (kind === "background") this.notice = "Foreground wait released; agents keep working";
+      else {
+        const target = {
+          assignment: `${ref?.worker}/${ref?.assignment}`,
+          worker: `agent ${ref?.worker}`,
+          run: "the entire fleet",
+        }[scope];
+        this.notice = `Stop requested for ${target}; cleanup may take time`;
+      }
       if (receipt.status === "accepted") this.options.accepted?.(receipt);
     } else this.notice = JSON.stringify(reply.response.result);
     this.changed();

@@ -77,7 +77,7 @@ export async function runProcess(options: {
       onEnrolled: async (identity) => {
         enrollment.push(
           await options.store.json({
-            schemaVersion: 2,
+            schemaVersion: 1,
             kind: "enrollment",
             identity,
             command: options.command,
@@ -128,7 +128,7 @@ export async function runProcess(options: {
     const evidence = [
       ...enrollment,
       await options.store.json({
-        schemaVersion: 2,
+        schemaVersion: 1,
         identity: handle.identity,
         exit,
         cleanup,
@@ -167,7 +167,7 @@ export async function runProcess(options: {
           };
     const evidence = [
       ...enrollment,
-      await options.store.json({ schemaVersion: 2, failure, cleanup, records }),
+      await options.store.json({ schemaVersion: 1, failure, cleanup, records }),
     ];
     return {
       state: state === "completed" ? "failed" : state,

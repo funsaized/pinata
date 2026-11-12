@@ -5,7 +5,7 @@ import {
   type CoreState,
   type UsageCoverage,
 } from "../contracts/index.ts";
-import { readiness } from "../core/readiness.ts";
+import { readiness, type ReadinessReason } from "../core/readiness.ts";
 import { assignmentUsage } from "../core/usage.ts";
 
 export function assignments(state: CoreState): Assignment[] {
@@ -19,7 +19,7 @@ export function steerTarget(state: CoreState, worker: string): AssignmentRef | u
 }
 export function executionLabel(assignment: Assignment): string {
   const execution = assignment.execution;
-  return `${assignment.historical ? "historical " : ""}${execution.phase === "ended" ? execution.reason : execution.phase}`;
+  return execution.phase === "ended" ? execution.reason : execution.phase;
 }
 export function usageLabel(usage: UsageCoverage): string {
   const total = usage.total ?? usage.observedTotal;
@@ -87,8 +87,11 @@ export function needsAttention(state: CoreState, assignment: Assignment): boolea
   );
 }
 
-export function queueLabel(state: CoreState, assignment: Assignment): string {
-  const reason = readiness(state)[assignmentKey(assignment.ref)];
+export function queueLabel(
+  state: CoreState,
+  assignment: Assignment,
+  reason: ReadinessReason = readiness(state)[assignmentKey(assignment.ref)],
+): string {
   if (reason !== "dependency") return reason;
   const blocked = assignment.after.flatMap((ref) => {
     const dependency = state.assignments[assignmentKey(ref)];

@@ -1,7 +1,7 @@
 import type { LaunchInfo } from "../contracts/runtime.ts";
 import { Schedules, type SchedulingOptions } from "../schedules/index.ts";
 import { randomUUID } from "node:crypto";
-import type { ArtifactPort, BackendObservation, SessionCheckpoint } from "../contracts/backend.ts";
+import type { BackendObservation, SessionCheckpoint } from "../contracts/backend.ts";
 import {
   assignmentKey,
   DomainError,
@@ -20,7 +20,6 @@ import { canonicalJson, digestValue } from "../contracts/digest.ts";
 import { configSchema, type Config, type ConfigLayer } from "../contracts/config.ts";
 import {
   transitionSchema,
-  historyImportSchema,
   transitionArtifacts,
   type CommandReceipt,
   type Effect,
@@ -41,10 +40,8 @@ import {
 } from "../contracts/runtime.ts";
 import { exportSchemas } from "../contracts/schemas.ts";
 import type { JournalFrame, Manifest } from "../contracts/storage.ts";
-import { legacyQuiescenceSchema, legacyQuiescenceObservationSchema } from "../contracts/history.ts";
 import type { DefinitionSummary } from "../contracts/definition.ts";
-import { digestBytes } from "../storage/io.ts";
-import { checkResolvedWorker, prepareCommand } from "../core/accept.ts";
+import { prepareCommand } from "../core/accept.ts";
 import { prepareControl } from "../core/control.ts";
 import { initialState, reduce } from "../core/state.ts";
 import { DurableStore } from "../storage/index.ts";
@@ -324,164 +321,6 @@ export class Runtime {
           transition: prepared,
         });
         return immutable(prepared.receipt);
-      } catch (error) {
-        return this.rejection(request.requestId, error);
-      }
-    });
-  }
-
-  // Only trusted migration adapters call this method; it is not model command JSON.
-  // Imported observations never dispatch inbox inputs, attempts or completion notices.
-  async importHistory(
-    input: unknown,
-    caller: CallerAuthority,
-    sourceArtifacts?: Pick<ArtifactPort, "read">,
-  ): Promise<CommandReceipt> {
-    const parsed = historyImportSchema.safeParse(input);
-    if (!parsed.success)
-      return this.rejection(
-        requestIdentity(input),
-        new DomainError(
-          "invalid_input",
-          parsed.error.issues[0]?.message ?? "Invalid historical import",
-        ),
-      );
-    const request = parsed.data;
-    if (this.closing)
-      return this.rejection(request.requestId, new DomainError("conflict", "Runtime is closing"));
-    return this.serialize(async () => {
-      try {
-        this.authorize(caller, true);
-        await this.store.assertOwner();
-        const payloadDigest = digestValue(request);
-        const previous = Object.hasOwn(this.state.receipts, request.requestId)
-          ? this.state.receipts[request.requestId]
-          : undefined;
-        if (previous) {
-          if (previous.payloadDigest !== payloadDigest)
-            throw new DomainError(
-              "conflict",
-              "Historical request identity has a different accepted payload",
-            );
-          return immutable(previous.receipt);
-        }
-        if (this.state.revision !== 0)
-          throw new DomainError("conflict", "Historical import requires an empty new run");
-        for (const { worker } of request.workers)
-          checkResolvedWorker(
-            {
-              id: worker.id,
-              agent: worker.agent,
-              task: "Imported history",
-              after: [],
-              inputs: [],
-              context: [],
-            },
-            worker,
-            caller,
-          );
-        const assignments = request.assignments.map((entry) => entry.assignment.ref);
-        const receipt = {
-          status: "accepted" as const,
-          requestId: request.requestId,
-          revision: this.state.revision + 1,
-          assignments,
-          resolved: assignments.map((ref) => {
-            const worker = request.workers.find((entry) => entry.worker.id === ref.worker)?.worker;
-            if (!worker)
-              throw new DomainError("invalid_input", "Historical assignment lacks a worker");
-            return {
-              ref,
-              workspace: worker.workspace,
-              backend: worker.backend,
-              lifetime: worker.lifetime,
-              grants: worker.grants,
-            };
-          }),
-        };
-        const transition: Extract<Transition, { kind: "history_imported" }> = {
-          kind: "history_imported",
-          ...request,
-          payloadDigest,
-          receipt,
-        };
-        for (const artifact of transitionArtifacts(transition)) {
-          const bytes = sourceArtifacts
-            ? await sourceArtifacts.read(artifact)
-            : await this.store.readArtifact(artifact);
-          if (bytes.length !== artifact.size || digestBytes(bytes) !== artifact.digest)
-            throw new DomainError(
-              "conflict",
-              "Historical artifact changed after migration planning",
-            );
-          if (sourceArtifacts) await this.store.putArtifact(bytes);
-        }
-        const proof = legacyQuiescenceSchema.parse(
-          JSON.parse(
-            Buffer.from(await this.store.readArtifact(request.quiescence)).toString("utf8"),
-          ),
-        );
-        if (proof.activity === "stopped") {
-          if (
-            !proof.observation ||
-            !request.evidence.some(
-              (artifact) =>
-                artifact.digest === proof.observation?.digest &&
-                artifact.size === proof.observation.size,
-            )
-          )
-            throw new DomainError(
-              "owner_unconfirmed",
-              "Historical stopped activity requires retained current quiescence observations",
-            );
-          const observed = legacyQuiescenceObservationSchema.parse(
-            JSON.parse(
-              Buffer.from(await this.store.readArtifact(proof.observation)).toString("utf8"),
-            ),
-          );
-          if (
-            !observed.owner ||
-            observed.owner.state === "active" ||
-            observed.gates.some((gate) => gate.markers.length || gate.writers.length)
-          )
-            throw new DomainError(
-              "owner_unconfirmed",
-              "Historical current ownership or checkout activity is unconfirmed",
-            );
-        }
-        const origin = this.store.manifest.origin;
-        if (
-          !origin ||
-          origin.run !== proof.sourceRun ||
-          origin.manifestDigest !== proof.sourceManifest.digest ||
-          proof.destinationRun !== this.state.run
-        )
-          throw new DomainError(
-            "conflict",
-            "Historical import does not match the new run's origin and quiescence evidence",
-          );
-        for (const entry of request.assignments) {
-          if (
-            !entry.assignment.historical ||
-            entry.assignment.historical.run !== origin.run ||
-            entry.assignment.historical.store !== origin.store ||
-            entry.assignment.historical.manifest.digest !== origin.manifestDigest
-          )
-            throw new DomainError(
-              "conflict",
-              "Historical assignment provenance disagrees with the import origin",
-            );
-          const retained = JSON.parse(
-            Buffer.from(await this.store.readArtifact(entry.resultArtifact)).toString("utf8"),
-          );
-          if (canonicalJson(retained) !== canonicalJson(entry.result))
-            throw new DomainError(
-              "conflict",
-              "Historical result artifact disagrees with its imported view",
-            );
-        }
-        await this.commit({ requestId: request.requestId, payloadDigest, transition });
-        return immutable(receipt);
       } catch (error) {
         return this.rejection(request.requestId, error);
       }
@@ -861,7 +700,7 @@ export class Runtime {
     // slip between choosing the history and installing its live listener.
     if (request.since === undefined) {
       this.deliver(subscriber, {
-        schemaVersion: 3,
+        schemaVersion: 1,
         kind: "snapshot",
         id: `${this.store.manifest.run}/snapshot/${this.store.owner.epoch}/${this.state.revision}`,
         ownerEpoch: this.store.owner.epoch,
@@ -881,7 +720,7 @@ export class Runtime {
 
   private event(frame: JournalFrame): RuntimeEvent {
     return {
-      schemaVersion: 3,
+      schemaVersion: 1,
       kind: "committed",
       id: `${this.store.manifest.run}/transaction/${frame.record.revision}/${frame.digest}`,
       revision: frame.record.revision,
@@ -929,7 +768,7 @@ export class Runtime {
     observation: Extract<BackendObservation, { kind: "activity" }>,
   ): void {
     const event: RuntimeEvent = {
-      schemaVersion: 3,
+      schemaVersion: 1,
       kind: "activity",
       source: observation.source,
       ordinal: observation.ordinal,

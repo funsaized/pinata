@@ -2,7 +2,7 @@
 description: Delegate a concrete fix and finish with coordinator checks.
 ---
 
-Use Pinata for this requested fix: ${@:-the requested change}.
+Use Piñata for this requested fix: ${@:-the requested change}.
 
 Discover relevant definitions and start useful workers with concrete responsibilities.
 Shared checkout is the default; use a worktree when isolation is requested. Continue

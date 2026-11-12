@@ -1,7 +1,7 @@
 # Repository work
 
-Pinata is a small, extensible subagent framework for Pi. Keep orchestration in
-Pinata and workflow decisions with the coordinator. Prefer agent definitions,
+Piñata is a small, extensible subagent framework for Pi. Keep orchestration in
+Piñata and workflow decisions with the coordinator. Prefer agent definitions,
 configuration, and existing extension points over new built-in roles or policy.
 
 Keep `engine/core` independent of Pi. Preserve the shared engine and event model

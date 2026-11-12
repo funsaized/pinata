@@ -12,7 +12,6 @@ type LifecycleTransition = Exclude<
   {
     kind:
       | "accepted"
-      | "history_imported"
       | "schedule_changed"
       | "schedule_occurrence"
       | "application_accepted"
