@@ -26,6 +26,12 @@ pi install npm:pi-pinata
 [Tools](#tools) · [CLI](#cli-reference) · [API](#package-api) ·
 [Implementation](#architecture-and-implementation-index) · [Development](#development)
 
+![A live Piñata fleet with a lead, two nested builder children, a scout and a queued reviewer.](media/pinata-fleet.png)
+
+[Watch this fleet run from launch through review](media/pinata-fleet.mp4)
+(6× playback). Live model execution in the terminal UI;
+[recording details](media/README.md).
+
 ## Why Piñata
 
 - Delegate independent work in parallel and add workers as the task develops.
@@ -144,6 +150,8 @@ Replace `provider/model` with an available model. Output names the run directory
 and exact assignments. `pinata status RUN_DIRECTORY --saved --json` reads retained work.
 
 ## Fleet and conversations
+
+![Navigate a two-agent fleet: select a worker, open its conversation, switch workers, search, and show finished work.](media/pinata-navigation.gif)
 
 The coordinator shows a compact Agents tree while work is active or queued.
 Workers have activity markers, model labels and execution state; real children
