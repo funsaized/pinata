@@ -1291,6 +1291,104 @@ test("worker detail fills the viewport and anchors the composer through resize",
   router.dispose();
 });
 
+test("short conversations and send feedback stay beside the composer without shifting controls", async () => {
+  const source = new UiSource(uiState(1));
+  let answer = "A short reply";
+  source.respond = async (input) => {
+    const call = surfaceCallSchema.parse(input);
+    return call.method === "execute" ? accepted(input) : conversationReply(ref(), answer);
+  };
+  let retainedMessageId: string | undefined;
+  const router = new ScreenRouter(source, {
+    accepted(_receipt, messageId) {
+      retainedMessageId = messageId;
+    },
+  });
+  await router.start();
+  router.navigate("conversation", ref());
+  await tick();
+  const terminal = new MemoryTerminal();
+  const tui = new TuiAltScreen(terminal);
+  tui.requestRender = () => {};
+  const screen = new PinataScreen({ tui, router, main() {} });
+  const render = (width: number) => screen.render(width).map(stripTerminalSequences);
+  const initial = render(100);
+  const focusRow = initial.findIndex((line) => line.includes("AGENT MESSAGE"));
+  const replyRow = initial.findIndex((line) => line.includes(answer));
+  assert(focusRow > terminal.rows - 10);
+  assert(focusRow - replyRow <= 3, "Short replies stay near the message controls");
+  assert.equal(initial[focusRow + 1].trim(), "");
+
+  screen.handleInput("cool");
+  screen.handleInput("\r");
+  await tick();
+  assert.equal(router.draft, "");
+  assert.equal(router.notice, "Message queued for worker-1");
+  assert.equal(router.noticeTone, "success");
+  assert.match(retainedMessageId ?? "", /^ui\/message\//);
+  let output = render(100);
+  assert.equal(
+    output.findIndex((line) => line.includes("AGENT MESSAGE")),
+    focusRow,
+  );
+  assert.match(output[focusRow + 1], /Message queued for worker-1/);
+  assert.doesNotMatch(output.join("\n"), /ui\/message\/|Accepted ui-run|recorded/);
+
+  screen.handleInput("another message");
+  assert.equal(router.notice, "", "Starting a new draft clears old success feedback");
+  router.notice = "Connection unavailable; your draft is retained";
+  assert.equal(router.noticeTone, "warning");
+  output = render(100);
+  assert.equal(
+    output.findIndex((line) => line.includes("AGENT MESSAGE")),
+    focusRow,
+  );
+  assert.match(output[focusRow + 1], /Connection unavailable/);
+  assert.equal(router.draft, "another message");
+
+  router.notice = "";
+  answer = "Earlier output\n".repeat(100) + "Latest answer";
+  await router.loadConversation();
+  for (const [width, height] of [
+    [120, 40],
+    [60, 24],
+    [30, 12],
+    [80, 40],
+  ]) {
+    terminal.columns = width;
+    terminal.rows = height;
+    output = render(width);
+    assert.equal(output.length, height);
+    assert(output.every((line) => visibleWidth(line) === width));
+    assert(output.some((line) => line.includes("Latest answer")));
+    assert(output.findIndex((line) => line.includes("AGENT MESSAGE")) > height - 10);
+  }
+  screen.dispose();
+  router.dispose();
+});
+
+test("a send finishing after switching workers does not show feedback for the previous worker", async () => {
+  const source = new UiSource();
+  const router = new ScreenRouter(source);
+  await router.start();
+  router.navigate("fleet", ref());
+  router.setDraft("message for worker one");
+  let finish!: (reply: SurfaceReply) => void;
+  source.respond = () =>
+    new Promise((resolve) => {
+      finish = resolve;
+    });
+  const sending = router.submit();
+  const input = source.calls.at(-1);
+  router.cycleWorker(1);
+  router.setDraft("draft for worker two");
+  finish(accepted(input));
+  await sending;
+  assert.equal(router.notice, "");
+  assert.equal(router.draft, "draft for worker two");
+  router.dispose();
+});
+
 test("transcript refresh keeps the previous complete page visible until all new pages arrive", async () => {
   const source = new UiSource();
   const router = new ScreenRouter(source);

@@ -129,11 +129,9 @@ export class PinataScreen implements Component, Focusable {
           hitRows: this.hitRows,
         })
       : [];
-    // Fill the viewport even for short reports and anchor controls above the composer.
-    const footerRows =
-      this.router.screen === "conversation" && !this.router.help && !this.router.actions ? 2 : 1;
+    // Normal screens own their footer layout; pad shorter help and action panels.
     rows.splice(
-      Math.max(0, rows.length - footerRows),
+      Math.max(0, rows.length - 1),
       0,
       ...Array.from({ length: Math.max(0, available - rows.length) }, () => ""),
     );

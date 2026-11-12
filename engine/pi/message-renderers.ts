@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Box, Text } from "@earendil-works/pi-tui";
-import { assignmentRefSchema } from "../contracts/index.ts";
+import { assignmentRefSchema, commandReceiptSchema } from "../contracts/index.ts";
 import { displayText } from "../ui/text.ts";
 import { completionMessageType } from "./notifications.ts";
 
@@ -8,7 +8,7 @@ import { completionMessageType } from "./notifications.ts";
 export function registerPinataMessageRenderers(pi: ExtensionAPI): void {
   const labels = {
     [completionMessageType]: "Subagent result",
-    "pinata.control.v1": "Subagent control",
+    "pinata.control.v1": "Subagent update",
     "pinata.addressed.v1": "Subagent assignment",
     "pinata.memory.v1": "Pinata memory",
     "pinata.schema.v1": "Pinata schema",
@@ -17,6 +17,13 @@ export function registerPinataMessageRenderers(pi: ExtensionAPI): void {
     pi.registerMessageRenderer(type, (message, options, theme) => {
       let content =
         typeof message.content === "string" ? message.content : JSON.stringify(message.content);
+      if (type === "pinata.control.v1" && !options.expanded) {
+        const receipt = commandReceiptSchema.safeParse(message.details);
+        if (receipt.success && receipt.data.status === "accepted") {
+          const workers = [...new Set(receipt.data.assignments.map((ref) => ref.worker))];
+          content = `Update queued${workers.length ? ` for ${workers.join(", ")}` : ""} · expand for details`;
+        }
+      }
       if (type === completionMessageType) {
         content = content.replace(/\n\[pinata-notice:[^\n]+\]$/, "");
         const details = message.details;

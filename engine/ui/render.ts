@@ -346,6 +346,7 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
     paint("muted", ` · ${router.source.capabilities.live ? "live" : "saved"} · ${router.mode}`) +
     (router.details ? paint("muted", ` · ${displayText(router.state.run)}`) : "");
   const output = [fit(header, width)];
+  const footer: string[] = [];
   if (router.screen === "main")
     return fleetWidget(router.state, {
       ...options,
@@ -560,25 +561,24 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
           : []),
         ...(view.inspection ? ["Retained result", JSON.stringify(view.inspection, null, 2)] : []),
       ].flatMap((line) => (Array.isArray(line) ? line : conversationLines(view, line, width)));
-      const available = Math.max(1, height - output.length - 3 - (router.notice ? 1 : 0));
+      // Reserve the focus, feedback and shortcut rows even when feedback is empty.
+      const available = Math.max(0, height - output.length - 3);
       view.maxScroll = Math.max(0, body.length - available);
       if (view.follow) view.scroll = view.maxScroll;
       view.scroll = Math.min(view.scroll, view.maxScroll);
-      output.push(...body.slice(view.scroll, view.scroll + available));
+      const visible = body.slice(view.scroll, view.scroll + available);
+      output.push(...Array.from({ length: available - visible.length }, () => ""), ...visible);
       const action =
         assignment.execution.phase !== "ended"
           ? "Steer"
           : assignment.execution.reason === "completed"
             ? "Follow up"
             : "Continue";
-      output.push(
+      footer.push(
         fit(
           paint("focus", router.transcriptFocus ? " TRANSCRIPT " : " AGENT MESSAGE ") +
             paint("accent.blue", ` ${displayText(assignment.ref.worker)}`) +
-            paint(
-              "muted",
-              ` · ${router.transcriptFocus ? "↑↓ scroll · Tab to message" : `${action} · Enter sends · Tab to transcript`} · `,
-            ) +
+            paint("muted", ` · ${router.transcriptFocus ? "↑↓ scroll" : action} · `) +
             paint(
               view.follow ? "success" : view.newOutput ? "warning" : "accent.cyan",
               view.follow
@@ -592,7 +592,8 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
       );
     }
   }
-  if (router.notice) output.push(fit(paint("warning", displayText(router.notice)), width));
+  if (router.notice || router.screen === "conversation")
+    footer.push(fit(paint(router.noticeTone, displayText(router.notice)), width));
   const controls =
     router.screen === "fleet"
       ? [
@@ -628,7 +629,7 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
     );
   }
   controls.push([resolveKeys(router.keys).parentScreen, "back"]);
-  output.push(
+  footer.push(
     fit(
       controls
         .map(([key, label]) => paint("accent.cyan", key) + paint("muted", ` ${label}`))
@@ -636,7 +637,14 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
       width,
     ),
   );
-  return output.slice(0, height).map((line) => paint("background", padded(line, width)));
+  const bodyHeight = Math.max(0, height - footer.length);
+  return [
+    ...output.slice(0, bodyHeight),
+    ...Array.from({ length: Math.max(0, bodyHeight - output.length) }, () => ""),
+    ...footer,
+  ]
+    .slice(0, height)
+    .map((line) => paint("background", padded(line, width)));
 }
 
 // Cache wrapping per view, not globally across sessions. Eviction bounds retained text.

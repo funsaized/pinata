@@ -57,7 +57,8 @@ export class ScreenRouter {
   mode: Config["mode"];
   motion: Config["ui"]["motion"];
   readonly keys: Record<string, string>;
-  notice = "";
+  private noticeText = "";
+  noticeTone: "success" | "warning" = "warning";
   fleetScroll = 0;
   fleetPageSize = 1;
   fleetRenderedSelection?: string;
@@ -104,6 +105,14 @@ export class ScreenRouter {
     this.motion = options.ui?.motion ?? "full";
     this.keys = { ...options.ui?.keys };
     this.selected = assignments(this.state)[0]?.ref;
+  }
+
+  get notice(): string {
+    return this.noticeText;
+  }
+  set notice(text: string) {
+    this.noticeText = text;
+    this.noticeTone = "warning";
   }
 
   async start(): Promise<void> {
@@ -209,6 +218,7 @@ export class ScreenRouter {
       this.changed();
       return;
     }
+    if (this.noticeTone === "success") this.notice = "";
     if (ref) {
       this.selected = { ...ref };
       this.definition = undefined;
@@ -428,6 +438,7 @@ export class ScreenRouter {
     return this.selected ? (this.drafts.get(this.selected.worker) ?? "") : "";
   }
   setDraft(text: string): void {
+    if (text !== this.draft && this.noticeTone === "success") this.notice = "";
     if (this.selected) this.drafts.set(this.selected.worker, text);
     this.changed();
   }
@@ -618,7 +629,6 @@ export class ScreenRouter {
       const target = receipt.assignments[0];
       const messageId =
         "messageId" in pending.envelope.command ? pending.envelope.command.messageId : undefined;
-      this.notice = `Accepted ${target?.run}/${target?.worker}/${target?.assignment} · message ${messageId} recorded`;
       this.options.accepted?.(receipt, messageId);
       if (
         target &&
@@ -627,6 +637,10 @@ export class ScreenRouter {
         assignmentKey(this.selected) === assignmentKey(ref)
       )
         this.navigate(this.screen, target);
+      if (this.selected?.worker === ref.worker) {
+        this.notice = `Message queued for ${target?.worker ?? ref.worker}`;
+        this.noticeTone = "success";
+      }
     } else {
       const error =
         reply.status === "error"

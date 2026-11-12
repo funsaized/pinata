@@ -184,6 +184,11 @@ history still; reaching the bottom resumes following. Visible live conversations
 refresh once per second while following. Reading mode, hidden views and saved
 sources do not poll. There is no separate follow toggle.
 
+Short conversations sit above the composer. Message controls stay at the bottom
+when output, send feedback or terminal size changes. "Message queued" means the
+runtime saved your message; it does not confirm the worker has read it. Receipt
+IDs remain in the expanded Subagent update card in the coordinator conversation.
+
 Each worker keeps its own message draft, separate from the coordinator draft.
 Tool and thinking toggles work from either focus and use Pi's configured shortcuts.
 They leave the message draft and assignment details unchanged. Standalone viewers

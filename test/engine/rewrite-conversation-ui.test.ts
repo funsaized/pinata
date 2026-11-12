@@ -233,3 +233,55 @@ test("Pinata notices use readable headings without exposing saved-message versio
   assert.equal(message.content, content, "stored delivery evidence remains unchanged");
   assert.equal(renderers.size, 5);
 });
+
+test("control cards summarize queued updates and keep the full receipt in expanded details", () => {
+  const renderers = new Map<string, MessageRenderer>();
+  registerPinataMessageRenderers({
+    registerMessageRenderer: (type: string, renderer: MessageRenderer) => {
+      renderers.set(type, renderer);
+    },
+  } as unknown as ExtensionAPI);
+  const renderer = renderers.get("pinata.control.v1");
+  assert(renderer);
+  const receipt = {
+    status: "accepted",
+    requestId: "ui/request-id",
+    revision: 1,
+    assignments: [{ run: "retained-run", worker: "data-map", assignment: 3 }],
+    resolved: [],
+  };
+  const content = JSON.stringify({ ...receipt, messageId: "ui/message/message-id" });
+  const message = {
+    role: "custom" as const,
+    customType: "pinata.control.v1",
+    content,
+    display: true,
+    details: receipt,
+    timestamp: 0,
+  };
+  const theme = {
+    bg: (_key: string, text: string) => text,
+    fg: (_key: string, text: string) => text,
+  } as Theme;
+  for (const expanded of [false, true]) {
+    const component = renderer(
+      message,
+      {
+        expanded,
+        outputPad: 1,
+        keyText: () => "",
+        keyHint: (_key, description) => description,
+      },
+      theme,
+    );
+    assert(component);
+    const output = stripTerminalSequences(component.render(120).join("\n"));
+    assert.match(output, /Subagent update/);
+    assert(output.includes("data-map"));
+    assert.equal(output.includes("ui/message/message-id"), expanded);
+    assert.equal(output.includes("retained-run"), expanded);
+    if (!expanded) assert.match(output, /Update queued for data-map/);
+  }
+  assert.equal(message.content, content);
+  assert.deepEqual(message.details, receipt);
+});
