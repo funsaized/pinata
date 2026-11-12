@@ -17,6 +17,7 @@ import test, { type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { digestValue } from "../../engine/contracts/digest.ts";
+import { parseConversationManifest, storeConversation } from "../../engine/storage/conversation.ts";
 import { digestBytes } from "../../engine/storage/io.ts";
 import { DurableStore, inspectStore, reconcileStore } from "../../engine/storage/index.ts";
 
@@ -1014,4 +1015,32 @@ test("persistent journal handles fence external edits and replacements without o
     assert.deepEqual(await readFile(path), edited);
     if (replacement) assert.deepEqual(await readFile(join(directory, "original.jsonl")), original);
   }
+});
+
+test("journal replay verifies chunks referenced by conversation manifests", async (t) => {
+  const directory = await temporaryStore(t);
+  const store = await DurableStore.open({ directory, manifest: manifest(directory) });
+  const artifacts = {
+    put: (bytes: Uint8Array) => store.putArtifact(bytes),
+    read: (ref: { digest: string; size: number }) => store.readArtifact(ref),
+  };
+  const artifact = await storeConversation(
+    Buffer.from(
+      Array.from({ length: 300 }, (_, index) => JSON.stringify({ index }) + "\n").join(""),
+    ),
+    {
+      kind: "assignment",
+      ref: { run: "storage-run", worker: "base", assignment: 1 },
+      session: "session",
+      fromEntry: null,
+      throughEntry: "last",
+    },
+    artifacts,
+  );
+  await store.append({ ...entry(), artifacts: [artifact] });
+  const saved = parseConversationManifest(await artifacts.read(artifact));
+  assert(saved);
+  await store.close();
+  await rm(join(directory, "artifacts", saved.chunks[1].artifact.digest));
+  await assert.rejects(inspectStore(directory), /Corrupt committed journal frame/);
 });

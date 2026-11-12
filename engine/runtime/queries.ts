@@ -10,6 +10,12 @@ import {
   type ArtifactRef,
   type AssignmentRef,
 } from "../contracts/common.ts";
+import {
+  parseConversationManifest,
+  readConversationPage,
+  verifyConversation,
+  type ConversationManifest,
+} from "../storage/conversation.ts";
 import { canonicalJson } from "../contracts/digest.ts";
 import type { ConversationQueryResult, RuntimeQuery } from "../contracts/runtime.ts";
 import type { CoreState } from "../contracts/lifecycle.ts";
@@ -26,10 +32,10 @@ const cursorSchema = z.strictObject({
   offset: revisionSchema,
 });
 type ConversationCursor = z.infer<typeof cursorSchema>;
-type CachedConversation = {
-  entries: ConversationQueryResult["entries"];
-  bytes: number;
-};
+type CachedConversation = { bytes: number } & (
+  | { kind: "entries"; entries: ConversationQueryResult["entries"] }
+  | { kind: "chunks"; manifest: ConversationManifest }
+);
 const cachedSnapshotLimit = 8;
 const cachedSourceByteLimit = 16 * 1024 * 1024;
 const transcriptSchema = z.looseObject({
@@ -122,14 +128,18 @@ export class ConversationQueries {
         complete: true,
       };
     try {
-      const saved = await this.entries(cursor, !request.cursor);
-      if (cursor.offset > saved.length)
+      const saved = await this.readSnapshot(cursor, !request.cursor);
+      const length = saved.kind === "entries" ? saved.entries.length : saved.manifest.entries;
+      if (cursor.offset > length)
         throw new DomainError(
           "invalid_input",
           "Conversation cursor exceeds its snapshot",
           "cursor",
         );
-      const entries = structuredClone(saved.slice(cursor.offset, cursor.offset + 100));
+      const entries =
+        saved.kind === "entries"
+          ? structuredClone(saved.entries.slice(cursor.offset, cursor.offset + 100))
+          : await readConversationPage(saved.manifest, this.artifacts, cursor.offset, 100);
       const offset = cursor.offset + entries.length;
       return {
         kind: "conversation",
@@ -137,8 +147,8 @@ export class ConversationQueries {
         source: cursor.source,
         artifact: cursor.artifact,
         entries,
-        complete: offset === saved.length,
-        ...(offset < saved.length ? { cursor: this.encode({ ...cursor, offset }) } : {}),
+        complete: offset === length,
+        ...(offset < length ? { cursor: this.encode({ ...cursor, offset }) } : {}),
       };
     } catch (cause) {
       if (cause instanceof DomainError) throw cause;
@@ -149,10 +159,10 @@ export class ConversationQueries {
     }
   }
 
-  private async entries(
+  private async readSnapshot(
     cursor: ConversationCursor,
     refresh: boolean,
-  ): Promise<ConversationQueryResult["entries"]> {
+  ): Promise<CachedConversation> {
     const key = JSON.stringify([
       assignmentKey(cursor.ref),
       cursor.source,
@@ -163,20 +173,46 @@ export class ConversationQueries {
     if (cached && !refresh) {
       this.snapshots.delete(key);
       this.snapshots.set(key, cached);
-      return cached.entries;
+      return cached;
     }
     const pending = this.loading.get(key);
-    if (pending) return (await pending).entries;
+    if (pending) return pending;
     // A fresh first page rechecks retained evidence. Cursor pages can reuse the
     // already validated snapshot, even when a newer checkpoint is available.
     this.evict(key);
     const generation = this.generation;
     const loading = (async () => {
       const bytes = await this.artifacts.read(cursor.artifact);
-      const snapshot = {
-        entries: readEntries(bytes, cursor, cursor.ref),
-        bytes: bytes.byteLength,
-      };
+      const manifest = parseConversationManifest(bytes);
+      let snapshot: CachedConversation;
+      if (manifest) {
+        if (
+          manifest.metadata.kind !== cursor.source &&
+          !(manifest.metadata.kind === "pi" && cursor.source === "checkpoint")
+        )
+          throw new DomainError(
+            "context_unavailable",
+            "Conversation manifest format does not match its source",
+          );
+        if (
+          manifest.metadata.kind === "assignment" &&
+          assignmentKey(manifest.metadata.ref) !== assignmentKey(cursor.ref)
+        )
+          throw new DomainError(
+            "context_unavailable",
+            "Saved transcript belongs to another assignment",
+          );
+        // A signed continuation cursor attests that this immutable manifest and
+        // its complete entry chain were checked on the first page, even if the
+        // bounded cache has since evicted it. Each requested chunk is rehashed.
+        if (refresh) await verifyConversation(manifest, this.artifacts);
+        snapshot = { kind: "chunks", manifest, bytes: bytes.byteLength };
+      } else
+        snapshot = {
+          kind: "entries",
+          entries: readEntries(bytes, cursor, cursor.ref),
+          bytes: bytes.byteLength,
+        };
       if (generation === this.generation && snapshot.bytes <= cachedSourceByteLimit) {
         while (
           this.snapshots.size >= cachedSnapshotLimit ||
@@ -193,7 +229,7 @@ export class ConversationQueries {
     })();
     this.loading.set(key, loading);
     try {
-      return (await loading).entries;
+      return await loading;
     } finally {
       if (this.loading.get(key) === loading) this.loading.delete(key);
     }

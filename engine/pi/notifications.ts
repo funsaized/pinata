@@ -2,6 +2,7 @@ import { open, readFile } from "node:fs/promises";
 import type { ExtensionAPI, ExtensionContext, SessionEntry } from "@earendil-works/pi-coding-agent";
 import { canonicalJson, type ArtifactPort, type CoreState } from "../contracts/index.ts";
 import { type NotificationPort } from "../runtime/delivery.ts";
+import { storeConversation } from "../storage/conversation.ts";
 import { validateConversation } from "../agent/conversation.ts";
 import { isMissing } from "../storage/io.ts";
 
@@ -150,5 +151,9 @@ export async function parentBranchArtifact(
       .join("\n") + "\n",
   );
   const saved = validateConversation(bytes);
-  return { id: saved.id, branch, artifact: await artifacts.put(bytes) };
+  return {
+    id: saved.id,
+    branch,
+    artifact: await storeConversation(bytes, { kind: "pi", session: saved.id }, artifacts),
+  };
 }

@@ -22,7 +22,7 @@ import {
   type ArtifactPort,
 } from "../contracts/index.ts";
 import { digestBytes, isMissing, publishImmutable } from "../storage/io.ts";
-import { verifyArtifact } from "../storage/journal.ts";
+import { verifyArtifactBytes } from "../storage/journal.ts";
 import { supervisorIdentitySchema } from "./supervision/contracts.ts";
 
 export const processOptionsSchema = z.strictObject({
@@ -175,6 +175,6 @@ export function processArtifacts(storeDirectory: string): ArtifactPort {
       );
       return reference;
     },
-    read: (reference) => verifyArtifact(storeDirectory, reference),
+    read: (reference) => verifyArtifactBytes(storeDirectory, reference),
   };
 }

@@ -11,6 +11,7 @@ import {
   type CoreState,
 } from "../engine/contracts/index.ts";
 import { openConversation, validateConversation } from "../engine/agent/conversation.ts";
+import { materializeConversation } from "../engine/storage/conversation.ts";
 import { processArtifacts } from "../engine/backends/process-transport.ts";
 import { freezeSkills, materializeSkills } from "../engine/definitions/resources.ts";
 import {
@@ -165,7 +166,7 @@ export async function profileComponents(options: {
     const checkpoint = state.sessions[worker.id];
     if (!checkpoint || checkpoint.format !== "pi")
       throw new Error("Session profiling requires an actual retained Pi checkpoint");
-    const bytes = await retained.read(checkpoint.artifact);
+    const bytes = await materializeConversation(checkpoint.artifact, retained);
     const start = now();
     sessionEntries += validateConversation(bytes).entries;
     validation.push(now() - start);

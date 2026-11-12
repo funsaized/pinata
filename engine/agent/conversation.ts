@@ -9,6 +9,7 @@ import {
   type BackendLaunch,
   type SessionCheckpoint,
 } from "../contracts/index.ts";
+import { materializeConversation, storeConversation } from "../storage/conversation.ts";
 import { syncDirectory, writeSynced } from "../storage/io.ts";
 
 const entryTypes = new Set([
@@ -86,7 +87,7 @@ export async function openConversation(launch: BackendLaunch): Promise<SessionMa
       "context_unavailable",
       "The saved conversation belongs to a different worker or backend format",
     );
-  const bytes = await launch.artifacts.read(checkpoint.artifact);
+  const bytes = await materializeConversation(checkpoint.artifact, launch.artifacts);
   const saved = validateConversation(bytes);
   if (saved.id !== checkpoint.id)
     throw new DomainError(
@@ -129,6 +130,6 @@ export async function checkpointConversation(
   const saved = validateConversation(bytes);
   if (saved.id !== manager.getSessionId())
     throw new DomainError("context_unavailable", "Saved conversation identity changed");
-  const artifact = await artifacts.put(bytes);
+  const artifact = await storeConversation(bytes, { kind: "pi", session: saved.id }, artifacts);
   return { id: saved.id, worker, artifact, format: "pi", branch, producerVersion: VERSION };
 }

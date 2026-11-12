@@ -5,6 +5,7 @@ import test from "node:test";
 import { fauxAssistantMessage, fauxText, fauxToolCall } from "@earendil-works/pi-ai";
 import { piFixture } from "./rewrite-pi-fixture.ts";
 import { supervisedSessionProcesses } from "../../engine/agent/processes.ts";
+import { materializeConversation } from "../../engine/storage/conversation.ts";
 import { verifyArtifact } from "../../engine/storage/index.ts";
 
 test(
@@ -190,7 +191,11 @@ test(
     assert.equal(message.state, "consumed");
     const checkpoint = message.attempts.find((attempt) => attempt.state === "consumed")?.checkpoint;
     assert(checkpoint);
-    const saved = (await verifyArtifact(world.storeDirectory, checkpoint)).toString("utf8");
+    const saved = (
+      await materializeConversation(checkpoint, {
+        read: (ref) => verifyArtifact(world.storeDirectory, ref),
+      })
+    ).toString("utf8");
     assert.match(saved, /"messageId":"live-input"/);
     assert.match(saved, /Distinct live instruction/);
   },

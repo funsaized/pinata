@@ -937,8 +937,16 @@
               "const": "welcome"
             },
             "version": {
-              "type": "number",
-              "const": 1
+              "anyOf": [
+                {
+                  "type": "number",
+                  "const": 1
+                },
+                {
+                  "type": "number",
+                  "const": 2
+                }
+              ]
             },
             "run": {
               "$ref": "#/definitions/__schema0"
@@ -5094,6 +5102,10 @@
                 },
                 "text": {
                   "type": "string"
+                },
+                "snapshot": {
+                  "type": "boolean",
+                  "const": true
                 }
               },
               "required": [
@@ -10291,6 +10303,10 @@
                                       },
                                       "text": {
                                         "type": "string"
+                                      },
+                                      "snapshot": {
+                                        "type": "boolean",
+                                        "const": true
                                       }
                                     },
                                     "required": [
@@ -22776,6 +22792,10 @@
             },
             "text": {
               "type": "string"
+            },
+            "snapshot": {
+              "type": "boolean",
+              "const": true
             }
           },
           "required": [
@@ -26172,6 +26192,10 @@
                       },
                       "text": {
                         "type": "string"
+                      },
+                      "snapshot": {
+                        "type": "boolean",
+                        "const": true
                       }
                     },
                     "required": [
@@ -30948,16 +30972,1044 @@
           ]
         },
         "state": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/__schema2"
+            }
+          ]
+        },
+        "projection": {
+          "type": "string",
+          "const": "core"
+        },
+        "snapshot": {
           "type": "object",
           "properties": {
-            "digest": {
-              "$ref": "#/definitions/__schema1"
+            "run": {
+              "$ref": "#/definitions/__schema3"
             },
-            "size": {
+            "revision": {
               "$ref": "#/definitions/__schema0"
+            },
+            "nextSequence": {
+              "exclusiveMinimum": 0,
+              "allOf": [
+                {
+                  "$ref": "#/definitions/__schema0"
+                }
+              ]
+            },
+            "config": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/__schema2"
+                }
+              ]
+            },
+            "workers": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "$ref": "#/definitions/__schema4"
+              }
+            },
+            "assignments": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "ref": {
+                    "$ref": "#/definitions/__schema13"
+                  },
+                  "sequence": {
+                    "exclusiveMinimum": 0,
+                    "allOf": [
+                      {
+                        "$ref": "#/definitions/__schema0"
+                      }
+                    ]
+                  },
+                  "task": {
+                    "$ref": "#/definitions/__schema3"
+                  },
+                  "after": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/definitions/__schema13"
+                    }
+                  },
+                  "inputs": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/definitions/__schema13"
+                    }
+                  },
+                  "context": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "execution": {
+                    "$ref": "#/definitions/__schema14"
+                  }
+                },
+                "required": ["ref", "sequence", "task", "after", "inputs", "context", "execution"],
+                "additionalProperties": false
+              }
+            },
+            "latest": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "exclusiveMinimum": 0,
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/__schema0"
+                  }
+                ]
+              }
+            },
+            "inbox": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "$ref": "#/definitions/__schema3"
+                  },
+                  "target": {
+                    "$ref": "#/definitions/__schema13"
+                  },
+                  "sender": {
+                    "$ref": "#/definitions/__schema3"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": ["initial", "follow_up", "steer", "notice"]
+                  },
+                  "text": {
+                    "$ref": "#/definitions/__schema3"
+                  },
+                  "state": {
+                    "type": "string",
+                    "enum": [
+                      "recorded",
+                      "dispatch_intent",
+                      "transport_queued",
+                      "transport_handled",
+                      "consumed",
+                      "uncertain"
+                    ]
+                  },
+                  "attempts": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "$ref": "#/definitions/__schema3"
+                        },
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "dispatch_intent",
+                            "transport_queued",
+                            "transport_handled",
+                            "consumed",
+                            "uncertain"
+                          ]
+                        },
+                        "checkpoint": {
+                          "allOf": [
+                            {
+                              "$ref": "#/definitions/__schema2"
+                            }
+                          ]
+                        }
+                      },
+                      "required": ["id", "state"],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": ["id", "target", "sender", "kind", "text", "state", "attempts"],
+                "additionalProperties": false
+              }
+            },
+            "receipts": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "payloadDigest": {
+                    "$ref": "#/definitions/__schema1"
+                  },
+                  "receipt": {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "type": "string",
+                        "const": "accepted"
+                      },
+                      "requestId": {
+                        "$ref": "#/definitions/__schema3"
+                      },
+                      "revision": {
+                        "exclusiveMinimum": 0,
+                        "allOf": [
+                          {
+                            "$ref": "#/definitions/__schema0"
+                          }
+                        ]
+                      },
+                      "operationId": {
+                        "allOf": [
+                          {
+                            "$ref": "#/definitions/__schema3"
+                          }
+                        ]
+                      },
+                      "schedules": {
+                        "type": "array",
+                        "items": {
+                          "$ref": "#/definitions/__schema15"
+                        }
+                      },
+                      "assignments": {
+                        "type": "array",
+                        "items": {
+                          "$ref": "#/definitions/__schema13"
+                        }
+                      },
+                      "resolved": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "ref": {
+                              "$ref": "#/definitions/__schema13"
+                            },
+                            "workspace": {
+                              "$ref": "#/definitions/__schema8"
+                            },
+                            "backend": {
+                              "$ref": "#/definitions/__schema9"
+                            },
+                            "lifetime": {
+                              "$ref": "#/definitions/__schema10"
+                            },
+                            "grants": {
+                              "$ref": "#/definitions/__schema11"
+                            }
+                          },
+                          "required": ["ref", "workspace", "backend", "lifetime", "grants"],
+                          "additionalProperties": false
+                        }
+                      }
+                    },
+                    "required": ["status", "requestId", "revision", "assignments", "resolved"],
+                    "additionalProperties": false
+                  }
+                },
+                "required": ["payloadDigest", "receipt"],
+                "additionalProperties": false
+              }
+            },
+            "effects": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "effect": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "$ref": "#/definitions/__schema3"
+                      },
+                      "ref": {
+                        "$ref": "#/definitions/__schema13"
+                      },
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "prepare",
+                          "launch",
+                          "steer",
+                          "cleanup",
+                          "checkpoint",
+                          "capture",
+                          "notification"
+                        ]
+                      },
+                      "input": {
+                        "allOf": [
+                          {
+                            "$ref": "#/definitions/__schema2"
+                          }
+                        ]
+                      }
+                    },
+                    "required": ["id", "ref", "kind"],
+                    "additionalProperties": false
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": ["intent", "completed", "failed", "uncertain"]
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": ["effect", "status"],
+                "additionalProperties": false
+              }
+            },
+            "applications": {
+              "default": {},
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "intent": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "$ref": "#/definitions/__schema3"
+                      },
+                      "requestId": {
+                        "$ref": "#/definitions/__schema3"
+                      },
+                      "command": {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "const": "apply"
+                              },
+                              "ref": {
+                                "$ref": "#/definitions/__schema13"
+                              },
+                              "destination": {
+                                "$ref": "#/definitions/__schema3"
+                              }
+                            },
+                            "required": ["kind", "ref", "destination"],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "const": "rollback"
+                              },
+                              "operation": {
+                                "$ref": "#/definitions/__schema3"
+                              },
+                              "destination": {
+                                "$ref": "#/definitions/__schema3"
+                              }
+                            },
+                            "required": ["kind", "operation", "destination"],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "const": "reconcile"
+                              },
+                              "operation": {
+                                "$ref": "#/definitions/__schema3"
+                              },
+                              "owner": {
+                                "$ref": "#/definitions/__schema3"
+                              }
+                            },
+                            "required": ["kind", "operation", "owner"],
+                            "additionalProperties": false
+                          }
+                        ]
+                      },
+                      "ownerEpoch": {
+                        "$ref": "#/definitions/__schema3"
+                      },
+                      "destination": {
+                        "$ref": "#/definitions/__schema3"
+                      },
+                      "ref": {
+                        "$ref": "#/definitions/__schema13"
+                      },
+                      "snapshot": {
+                        "$ref": "#/definitions/__schema2"
+                      },
+                      "targetOperation": {
+                        "allOf": [
+                          {
+                            "$ref": "#/definitions/__schema3"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "requestId",
+                      "command",
+                      "ownerEpoch",
+                      "destination",
+                      "ref",
+                      "snapshot"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": ["pending", "completed", "failed", "uncertain"]
+                  },
+                  "receipt": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "status": {
+                            "type": "string",
+                            "enum": ["applied", "rolled_back", "already_recorded"]
+                          },
+                          "operationId": {
+                            "$ref": "#/definitions/__schema3"
+                          },
+                          "destination": {
+                            "$ref": "#/definitions/__schema3"
+                          },
+                          "revision": {
+                            "$ref": "#/definitions/__schema0"
+                          },
+                          "snapshot": {
+                            "$ref": "#/definitions/__schema2"
+                          },
+                          "freshness": {
+                            "type": "string",
+                            "enum": ["matching", "changed", "unknown"]
+                          }
+                        },
+                        "required": [
+                          "status",
+                          "operationId",
+                          "destination",
+                          "revision",
+                          "snapshot",
+                          "freshness"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "error": {
+                    "type": "object",
+                    "properties": {
+                      "code": {
+                        "type": "string",
+                        "enum": [
+                          "invalid_input",
+                          "dependency_missing",
+                          "capability_denied",
+                          "unsupported",
+                          "conflict",
+                          "owner_unconfirmed",
+                          "context_unavailable",
+                          "commit_unknown"
+                        ]
+                      },
+                      "message": {
+                        "$ref": "#/definitions/__schema3"
+                      },
+                      "field": {
+                        "allOf": [
+                          {
+                            "$ref": "#/definitions/__schema3"
+                          }
+                        ]
+                      }
+                    },
+                    "required": ["code", "message"],
+                    "additionalProperties": false
+                  },
+                  "evidence": {
+                    "allOf": [
+                      {
+                        "$ref": "#/definitions/__schema2"
+                      }
+                    ]
+                  }
+                },
+                "required": ["intent", "status"],
+                "additionalProperties": false
+              }
+            },
+            "schedules": {
+              "default": {},
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "$ref": "#/definitions/__schema15"
+              }
+            },
+            "attempts": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "attempt": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "$ref": "#/definitions/__schema3"
+                      },
+                      "ref": {
+                        "$ref": "#/definitions/__schema13"
+                      },
+                      "ordinal": {
+                        "exclusiveMinimum": 0,
+                        "allOf": [
+                          {
+                            "$ref": "#/definitions/__schema0"
+                          }
+                        ]
+                      },
+                      "backend": {
+                        "$ref": "#/definitions/__schema9"
+                      },
+                      "ownerEpoch": {
+                        "$ref": "#/definitions/__schema3"
+                      }
+                    },
+                    "required": ["id", "ref", "ordinal", "backend", "ownerEpoch"],
+                    "additionalProperties": false
+                  },
+                  "prepared": {
+                    "type": "object",
+                    "properties": {
+                      "cwd": {
+                        "$ref": "#/definitions/__schema3"
+                      },
+                      "identity": {
+                        "$ref": "#/definitions/__schema3"
+                      },
+                      "lease": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "$ref": "#/definitions/__schema3"
+                          },
+                          "workspace": {
+                            "$ref": "#/definitions/__schema3"
+                          }
+                        },
+                        "required": ["id", "workspace"],
+                        "additionalProperties": false
+                      },
+                      "artifacts": {
+                        "type": "array",
+                        "items": {
+                          "$ref": "#/definitions/__schema2"
+                        }
+                      }
+                    },
+                    "required": ["cwd", "identity", "artifacts"],
+                    "additionalProperties": false
+                  },
+                  "capture": {
+                    "type": "object",
+                    "properties": {
+                      "artifacts": {
+                        "type": "array",
+                        "items": {
+                          "$ref": "#/definitions/__schema2"
+                        }
+                      },
+                      "snapshot": {
+                        "allOf": [
+                          {
+                            "$ref": "#/definitions/__schema2"
+                          }
+                        ]
+                      },
+                      "errors": {
+                        "type": "array",
+                        "items": {
+                          "$ref": "#/definitions/__schema3"
+                        }
+                      }
+                    },
+                    "required": ["artifacts"],
+                    "additionalProperties": false
+                  },
+                  "identity": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "$ref": "#/definitions/__schema3"
+                      },
+                      "kind": {
+                        "$ref": "#/definitions/__schema9"
+                      },
+                      "ownerEpoch": {
+                        "$ref": "#/definitions/__schema3"
+                      }
+                    },
+                    "required": ["id", "kind", "ownerEpoch"],
+                    "additionalProperties": false
+                  },
+                  "enrollmentEvidence": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/definitions/__schema2"
+                    }
+                  },
+                  "outcome": {
+                    "type": "object",
+                    "properties": {
+                      "reason": {
+                        "type": "string",
+                        "enum": ["completed", "failed", "cancelled"]
+                      },
+                      "summary": {
+                        "type": "string"
+                      },
+                      "usage": {
+                        "$ref": "#/definitions/__schema18"
+                      },
+                      "report": {
+                        "allOf": [
+                          {
+                            "$ref": "#/definitions/__schema2"
+                          }
+                        ]
+                      },
+                      "reportingError": {
+                        "allOf": [
+                          {
+                            "$ref": "#/definitions/__schema3"
+                          }
+                        ]
+                      },
+                      "session": {
+                        "allOf": [
+                          {
+                            "$ref": "#/definitions/__schema23"
+                          }
+                        ]
+                      },
+                      "transcript": {
+                        "allOf": [
+                          {
+                            "$ref": "#/definitions/__schema2"
+                          }
+                        ]
+                      },
+                      "artifacts": {
+                        "type": "array",
+                        "items": {
+                          "$ref": "#/definitions/__schema2"
+                        }
+                      },
+                      "error": {
+                        "allOf": [
+                          {
+                            "$ref": "#/definitions/__schema3"
+                          }
+                        ]
+                      }
+                    },
+                    "required": ["reason", "summary", "usage", "artifacts"],
+                    "additionalProperties": false
+                  },
+                  "outcomeArtifact": {
+                    "allOf": [
+                      {
+                        "$ref": "#/definitions/__schema2"
+                      }
+                    ]
+                  },
+                  "cleanup": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "status": {
+                            "type": "string",
+                            "const": "stopped"
+                          },
+                          "ownerEpoch": {
+                            "$ref": "#/definitions/__schema3"
+                          },
+                          "identities": {
+                            "type": "array",
+                            "items": {
+                              "$ref": "#/definitions/__schema3"
+                            }
+                          },
+                          "evidence": {
+                            "type": "array",
+                            "items": {
+                              "$ref": "#/definitions/__schema2"
+                            }
+                          }
+                        },
+                        "required": ["status", "ownerEpoch", "identities", "evidence"],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "status": {
+                            "type": "string",
+                            "const": "unconfirmed"
+                          },
+                          "ownerEpoch": {
+                            "$ref": "#/definitions/__schema3"
+                          },
+                          "identities": {
+                            "type": "array",
+                            "items": {
+                              "$ref": "#/definitions/__schema3"
+                            }
+                          },
+                          "reasons": {
+                            "minItems": 1,
+                            "type": "array",
+                            "items": {
+                              "$ref": "#/definitions/__schema3"
+                            }
+                          },
+                          "evidence": {
+                            "type": "array",
+                            "items": {
+                              "$ref": "#/definitions/__schema2"
+                            }
+                          }
+                        },
+                        "required": ["status", "ownerEpoch", "identities", "reasons", "evidence"],
+                        "additionalProperties": false
+                      }
+                    ]
+                  },
+                  "usageObservations": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/definitions/__schema19"
+                    }
+                  },
+                  "responses": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {
+                      "type": "string",
+                      "enum": ["started", "completed", "interrupted"]
+                    }
+                  }
+                },
+                "required": ["attempt", "enrollmentEvidence", "usageObservations", "responses"],
+                "additionalProperties": false
+              }
+            },
+            "sessions": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "$ref": "#/definitions/__schema23"
+              }
+            },
+            "contextUsage": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "tokens": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/definitions/__schema0"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "window": {
+                    "anyOf": [
+                      {
+                        "exclusiveMinimum": 0,
+                        "allOf": [
+                          {
+                            "$ref": "#/definitions/__schema0"
+                          }
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "percent": {
+                    "anyOf": [
+                      {
+                        "type": "number",
+                        "minimum": 0
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "source": {
+                    "$ref": "#/definitions/__schema3"
+                  },
+                  "timestamp": {
+                    "$ref": "#/definitions/__schema0"
+                  }
+                },
+                "required": ["tokens", "window", "percent", "source", "timestamp"],
+                "additionalProperties": false
+              }
+            },
+            "cancelled": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "requestId": {
+                    "$ref": "#/definitions/__schema3"
+                  }
+                },
+                "required": ["requestId"],
+                "additionalProperties": false
+              }
+            },
+            "attachment": {
+              "type": "string",
+              "enum": ["foreground", "background"]
+            },
+            "results": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "result": {
+                    "type": "object",
+                    "properties": {
+                      "ref": {
+                        "$ref": "#/definitions/__schema13"
+                      },
+                      "summary": {
+                        "type": "string"
+                      },
+                      "execution": {
+                        "$ref": "#/definitions/__schema14"
+                      },
+                      "report": {
+                        "allOf": [
+                          {
+                            "$ref": "#/definitions/__schema2"
+                          }
+                        ]
+                      },
+                      "reportingError": {
+                        "allOf": [
+                          {
+                            "$ref": "#/definitions/__schema3"
+                          }
+                        ]
+                      },
+                      "finalizationErrors": {
+                        "type": "array",
+                        "items": {
+                          "$ref": "#/definitions/__schema3"
+                        }
+                      },
+                      "artifacts": {
+                        "type": "array",
+                        "items": {
+                          "$ref": "#/definitions/__schema2"
+                        }
+                      },
+                      "transcript": {
+                        "allOf": [
+                          {
+                            "$ref": "#/definitions/__schema2"
+                          }
+                        ]
+                      },
+                      "session": {
+                        "allOf": [
+                          {
+                            "$ref": "#/definitions/__schema2"
+                          }
+                        ]
+                      },
+                      "snapshot": {
+                        "allOf": [
+                          {
+                            "$ref": "#/definitions/__schema2"
+                          }
+                        ]
+                      },
+                      "usage": {
+                        "$ref": "#/definitions/__schema18"
+                      }
+                    },
+                    "required": ["ref", "summary", "execution", "artifacts", "usage"],
+                    "additionalProperties": false
+                  },
+                  "artifact": {
+                    "$ref": "#/definitions/__schema2"
+                  }
+                },
+                "required": ["result", "artifact"],
+                "additionalProperties": false
+              }
+            },
+            "outbox": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "ref": {
+                    "$ref": "#/definitions/__schema13"
+                  },
+                  "result": {
+                    "$ref": "#/definitions/__schema2"
+                  },
+                  "state": {
+                    "type": "string",
+                    "enum": ["recorded", "dispatch_intent", "delivered", "consumed", "uncertain"]
+                  },
+                  "attempts": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "$ref": "#/definitions/__schema3"
+                        },
+                        "state": {
+                          "type": "string",
+                          "enum": ["dispatch_intent", "delivered", "consumed", "uncertain"]
+                        },
+                        "checkpoint": {
+                          "allOf": [
+                            {
+                              "$ref": "#/definitions/__schema2"
+                            }
+                          ]
+                        }
+                      },
+                      "required": ["id", "state"],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": ["ref", "result", "state", "attempts"],
+                "additionalProperties": false
+              }
+            },
+            "maxConcurrent": {
+              "anyOf": [
+                {
+                  "exclusiveMinimum": 0,
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/__schema0"
+                    }
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "history": {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "$ref": "#/definitions/__schema2"
+                },
+                "quiescence": {
+                  "$ref": "#/definitions/__schema2"
+                },
+                "requestId": {
+                  "$ref": "#/definitions/__schema3"
+                }
+              },
+              "required": ["source", "quiescence", "requestId"],
+              "additionalProperties": false
             }
           },
-          "required": ["digest", "size"],
+          "required": [
+            "run",
+            "revision",
+            "nextSequence",
+            "workers",
+            "assignments",
+            "latest",
+            "inbox",
+            "receipts",
+            "effects",
+            "attempts",
+            "sessions",
+            "contextUsage",
+            "cancelled",
+            "attachment",
+            "results",
+            "outbox",
+            "maxConcurrent"
+          ],
           "additionalProperties": false
         }
       },
@@ -30972,6 +32024,871 @@
         "__schema1": {
           "type": "string",
           "pattern": "^[a-f0-9]{64}$"
+        },
+        "__schema2": {
+          "type": "object",
+          "properties": {
+            "digest": {
+              "$ref": "#/definitions/__schema1"
+            },
+            "size": {
+              "$ref": "#/definitions/__schema0"
+            }
+          },
+          "required": ["digest", "size"],
+          "additionalProperties": false
+        },
+        "__schema3": {
+          "type": "string",
+          "minLength": 1
+        },
+        "__schema4": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/__schema5"
+            },
+            "agent": {
+              "$ref": "#/definitions/__schema5"
+            },
+            "definition": {
+              "$ref": "#/definitions/__schema2"
+            },
+            "color": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "accent.blue",
+                    "accent.cyan",
+                    "accent.green",
+                    "accent.yellow",
+                    "accent.orange",
+                    "accent.red",
+                    "accent.pink",
+                    "accent.purple"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "pattern": "^#[0-9a-fA-F]{6}$"
+                }
+              ]
+            },
+            "loadout": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/__schema2"
+                }
+              ]
+            },
+            "model": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/__schema6"
+                }
+              ]
+            },
+            "fallbacks": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/__schema6"
+              }
+            },
+            "tools": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/__schema3"
+              }
+            },
+            "access": {
+              "$ref": "#/definitions/__schema7"
+            },
+            "workspace": {
+              "$ref": "#/definitions/__schema8"
+            },
+            "observeWorkspace": {
+              "type": "boolean"
+            },
+            "backend": {
+              "$ref": "#/definitions/__schema9"
+            },
+            "lifetime": {
+              "$ref": "#/definitions/__schema10"
+            },
+            "grants": {
+              "$ref": "#/definitions/__schema11"
+            },
+            "origin": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/__schema13"
+                }
+              ]
+            },
+            "parentAssignment": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/__schema13"
+                }
+              ]
+            },
+            "depth": {
+              "default": 0,
+              "allOf": [
+                {
+                  "$ref": "#/definitions/__schema0"
+                }
+              ]
+            },
+            "config": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/__schema2"
+                }
+              ]
+            },
+            "context": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/__schema2"
+                }
+              ]
+            },
+            "workspacePlan": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/__schema2"
+                }
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "agent",
+            "definition",
+            "fallbacks",
+            "tools",
+            "access",
+            "workspace",
+            "backend",
+            "lifetime",
+            "grants"
+          ],
+          "additionalProperties": false
+        },
+        "__schema5": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,31}$"
+        },
+        "__schema6": {
+          "type": "object",
+          "properties": {
+            "provider": {
+              "$ref": "#/definitions/__schema3"
+            },
+            "id": {
+              "$ref": "#/definitions/__schema3"
+            },
+            "thinking": {
+              "type": "string",
+              "enum": ["off", "minimal", "low", "medium", "high", "xhigh", "max"]
+            }
+          },
+          "required": ["provider", "id", "thinking"],
+          "additionalProperties": false
+        },
+        "__schema7": {
+          "type": "string",
+          "enum": ["read", "write"]
+        },
+        "__schema8": {
+          "type": "string",
+          "enum": ["shared", "worktree"]
+        },
+        "__schema9": {
+          "type": "string",
+          "enum": ["in-process", "process", "herdr-pi"]
+        },
+        "__schema10": {
+          "type": "string",
+          "enum": ["attached", "surviving"]
+        },
+        "__schema11": {
+          "type": "object",
+          "properties": {
+            "access": {
+              "$ref": "#/definitions/__schema7"
+            },
+            "tools": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/__schema3"
+              }
+            },
+            "workspaces": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/__schema8"
+              }
+            },
+            "inheritContext": {
+              "type": "boolean"
+            },
+            "memory": {
+              "$ref": "#/definitions/__schema12"
+            },
+            "delegation": {
+              "type": "object",
+              "properties": {
+                "maxDepth": {
+                  "$ref": "#/definitions/__schema0"
+                },
+                "agents": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/__schema5"
+                  }
+                },
+                "tools": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/__schema3"
+                  }
+                },
+                "workspaces": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/__schema8"
+                  }
+                }
+              },
+              "required": ["maxDepth", "agents", "tools", "workspaces"],
+              "additionalProperties": false
+            }
+          },
+          "required": ["access", "tools", "workspaces", "inheritContext", "memory", "delegation"],
+          "additionalProperties": false
+        },
+        "__schema12": {
+          "type": "object",
+          "properties": {
+            "scope": {
+              "type": "string",
+              "enum": ["none", "worker", "project-agent"]
+            },
+            "access": {
+              "$ref": "#/definitions/__schema7"
+            }
+          },
+          "required": ["scope", "access"],
+          "additionalProperties": false
+        },
+        "__schema13": {
+          "type": "object",
+          "properties": {
+            "run": {
+              "$ref": "#/definitions/__schema3"
+            },
+            "worker": {
+              "$ref": "#/definitions/__schema5"
+            },
+            "assignment": {
+              "exclusiveMinimum": 0,
+              "allOf": [
+                {
+                  "$ref": "#/definitions/__schema0"
+                }
+              ]
+            }
+          },
+          "required": ["run", "worker", "assignment"],
+          "additionalProperties": false
+        },
+        "__schema14": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "phase": {
+                  "type": "string",
+                  "const": "queued"
+                }
+              },
+              "required": ["phase"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "phase": {
+                  "type": "string",
+                  "const": "preparing"
+                }
+              },
+              "required": ["phase"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "phase": {
+                  "type": "string",
+                  "const": "running"
+                }
+              },
+              "required": ["phase"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "phase": {
+                  "type": "string",
+                  "const": "stopping"
+                }
+              },
+              "required": ["phase"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "phase": {
+                  "type": "string",
+                  "const": "finalizing"
+                }
+              },
+              "required": ["phase"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "phase": {
+                  "type": "string",
+                  "const": "ended"
+                },
+                "reason": {
+                  "type": "string",
+                  "enum": ["completed", "failed", "cancelled", "interrupted"]
+                },
+                "cleanup": {
+                  "type": "string",
+                  "enum": ["confirmed", "unconfirmed"]
+                }
+              },
+              "required": ["phase", "reason", "cleanup"],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "__schema15": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/__schema5"
+            },
+            "sessionId": {
+              "$ref": "#/definitions/__schema3"
+            },
+            "revision": {
+              "exclusiveMinimum": 0,
+              "allOf": [
+                {
+                  "$ref": "#/definitions/__schema0"
+                }
+              ]
+            },
+            "trigger": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "at"
+                    },
+                    "at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                    }
+                  },
+                  "required": ["kind", "at"],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "interval"
+                    },
+                    "milliseconds": {
+                      "exclusiveMinimum": 0,
+                      "allOf": [
+                        {
+                          "$ref": "#/definitions/__schema0"
+                        }
+                      ]
+                    }
+                  },
+                  "required": ["kind", "milliseconds"],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "cron"
+                    },
+                    "expression": {
+                      "$ref": "#/definitions/__schema3"
+                    },
+                    "timezone": {
+                      "$ref": "#/definitions/__schema3"
+                    }
+                  },
+                  "required": ["kind", "expression", "timezone"],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "overlap": {
+              "type": "string",
+              "enum": ["skip", "queue"]
+            },
+            "status": {
+              "type": "string",
+              "enum": ["paused", "active", "completed", "deleted", "closed"]
+            },
+            "target": {
+              "type": "object",
+              "properties": {
+                "worker": {
+                  "$ref": "#/definitions/__schema5"
+                }
+              },
+              "required": ["worker"],
+              "additionalProperties": false
+            },
+            "task": {
+              "$ref": "#/definitions/__schema3"
+            },
+            "template": {
+              "type": "object",
+              "properties": {
+                "request": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "$ref": "#/definitions/__schema5"
+                    },
+                    "agent": {
+                      "$ref": "#/definitions/__schema5"
+                    },
+                    "task": {
+                      "$ref": "#/definitions/__schema3"
+                    },
+                    "origin": {
+                      "allOf": [
+                        {
+                          "$ref": "#/definitions/__schema13"
+                        }
+                      ]
+                    },
+                    "messageId": {
+                      "allOf": [
+                        {
+                          "$ref": "#/definitions/__schema3"
+                        }
+                      ]
+                    },
+                    "after": {
+                      "default": [],
+                      "type": "array",
+                      "items": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/definitions/__schema5"
+                          },
+                          {
+                            "$ref": "#/definitions/__schema13"
+                          }
+                        ]
+                      }
+                    },
+                    "inputs": {
+                      "default": [],
+                      "description": "Workspace snapshots to compose, NOT reports or conversation. For report synthesis use after for ordering, query result/conversation, and supply report text in context.",
+                      "allOf": [
+                        {
+                          "$ref": "#/definitions/__schema16"
+                        }
+                      ]
+                    },
+                    "workspace": {
+                      "allOf": [
+                        {
+                          "$ref": "#/definitions/__schema8"
+                        }
+                      ]
+                    },
+                    "observeWorkspace": {
+                      "type": "boolean"
+                    },
+                    "model": {
+                      "allOf": [
+                        {
+                          "$ref": "#/definitions/__schema6"
+                        }
+                      ]
+                    },
+                    "backend": {
+                      "allOf": [
+                        {
+                          "$ref": "#/definitions/__schema9"
+                        }
+                      ]
+                    },
+                    "lifetime": {
+                      "allOf": [
+                        {
+                          "$ref": "#/definitions/__schema10"
+                        }
+                      ]
+                    },
+                    "context": {
+                      "default": [],
+                      "description": "Quoted context text, such as upstream report contents. Assignment references in inputs do not import reports.",
+                      "allOf": [
+                        {
+                          "$ref": "#/definitions/__schema17"
+                        }
+                      ]
+                    },
+                    "inheritContext": {
+                      "type": "string",
+                      "enum": ["none", "parent"]
+                    },
+                    "memory": {
+                      "allOf": [
+                        {
+                          "$ref": "#/definitions/__schema12"
+                        }
+                      ]
+                    },
+                    "delegation": {
+                      "type": "object",
+                      "properties": {
+                        "maxDepth": {
+                          "$ref": "#/definitions/__schema0"
+                        }
+                      },
+                      "required": ["maxDepth"],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": ["id", "agent", "task"],
+                  "additionalProperties": false
+                },
+                "worker": {
+                  "$ref": "#/definitions/__schema4"
+                }
+              },
+              "required": ["request", "worker"],
+              "additionalProperties": false
+            },
+            "nextAt": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "lastLocalKey": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/__schema3"
+                }
+              ]
+            },
+            "activatedAt": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+            },
+            "occurrences": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "scheduledAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": ["accepted", "skipped", "missed"]
+                  },
+                  "ref": {
+                    "allOf": [
+                      {
+                        "$ref": "#/definitions/__schema13"
+                      }
+                    ]
+                  },
+                  "reason": {
+                    "allOf": [
+                      {
+                        "$ref": "#/definitions/__schema3"
+                      }
+                    ]
+                  },
+                  "through": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                  }
+                },
+                "required": ["scheduledAt", "status"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "id",
+            "sessionId",
+            "revision",
+            "trigger",
+            "overlap",
+            "status",
+            "target",
+            "task",
+            "nextAt",
+            "occurrences"
+          ],
+          "additionalProperties": false
+        },
+        "__schema16": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/__schema13"
+          }
+        },
+        "__schema17": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "__schema18": {
+          "type": "object",
+          "properties": {
+            "expectedAttempts": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/__schema3"
+              }
+            },
+            "observations": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/__schema19"
+              }
+            },
+            "complete": {
+              "type": "boolean"
+            },
+            "reason": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/__schema3"
+                }
+              ]
+            },
+            "total": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/__schema20"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "observedTotal": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/__schema20"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "missingAttempts": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/__schema3"
+              }
+            },
+            "issues": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/__schema3"
+              }
+            }
+          },
+          "required": ["expectedAttempts", "observations", "complete"],
+          "additionalProperties": false
+        },
+        "__schema19": {
+          "type": "object",
+          "properties": {
+            "attempt": {
+              "$ref": "#/definitions/__schema3"
+            },
+            "source": {
+              "$ref": "#/definitions/__schema3"
+            },
+            "usage": {
+              "$ref": "#/definitions/__schema20"
+            },
+            "kind": {
+              "$ref": "#/definitions/__schema21"
+            },
+            "responseId": {
+              "$ref": "#/definitions/__schema22"
+            }
+          },
+          "required": ["attempt", "source", "usage"],
+          "additionalProperties": false
+        },
+        "__schema20": {
+          "type": "object",
+          "properties": {
+            "input": {
+              "$ref": "#/definitions/__schema0"
+            },
+            "output": {
+              "$ref": "#/definitions/__schema0"
+            },
+            "cacheRead": {
+              "$ref": "#/definitions/__schema0"
+            },
+            "cacheWrite": {
+              "$ref": "#/definitions/__schema0"
+            },
+            "cost": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": ["input", "output", "cacheRead", "cacheWrite", "cost"],
+          "additionalProperties": false
+        },
+        "__schema21": {
+          "type": "string",
+          "enum": ["attempt_total", "response"]
+        },
+        "__schema22": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/__schema3"
+            }
+          ]
+        },
+        "__schema23": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "$ref": "#/definitions/__schema3"
+                },
+                "worker": {
+                  "$ref": "#/definitions/__schema3"
+                },
+                "artifact": {
+                  "$ref": "#/definitions/__schema2"
+                },
+                "branch": {
+                  "$ref": "#/definitions/__schema3"
+                },
+                "transcript": {
+                  "$ref": "#/definitions/__schema24"
+                },
+                "format": {
+                  "type": "string",
+                  "const": "pi"
+                },
+                "producerVersion": {
+                  "$ref": "#/definitions/__schema3"
+                }
+              },
+              "required": ["id", "worker", "artifact", "branch", "format", "producerVersion"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "$ref": "#/definitions/__schema3"
+                },
+                "worker": {
+                  "$ref": "#/definitions/__schema3"
+                },
+                "artifact": {
+                  "$ref": "#/definitions/__schema2"
+                },
+                "branch": {
+                  "$ref": "#/definitions/__schema3"
+                },
+                "transcript": {
+                  "$ref": "#/definitions/__schema24"
+                },
+                "format": {
+                  "type": "string",
+                  "const": "scripted"
+                },
+                "producerVersion": {
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/__schema3"
+                    }
+                  ]
+                }
+              },
+              "required": ["id", "worker", "artifact", "branch", "format"],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "__schema24": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/__schema2"
+            }
+          ]
         }
       }
     },
@@ -31615,6 +33532,10 @@
             },
             "text": {
               "type": "string"
+            },
+            "snapshot": {
+              "type": "boolean",
+              "const": true
             }
           },
           "required": ["kind", "source", "ordinal", "text"],

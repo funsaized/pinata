@@ -34,6 +34,7 @@ import {
   type Usage,
   type UsageObservation,
 } from "../contracts/index.ts";
+import { storeConversation } from "../storage/conversation.ts";
 import { checkpointConversation, openConversation } from "../agent/conversation.ts";
 import { reportTool, workerExtension } from "../agent/extension.ts";
 import { memoryTools } from "../agent/memory.ts";
@@ -754,17 +755,17 @@ export class InProcessBackend implements BackendPort {
         let transcript: ArtifactRef | undefined;
         try {
           saved = await checkpoint();
-          transcript = await launch.artifacts.put(
-            Buffer.from(
-              canonicalJson({
-                schemaVersion: 1,
-                ref: launch.ref,
-                session: saved.id,
-                fromEntry: initialBranch,
-                throughEntry: saved.branch,
-                entries: manager.getEntries().slice(initialEntryCount),
-              }),
-            ),
+          const entries = manager.getEntries().slice(initialEntryCount);
+          transcript = await storeConversation(
+            Buffer.from(entries.map((entry) => JSON.stringify(entry) + "\n").join("")),
+            {
+              kind: "assignment",
+              ref: launch.ref,
+              session: saved.id,
+              fromEntry: initialBranch,
+              throughEntry: saved.branch,
+            },
+            launch.artifacts,
           );
         } catch (error) {
           errorMessage ??= error instanceof Error ? error.message : String(error);

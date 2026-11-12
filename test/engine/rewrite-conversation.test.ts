@@ -15,6 +15,11 @@ import {
   type ArtifactPort,
   type BackendLaunch,
 } from "../../engine/contracts/index.ts";
+import {
+  materializeConversation,
+  parseConversationManifest,
+  storeConversation,
+} from "../../engine/storage/conversation.ts";
 import { digestBytes } from "../../engine/storage/io.ts";
 
 function artifactPort(): ArtifactPort {
@@ -130,4 +135,82 @@ test("replacement conversations refuse corrupt or unknown session formats", () =
     () => validateConversation(Buffer.from(JSON.stringify(header) + "\n{bad}\n")),
     /cannot be restored/,
   );
+});
+
+test("chunked Pi checkpoints share immutable prefixes and restore exact bytes through branching and compaction", async (t) => {
+  const directory = await realpath(await mkdtemp(join(tmpdir(), "pinata-chunked-session-")));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const artifacts = artifactPort();
+  const manager = SessionManager.create(directory, join(directory, "source"));
+  for (let index = 0; index < 300; index++)
+    manager.appendMessage({ role: "user", content: `Message ${index} 🌲`, timestamp: index });
+  manager.appendMessage(fauxAssistantMessage("Retained answer"));
+  const first = await checkpointConversation(manager, worker.id, artifacts);
+  const firstManifest = parseConversationManifest(await artifacts.read(first.artifact));
+  assert(firstManifest && firstManifest.chunks.length >= 3);
+  const firstBytes = await materializeConversation(first.artifact, artifacts);
+  const entry = manager.getEntries()[100];
+  manager.branch(entry.id);
+  manager.appendMessage({ role: "user", content: "Branched question", timestamp: 500 });
+  manager.appendMessage(fauxAssistantMessage("Branched answer"));
+  manager.appendCompaction("Retained branch summary", entry.id, 1000);
+  const second = await checkpointConversation(manager, worker.id, artifacts);
+  const secondManifest = parseConversationManifest(await artifacts.read(second.artifact));
+  assert(secondManifest);
+  assert.deepEqual(secondManifest.chunks.slice(0, -1), firstManifest.chunks.slice(0, -1));
+  assert.deepEqual(await materializeConversation(first.artifact, artifacts), firstBytes);
+  const original = await readFile(manager.getSessionFile()!);
+  const launch: BackendLaunch = {
+    ref: { run: "run", worker: worker.id, assignment: 2 },
+    attemptId: "next",
+    worker,
+    cwd: directory,
+    initialMessages: [],
+    brief: { task: "Continue", context: [], dependencies: [] },
+    continuation: second,
+    storeDirectory: directory,
+    artifacts,
+    ownerEpoch: "epoch",
+  };
+  const restored = await openConversation(launch);
+  assert.deepEqual(await readFile(restored.getSessionFile()!), original);
+  assert.equal(restored.getLeafId(), second.branch);
+  assert.deepEqual(restored.getEntries(), JSON.parse(JSON.stringify(manager.getEntries())));
+  const legacy = await artifacts.put(original);
+  const oldFormat = await openConversation({
+    ...launch,
+    continuation: { ...second, artifact: legacy },
+  });
+  assert.deepEqual(oldFormat.getEntries(), restored.getEntries());
+  const broken = secondManifest.chunks[1].artifact;
+  for (const missing of [false, true]) {
+    const damaged: ArtifactPort = {
+      ...artifacts,
+      async read(reference) {
+        if (reference.digest !== broken.digest) return artifacts.read(reference);
+        if (missing) throw new Error("Missing retained chunk");
+        return Buffer.alloc(reference.size);
+      },
+    };
+    await assert.rejects(
+      openConversation({ ...launch, artifacts: damaged }),
+      /Missing retained chunk|content changed/,
+    );
+  }
+  let publications = 0;
+  await assert.rejects(
+    storeConversation(
+      original,
+      { kind: "pi", session: second.id },
+      {
+        ...artifacts,
+        async put(bytes) {
+          if (++publications === 2) throw new Error("Interrupted publication");
+          return artifacts.put(bytes);
+        },
+      },
+    ),
+    /Interrupted/,
+  );
+  assert.deepEqual(await materializeConversation(first.artifact, artifacts), firstBytes);
 });

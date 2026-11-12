@@ -17,6 +17,7 @@ import { Runtime } from "../../engine/runtime/index.ts";
 import { ConversationQueries } from "../../engine/runtime/queries.ts";
 import { bindRuntime } from "../../engine/sources/runtime.ts";
 import { openSavedSource } from "../../engine/sources/saved.ts";
+import { parseConversationManifest, storeConversation } from "../../engine/storage/conversation.ts";
 import { digestBytes } from "../../engine/storage/io.ts";
 import { piFixture } from "./rewrite-pi-fixture.ts";
 
@@ -425,3 +426,76 @@ test(
     );
   },
 );
+
+test("large chunked conversations page only overlapping chunks after cache eviction and detect changed evidence", async () => {
+  const { artifacts, reads, values } = conversationArtifacts();
+  const ref = { run: "chunk-pages", worker: "reader", assignment: 1 };
+  const entries = Array.from({ length: 1000 }, (_, index) => ({ index, text: "x".repeat(17_000) }));
+  const artifact = await storeConversation(
+    Buffer.from(entries.map((entry) => JSON.stringify(entry) + "\n").join("")),
+    { kind: "assignment", ref, session: "session", fromEntry: null, throughEntry: "last" },
+    artifacts,
+  );
+  const manifest = parseConversationManifest(await artifacts.read(artifact));
+  assert(manifest && manifest.content.size > 16 * 1024 * 1024);
+  const queries = new ConversationQueries(artifacts);
+  const first = await queries.query(
+    { kind: "conversation", ref },
+    { source: "assignment", artifact },
+  );
+  assert.deepEqual(first.entries, entries.slice(0, 100));
+  assert(first.cursor);
+  queries.clear();
+  reads.length = 0;
+  const second = await queries.query({ kind: "conversation", ref, cursor: first.cursor });
+  assert.deepEqual(second.entries, entries.slice(100, 200));
+  const readBytes = reads.reduce((total, digest) => total + values.get(digest)!.length, 0);
+  assert(readBytes < 3 * 1024 * 1024, `Read only the page's chunks: ${readBytes}`);
+  assert(reads.length < 20);
+  assert(second.cursor);
+  const damaged = manifest.chunks.find(
+    (chunk) => chunk.firstEntry <= 200 && chunk.firstEntry + chunk.entries > 200,
+  )!;
+  const original = values.get(damaged.artifact.digest)!;
+  values.set(damaged.artifact.digest, new Uint8Array(original.length));
+  await assert.rejects(
+    queries.query({ kind: "conversation", ref, cursor: second.cursor }),
+    /cannot be read/,
+  );
+  values.delete(damaged.artifact.digest);
+  await assert.rejects(
+    queries.query({ kind: "conversation", ref }, { source: "assignment", artifact }),
+    /cannot be read/,
+  );
+  values.set(damaged.artifact.digest, original);
+  await assert.rejects(
+    queries.query({
+      kind: "conversation",
+      ref: { ...ref, worker: "other" },
+      cursor: second.cursor,
+    }),
+    /invalid for this runtime/,
+  );
+});
+
+test("chunked first pages validate Pi parent links beyond the requested page", async () => {
+  const { artifacts } = conversationArtifacts();
+  const header = { type: "session", id: "session", version: 3 };
+  const entries = Array.from({ length: 300 }, (_, index) => ({
+    type: "message",
+    id: String(index),
+    parentId: index === 250 ? "missing" : index ? String(index - 1) : null,
+  }));
+  const bytes = Buffer.from(
+    [header, ...entries].map((entry) => JSON.stringify(entry) + "\n").join(""),
+  );
+  const artifact = await storeConversation(bytes, { kind: "pi", session: "session" }, artifacts);
+  const queries = new ConversationQueries(artifacts);
+  await assert.rejects(
+    queries.query(
+      { kind: "conversation", ref: { run: "run", worker: "reader", assignment: 1 } },
+      { source: "checkpoint", artifact },
+    ),
+    /broken entry chain/,
+  );
+});

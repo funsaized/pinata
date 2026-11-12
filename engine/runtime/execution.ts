@@ -49,6 +49,7 @@ import {
 } from "../core/indexes.ts";
 import { dependencyResults } from "../core/state.ts";
 import { assignmentUsage } from "../core/usage.ts";
+import { verifyConversationArtifact } from "../storage/conversation.ts";
 import { immutable } from "./immutable.ts";
 
 export type ExecutionTransaction = {
@@ -120,7 +121,7 @@ export class ExecutionCoordinator {
     const checkpoint = sessionCheckpointSchema.parse(await active.handle.checkpoint());
     if (checkpoint.worker !== ref.worker)
       throw new DomainError("context_unavailable", "Live checkpoint belongs to another worker");
-    await this.host.artifacts.read(checkpoint.artifact);
+    await verifyConversationArtifact(checkpoint.artifact, this.host.artifacts);
     await this.host.assertOwner();
     return checkpoint;
   }
@@ -187,7 +188,7 @@ export class ExecutionCoordinator {
             "worker",
           );
         try {
-          await this.host.artifacts.read(checkpoint.artifact);
+          await verifyConversationArtifact(checkpoint.artifact, this.host.artifacts);
         } catch (error) {
           throw new DomainError(
             "context_unavailable",
@@ -620,7 +621,7 @@ export class ExecutionCoordinator {
           );
         if (continuation) {
           try {
-            await this.host.artifacts.read(continuation.artifact);
+            await verifyConversationArtifact(continuation.artifact, this.host.artifacts);
           } catch (cause) {
             throw new DomainError(
               "context_unavailable",

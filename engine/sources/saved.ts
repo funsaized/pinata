@@ -13,7 +13,7 @@ import {
 import { initialState, reduce } from "../core/state.ts";
 import { inspectStore } from "../storage/journal.ts";
 import { StorageError } from "../storage/io.ts";
-import { verifyArtifact } from "../storage/index.ts";
+import { verifyArtifactBytes } from "../storage/journal.ts";
 import { ConversationQueries, savedConversation } from "../runtime/queries.ts";
 import { readChanges } from "../runtime/changes.ts";
 import { surfaceError, type RuntimeSource, type SnapshotEvent } from "./runtime.ts";
@@ -46,7 +46,9 @@ export async function openSavedSource(directory: string): Promise<RuntimeSource>
     ownerEpoch,
     transition: frame.record.transition,
   }));
-  const conversations = new ConversationQueries({ read: (ref) => verifyArtifact(directory, ref) });
+  const conversations = new ConversationQueries({
+    read: (ref) => verifyArtifactBytes(directory, ref),
+  });
   const source: RuntimeSource = {
     run: state.run,
     capabilities: {
@@ -130,7 +132,7 @@ export async function openSavedSource(directory: string): Promise<RuntimeSource>
               response: {
                 method: "query",
                 result: await readChanges(query.ref, state.results[key]?.result.snapshot, {
-                  read: (ref) => verifyArtifact(directory, ref),
+                  read: (ref) => verifyArtifactBytes(directory, ref),
                 }),
               },
             };
@@ -145,7 +147,7 @@ export async function openSavedSource(directory: string): Promise<RuntimeSource>
                   config: state.config
                     ? configSchema.parse(
                         JSON.parse(
-                          Buffer.from(await verifyArtifact(directory, state.config)).toString(
+                          Buffer.from(await verifyArtifactBytes(directory, state.config)).toString(
                             "utf8",
                           ),
                         ),

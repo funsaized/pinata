@@ -3,6 +3,8 @@ import { mkdir, open, realpath, stat, type FileHandle } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 import {
   checkpointSchema,
+  coreStateSchema,
+  type CoreState,
   journalFrameSchema,
   journalRecordSchema,
   manifestSchema,
@@ -11,6 +13,7 @@ import {
   type Manifest,
   type Transition,
 } from "../contracts/index.ts";
+import { initialState, reduce } from "../core/state.ts";
 import { canonicalJson, digestValue } from "../contracts/digest.ts";
 import {
   digestBytes,
@@ -21,7 +24,8 @@ import {
   syncDirectory,
   type FaultHook,
 } from "./io.ts";
-import { inspectStore, verifyArtifact } from "./journal.ts";
+import { inspectStore, verifyArtifact, verifyArtifactBytes } from "./journal.ts";
+import { parseConversationManifest } from "./conversation.ts";
 import { assertOwner, claimOwner, releaseOwner, type OwnerClaim } from "./owner.ts";
 
 export type OpenStoreOptions = {
@@ -52,10 +56,12 @@ export class DurableStore {
   readonly manifest: Manifest;
   readonly owner: OwnerClaim;
   readonly replayWarnings: readonly string[];
+  private readonly projection?: CoreState;
   private committed: JournalFrame[];
   private readonly journal: FileHandle;
   private journalVersion: ArtifactVersion;
   private readonly requests: Map<string, JournalFrame>;
+  private readonly artifactChildren = new Map<string, ArtifactRef[]>();
   private readonly publishedArtifacts = new Map<string, ArtifactVersion>();
   private readonly fault?: FaultHook;
   private pending: Promise<void> = Promise.resolve();
@@ -71,6 +77,7 @@ export class DurableStore {
     journalVersion: ArtifactVersion;
     fault?: FaultHook;
     replayWarnings: string[];
+    projection?: CoreState;
   }) {
     this.directory = options.directory;
     this.manifest = Object.freeze(options.manifest);
@@ -81,6 +88,7 @@ export class DurableStore {
     this.requests = new Map(options.frames.map((frame) => [frame.record.requestId, frame]));
     this.fault = options.fault;
     this.replayWarnings = Object.freeze(options.replayWarnings);
+    this.projection = options.projection;
   }
 
   static async open(options: OpenStoreOptions): Promise<DurableStore> {
@@ -119,6 +127,7 @@ export class DurableStore {
         "Incomplete journal tail requires explicit isolation before reopening",
       );
     const replayWarnings: string[] = [];
+    let projection: CoreState | undefined;
     const checkpointBytes = await readOptional(join(directory, "checkpoints", "latest.json"));
     if (checkpointBytes) {
       try {
@@ -128,7 +137,17 @@ export class DurableStore {
           : "";
         if (checkpoint.digest !== expectedDigest)
           throw new Error("Checkpoint does not match the journal chain");
-        if (checkpoint.state) {
+        if (checkpoint.projection === "core") {
+          const saved = coreStateSchema.parse(checkpoint.snapshot);
+          let expected = initialState(manifest.run);
+          // A checksum binds bytes to a revision, not their meaning. Preserve
+          // semantic corruption detection before using a rebuildable projection.
+          for (const frame of inspection.frames.slice(0, checkpoint.revision))
+            expected = reduce(expected, frame.record.transition, frame.record.revision);
+          if (digestValue(saved) !== digestValue(expected))
+            throw new Error("Checkpoint state does not match journal");
+          projection = expected;
+        } else if (checkpoint.state) {
           const snapshot = await verifyArtifact(directory, checkpoint.state);
           const frames = journalFrameSchema.array().parse(JSON.parse(snapshot.toString("utf8")));
           if (digestValue(frames) !== digestValue(inspection.frames.slice(0, checkpoint.revision)))
@@ -160,11 +179,16 @@ export class DurableStore {
         journalVersion,
         fault: options.fault,
         replayWarnings,
+        projection,
       });
     } catch (error) {
       await journal.close();
       throw error;
     }
+  }
+
+  get replayState(): CoreState | undefined {
+    return this.projection ? structuredClone(this.projection) : undefined;
   }
 
   get frames(): readonly JournalFrame[] {
@@ -202,6 +226,14 @@ export class DurableStore {
     }
     await publishImmutable(path, bytes, "artifact", this.fault);
     const version = await this.verifyPublication(artifact);
+    const manifest = parseConversationManifest(bytes);
+    if (manifest) {
+      await verifyArtifact(this.directory, artifact);
+      this.artifactChildren.set(
+        artifact.digest,
+        manifest.chunks.map((chunk) => chunk.artifact),
+      );
+    }
     // Windows filesystem timestamps can alias same-size edits, including on CI's
     // ARM64 volume. Reverify and flush bytes there rather than trusting metadata.
     if (process.platform !== "win32") this.publishedArtifacts.set(artifact.digest, version);
@@ -249,7 +281,7 @@ export class DurableStore {
   }
 
   readArtifact(artifact: ArtifactRef): Promise<Buffer> {
-    return verifyArtifact(this.directory, artifact);
+    return verifyArtifactBytes(this.directory, artifact);
   }
 
   private async verifyReference(artifact: ArtifactRef): Promise<void> {
@@ -260,9 +292,24 @@ export class DurableStore {
       const current = await stat(join(this.directory, "artifacts", artifact.digest), {
         bigint: true,
       }).catch(() => undefined);
-      if (current && sameArtifactVersion(published, current)) return;
+      if (current && sameArtifactVersion(published, current)) {
+        for (const child of this.artifactChildren.get(artifact.digest) ?? [])
+          await this.verifyChunkReference(child);
+        return;
+      }
     }
     await verifyArtifact(this.directory, artifact);
+  }
+
+  private async verifyChunkReference(artifact: ArtifactRef): Promise<void> {
+    const published = this.publishedArtifacts.get(artifact.digest);
+    if (published && published.size === BigInt(artifact.size)) {
+      const current = await stat(join(this.directory, "artifacts", artifact.digest), {
+        bigint: true,
+      }).catch(() => undefined);
+      if (current && sameArtifactVersion(published, current)) return;
+    }
+    await verifyArtifactBytes(this.directory, artifact);
   }
 
   async append(request: AppendRequest): Promise<JournalFrame> {
@@ -361,15 +408,26 @@ export class DurableStore {
     });
   }
 
-  checkpoint(): Promise<void> {
+  checkpoint(state?: CoreState): Promise<void> {
+    const snapshot = state ? coreStateSchema.parse(state) : undefined;
     return this.serialize(async () => {
       await this.assertOwner();
-      const state = await this.writeArtifact(Buffer.from(canonicalJson(this.committed)));
+      if (
+        snapshot &&
+        (snapshot.run !== this.manifest.run || snapshot.revision !== this.committed.length)
+      )
+        throw new StorageError(
+          "conflict",
+          "Checkpoint projection does not match this run revision",
+        );
+      const legacy = snapshot
+        ? undefined
+        : await this.writeArtifact(Buffer.from(canonicalJson(this.committed)));
       const checkpoint = checkpointSchema.parse({
         schemaVersion: 1,
         revision: this.committed.length,
         digest: this.committed.at(-1)?.digest ?? "",
-        state,
+        ...(snapshot ? { projection: "core", snapshot } : { state: legacy }),
       });
       // Checkpoints are rebuildable. A failed projection does not invalidate an
       // already-synced lifecycle transition or authorize new work on its own.
@@ -382,7 +440,7 @@ export class DurableStore {
     });
   }
 
-  close(): Promise<void> {
+  close(options: { retainOwner?: boolean } = {}): Promise<void> {
     return this.serialize(async () => {
       if (this.closed) return;
       await this.journal.close();
@@ -393,7 +451,7 @@ export class DurableStore {
           "Uncertain store closed with its owner claim retained for reconciliation",
         );
       }
-      await releaseOwner(this.directory, this.owner);
+      if (!options.retainOwner) await releaseOwner(this.directory, this.owner);
     });
   }
 }

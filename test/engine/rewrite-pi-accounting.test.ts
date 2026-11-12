@@ -10,6 +10,8 @@ import {
   type AssignmentResult,
   type CommandReceipt,
 } from "../../engine/contracts/index.ts";
+import { ConversationQueries } from "../../engine/runtime/queries.ts";
+import { verifyArtifactBytes } from "../../engine/storage/journal.ts";
 import { verifyArtifact } from "../../engine/storage/index.ts";
 import { piFixture } from "./rewrite-pi-fixture.ts";
 
@@ -63,9 +65,18 @@ const messageSchema = z.looseObject({
 });
 async function transcriptMessages(directory: string, result: AssignmentResult) {
   assert(result.transcript, "assignment retains its full transcript");
-  const transcript = transcriptSchema.parse(
-    JSON.parse((await verifyArtifact(directory, result.transcript)).toString("utf8")),
+  const queries = new ConversationQueries({ read: (ref) => verifyArtifactBytes(directory, ref) });
+  const entries = [];
+  let page = await queries.query(
+    { kind: "conversation", ref: result.ref },
+    { source: "assignment", artifact: result.transcript },
   );
+  entries.push(...page.entries);
+  while (page.cursor) {
+    page = await queries.query({ kind: "conversation", ref: result.ref, cursor: page.cursor });
+    entries.push(...page.entries);
+  }
+  const transcript = transcriptSchema.parse({ entries });
   return transcript.entries
     .filter((entry) => entry.type === "message")
     .map((entry) => messageSchema.parse(entry.message));

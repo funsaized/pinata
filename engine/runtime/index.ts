@@ -113,6 +113,7 @@ export class Runtime {
   private state: ReturnType<typeof initialState>;
   private pending: Promise<void> = Promise.resolve();
   private closing = false;
+  private checkpointAttemptRevision = 0;
   private readonly subscribers = new Set<Subscriber>();
   private readonly failures: RuntimeDiagnostic[] = [];
   private readonly execution?: ExecutionCoordinator;
@@ -134,9 +135,11 @@ export class Runtime {
     this.children = new ChildBindings(this, () =>
       this.serialize(async () => immutable(this.state)),
     );
-    let state = initialState(store.manifest.run);
+    let state = store.replayState ?? initialState(store.manifest.run);
+    this.checkpointAttemptRevision = state.revision;
     for (const frame of store.frames) {
-      state = reduce(state, frame.record.transition, frame.record.revision);
+      if (frame.record.revision > state.revision)
+        state = reduce(state, frame.record.transition, frame.record.revision);
       this.committedRequests.set(frame.record.requestId, {
         payloadDigest: frame.record.payloadDigest,
         transitionDigest: digestValue(frame.record.transition),
@@ -531,6 +534,20 @@ export class Runtime {
       this.execution?.committed(entry.input.transition, this.state);
       this.schedules?.changed(this.state);
     }
+    await this.checkpoint();
+  }
+
+  private async checkpoint(force = false): Promise<void> {
+    if (!force && this.state.revision - this.checkpointAttemptRevision < 256) return;
+    this.checkpointAttemptRevision = this.state.revision;
+    try {
+      await this.store.checkpoint(this.state);
+    } catch (error) {
+      this.diagnostic({
+        kind: "execution_failed",
+        message: `Checkpoint projection was not saved; the journal remains authoritative: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    }
   }
 
   async query(input: unknown, caller: CallerAuthority): Promise<QueryResult> {
@@ -923,12 +940,15 @@ export class Runtime {
         for (const cancel of this.waitCancellations) cancel();
         for (const subscriber of this.subscribers) subscriber.active = false;
         this.subscribers.clear();
-        if (!confirmed || !applicationConfirmed)
+        if (!confirmed || !applicationConfirmed) {
+          await this.store.close({ retainOwner: true });
           return {
             status: "owner_unconfirmed",
             revision: this.state.revision,
             reason: "Owned activity is unconfirmed; the run claim and writer leases are retained",
           };
+        }
+        await this.checkpoint(true);
         await this.store.close();
         return { status: "closed", revision: this.state.revision };
       });
