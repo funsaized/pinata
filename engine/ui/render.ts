@@ -597,8 +597,15 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
   const controls =
     router.screen === "fleet"
       ? [
+          ...(width < 40
+            ? [
+                ["a", "actions"],
+                ["?", "help"],
+              ]
+            : []),
           ["↑↓", "select"],
           ["Enter", "open"],
+          ...(width >= 40 ? [["a", "stop/actions"]] : []),
           ...(width < 70
             ? []
             : [
@@ -606,9 +613,8 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
                 ["/", "search"],
                 ["f", "filter"],
                 ["h", "history"],
-                ["a", "actions"],
               ]),
-          ["?", "help"],
+          ...(width >= 40 ? [["?", "help"]] : []),
         ]
       : router.transcriptFocus
         ? [

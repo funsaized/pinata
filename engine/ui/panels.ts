@@ -49,6 +49,19 @@ export function helpPanel(
   const fleet = router.screen === "fleet";
   const composing = router.screen === "conversation" && !router.transcriptFocus;
   const context = fleet ? "Fleet" : composing ? "Message" : "Transcript";
+  const stopping: Section = {
+    title: "Stop or leave",
+    rows: [
+      [keys.stop, "Stop selected agent's active and queued work, including child agents."],
+      ["a · actions", "Choose one task (assignment), one agent, or the entire fleet (this run)."],
+      [keys.background, "Release the foreground wait; agents keep working."],
+      ["Esc / " + keys.parentScreen, "Leave this view; agents keep working."],
+      [
+        "Stop behavior",
+        "Interrupt active work and cancel queued work. Output and file edits are kept; cleanup may take time.",
+      ],
+    ],
+  };
   const sections: Section[] = fleet
     ? [
         {
@@ -61,14 +74,14 @@ export function helpPanel(
             ["f", "Cycle all / active / failed"],
             ["h", "Toggle assignment history"],
             ["Q", "Show / hide queued work"],
-            ["a", "Open actions"],
+            ["a", "Stop / manage agents"],
           ],
         },
+        stopping,
         {
           title: "Navigation",
           rows: [
             ["PageUp / PageDown", "Scroll fleet"],
-            [keys.parentScreen, "Return to Pi"],
             ["?", "Open / close help"],
           ],
         },
@@ -85,6 +98,13 @@ export function helpPanel(
               [conversationKeys.expandTools.join(" / "), "Expand / collapse tool output"],
               [conversationKeys.toggleThinking.join(" / "), "Show / hide thinking"],
               ["? (empty message)", "Open help"],
+              [
+                keys.stop + " / /stop",
+                "Stop this agent's active and queued work, including child agents.",
+              ],
+              ["/stop-assignment", "Stop only the selected assignment and its child agents."],
+              ["/stop-run", "Stop all active and queued work in this fleet."],
+              ["/background", "Let the coordinator continue; agents keep working."],
             ],
           },
           {
@@ -109,10 +129,11 @@ export function helpPanel(
               ["m", "Load older messages"],
               [keys.refresh, "Refresh or reconnect"],
               ["Tab", "Focus message"],
-              ["a", "Open actions"],
+              ["a", "Stop / manage agents"],
               ["?", "Open / close help"],
             ],
           },
+          stopping,
           {
             title: "Navigation",
             rows: [
@@ -147,17 +168,30 @@ export function actionsPanel(
   const target = router.selected
     ? `${router.selected.worker}/${router.selected.assignment}`
     : "no assignment selected";
+  const worker = router.selected?.worker ?? "the selected agent";
   const actions = [
     [
-      "Stop selected assignment",
-      "Cancel this assignment and its descendants; leave other assignments alone.",
+      "Stop selected task (assignment)",
+      `Interrupt ${target} if active, or cancel it if queued. Includes its child agents; other assignments are not cancelled.`,
     ],
-    ["Stop selected worker", "Cancel this worker's unfinished assignments and their descendants."],
-    ["Stop entire run", "Cancel all unfinished work in this run."],
-    ["Release foreground wait", "Let the coordinator resume while subagents keep working."],
+    [
+      "Stop selected agent",
+      `Stop all active and queued work for ${worker}, including child agents. Unrelated agents keep working.`,
+    ],
+    [
+      "Stop entire fleet (this run)",
+      "Stop all active and queued work in this run, including hidden or filtered agents." +
+        (Object.values(router.state.schedules).some((schedule) => schedule.status === "active")
+          ? " Active schedules can still start new work."
+          : ""),
+    ],
+    [
+      "Release wait (keep agents running)",
+      "Let the coordinator continue. Agents and queued work keep running; nothing is paused or cancelled.",
+    ],
     [
       "Recover selected assignment",
-      "Check saved execution evidence to reconnect to interrupted work when possible.",
+      "Reconnect to the original attempt from saved evidence when possible. Use Continue to resume cancelled work; recovery does not launch a new attempt.",
     ],
     ["Inspect selected result", "Open the saved result and execution details for this assignment."],
   ];
@@ -181,13 +215,22 @@ export function actionsPanel(
     if (selected) selectedEnd = body.length;
     body.push("");
   });
-  const available = Math.max(1, height - 4);
+  const header = [
+    paint("strong", "Agent actions"),
+    fit(paint("accent.purple", `Selected: ${displayText(target)}`), width),
+    ...wrapTextWithAnsi("Stops keep output and edits; cleanup may take time.", width).map((line) =>
+      paint("muted", line),
+    ),
+    "",
+  ];
+  const available = Math.max(1, height - header.length - 1);
   const first = Math.min(selectedStart, Math.max(0, selectedEnd - available));
   return [
-    paint("strong", "Actions"),
-    fit(paint("accent.purple", displayText(target)), width),
-    "",
+    ...header,
     ...body.slice(first, first + available),
-    paint("muted", width < 40 ? "↑↓ · Enter · Esc" : "↑↓ select · Enter execute · Esc cancel"),
+    paint(
+      "muted",
+      width < 40 ? "↑↓ · Enter · Esc close" : "↑↓ select · Enter execute · Esc close menu",
+    ),
   ].slice(0, height);
 }

@@ -660,7 +660,8 @@ export class ScreenRouter {
     scope: "assignment" | "worker" | "run" = "worker",
   ): Promise<SurfaceReply> {
     const ref = this.selected;
-    if (!ref && kind !== "background") return this.unavailable("Select an assignment first");
+    if (!ref && kind !== "background" && !(kind === "cancel" && scope === "run"))
+      return this.unavailable("Select an assignment first");
     if (kind !== "inspect" && !this.source.capabilities.control)
       return this.unavailable("This source is read-only; control requires the owning runtime");
     const call =
@@ -692,10 +693,16 @@ export class ScreenRouter {
       this.notice = "Retained assignment result";
     } else if (reply.response.method === "execute") {
       const receipt = reply.response.result;
-      this.notice =
-        receipt.status === "accepted"
-          ? `${kind} accepted at revision ${receipt.revision}`
-          : receipt.error.message;
+      if (receipt.status !== "accepted") this.notice = receipt.error.message;
+      else if (kind === "background") this.notice = "Foreground wait released; agents keep working";
+      else {
+        const target = {
+          assignment: `${ref?.worker}/${ref?.assignment}`,
+          worker: `agent ${ref?.worker}`,
+          run: "the entire fleet",
+        }[scope];
+        this.notice = `Stop requested for ${target}; cleanup may take time`;
+      }
       if (receipt.status === "accepted") this.options.accepted?.(receipt);
     } else this.notice = JSON.stringify(reply.response.result);
     this.changed();

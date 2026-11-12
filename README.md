@@ -167,13 +167,13 @@ Backend and context metadata remain available through the details control.
 | Mouse wheel, PageUp/PageDown, Alt+PageUp/PageDown | Scroll the selected view.                                   |
 | `/` in the fleet                                  | Search workers/tasks; Enter keeps the filter.               |
 | `f`, `h`, `Q` in the fleet                        | Cycle all/active/failed, include history, show queued work. |
-| `a` in the fleet                                  | Show actions with assignment, worker and run scopes.        |
+| `a` in the fleet                                  | Show stop actions for an assignment, agent or entire fleet. |
 | Tab in a conversation                             | Switch composer/transcript focus.                           |
 | Ctrl+O in a conversation                          | Expand/collapse tool output.                                |
 | Ctrl+T in a conversation                          | Show/hide thinking output.                                  |
 | `d`, `m` with transcript focus                    | Expand details, load older pages.                           |
-| Ctrl+X                                            | Stop the selected worker's pending work.                    |
-| Ctrl+B                                            | Release a foreground wait.                                  |
+| Ctrl+X                                            | Stop this agent's active/queued work, including children.   |
+| Ctrl+B                                            | Release a foreground wait; agents keep working.             |
 | Ctrl+R                                            | Recover the selected original assignment.                   |
 | Ctrl+L                                            | Refresh, or reconnect a disconnected attachment.            |
 | Ctrl+Left/Right                                   | Cycle main, fleet and conversation screens.                 |
@@ -201,7 +201,15 @@ for transcript controls or the commands below.
 Inside a worker screen, `/worker <id> [assignment]`, `/assignment <number>`,
 `/fleet` and `/main` navigate. `/steer <text>`, `/follow-up <text>` and
 `/continue <text>` select the message action. `/stop`, `/stop-assignment` and
-`/stop-run` have distinct scopes. Other controls are `/inspect`, `/more`, `/refresh`,
+`/stop-run` stop the selected agent, one assignment, or the entire fleet in the
+current run, respectively. Stops include child agents, interrupt active work and
+cancel queued work. The fleet action includes hidden and filtered agents and works
+without a selected row. Stop requests retain output and file edits; cleanup may take
+time. Active schedules can still start new work. `/background` releases the
+coordinator's foreground wait while agents keep working. `Esc` closes the actions
+menu or leaves the view without stopping work.
+
+Other controls are `/inspect`, `/more`, `/refresh`,
 `/recover`, `/reconnect`, `/background`, `/queued`, `/scroll up|down|N`,
 `/palette <name>` and `/help`. `/replace <definition> <task>` creates a worker
 with the selected assignment recorded as origin.

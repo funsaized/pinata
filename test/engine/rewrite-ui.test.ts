@@ -987,9 +987,66 @@ test("fleet help, search, filtering and actions are usable without a composer", 
   screen.handleInput("h");
   assert.equal(router.history, true);
   screen.handleInput("a");
-  assert.match(screen.render(80).join("\n"), /Stop entire run/);
+  assert.match(screen.render(80).join("\n"), /Stop entire fleet/);
   screen.handleInput("\u001b");
   assert.equal(source.calls.length, 0, "browsing actions does not execute them");
+  screen.dispose();
+  router.dispose();
+});
+
+test("fleet stop actions preserve their scope and background only releases the wait", async () => {
+  const source = new UiSource(uiState(3));
+  for (const assignment of Object.values(source.state.assignments))
+    assignment.execution = { phase: "running" };
+  const router = new ScreenRouter(source);
+  await router.start();
+  router.navigate("fleet", ref(2));
+  source.respond = async (input) => accepted(input);
+  const terminal = new MemoryTerminal();
+  terminal.rows = 40;
+  const tui = new TuiAltScreen(terminal);
+  tui.requestRender = () => {};
+  const screen = new PinataScreen({ tui, router, main() {} });
+  for (const [index, scope] of ["assignment", "worker", "run", "background"].entries()) {
+    screen.handleInput("a");
+    router.actionIndex = index;
+    const menu = stripTerminalSequences(screen.render(100).join("\n"));
+    assert.match(menu, /Selected: worker-2\/1/);
+    assert.match(menu, /Stops keep output and edits/);
+    assert.match(menu, /Esc close menu/);
+    screen.handleInput("\r");
+    await tick();
+    const call = surfaceCallSchema.parse(source.calls.at(-1));
+    assert.equal(call.method, "execute");
+    if (call.method !== "execute") throw new Error("Expected control");
+    const { command } = commandEnvelopeSchema.parse(call.input);
+    if (scope === "background") {
+      assert.equal(command.kind, "background");
+      assert.match(router.notice, /agents keep working/);
+    } else {
+      assert.equal(command.kind, "cancel");
+      if (command.kind !== "cancel") throw new Error("Expected cancellation");
+      assert.equal(command.scope, scope);
+      assert.equal(command.worker, scope === "run" ? undefined : "worker-2");
+      assert.equal(command.assignment, scope === "assignment" ? 1 : undefined);
+      assert.equal(command.descendants, true);
+      assert.match(router.notice, /Stop requested/);
+    }
+  }
+  router.search = "no matching agent";
+  router.refreshView();
+  assert.equal(router.selected, undefined);
+  assert.equal((await router.control("cancel", "worker")).status, "error");
+  assert.equal((await router.control("cancel", "run")).status, "ok");
+  const call = surfaceCallSchema.parse(source.calls.at(-1));
+  assert(call.method === "execute");
+  const { command } = commandEnvelopeSchema.parse(call.input);
+  assert(command.kind === "cancel" && command.scope === "run");
+  for (const width of [24, 50, 80])
+    assert.match(
+      stripTerminalSequences(screen.render(width).at(-2) ?? ""),
+      /a\s+(?:stop\/)?actions/,
+    );
   screen.dispose();
   router.dispose();
 });
