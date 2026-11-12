@@ -1,6 +1,6 @@
 {
   "name": "pi-pinata",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "An extensible subagent runtime for Pi with durable assignments, shared workspaces, and live conversation controls.",
   "keywords": [
     "herdr",
