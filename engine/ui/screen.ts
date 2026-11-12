@@ -5,6 +5,7 @@ import {
   type Component,
   type Focusable,
   type KeyId,
+  type KeybindingsManager,
   type TUI,
   type TuiMouseEvent,
   type TuiMouseEventResult,
@@ -17,7 +18,7 @@ import { ScreenRouter, type MessageAction } from "./router.ts";
 import type { ConversationPresentation } from "./conversation.ts";
 import { padded } from "./text.ts";
 
-import { resolveKeys, type UiKeys } from "./keys.ts";
+import { resolveKeys, resolveConversationKeys, type UiKeys } from "./keys.ts";
 export { resolveKeys } from "./keys.ts";
 export type ScreenOptions = {
   tui: TUI;
@@ -25,6 +26,7 @@ export type ScreenOptions = {
   main(): void;
   paint?(): Paint;
   presentation?(): ConversationPresentation | undefined;
+  keybindings?: Pick<KeybindingsManager, "getKeys">;
   ascii?: boolean;
   error?(error: unknown): void;
 };
@@ -121,6 +123,7 @@ export class PinataScreen implements Component, Focusable {
           width: Math.max(1, width - 2),
           height: available,
           presentation: this.options.presentation?.(),
+          conversationKeys: resolveConversationKeys(this.router.keys, this.options.keybindings),
           paint: this.paint(),
           ascii: this.options.ascii,
           hitRows: this.hitRows,
@@ -209,6 +212,19 @@ export class PinataScreen implements Component, Focusable {
       return;
     }
     const composing = this.router.screen === "conversation" && !this.router.transcriptFocus;
+    if (this.router.screen === "conversation") {
+      const keys = resolveConversationKeys(this.router.keys, this.options.keybindings);
+      if (keys.expandTools.some((key) => matchesKey(data, key))) {
+        this.router.expandedTools = !this.router.expandedTools;
+        this.requestRender();
+        return;
+      }
+      if (keys.toggleThinking.some((key) => matchesKey(data, key))) {
+        this.router.showThinking = !this.router.showThinking;
+        this.requestRender();
+        return;
+      }
+    }
     if (
       composing &&
       ["ctrl+left", "ctrl+right", "ctrl+b", "ctrl+r"].some((key) => matchesKey(data, key as KeyId))

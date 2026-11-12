@@ -196,11 +196,12 @@ export function installCoordinatorUi(
       opening = (async () => {
         try {
           await context.ui.custom<void>(
-            (tui, _theme, _keys, done) => {
+            (tui, _theme, keys, done) => {
               closeScreen = () => done();
               return new PinataScreen({
                 tui,
                 router,
+                keybindings: keys,
                 main: () => done(),
                 paint: () => paint(binding),
                 presentation: () => {

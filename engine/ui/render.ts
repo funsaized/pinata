@@ -1,6 +1,6 @@
 import { actionsPanel, helpPanel } from "./panels.ts";
 import { renderConversation, type ConversationPresentation } from "./conversation.ts";
-import { resolveKeys } from "./keys.ts";
+import { resolveKeys, resolveConversationKeys, type ConversationKeys } from "./keys.ts";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { assignmentKey, type AssignmentRef, type CoreState } from "../contracts/index.ts";
 import {
@@ -23,6 +23,7 @@ export type RenderOptions = {
   ascii?: boolean;
   hitRows?: Map<number, AssignmentRef>;
   presentation?: ConversationPresentation;
+  conversationKeys?: ConversationKeys;
 };
 function promptBox(
   task: string,
@@ -120,7 +121,7 @@ export function activityIndicator(
   now: number,
   prefix = "",
   row = 0,
-  cycle = 15,
+  cycle = row + Math.min(prefix.length, 3) + 5,
   ascii = true,
 ): string {
   const rail = ascii ? "-" : "─";
@@ -130,8 +131,8 @@ export function activityIndicator(
   const position = (frame % cycle) - row;
   return Array.from(branch, (character, column) => {
     if (character === " ") return character;
-    // A shared wave descends the trunk, then forks along each connected branch.
-    const distance = column < prefix.length - 3 ? 0 : column;
+    // Indentation does not add empty travel frames before a connected branch.
+    const distance = Math.max(0, column - Math.max(0, prefix.length - 3));
     if (position === distance) return ["c", "C", "c"][frame % 3];
     if (position < distance) return column % 2 === 0 ? "o" : " ";
     if (character === "─" || character === "-") return column % 2 === 0 ? "-" : " ";
@@ -161,8 +162,16 @@ function treeLines(state: CoreState, nodes: TreeNode[], options: TreeOptions): T
   const models = Object.values(state.workers).flatMap((worker) =>
     worker.model ? [`${worker.model.provider}/${worker.model.id}`] : [],
   );
-  const cycle = nodes.length + Math.max(0, ...nodes.map((node) => node.prefix.length)) + 8;
-  for (const [row, node] of nodes.entries()) {
+  // Completed and queued rows must not lengthen the animated wave.
+  const activeNodes = nodes.filter(
+    (node) => !["ended", "queued"].includes(node.assignment.execution.phase),
+  );
+  const cycle = Math.max(
+    1,
+    ...activeNodes.map((node, row) => row + Math.min(node.prefix.length, 3) + 5),
+  );
+  let activeRow = 0;
+  for (const node of nodes) {
     const assignment = node.assignment;
     const worker = state.workers[assignment.ref.worker];
     const status = executionLabel(assignment);
@@ -179,7 +188,7 @@ function treeLines(state: CoreState, nodes: TreeNode[], options: TreeOptions): T
           options.motion ?? "off",
           now,
           node.prefix,
-          row,
+          activeRow++,
           cycle,
           options.ascii ?? false,
         )
@@ -321,12 +330,13 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
   const width = Math.max(1, options.width);
   const height = Math.max(1, options.height);
   const { paint } = options;
+  const conversationKeys = options.conversationKeys ?? resolveConversationKeys(router.keys);
   options.hitRows?.clear();
   if (router.actions || router.help)
     return (
       router.actions
         ? actionsPanel(router, width, height, paint)
-        : helpPanel(router, width, height, paint)
+        : helpPanel(router, width, height, paint, conversationKeys)
     ).map((line) => paint("background", padded(line, width)));
 
   const header =
@@ -527,7 +537,11 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
               renderConversation(view.page.entries, {
                 width,
                 paint,
-                expanded: router.details,
+                expanded: router.expandedTools,
+                showThinking: router.showThinking,
+                details: router.details,
+                toolShortcut: conversationKeys.expandTools.join(" / "),
+                thinkingShortcut: conversationKeys.toggleThinking.join(" / "),
                 presentation: options.presentation,
               }),
             ]
@@ -607,6 +621,12 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
             ["Enter", "send"],
             ["?", "help (empty message)"],
           ];
+  if (router.screen === "conversation") {
+    controls.unshift(
+      [conversationKeys.expandTools.join(" / "), "tools"],
+      [conversationKeys.toggleThinking.join(" / "), "thinking"],
+    );
+  }
   controls.push([resolveKeys(router.keys).parentScreen, "back"]);
   output.push(
     fit(

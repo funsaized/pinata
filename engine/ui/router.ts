@@ -73,6 +73,8 @@ export class ScreenRouter {
   readonly collapsed = new Set<string>();
   transcriptFocus = false;
   details = false;
+  expandedTools = false;
+  showThinking = false;
   readonly activity = new Map<string, string>();
   private readonly drafts = new Map<string, string>();
   private readonly conversations = new Map<string, ConversationView>();

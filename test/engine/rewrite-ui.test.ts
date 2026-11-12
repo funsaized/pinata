@@ -1024,6 +1024,62 @@ test("composer editing keys preserve focus and transcript controls are explicit"
   router.dispose();
 });
 
+test("Pi conversation shortcuts toggle tools and thinking independently without changing drafts", async (t) => {
+  for (const custom of [false, true]) {
+    await t.test(custom ? "configured Pi shortcuts" : "default shortcuts", async () => {
+      const source = new UiSource();
+      const router = new ScreenRouter(source);
+      await router.start();
+      const tui = new TuiAltScreen(new MemoryTerminal());
+      tui.requestRender = () => {};
+      const screen = new PinataScreen({
+        tui,
+        router,
+        main() {},
+        keybindings: custom
+          ? { getKeys: (key) => (key === "app.tools.expand" ? ["alt+o"] : ["alt+t"]) }
+          : undefined,
+      });
+      try {
+        router.navigate("conversation", ref());
+        await tick();
+        screen.handleInput("Keep this draft");
+        const calls = source.calls.length;
+        if (custom) {
+          screen.handleInput("\u000f");
+          screen.handleInput("\u0014");
+          assert.equal(router.expandedTools, false);
+          assert.equal(router.showThinking, false);
+        }
+        const tools = custom ? "\u001bo" : "\u000f";
+        const thinking = custom ? "\u001bt" : "\u0014";
+        screen.handleInput(tools);
+        assert.equal(router.expandedTools, true);
+        assert.equal(router.showThinking, false);
+        screen.handleInput(thinking);
+        assert.equal(router.expandedTools, true);
+        assert.equal(router.showThinking, true);
+        assert.equal(router.details, false);
+        const rows = stripTerminalSequences(screen.render(120).join("\n"));
+        assert(rows.includes(custom ? "alt+o tools" : "ctrl+o tools"));
+        assert(rows.includes(custom ? "alt+t thinking" : "ctrl+t thinking"));
+        screen.handleInput("\t");
+        screen.handleInput(tools);
+        screen.handleInput(thinking);
+        screen.handleInput("d");
+        assert.equal(router.expandedTools, false);
+        assert.equal(router.showThinking, false);
+        assert.equal(router.details, true);
+        assert.equal(router.draft, "Keep this draft");
+        assert.equal(source.calls.length, calls);
+      } finally {
+        screen.dispose();
+        router.dispose();
+      }
+    });
+  }
+});
+
 test("queued-only compact trees never resurrect completed rows and narrow rows retain status", () => {
   const state = uiState(2);
   state.assignments[assignmentKey(ref())].execution = {
@@ -1098,9 +1154,9 @@ test("conversation renders Markdown messages and tool previews without hiding er
   ];
   const options = { width: 100, paint: createPaint("terminal-default"), expanded: false };
   const compact = stripTerminalSequences(renderConversation(entries, options).join("\n"));
-  assert.match(compact, /Tool call · read parser.ts/);
   assert.match(compact, /read parser.ts/);
-  assert.match(compact, /Tool error · read test.ts/);
+  assert.equal(compact.match(/read parser.ts/g)?.length, 1);
+  assert.match(compact, /read test.ts · failed/);
   assert.match(compact, /File missing/);
   assert.match(compact, /Findings/);
   assert(!compact.includes("**One issue**"));
@@ -1402,18 +1458,55 @@ test("selected prompts wrap inside their box without hiding fleet controls", asy
 
 test("activity travels across a fixed ASCII track and honors reduced motion", () => {
   assert.deepEqual(
-    [0, 250, 500, 750, 3500, 3750].map((now) => activityIndicator("full", now)),
-    ["c o o", "-Co o", "- c o", "- -co", "- - -", "c o o"],
+    [0, 250, 500, 750, 1000, 1250].map((now) => activityIndicator("full", now)),
+    ["c o o", "-Co o", "- c o", "- -co", "- - C", "c o o"],
   );
   for (const motion of ["reduced", "off"] as const)
     assert.equal(activityIndicator(motion, 900), activityIndicator(motion, 0));
-  assert.equal(activityIndicator("full", 0, "├─ ", 0, 15, false), "c o o o ");
-  assert.equal(activityIndicator("full", 250, "├─ ", 0, 15, false), "┆Co o o ");
-  assert.equal(activityIndicator("full", 500, "├─ ", 0, 15, false), "┆ c o o ");
-  assert.equal(activityIndicator("full", 3000, "├─ ", 0, 15, false), "┆ - - - ");
-  assert.equal(activityIndicator("full", 3000, "|- ", 0, 15, true), ": - - - ");
+  assert.equal(activityIndicator("full", 0, "├─ ", 0, 8, false), "c o o o ");
+  assert.equal(activityIndicator("full", 250, "├─ ", 0, 8, false), "┆Co o o ");
+  assert.equal(activityIndicator("full", 500, "├─ ", 0, 8, false), "┆ c o o ");
+  assert.equal(activityIndicator("full", 1750, "├─ ", 0, 8, false), "┆ - - -C");
+  assert.equal(activityIndicator("full", 2000, "├─ ", 0, 8, false), "c o o o ");
   assert.equal(activityIndicator("full", 250, "└─ ", 1, 15, false), "C o o o ");
   assert.equal(activityIndicator("off", 250, "└─ ", 1, 15, false), "└───────");
+});
+
+test("tree activity loops without idle frames around completed ancestors and queued rows", async (t) => {
+  let now = 0;
+  t.mock.method(performance, "now", () => now);
+  const state = uiState(5);
+  for (const assignment of Object.values(state.assignments))
+    assignment.execution = { phase: "ended", reason: "completed", cleanup: "confirmed" };
+  state.assignments[assignmentKey(ref())].execution = { phase: "queued" };
+  for (const worker of [3, 5])
+    state.assignments[assignmentKey(ref(worker))].execution = { phase: "running" };
+  state.workers["worker-4"].parentAssignment = ref(2);
+  state.workers["worker-5"].parentAssignment = ref(4);
+  const router = new ScreenRouter(new UiSource(state));
+  t.after(() => router.dispose());
+  await router.start();
+  router.navigate("fleet");
+  router.showQueued = true;
+  const paint = createPaint("terminal-default");
+  for (const ascii of [false, true]) {
+    for (let frame = 0; frame < 30; frame++) {
+      now = frame * 250;
+      for (const rows of [
+        fleetWidget(state, { width: 100, paint, ascii, motion: "full" }),
+        renderScreen(router, { width: 100, height: 30, paint, ascii }),
+      ]) {
+        const markers = rows
+          .map(stripTerminalSequences)
+          .filter((line) => /worker-(3|5)\/1/.test(line))
+          .map((line) => line.split("fixture")[0]);
+        assert(
+          markers.some((marker) => /[cC]/.test(marker)),
+          `idle frame ${frame}`,
+        );
+      }
+    }
+  }
 });
 
 test("fleet retains completed dependency references without inventing ancestry", async () => {
@@ -1488,7 +1581,9 @@ test("help and footer follow fleet, transcript and composer context without swal
   screen.handleInput("\t");
   screen.handleInput("?");
   assert.match(rendered(), /Pinata help · Message/);
-  assert.doesNotMatch(rendered(), /Expand.*tool output|Cycle all/);
+  assert.match(rendered(), /Expand.*tool output/);
+  assert.match(rendered(), /Show.*thinking/);
+  assert.doesNotMatch(rendered(), /Cycle all/);
   screen.handleInput("?");
   screen.handleInput("Why");
   screen.handleInput("?");

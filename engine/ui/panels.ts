@@ -1,6 +1,6 @@
 import { visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import type { Paint } from "./palette.ts";
-import { resolveKeys } from "./keys.ts";
+import { resolveKeys, resolveConversationKeys, type ConversationKeys } from "./keys.ts";
 import { displayText, fit, padded } from "./text.ts";
 import type { ScreenRouter } from "./router.ts";
 
@@ -43,6 +43,7 @@ export function helpPanel(
   width: number,
   height: number,
   paint: Paint,
+  conversationKeys: ConversationKeys = resolveConversationKeys(router.keys),
 ): string[] {
   const keys = resolveKeys(router.keys);
   const fleet = router.screen === "fleet";
@@ -81,6 +82,8 @@ export function helpPanel(
               ["Shift+Enter", "Insert newline"],
               ["Ctrl+Left / Right", "Move by word"],
               ["Tab", "Focus transcript"],
+              [conversationKeys.expandTools.join(" / "), "Expand / collapse tool output"],
+              [conversationKeys.toggleThinking.join(" / "), "Show / hide thinking"],
               ["? (empty message)", "Open help"],
             ],
           },
@@ -100,7 +103,9 @@ export function helpPanel(
               ["↑ / ↓", "Scroll transcript"],
               ["PageUp / PageDown", "Scroll by page"],
               ["Bottom of transcript", "Resume following automatically"],
-              ["d", "Expand / collapse tool output"],
+              [conversationKeys.expandTools.join(" / "), "Expand / collapse tool output"],
+              [conversationKeys.toggleThinking.join(" / "), "Show / hide thinking"],
+              ["d", "Show / hide assignment details"],
               ["m", "Load older messages"],
               [keys.refresh, "Refresh or reconnect"],
               ["Tab", "Focus message"],

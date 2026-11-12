@@ -49,6 +49,59 @@ test("Pi conversations use native user cards, Markdown styles and syntax highlig
   assert(output.every((line) => visibleWidth(line) <= 80));
 });
 
+test("conversation display toggles keep thinking, tool output and assignment metadata independent", () => {
+  initTheme("dark", false);
+  const entries = [
+    {
+      message: {
+        role: "assistant",
+        content: [
+          { type: "thinking", thinking: "Inspect the boundary carefully." },
+          { type: "text", text: "I will read the file." },
+          { type: "toolCall", id: "read", name: "read", arguments: { path: "fixture.ts" } },
+        ],
+      },
+    },
+    {
+      message: {
+        role: "toolResult",
+        toolCallId: "read",
+        toolName: "read",
+        content: Array.from({ length: 15 }, (_, index) => `output ${index + 1}`).join("\n"),
+      },
+    },
+  ];
+  const options = {
+    width: 80,
+    paint: createPaint("terminal-default"),
+    expanded: false,
+    presentation: piConversationPresentation(),
+  };
+  const render = (expanded: boolean, showThinking: boolean) =>
+    stripTerminalSequences(
+      renderConversation(entries, { ...options, expanded, showThinking }).join("\n"),
+    );
+  const compact = render(false, false);
+  assert.doesNotMatch(compact, /Inspect the boundary|output 15/);
+  assert.match(compact, /ctrl\+o to expand/);
+  assert.match(compact, /ctrl\+t to show/);
+  assert.equal(compact.match(/read fixture.ts/g)?.length, 1);
+  const thinking = render(false, true);
+  assert(thinking.indexOf("Inspect the boundary") < thinking.indexOf("I will read"));
+  assert.doesNotMatch(thinking, /output 15/);
+  const tools = render(true, false);
+  assert.match(tools, /output 15/);
+  assert.doesNotMatch(tools, /Inspect the boundary/);
+  assert.match(render(true, true), /Inspect the boundary/);
+  assert.match(render(true, true), /output 15/);
+  for (const width of [1, 2, 30, 80])
+    assert(
+      renderConversation(entries, { ...options, width, showThinking: true, expanded: true }).every(
+        (line) => visibleWidth(line) <= width,
+      ),
+    );
+});
+
 test("Pi tool and report surfaces use native state backgrounds with full-width padding", () => {
   initTheme("dark", false);
   const colors: Record<string, number> = {

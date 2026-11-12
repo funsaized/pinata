@@ -5,7 +5,7 @@ import {
   UserMessageComponent,
   type Theme,
 } from "@earendil-works/pi-coding-agent";
-import { Box, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { Box, Markdown, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import type { ConversationPresentation, ConversationSurface } from "../ui/conversation.ts";
 import { displayText, fit } from "../ui/text.ts";
 
@@ -26,6 +26,7 @@ export function piConversationPresentation(
       markdown.heading("theme"),
       markdown.code("theme"),
       markdown.codeBlock("theme"),
+      hostTheme?.fg("thinkingText", "theme") ?? "",
       hostTheme?.bg("userMessageBg", hostTheme.fg("userMessageText", "theme")) ?? "",
       highlightCode("const value = 'text';", "typescript").join(""),
       ...Object.values(backgrounds).map((token) => hostTheme?.bg(token, "theme") ?? ""),
@@ -48,7 +49,7 @@ export function piConversationPresentation(
       : {}),
     user(text, width) {
       // Pi prompt-zone markers belong to the parent transcript, not this overlay.
-      return new UserMessageComponent(displayText(text), markdown, 1)
+      return new UserMessageComponent(displayText(text), markdown, width > 2 ? 1 : 0)
         .render(width)
         .map((line) =>
           ["A", "B", "C"].reduce(
@@ -61,6 +62,12 @@ export function piConversationPresentation(
       return highlightCode(displayText(text), getLanguageFromPath(path))
         .flatMap((line) => wrapTextWithAnsi(line, width))
         .map((line) => fit(line, width));
+    },
+    thinking(text, width) {
+      return new Markdown(displayText(text), width > 2 ? 1 : 0, 0, markdown, {
+        color: (value) => hostTheme?.fg("thinkingText", value) ?? value,
+        italic: true,
+      }).render(width);
     },
     code(text, language, width) {
       return highlightCode(displayText(text), language)

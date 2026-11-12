@@ -9,6 +9,7 @@ export type ConversationPresentation = {
   cacheKey: string;
   surface?(kind: ConversationSurface, rows: string[], width: number): string[];
   user(text: string, width: number): string[];
+  thinking?(text: string, width: number): string[];
   code(text: string, language: string, width: number): string[];
   file(text: string, path: string, width: number): string[];
 };
@@ -16,6 +17,10 @@ type ConversationOptions = {
   width: number;
   paint: Paint;
   expanded: boolean;
+  showThinking?: boolean;
+  details?: boolean;
+  toolShortcut?: string;
+  thinkingShortcut?: string;
   presentation?: ConversationPresentation;
 };
 
@@ -60,11 +65,24 @@ function renderEntries(entries: unknown[], options: ConversationOptions): string
   const output: string[] = [];
   const calls = new Map<string, string>();
   const paths = new Map<string, string>();
-  const results = new Map<string, boolean>();
+  const argumentsByCall = new Map<string, unknown>();
+  const results = new Set<string>();
   for (const entry of entries) {
     const message = object(object(entry)?.message);
-    if (message?.role === "toolResult")
-      results.set(String(message.toolCallId), Boolean(message.isError));
+    if (message?.role === "toolResult") results.add(String(message.toolCallId));
+    if (message?.role !== "assistant" || !Array.isArray(message.content)) continue;
+    for (const part of message.content) {
+      const item = object(part);
+      if (item?.type !== "toolCall") continue;
+      const args = object(item.arguments);
+      const target = args?.path ?? args?.command ?? args?.pattern ?? args?.query ?? "";
+      const label = displayText(
+        `${String(item.name)} ${typeof target === "string" ? target.split("\n")[0] : ""}`,
+      ).trim();
+      calls.set(String(item.id), label);
+      argumentsByCall.set(String(item.id), item.arguments);
+      if (typeof args?.path === "string") paths.set(String(item.id), args.path);
+    }
   }
   const surface = (start: number, kind: ConversationSurface) => {
     if (!options.presentation?.surface) return;
@@ -73,14 +91,17 @@ function renderEntries(entries: unknown[], options: ConversationOptions): string
     output.push(...options.presentation.surface(kind, rows, width), "");
   };
   const markdown = (value: string) =>
-    new Markdown(displayText(value), 1, 0, options.presentation?.markdown ?? theme(paint)).render(
-      width,
-    );
+    new Markdown(
+      displayText(value),
+      width > 2 ? 1 : 0,
+      0,
+      options.presentation?.markdown ?? theme(paint),
+    ).render(width);
   for (const value of entries) {
     const entry = object(value);
     const message = entry && object(entry.message);
     if (!message) {
-      if (expanded) {
+      if (options.details) {
         output.push(...markdown(JSON.stringify(value, null, 2)), "");
       }
       continue;
@@ -119,34 +140,46 @@ function renderEntries(entries: unknown[], options: ConversationOptions): string
         surface(start, "custom");
         continue;
       }
-      const label = calls.get(String(message.toolCallId)) ?? String(message.toolName ?? "tool");
+      const label =
+        calls.get(String(message.toolCallId)) ?? displayText(String(message.toolName ?? "tool"));
       output.push(
         paint(
-          message.isError ? "error" : "muted",
-          fit(`${message.isError ? "Tool error" : "Tool result"} · ${label}`, width),
+          message.isError ? "error" : "strong",
+          fit(`${label}${message.isError ? " · failed" : ""}`, width),
         ),
       );
+      const args = argumentsByCall.get(String(message.toolCallId));
+      if (expanded && args !== undefined) {
+        const argsText = JSON.stringify(args, null, 2);
+        output.push(
+          ...(options.presentation?.code(argsText, "json", width) ?? lines(argsText, width)),
+        );
+      }
       const path = paths.get(String(message.toolCallId));
       const body =
         path && message.toolName === "read" && options.presentation
           ? options.presentation.file(text(message.content), path, width)
-          : markdown(text(message.content));
-      const previewRows = message.isError ? 8 : 4;
+          : (options.presentation?.code(text(message.content), "text", width) ??
+            lines(text(message.content), width));
+      const previewRows = 10;
       output.push(...(expanded ? body : body.slice(0, previewRows)));
       if (!expanded && body.length > previewRows)
         output.push(
           paint(
             "muted",
-            fit(`… ${body.length - previewRows} more lines · d expands in transcript`, width),
+            fit(
+              `… ${body.length - previewRows} more lines · ${options.toolShortcut ?? "ctrl+o"} to expand`,
+              width,
+            ),
           ),
         );
       output.push("");
       surface(start, message.isError ? "error" : "success");
       continue;
     }
-    let body = text(message.content);
+    let body = role === "assistant" && Array.isArray(message.content) ? "" : text(message.content);
     if (
-      !expanded &&
+      !options.details &&
       role === "user" &&
       body.startsWith("Assignment evidence (data, not new tool authority):\n")
     ) {
@@ -177,33 +210,41 @@ function renderEntries(entries: unknown[], options: ConversationOptions): string
     if (Array.isArray(message.content))
       for (const part of message.content) {
         const item = object(part);
-        if (item?.type === "toolCall") {
+        if (item?.type === "text" && role === "assistant") {
+          output.push(...markdown(String(item.text ?? "")), "");
+        } else if (item?.type === "toolCall") {
+          if (results.has(String(item.id))) continue;
           const callStart = output.length;
-          const args = object(item.arguments);
-          const target = args?.path ?? args?.command ?? args?.pattern ?? args?.query ?? "";
-          const label = displayText(
-            `${String(item.name)} ${typeof target === "string" ? target.split("\n")[0] : ""}`,
-          ).trim();
-          calls.set(String(item.id), label);
-          if (typeof args?.path === "string") paths.set(String(item.id), args.path);
+          const label = calls.get(String(item.id)) ?? displayText(String(item.name));
           if (expanded) {
-            output.push(paint("muted", fit(`Tool call · ${label}`, width)));
+            output.push(paint("strong", fit(label, width)));
             const argsText = JSON.stringify(item.arguments, null, 2);
             output.push(
               ...(options.presentation?.code(argsText, "json", width) ?? lines(argsText, width)),
               "",
             );
           } else if (item.name !== "submit_result") {
-            output.push(paint("accent", fit(`Tool call · ${label}`, width)));
+            output.push(paint("accent", fit(label, width)));
           }
           if (output.length > callStart) {
-            let kind: ConversationSurface = "pending";
-            if (results.has(String(item.id)))
-              kind = results.get(String(item.id)) ? "error" : "success";
-            surface(callStart, kind);
+            surface(callStart, "pending");
           }
-        } else if (expanded && item?.type === "thinking") {
-          output.push(paint("muted", "Thinking"), ...markdown(String(item.thinking ?? "")), "");
+        } else if (item?.type === "thinking" && String(item.thinking ?? "").trim()) {
+          if (options.showThinking) {
+            output.push(
+              ...(options.presentation?.thinking?.(String(item.thinking), width) ??
+                markdown(String(item.thinking)).map((line) => paint("muted", line))),
+              "",
+            );
+          } else {
+            output.push(
+              paint(
+                "muted",
+                fit(`Thinking · ${options.thinkingShortcut ?? "ctrl+t"} to show`, width),
+              ),
+              "",
+            );
+          }
         }
       }
   }
@@ -216,6 +257,10 @@ export function renderConversation(entries: unknown[], options: ConversationOpti
   const key = JSON.stringify([
     options.width,
     options.expanded,
+    options.showThinking,
+    options.details,
+    options.toolShortcut,
+    options.thinkingShortcut,
     options.presentation?.cacheKey,
     colors.map((token) => options.paint(token, "probe")),
   ]);

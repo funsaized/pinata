@@ -169,6 +169,8 @@ Backend and context metadata remain available through the details control.
 | `f`, `h`, `Q` in the fleet                        | Cycle all/active/failed, include history, show queued work. |
 | `a` in the fleet                                  | Show actions with assignment, worker and run scopes.        |
 | Tab in a conversation                             | Switch composer/transcript focus.                           |
+| Ctrl+O in a conversation                          | Expand/collapse tool output.                                |
+| Ctrl+T in a conversation                          | Show/hide thinking output.                                  |
 | `d`, `m` with transcript focus                    | Expand details, load older pages.                           |
 | Ctrl+X                                            | Stop the selected worker's pending work.                    |
 | Ctrl+B                                            | Release a foreground wait.                                  |
@@ -183,6 +185,9 @@ refresh once per second while following. Reading mode, hidden views and saved
 sources do not poll. There is no separate follow toggle.
 
 Each worker keeps its own message draft, separate from the coordinator draft.
+Tool and thinking toggles work from either focus and use Pi's configured shortcuts.
+They leave the message draft and assignment details unchanged. Standalone viewers
+use Ctrl+O and Ctrl+T; `ui.keys.expandTools` and `ui.keys.toggleThinking` override them.
 A control draft clears only after durable acceptance. The composer labels whether
 text will steer, follow up or continue. Question marks inside a draft remain text.
 Ctrl+Left/Right, Ctrl+B and Ctrl+R retain editor behavior while composing; use Tab
