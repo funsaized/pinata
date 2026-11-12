@@ -1,3 +1,4 @@
+import { renderFleet } from "./fleet.ts";
 import { actionsPanel, helpPanel } from "./panels.ts";
 import { renderConversation, type ConversationPresentation } from "./conversation.ts";
 import { resolveKeys, resolveConversationKeys, type ConversationKeys } from "./keys.ts";
@@ -11,7 +12,7 @@ import {
   needsAttention,
   queueLabel,
 } from "./projection.ts";
-import { agentAccent, modelAccent, type Paint, type SemanticToken } from "./palette.ts";
+import { agentAccent, modelAccent, type Paint } from "./palette.ts";
 import { displayText, fit, lines, padded } from "./text.ts";
 import type { ConversationView, ScreenRouter } from "./router.ts";
 import { assignmentTree, type TreeNode } from "./tree.ts";
@@ -25,51 +26,6 @@ export type RenderOptions = {
   presentation?: ConversationPresentation;
   conversationKeys?: ConversationKeys;
 };
-function promptBox(
-  task: string,
-  width: number,
-  paint: Paint,
-  ascii?: boolean,
-  maxLines = 1,
-): string[] {
-  if (width < 5) return [fit(paint("muted", displayText(task)), width)];
-  const colors: SemanticToken[] = [
-    "accent.pink",
-    "accent.purple",
-    "accent.blue",
-    "accent.cyan",
-    "accent.green",
-    "accent.yellow",
-    "accent.orange",
-    "accent.red",
-  ];
-  const colorAt = (column: number): SemanticToken =>
-    colors[Math.min(colors.length - 1, Math.floor((column * colors.length) / width))];
-  const edge = (left: string, right: string): string =>
-    Array.from({ length: width }, (_, column) =>
-      paint(
-        colorAt(column),
-        column === 0 ? left : column === width - 1 ? right : ascii ? "-" : "─",
-      ),
-    ).join("");
-  const side = ascii ? "|" : "│";
-  const wrapped = lines(task, width - 4);
-  const body = wrapped.slice(0, maxLines);
-  if (wrapped.length > maxLines)
-    body[body.length - 1] = (width > 5 ? fit(body[body.length - 1], width - 5) : "") + "…";
-  return [
-    edge(ascii ? "+" : "╭", ascii ? "+" : "╮"),
-    ...body.map(
-      (text) =>
-        paint("accent.pink", side) +
-        " " +
-        padded(paint("muted", text), width - 4) +
-        " " +
-        paint("accent.red", side),
-    ),
-    edge(ascii ? "+" : "╰", ascii ? "+" : "╯"),
-  ];
-}
 function record(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -356,110 +312,14 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
       elapsed: (ref) => router.observedElapsed(ref),
     }).slice(0, height);
   if (router.screen === "fleet") {
-    output[0] =
-      paint("strong", paint("accent.blue", `${options.ascii ? "*" : "●"} Agents`)) +
-      paint("border", " › ") +
-      paint(
-        router.source.capabilities.live ? "success" : "muted",
-        router.source.capabilities.live ? "live" : "saved",
-      ) +
-      paint("muted", ` · ${router.mode} · `) +
-      paint(
-        "accent.purple",
-        router.source.capabilities.control ? "control connected" : "read-only",
-      );
-    const schedules = Object.values(router.state.schedules);
-    if (schedules.length)
-      output.push(
-        fit(
-          `Schedules ${schedules.map((schedule) => `${schedule.id}: ${schedule.status} → ${schedule.target.worker} (${schedule.nextAt ?? "no next occurrence"})`).join(" · ")}`,
-          width,
-        ),
-      );
-    const queued = assignments(router.state).filter(
-      (assignment) => assignment.execution.phase === "queued",
-    ).length;
-    const nodes = router.fleetNodes(options.ascii);
-    const rows = treeLines(router.state, nodes, {
-      ...options,
-      width,
-      mode: router.mode,
-      activity: router.activity,
-      elapsed: (ref) => router.observedElapsed(ref),
-      selected: router.selected,
-      motion: router.motion,
-      collapsed: router.collapsed,
-      dependencies: true,
-      showModels: true,
-    });
-    output.push(
-      fit(
-        paint("muted", "View ") +
-          paint("accent.cyan", router.filter) +
-          paint("border", " · ") +
-          paint("accent.purple", router.history ? "history" : "latest") +
-          (router.search || router.searching
-            ? paint("muted", " · search: ") +
-              paint("text", `${displayText(router.search)}${router.searching ? "_" : ""}`)
-            : ""),
+    output.splice(
+      0,
+      output.length,
+      ...renderFleet(router, {
+        ...options,
         width,
-      ),
-    );
-    const selectedTask =
-      router.selected && router.state.assignments[assignmentKey(router.selected)]?.task;
-    const prompt = selectedTask
-      ? promptBox(
-          selectedTask,
-          width,
-          paint,
-          options.ascii,
-          Math.max(1, Math.floor((height - output.length - 5) / 2)),
-        )
-      : [];
-    const available = Math.max(
-      1,
-      height - output.length - 4 - prompt.length - (router.notice ? 1 : 0),
-    );
-    router.fleetPageSize = available;
-    let first = Math.min(router.fleetScroll, Math.max(0, rows.length - available));
-    const selected = router.selected ? assignmentKey(router.selected) : undefined;
-    if (selected !== router.fleetRenderedSelection) {
-      const index = rows.findIndex((row) => row.worker && assignmentKey(row.ref) === selected);
-      if (index >= 0 && index < first) first = index;
-      if (index >= first + available) first = index - available + 1;
-      router.fleetRenderedSelection = selected;
-    }
-    router.fleetScroll = first;
-    for (const row of rows.slice(first, first + available)) {
-      options.hitRows?.set(output.length, row.ref);
-      output.push(fit(row.text, width));
-    }
-    if (!rows.length)
-      output.push(
-        fit(
-          Object.keys(router.state.assignments).length
-            ? "No matching rows · / search · f filter · Q queued · h history"
-            : "No assignments accepted. Start a named definition with @handle message.",
-          width,
-        ),
-      );
-    if (queued)
-      output.push(
-        paint("muted", `${queued} queued · Q ${router.showQueued ? "collapse" : "expand"}`),
-      );
-    if (rows.length > available)
-      output.push(
-        paint(
-          "muted",
-          `Rows ${first + 1}–${Math.min(rows.length, first + available)} of ${rows.length}`,
-        ),
-      );
-    output.push(...prompt);
-    output.push(
-      paint(
-        "muted",
-        `${router.state.attachment}${router.state.maxConcurrent === null ? "" : ` · capacity ${router.state.maxConcurrent}`}`,
-      ),
+        height: Math.max(0, height - (router.notice ? 2 : 1)),
+      }),
     );
   } else {
     const selected = router.selected;
@@ -594,6 +454,7 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
   }
   if (router.notice || router.screen === "conversation")
     footer.push(fit(paint(router.noticeTone, displayText(router.notice)), width));
+  const hasBranches = Object.values(router.state.workers).some((worker) => worker.parentAssignment);
   const controls =
     router.screen === "fleet"
       ? [
@@ -605,11 +466,16 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
             : []),
           ["↑↓", "select"],
           ["Enter", "open"],
-          ...(width >= 40 ? [["a", "stop/actions"]] : []),
+          ...(width >= 40
+            ? [
+                ["a", "stop/actions"],
+                ["d", router.details ? "less" : "details"],
+              ]
+            : []),
           ...(width < 70
             ? []
             : [
-                ["←→", "branches"],
+                ...(hasBranches ? [["←→", "branches"]] : []),
                 ["/", "search"],
                 ["f", "filter"],
                 ["h", "history"],

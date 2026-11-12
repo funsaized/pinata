@@ -62,7 +62,7 @@ export class ScreenRouter {
   fleetScroll = 0;
   fleetPageSize = 1;
   fleetRenderedSelection?: string;
-  showQueued = false;
+  showQueued = true;
   help = false;
   helpScroll = 0;
   actions = false;

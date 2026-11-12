@@ -5,7 +5,7 @@ import {
   type CoreState,
   type UsageCoverage,
 } from "../contracts/index.ts";
-import { readiness } from "../core/readiness.ts";
+import { readiness, type ReadinessReason } from "../core/readiness.ts";
 import { assignmentUsage } from "../core/usage.ts";
 
 export function assignments(state: CoreState): Assignment[] {
@@ -87,8 +87,11 @@ export function needsAttention(state: CoreState, assignment: Assignment): boolea
   );
 }
 
-export function queueLabel(state: CoreState, assignment: Assignment): string {
-  const reason = readiness(state)[assignmentKey(assignment.ref)];
+export function queueLabel(
+  state: CoreState,
+  assignment: Assignment,
+  reason: ReadinessReason = readiness(state)[assignmentKey(assignment.ref)],
+): string {
   if (reason !== "dependency") return reason;
   const blocked = assignment.after.flatMap((ref) => {
     const dependency = state.assignments[assignmentKey(ref)];

@@ -155,6 +155,16 @@ syntax highlighting and tool output using its theme. Completion cards show
 "Subagent result" with the worker, outcome, summary and conversation command.
 Backend and context metadata remain available through the details control.
 
+The fleet uses one aligned row per assignment, with status near the agent name.
+Queued stages are visible by default and show what they are waiting for. `Q` hides
+other queued stages while keeping the selected agent visible. Dependency
+edges do not create parent/child branches. Shared model settings appear once;
+mixed models get their own column when there is room. The selected agent's task
+and waiting reason appear in a separate panel, with `d` for execution details.
+Long task previews stay bounded on wide terminals. The Observed column measures
+time since this viewer witnessed an assignment start; a dash means the start is
+unknown. It is not an estimate of total execution time.
+
 | Input                                             | Action                                                      |
 | ------------------------------------------------- | ----------------------------------------------------------- |
 | Shift+Down                                        | Open the fleet, including from a worker conversation.       |
@@ -168,6 +178,7 @@ Backend and context metadata remain available through the details control.
 | `/` in the fleet                                  | Search workers/tasks; Enter keeps the filter.               |
 | `f`, `h`, `Q` in the fleet                        | Cycle all/active/failed, include history, show queued work. |
 | `a` in the fleet                                  | Show stop actions for an assignment, agent or entire fleet. |
+| `d` in the fleet                                  | Expand details for the selected assignment.                 |
 | Tab in a conversation                             | Switch composer/transcript focus.                           |
 | Ctrl+O in a conversation                          | Expand/collapse tool output.                                |
 | Ctrl+T in a conversation                          | Show/hide thinking output.                                  |

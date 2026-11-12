@@ -285,6 +285,11 @@ export class PinataScreen implements Component, Focusable {
         return;
       }
       if (data === "Q") return this.router.toggleQueued();
+      if (data === "d") {
+        this.router.details = !this.router.details;
+        this.requestRender();
+        return;
+      }
       if (data === "/") {
         this.router.searching = true;
         this.requestRender();

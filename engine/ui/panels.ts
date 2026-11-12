@@ -74,6 +74,7 @@ export function helpPanel(
             ["f", "Cycle all / active / failed"],
             ["h", "Toggle assignment history"],
             ["Q", "Show / hide queued work"],
+            ["d", "Expand / collapse selected agent details"],
             ["a", "Stop / manage agents"],
           ],
         },
