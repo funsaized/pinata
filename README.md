@@ -28,9 +28,7 @@ pi install npm:pi-pinata
 
 ![A live Piñata fleet with a lead, two nested builder children, a scout and a queued reviewer.](media/pinata-fleet.png)
 
-[Watch this fleet run from launch through review](media/pinata-fleet.mp4)
-(6× playback). Live model execution in the terminal UI;
-[recording details](media/README.md).
+[Watch the fleet run (6× speed)](media/pinata-fleet.mp4)
 
 ## Why Piñata
 
