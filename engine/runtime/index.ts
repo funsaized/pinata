@@ -149,6 +149,14 @@ export class Runtime {
       this.serialize(() =>
         operation({
           state: () => this.state,
+          commitAll: (transitions) =>
+            this.commitBatch(
+              transitions.map((transition) => ({
+                requestId: randomUUID(),
+                payloadDigest: digestValue(transition),
+                transition,
+              })),
+            ),
           commit: async (transition, identity) =>
             this.commit({
               requestId: identity?.requestId ?? randomUUID(),
@@ -445,41 +453,84 @@ export class Runtime {
     transition: Transition;
     artifacts?: ArtifactRef[];
   }): Promise<void> {
-    const transition = transitionSchema.parse(input.transition);
-    const previous = this.committedRequests.get(input.requestId);
-    const transitionDigest = digestValue(transition);
-    if (previous) {
-      if (
-        previous.payloadDigest !== input.payloadDigest ||
-        previous.transitionDigest !== transitionDigest
-      )
-        throw new DomainError(
-          "conflict",
-          "A committed source identity was reused with different content",
-        );
+    await this.commitBatch([input]);
+  }
+
+  private async commitBatch(
+    inputs: readonly {
+      requestId: string;
+      payloadDigest: string;
+      transition: Transition;
+      artifacts?: ArtifactRef[];
+    }[],
+  ): Promise<void> {
+    let next = this.state;
+    const staged = new Map<
+      string,
+      {
+        input: {
+          requestId: string;
+          payloadDigest: string;
+          transition: Transition;
+          artifacts: ArtifactRef[];
+        };
+        state: ReturnType<typeof initialState>;
+        transitionDigest: string;
+      }
+    >();
+    for (const input of inputs) {
+      const transition = transitionSchema.parse(input.transition);
+      const transitionDigest = digestValue(transition);
+      const pending = staged.get(input.requestId);
+      const previous = pending
+        ? { payloadDigest: pending.input.payloadDigest, transitionDigest: pending.transitionDigest }
+        : this.committedRequests.get(input.requestId);
+      if (previous) {
+        if (
+          previous.payloadDigest !== input.payloadDigest ||
+          previous.transitionDigest !== transitionDigest
+        )
+          throw new DomainError(
+            "conflict",
+            "A committed source identity was reused with different content",
+          );
+        continue;
+      }
+      next = reduce(next, transition, next.revision + 1);
+      const artifacts = [
+        ...new Map(
+          [...(input.artifacts ?? []), ...transitionArtifacts(transition)].map((artifact) => [
+            `${artifact.digest}/${artifact.size}`,
+            artifact,
+          ]),
+        ).values(),
+      ];
+      staged.set(input.requestId, {
+        input: { ...input, transition, artifacts },
+        state: next,
+        transitionDigest,
+      });
+    }
+    if (!staged.size) {
       await this.store.assertOwner();
       return;
     }
-    const next = reduce(this.state, transition, this.state.revision + 1);
-    const artifacts = [
-      ...new Map(
-        [...(input.artifacts ?? []), ...transitionArtifacts(transition)].map((artifact) => [
-          `${artifact.digest}/${artifact.size}`,
-          artifact,
-        ]),
-      ).values(),
-    ];
-    const frame = await this.store.append({ ...input, artifacts });
-    this.state = next;
-    this.committedRequests.set(input.requestId, {
-      payloadDigest: input.payloadDigest,
-      transitionDigest,
-    });
-    const event = this.event(frame);
-    const subscribers = [...this.subscribers];
-    for (const subscriber of subscribers) this.deliver(subscriber, event);
-    this.execution?.committed(transition, this.state);
-    this.schedules?.changed(this.state);
+    // Stage only deterministic transitions. No state, receipt, subscriber event
+    // or execution effect becomes visible until the complete sync barrier passes.
+    const entries = [...staged.values()];
+    const frames = await this.store.appendBatch(entries.map((entry) => entry.input));
+    for (const [index, entry] of entries.entries()) {
+      this.state = entry.state;
+      this.committedRequests.set(entry.input.requestId, {
+        payloadDigest: entry.input.payloadDigest,
+        transitionDigest: entry.transitionDigest,
+      });
+      const event = this.event(frames[index]);
+      const subscribers = [...this.subscribers];
+      for (const subscriber of subscribers) this.deliver(subscriber, event);
+      this.execution?.committed(entry.input.transition, this.state);
+      this.schedules?.changed(this.state);
+    }
   }
 
   async query(input: unknown, caller: CallerAuthority): Promise<QueryResult> {

@@ -33,6 +33,7 @@ import {
 } from "../../engine/contracts/lifecycle.ts";
 import { digestValue } from "../../engine/contracts/digest.ts";
 import { Runtime, type NotificationPort, type WorkerResolver } from "../../engine/runtime/index.ts";
+import type { FaultHook } from "../../engine/storage/io.ts";
 import { DurableStore } from "../../engine/storage/index.ts";
 
 const grants: Grants = {
@@ -335,6 +336,7 @@ async function world(
     notifications?: NotificationPort;
     grants?: Grants;
     scheduling?: SchedulingOptions;
+    fault?: FaultHook;
   } = {},
 ) {
   const directory = await realpath(await mkdtemp(join(tmpdir(), "pinata-rewrite-execution-")));
@@ -378,6 +380,7 @@ async function world(
     execution: { backends: { "in-process": backend }, workspace },
     notifications: configuration.notifications,
     scheduling: configuration.scheduling,
+    fault: configuration.fault,
   };
   let runtime = await Runtime.open({
     ...options,
@@ -2175,5 +2178,49 @@ test(
     await fixture.runtime.close();
     assert.equal(fixture.workspace.released.length, 2);
     assert.equal(timers.size, 0);
+  },
+);
+
+test(
+  "grouped preparation publishes no lifecycle events or backend launch before its shared durability barrier",
+  { timeout: 10_000 },
+  async (t) => {
+    const entered = deferred<void>();
+    const release = deferred<void>();
+    let writes = 0;
+    let syncs = 0;
+    const fixture = await world(t, {
+      fault: async (point) => {
+        if (point === "journal.write.after") writes++;
+        if (point === "journal.sync.before") {
+          syncs++;
+          if (syncs === 2) {
+            entered.resolve();
+            await release.promise;
+          }
+        }
+      },
+    });
+    const revisions: number[] = [];
+    const unsubscribe = await fixture.runtime.subscribe({}, caller, (event) => {
+      if (event.kind === "committed") revisions.push(event.revision);
+    });
+    accepted(
+      await fixture.runtime.execute(
+        { requestId: "create", command: { kind: "create", workers: [worker("grouped")] } },
+        caller,
+      ),
+    );
+    await entered.promise;
+    assert.equal(writes, 4);
+    assert.equal(syncs, 2);
+    assert.deepEqual(revisions, [1]);
+    assert.equal(fixture.backend.launches.length, 0);
+    release.resolve();
+    await fixture.backend.waitStarted(ref("grouped"));
+    assert.deepEqual(revisions.slice(0, 4), [1, 2, 3, 4]);
+    await fixture.backend.complete(ref("grouped"));
+    assert.equal((await fixture.runtime.wait({}, caller)).status, "settled");
+    unsubscribe();
   },
 );

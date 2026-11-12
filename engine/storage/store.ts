@@ -1,5 +1,5 @@
 import { constants, type BigIntStats } from "node:fs";
-import { mkdir, open, realpath, stat } from "node:fs/promises";
+import { mkdir, open, realpath, stat, type FileHandle } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 import {
   checkpointSchema,
@@ -53,6 +53,8 @@ export class DurableStore {
   readonly owner: OwnerClaim;
   readonly replayWarnings: readonly string[];
   private committed: JournalFrame[];
+  private readonly journal: FileHandle;
+  private journalVersion: ArtifactVersion;
   private readonly requests: Map<string, JournalFrame>;
   private readonly publishedArtifacts = new Map<string, ArtifactVersion>();
   private readonly fault?: FaultHook;
@@ -65,6 +67,8 @@ export class DurableStore {
     manifest: Manifest;
     owner: OwnerClaim;
     frames: JournalFrame[];
+    journal: FileHandle;
+    journalVersion: ArtifactVersion;
     fault?: FaultHook;
     replayWarnings: string[];
   }) {
@@ -72,6 +76,8 @@ export class DurableStore {
     this.manifest = Object.freeze(options.manifest);
     this.owner = Object.freeze(options.owner);
     this.committed = options.frames;
+    this.journal = options.journal;
+    this.journalVersion = options.journalVersion;
     this.requests = new Map(options.frames.map((frame) => [frame.record.requestId, frame]));
     this.fault = options.fault;
     this.replayWarnings = Object.freeze(options.replayWarnings);
@@ -112,13 +118,6 @@ export class DurableStore {
         "commit_unknown",
         "Incomplete journal tail requires explicit isolation before reopening",
       );
-    const journal = await open(join(directory, "journal.jsonl"), "a", 0o600);
-    try {
-      await journal.sync();
-    } finally {
-      await journal.close();
-    }
-    await syncDirectory(directory);
     const replayWarnings: string[] = [];
     const checkpointBytes = await readOptional(join(directory, "checkpoints", "latest.json"));
     if (checkpointBytes) {
@@ -141,14 +140,31 @@ export class DurableStore {
         );
       }
     }
-    return new DurableStore({
-      directory,
-      manifest,
-      owner,
-      frames: inspection.frames,
-      fault: options.fault,
-      replayWarnings,
-    });
+    const journal = await open(
+      join(directory, "journal.jsonl"),
+      constants.O_WRONLY | constants.O_APPEND | constants.O_CREAT | (constants.O_NOFOLLOW ?? 0),
+      0o600,
+    );
+    try {
+      await journal.sync();
+      const journalVersion = await journal.stat({ bigint: true });
+      if (!journalVersion.isFile()) throw new StorageError("conflict", "Journal is not a file");
+      await syncDirectory(directory);
+      await assertOwner(directory, owner);
+      return new DurableStore({
+        directory,
+        manifest,
+        owner,
+        frames: inspection.frames,
+        journal,
+        journalVersion,
+        fault: options.fault,
+        replayWarnings,
+      });
+    } catch (error) {
+      await journal.close();
+      throw error;
+    }
   }
 
   get frames(): readonly JournalFrame[] {
@@ -249,61 +265,99 @@ export class DurableStore {
     await verifyArtifact(this.directory, artifact);
   }
 
-  append(request: AppendRequest): Promise<JournalFrame> {
-    const input = structuredClone(request);
+  async append(request: AppendRequest): Promise<JournalFrame> {
+    const [frame] = await this.appendBatch([request]);
+    return frame;
+  }
+
+  appendBatch(requests: readonly AppendRequest[]): Promise<JournalFrame[]> {
+    const inputs = structuredClone(requests);
     return this.serialize(async () => {
       await this.assertOwner();
-      const prior = this.requests.get(input.requestId);
-      if (prior) {
-        if (prior.record.payloadDigest !== input.payloadDigest)
-          throw new StorageError(
-            "conflict",
-            "Request ID already committed with a different payload",
-          );
-        return structuredClone(prior);
-      }
-      const record = journalRecordSchema.parse({
-        schemaVersion: 1,
-        revision: this.committed.length + 1,
-        requestId: input.requestId,
-        payloadDigest: input.payloadDigest,
-        previousDigest: this.committed.at(-1)?.digest ?? "",
-        transition: input.transition,
-        artifacts: input.artifacts ?? [],
-      });
-      for (const artifact of record.artifacts) await this.verifyReference(artifact);
-      const frame: JournalFrame = {
-        record,
-        digest: digestValue(record),
-        commit: "pinata.commit.v1",
-      };
-      try {
-        const journal = await open(join(this.directory, "journal.jsonl"), "a", 0o600);
-        try {
-          await this.fault?.("journal.write.before");
-          await journal.writeFile(JSON.stringify(frame) + "\n");
-          await this.fault?.("journal.write.after");
-          await this.fault?.("journal.sync.before");
-          await journal.sync();
-          await this.fault?.("journal.sync.after");
-        } finally {
-          await journal.close();
+      const staged = new Map<string, JournalFrame>();
+      const results: JournalFrame[] = [];
+      let last = this.committed.at(-1);
+      for (const input of inputs) {
+        const prior = staged.get(input.requestId) ?? this.requests.get(input.requestId);
+        if (prior) {
+          if (
+            prior.record.payloadDigest !== input.payloadDigest ||
+            digestValue(prior.record.transition) !== digestValue(input.transition)
+          )
+            throw new StorageError(
+              "conflict",
+              "Request ID already committed with different content",
+            );
+          results.push(prior);
+          continue;
         }
+        // Duplicate retries may refer to older revisions, so chain only new frames.
+        const record = journalRecordSchema.parse({
+          schemaVersion: 1,
+          revision: this.committed.length + staged.size + 1,
+          requestId: input.requestId,
+          payloadDigest: input.payloadDigest,
+          previousDigest: last?.digest ?? "",
+          transition: input.transition,
+          artifacts: input.artifacts ?? [],
+        });
+        for (const artifact of record.artifacts) await this.verifyReference(artifact);
+        const frame: JournalFrame = {
+          record,
+          digest: digestValue(record),
+          commit: "pinata.commit.v1",
+        };
+        staged.set(input.requestId, frame);
+        last = frame;
+        results.push(frame);
+      }
+      if (!staged.size) return structuredClone(results);
+      try {
+        await this.assertOwner();
+        const before = await stat(join(this.directory, "journal.jsonl"), { bigint: true });
+        if (
+          !sameArtifactVersion(before, this.journalVersion) ||
+          !sameArtifactVersion(before, await this.journal.stat({ bigint: true }))
+        )
+          throw new StorageError("conflict", "Journal was edited or replaced while owned");
+        let expectedSize = before.size;
+        for (const frame of staged.values()) {
+          const bytes = Buffer.from(JSON.stringify(frame) + "\n");
+          await this.fault?.("journal.write.before");
+          await this.journal.writeFile(bytes);
+          expectedSize += BigInt(bytes.length);
+          await this.fault?.("journal.write.after");
+        }
+        await this.fault?.("journal.sync.before");
+        await this.journal.sync();
+        await this.fault?.("journal.sync.after");
         await this.fault?.("journal.directory-sync.before");
         await syncDirectory(this.directory);
         await this.fault?.("journal.directory-sync.after");
         await this.assertOwner();
+        const after = await this.journal.stat({ bigint: true });
+        if (
+          after.size !== expectedSize ||
+          !sameArtifactVersion(
+            after,
+            await stat(join(this.directory, "journal.jsonl"), { bigint: true }),
+          )
+        )
+          throw new StorageError("conflict", "Journal changed during append");
+        this.journalVersion = after;
       } catch (cause) {
         this.uncertain = true;
         throw new StorageError(
           "commit_unknown",
-          "Journal durability or ownership is uncertain; lookup/retry this exact request after reconciliation",
+          "Journal durability or ownership is uncertain; lookup/retry these exact requests after reconciliation",
           { cause },
         );
       }
-      this.committed.push(frame);
-      this.requests.set(frame.record.requestId, frame);
-      return structuredClone(frame);
+      for (const frame of staged.values()) {
+        this.committed.push(frame);
+        this.requests.set(frame.record.requestId, frame);
+      }
+      return structuredClone(results);
     });
   }
 
@@ -331,15 +385,15 @@ export class DurableStore {
   close(): Promise<void> {
     return this.serialize(async () => {
       if (this.closed) return;
+      await this.journal.close();
+      this.closed = true;
       if (this.uncertain) {
-        this.closed = true;
         throw new StorageError(
           "commit_unknown",
           "Uncertain store closed with its owner claim retained for reconciliation",
         );
       }
       await releaseOwner(this.directory, this.owner);
-      this.closed = true;
     });
   }
 }

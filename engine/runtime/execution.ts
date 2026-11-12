@@ -53,6 +53,7 @@ import { immutable } from "./immutable.ts";
 
 export type ExecutionTransaction = {
   state(): CoreState;
+  commitAll(transitions: readonly Transition[]): Promise<void>;
   commit(
     transition: Transition,
     identity?: { requestId: string; payloadDigest: string },
@@ -293,25 +294,27 @@ export class ExecutionCoordinator {
           };
           this.active.set(key, active);
           if (!cancelled) {
-            await transaction.commit({
-              kind: "assignment_state",
-              ref: assignment.ref,
-              execution: { phase: "preparing" },
-            });
-            await transaction.commit({
-              kind: "attempt_started",
-              attempt: {
-                id: active.attemptId,
+            await transaction.commitAll([
+              {
+                kind: "assignment_state",
                 ref: assignment.ref,
-                ordinal: 1,
-                backend: worker.backend,
-                ownerEpoch: this.host.ownerEpoch,
+                execution: { phase: "preparing" },
               },
-            });
-            await transaction.commit({
-              kind: "effect_intent",
-              effect: { id: `${active.attemptId}/prepare`, ref: assignment.ref, kind: "prepare" },
-            });
+              {
+                kind: "attempt_started",
+                attempt: {
+                  id: active.attemptId,
+                  ref: assignment.ref,
+                  ordinal: 1,
+                  backend: worker.backend,
+                  ownerEpoch: this.host.ownerEpoch,
+                },
+              },
+              {
+                kind: "effect_intent",
+                effect: { id: `${active.attemptId}/prepare`, ref: assignment.ref, kind: "prepare" },
+              },
+            ]);
           }
           const inputs: SelectedInput[] = cancelled
             ? []
@@ -590,19 +593,21 @@ export class ExecutionCoordinator {
       );
       active.prepared = prepared;
       // Publish the consecutive preparation/launch records in one queue turn.
-      // Each frame still has its own durability boundary; other workers do not
-      // create a barrier between a prepared workspace and its launch intent.
+      // Deterministic preparation records share one durability barrier. Launch
+      // still waits for durable inputs and its own committed intent.
       const launch = await this.host.transaction(async (transaction) => {
-        await transaction.commit({
-          kind: "workspace_prepared",
-          attemptId: active.attemptId,
-          prepared,
-        });
-        await transaction.commit({
-          kind: "effect_observed",
-          effectId: `${active.attemptId}/prepare`,
-          status: "completed",
-        });
+        await transaction.commitAll([
+          {
+            kind: "workspace_prepared",
+            attemptId: active.attemptId,
+            prepared,
+          },
+          {
+            kind: "effect_observed",
+            effectId: `${active.attemptId}/prepare`,
+            status: "completed",
+          },
+        ]);
         if (active.controller.signal.aborted) return undefined;
         const state = transaction.state();
         const continuation = Object.hasOwn(state.sessions, active.worker.id)
@@ -1052,15 +1057,15 @@ export class ExecutionCoordinator {
         message.state === "recorded" &&
         !active.sending.has(message.id),
     );
-    for (const message of messages) {
-      active.sending.add(message.id);
-      await transaction.commit({
+    await transaction.commitAll(
+      messages.map((message) => ({
         kind: "inbox_state",
         messageId: message.id,
         state: "dispatch_intent",
         attemptId: `${active.attemptId}/input/${message.id}`,
-      });
-    }
+      })),
+    );
+    for (const message of messages) active.sending.add(message.id);
     return immutable(messages);
   }
 
