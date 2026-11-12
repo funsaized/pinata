@@ -73,6 +73,7 @@ test("replacement conversations restore immutable worker checkpoints without cha
   const originalPath = manager.getSessionFile();
   assert(originalPath);
   const before = await readFile(originalPath);
+  assert.deepEqual(await artifacts.read(checkpoint.artifact), before);
   const launch: BackendLaunch = {
     ref: { run: "run", worker: worker.id, assignment: 2 },
     attemptId: "attempt-2",

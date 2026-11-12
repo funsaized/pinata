@@ -190,6 +190,22 @@ export async function storeConversation(
   artifacts: ArtifactPort,
 ): Promise<ArtifactRef> {
   const input = Buffer.from(bytes);
+  if (input.length && input.at(-1) !== 10)
+    throw new DomainError("context_unavailable", "Saved conversation has an incomplete record");
+  // A manifest only shares storage when history spans multiple chunks. Keep the
+  // existing single-artifact formats for short conversations and transcripts.
+  if (input.length <= 256 * 1024) {
+    let records = 0;
+    for (const byte of input) if (byte === 10) records++;
+    const entries = records - (metadata.kind === "pi" ? 1 : 0);
+    if (entries <= 128) {
+      if (metadata.kind === "pi") return artifacts.put(input);
+      const { kind: _kind, ...transcript } = metadata;
+      return artifacts.put(
+        Buffer.from(canonicalJson({ schemaVersion: 1, ...transcript, entries: lines(input) })),
+      );
+    }
+  }
   const chunks: ConversationManifest["chunks"] = [];
   let start = 0;
   let offset = 0;
