@@ -188,7 +188,7 @@ export class ScreenRouter {
       event.transition.config
     )
       void this.loadSettings().catch((error: unknown) => this.fail(error));
-    if (!this.selected) this.selected = assignments(this.state)[0]?.ref;
+    if (!this.selected && !this.definition) this.selected = assignments(this.state)[0]?.ref;
     if (this.screen === "fleet") {
       const rows = this.fleetAssignments();
       if (
@@ -225,6 +225,10 @@ export class ScreenRouter {
     if (ref) {
       this.selected = { ...ref };
       this.definition = undefined;
+    }
+    if (screen === "fleet" && this.definition) {
+      this.definition = undefined;
+      this.selected = this.fleetAssignments()[0]?.ref;
     }
     this.screen = screen;
     if (screen === "conversation" && this.selected) {

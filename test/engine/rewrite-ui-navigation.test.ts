@@ -152,7 +152,7 @@ test("invalid local navigation and replacement commands preserve drafts and do n
 });
 
 test("definition previews scroll to their end and offer their own help without a composer", async (t) => {
-  const source = new UiSource(uiState(0));
+  const source = new UiSource(uiState(1));
   const definition = definitionSchema.parse({
     schemaVersion: 1,
     name: "reader",
@@ -171,6 +171,8 @@ test("definition previews scroll to their end and offer their own help without a
   });
   const { router, screen } = await setup(t, source);
   await router.showDefinition("reader");
+  await source.emit(source.snapshot());
+  assert.equal(router.selected, undefined, "agent updates must not replace an open definition");
   const render = () => stripTerminalSequences(screen.render(80).join("\n"));
   assert.match(render(), /Definition @reader/);
   screen.handleInput("\u001b[6~");
@@ -186,6 +188,8 @@ test("definition previews scroll to their end and offer their own help without a
   screen.handleInput("\u001b");
   screen.handleInput("\u001b");
   assert.equal(router.screen, "fleet");
+  assert.deepEqual(router.selected, ref());
+  assert.equal(router.definition, undefined);
 });
 
 test("custom shortcuts cannot replace text entry, paging or reserved fleet controls", () => {
