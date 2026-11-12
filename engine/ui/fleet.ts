@@ -9,6 +9,7 @@ import {
   queueLabel,
 } from "./projection.ts";
 import { agentAccent, modelAccent, type Paint } from "./palette.ts";
+import { activityIndicator } from "./tree.ts";
 import type { ScreenRouter } from "./router.ts";
 import { displayText, fit, lines, padded } from "./text.ts";
 
@@ -80,19 +81,6 @@ function observedDuration(elapsed: number | undefined): string {
   return elapsed < 60_000 ? `${(elapsed / 1000).toFixed(1)}s` : `${(elapsed / 60_000).toFixed(1)}m`;
 }
 
-function activityMarker(
-  router: ScreenRouter,
-  assignment: Assignment,
-  ascii: boolean,
-  now: number,
-): string {
-  if (assignment.execution.phase === "queued") return ascii ? "o" : "○";
-  if (assignment.execution.phase === "ended")
-    return assignment.execution.reason === "completed" ? "+" : "!";
-  if (router.motion !== "full") return ascii ? "*" : "●";
-  return (ascii ? ["c", "C"] : ["●", "◉"])[Math.floor(now / 250) % 2];
-}
-
 function selectedPanel(
   router: ScreenRouter,
   options: FleetOptions,
@@ -104,10 +92,9 @@ function selectedPanel(
   const assignment = ref && router.state.assignments[assignmentKey(ref)];
   if (!assignment || budget < 2) return [];
   const { paint, width } = options;
-  const measure = Math.min(width, 104);
   const worker = router.state.workers[assignment.ref.worker];
   const output = [
-    paint("border", (options.ascii ? "-" : "─").repeat(measure)),
+    paint("border", (options.ascii ? "-" : "─").repeat(width)),
     fit(
       paint("strong", `Selected: ${assignment.ref.worker}/${assignment.ref.assignment}`) +
         paint("muted", ` · ${worker.agent}`),
@@ -118,7 +105,7 @@ function selectedPanel(
   const cleanup =
     assignment.execution.phase === "ended" ? ` · cleanup ${assignment.execution.cleanup}` : "";
   output.push(
-    ...lines(detail + cleanup, measure).map((line) => paint(statusColor(assignment), line)),
+    ...lines(detail + cleanup, width).map((line) => paint(statusColor(assignment), line)),
   );
   if (!commonModel)
     output.push(fit(paint("muted", "Model: " + modelLabel(router, worker.id)), width));
@@ -126,20 +113,20 @@ function selectedPanel(
     output.push(
       ...lines(
         "After: " + assignment.after.map((ref) => `${ref.worker}/${ref.assignment}`).join(", "),
-        measure,
+        width,
       ).map((line) => paint("muted", line)),
     );
   if (router.details)
     output.push(
       ...assignmentDetails(router.state, assignment).flatMap((line) =>
-        lines(line, measure).map((part) => paint("muted", part)),
+        lines(line, width).map((part) => paint("muted", part)),
       ),
     );
-  const task = lines("Task: " + assignment.task, measure);
+  const task = lines("Task: " + assignment.task, width);
   const available = Math.max(1, budget - output.length);
   const visible = task.slice(0, available);
   if (visible.length < task.length)
-    visible[visible.length - 1] = ellipsis(visible.at(-1) ?? "", Math.max(1, measure - 1)) + "…";
+    visible[visible.length - 1] = ellipsis(visible.at(-1) ?? "", Math.max(1, width - 1)) + "…";
   return [...output, ...visible.map((line) => paint("text", line))].slice(0, budget);
 }
 
@@ -234,26 +221,31 @@ export function renderFleet(router: ScreenRouter, options: FleetOptions): string
       ),
     );
   const nodes = router.fleetNodes(options.ascii);
+  const trackWidth = Math.min(
+    Math.max(8, ...nodes.map((node) => node.prefix.length + 5)),
+    Math.max(3, Math.floor(width / 5)),
+  );
   const statusWidth = Math.min(14, Math.max(7, Math.floor(width * 0.22)));
   const nameWidth = Math.max(
     1,
-    Math.min(28, width < 60 ? width - statusWidth - 6 : Math.floor(width * 0.25)),
+    Math.min(28, width < 60 ? width - statusWidth - trackWidth - 5 : Math.floor(width * 0.25)),
   );
   const showAge = width >= 90;
   const showModels = !commonModel && width >= 120;
   const ageWidth = showAge ? 10 : 0;
   const modelWidth = showModels ? Math.min(32, Math.floor(width * 0.2)) : 0;
   const fixedWidth =
-    4 +
+    3 +
+    trackWidth +
     nameWidth +
     2 +
     statusWidth +
     (showAge ? ageWidth + 2 : 0) +
     (showModels ? modelWidth + 2 : 0);
   const remaining = width - fixedWidth - 2;
-  const infoWidth = remaining >= 16 ? Math.min(88, remaining) : 0;
+  const infoWidth = remaining >= 16 ? remaining : 0;
   const heading =
-    "    " +
+    " ".repeat(trackWidth + 3) +
     padded("Agent", nameWidth) +
     "  " +
     padded("Status", statusWidth) +
@@ -287,20 +279,44 @@ export function renderFleet(router: ScreenRouter, options: FleetOptions): string
   }
   router.fleetScroll = first;
   const now = performance.now();
-  for (const node of nodes.slice(first, first + available)) {
+  const visibleNodes = nodes.slice(first, first + available);
+  const activeNodes = visibleNodes.filter(
+    (node) => !["ended", "queued"].includes(node.assignment.execution.phase),
+  );
+  const cycle = Math.max(
+    1,
+    ...activeNodes.map((node, row) => row + Math.min(node.prefix.length, 3) + 5),
+  );
+  let activeRow = 0;
+  for (const node of visibleNodes) {
     const assignment = node.assignment;
     const worker = state.workers[assignment.ref.worker];
     const selected = assignmentKey(assignment.ref) === selection;
-    const marker = activityMarker(router, assignment, options.ascii ?? false, now);
-    const ancestry = worker.parentAssignment ? node.prefix : "";
+    const active = !["ended", "queued"].includes(assignment.execution.phase);
+    const track = active
+      ? activityIndicator(
+          router.motion,
+          now,
+          node.prefix,
+          activeRow++,
+          cycle,
+          options.ascii ?? false,
+        )
+      : node.prefix +
+        (assignment.execution.phase === "queued"
+          ? "  o  "
+          : assignment.execution.phase === "ended" && assignment.execution.reason === "completed"
+            ? "  +  "
+            : "  !  ");
     let disclosure = "";
     if (node.hasChildren)
       disclosure = router.collapsed.has(assignmentKey(assignment.ref)) ? "+ " : "- ";
-    const name = ancestry + disclosure + `${worker.id}/${assignment.ref.assignment}`;
+    const name = disclosure + `${worker.id}/${assignment.ref.assignment}`;
     const age = observedDuration(router.observedElapsed(assignment.ref));
     let text =
       paint(selected ? "accent.blue" : "muted", selected ? "> " : "  ") +
-      paint(statusColor(assignment), marker + " ") +
+      paint(statusColor(assignment), padded(track, trackWidth)) +
+      " " +
       paint(
         selected ? "focus" : (worker.color ?? agentAccent(worker.agent)),
         padded(ellipsis(name, nameWidth), nameWidth),

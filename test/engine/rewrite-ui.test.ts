@@ -18,7 +18,8 @@ import { PinataScreen, resolveKeys } from "../../engine/ui/screen.ts";
 import { createPaint, modelAccent, palettes } from "../../engine/ui/palette.ts";
 import { displayText, lines } from "../../engine/ui/text.ts";
 import { invokeCoordinatorTool } from "../../engine/pi/tools.ts";
-import { activityIndicator, fleetWidget, renderScreen } from "../../engine/ui/render.ts";
+import { activityIndicator } from "../../engine/ui/tree.ts";
+import { fleetWidget, renderScreen } from "../../engine/ui/render.ts";
 import { openViewer } from "../../engine/viewer/main.ts";
 import { installCoordinatorUi } from "../../engine/ui/pi.ts";
 import { AttachedSource } from "../../engine/sources/attached.ts";
@@ -115,7 +116,7 @@ test("staged fleets use aligned rows, one shared model, and keep the selected ag
       "resize must not hide the selected agent",
     );
     assert.match(output, /2 active · 3 queued/);
-    assert.doesNotMatch(output, /waiting: dependency|after:|[├└]─/);
+    assert.doesNotMatch(output, /waiting: dependency|after:/);
     if (width >= 80) {
       assert.equal(output.match(/shared-model/g)?.length, 1);
       assert.equal(hitRows.size, 5, "each stage occupies one selectable row");
@@ -124,12 +125,13 @@ test("staged fleets use aligned rows, one shared model, and keep the selected ag
         .map(([row]) => stripTerminalSequences(rows[row]));
       assert.equal(activeRows[0].indexOf("Running"), activeRows[1].indexOf("Running"));
       assert.match(output, /Waiting for worker-3\/1/);
-      if (width >= 300)
-        for (const [row] of hitRows)
-          assert(
-            visibleWidth(stripTerminalSequences(rows[row]).trimEnd()) <= 160,
-            "wide rows must not expand long prompts across the terminal",
-          );
+      if (width >= 300) {
+        assert.equal(visibleWidth(activeRows[0].trimEnd()), width);
+        const divider = rows.map(stripTerminalSequences).find((row) => /^─+$/.test(row.trimEnd()));
+        assert.equal(visibleWidth(divider?.trimEnd() ?? ""), width);
+        const task = rows.map(stripTerminalSequences).find((row) => row.startsWith("Task:"));
+        assert(visibleWidth(task?.trimEnd() ?? "") > 300, "selected task uses the viewport width");
+      }
     }
   }
   const terminal = new MemoryTerminal();
@@ -164,6 +166,7 @@ test("fleet rows preserve actual parent branches and unconfirmed cleanup blocker
   const router = new ScreenRouter(new UiSource(state));
   await router.start();
   router.navigate("fleet", ref(3));
+  router.motion = "off";
   const render = () =>
     stripTerminalSequences(
       renderScreen(router, { width: 140, height: 32, paint: createPaint("terminal-default") }).join(
@@ -172,13 +175,13 @@ test("fleet rows preserve actual parent branches and unconfirmed cleanup blocker
     );
   assert.match(render(), /1 need attention/);
   assert.match(render(), /Failed !/);
-  assert.match(render(), /└─ worker-2\/1/);
+  assert.match(render(), /└───────\s+worker-2\/1/);
   assert.match(render(), /Waiting for worker-1\/1 \(failed; cleanup unconfirmed\)/);
   router.navigate("fleet", ref());
   router.collapse(true);
-  assert.doesNotMatch(render(), /└─ worker-2\/1/);
+  assert.doesNotMatch(render(), /└───────\s+worker-2\/1/);
   router.collapse(false);
-  assert.match(render(), /└─ worker-2\/1/);
+  assert.match(render(), /└───────\s+worker-2\/1/);
   router.dispose();
 });
 function accepted(input: unknown): SurfaceReply {
@@ -1751,6 +1754,7 @@ test("tree activity loops without idle frames around completed ancestors and que
   router.showQueued = true;
   const paint = createPaint("terminal-default");
   for (const ascii of [false, true]) {
+    const tracks = new Set<string>();
     for (let frame = 0; frame < 30; frame++) {
       now = frame * 250;
       const markers = fleetWidget(state, { width: 100, paint, ascii, motion: "full" })
@@ -1764,11 +1768,30 @@ test("tree activity loops without idle frames around completed ancestors and que
       const activeRows = renderScreen(router, { width: 100, height: 30, paint, ascii })
         .map(stripTerminalSequences)
         .filter((line) => /worker-(3|5)\/1/.test(line));
+      tracks.add(activeRows[0].split("worker-")[0]);
       assert(
-        activeRows.some((line) => (ascii ? /^[ >]*[cC] / : /^[ >]*[●◉] /).test(line)),
+        activeRows.some((line) => /[cC]/.test(line.split("worker-")[0])),
         `idle fleet frame ${frame}`,
       );
     }
+    assert(
+      tracks.size > 4,
+      "fleet animation travels across the branch instead of pulsing in place",
+    );
+    for (const motion of ["reduced", "off"] as const) {
+      router.motion = motion;
+      const track = () =>
+        renderScreen(router, { width: 100, height: 30, paint, ascii })
+          .map(stripTerminalSequences)
+          .filter((line) => /worker-(3|5)\/1/.test(line))
+          .map((line) => line.split("worker-")[0]);
+      now = 0;
+      const initial = track();
+      now = 750;
+      assert.deepEqual(track(), initial, `${motion} motion keeps fleet branches still`);
+      assert(initial.every((line) => line.includes(ascii ? "-----" : "─────")));
+    }
+    router.motion = "full";
   }
 });
 
