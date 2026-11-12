@@ -1,11 +1,21 @@
 # Performance follow-ups
 
 Items 1 and 2, incremental UI state and conversation pagination, are implemented
-in `4f43d4c`. Items 3–8 below are proposals awaiting review. Research was checked on
+in `4f43d4c`. Items 3 through 8 are also implemented, in the order recommended below.
+Research was checked on
 2026-11-12 against official documentation, public Codex source, and Anthropic's
 public Python Agent SDK. The SDK exposes relevant transport and transcript code;
-it does not establish Claude Code's private scheduler implementation. Recommendations
-for Piñata are engineering judgments, with acceptance checks listed for each.
+it does not establish Claude Code's private scheduler implementation. The comparisons
+explain the implementation choices; Piñata's tests establish its own behavior.
+
+| Item                                | Implementation commit                         |
+| ----------------------------------- | --------------------------------------------- |
+| 3. Process transport                | `4b4fe06`                                     |
+| 4. Assignment indexes               | `767cade`                                     |
+| 5. IPC framing                      | `96ac2e1`                                     |
+| 8. Initialization and serialization | `b861959`                                     |
+| 6. Journal writes                   | `fd81b69`                                     |
+| 7. Session history and recovery     | `a6a668c`, short-history refinement `3270cbf` |
 
 ## Implemented changes and measurements
 
@@ -17,12 +27,12 @@ conversation pages appends entries without repeatedly copying the accumulated li
 Cursor pages reuse validated conversation snapshots. Fresh first pages recheck
 retained evidence, concurrent reads share work, and returned pages are cloned.
 The cache holds at most eight snapshots and 16 MiB of source bytes. Parsed objects
-use additional memory. Larger or evicted snapshots remain readable through the
-artifact path, so this first change does not make all large histories cheap to page.
+use additional memory. Larger or evicted legacy snapshots remain readable through
+the artifact path. Item 7 adds chunk paging for new large histories.
 
 Matched scripted runs used Node 26.12.0 on the same Linux machine, btrfs storage,
 the in-process faux provider, observe mode, and an attached viewer. These are medians
-of three runs per scenario, comparing `6c24697` with the final implementation:
+of three runs per scenario, comparing `6c24697` with `4f43d4c`:
 
 | Measurement                           |    Before |    After |                  Change |
 | ------------------------------------- | --------: | -------: | ----------------------: |
@@ -46,7 +56,7 @@ Complete local batches, including the intermediate implementation, remain under
 `pagination-probe.mjs`. These generated files are ignored by Git. Both matched
 runtime batches passed validation with confirmed cleanup.
 
-`npm run check` passed with five existing warnings. The full local suite passed
+For items 1 and 2, `npm run check` passed with five existing warnings. The full local suite passed
 421 tests with seven skips. After the final UI timing reset adjustment, the
 focused UI/query suite passed all 59 tests and `npm run check` passed again.
 All tests and measurements used scripted providers without paid model calls.
@@ -56,11 +66,83 @@ thread metadata from paginated turns and items, with omitted, summary or full it
 views. Reading stored history need not resume the thread. This supports fetching
 only what a viewer needs. [OpenAI Docs: App Server](https://learn.chatgpt.com/docs/app-server)
 
+## Follow-up measurements
+
+The next comparison uses `1ad6637` as its baseline and `3270cbf` as the final source.
+Both already include items 1 and 2. All runtime batches used Node 26.12.0 on the same
+Linux x64 machine and btrfs volume, with observe mode and an attached viewer. Values
+are medians of three trials per scenario. In-process runs used the faux provider;
+process runs used the local HTTP loopback provider. Every batch passed execution,
+usage and cleanup validation.
+
+| Measurement                               |    Before |    After |                  Change |
+| ----------------------------------------- | --------: | -------: | ----------------------: |
+| 8-worker process streaming runtime        |  4,745 ms | 3,875 ms |             18.3% lower |
+| 8-worker process streaming host CPU       |  3,644 ms | 2,506 ms |             31.2% lower |
+| Streaming observation files               |     1,616 |      112 |             93.1% fewer |
+| Observation-file allocated bytes          | 6,619,136 |  458,752 |             93.1% lower |
+| 8-worker process fan-out runtime          |  2,249 ms | 2,141 ms |              4.8% lower |
+| Process fan-out startup, median per trial |  1,296 ms | 1,132 ms |             12.7% lower |
+| 64-worker in-process runtime              |  9,214 ms | 9,454 ms |             2.6% higher |
+| 8-worker in-process streaming runtime     |  5,340 ms | 5,332 ms | Approximately unchanged |
+| Journal syncs, 64-worker in-process run   |     2,113 |    1,921 |              9.1% fewer |
+
+Startup runs from committed preparation to the first ordinary workload provider
+request. Host CPU excludes worker CPU. The streaming file reduction removes 1,504
+activity records; the 112 durable observations remain. These are overhead results,
+not model coding-quality results. The in-process regression remains visible: fewer
+syncs do not guarantee lower total latency. The new reduced-state projection also
+adds retained bytes to runs that previously saved no engine checkpoint.
+
+An intermediate implementation stored manifests even for short conversations and
+took 10,144 ms in the 64-worker scenario. Keeping short histories in their compact
+formats reduced that median to 9,454 ms. Both batches are retained.
+
+Separate probes isolate operations that the short runtime workloads do not stress:
+
+| Probe                                                |     Before |      After |
+| ---------------------------------------------------- | ---------: | ---------: |
+| 10 MiB logical IPC reply, encoded wire bytes         | 13,986,760 | 10,485,864 |
+| Same JSON frame decoded in 4 KiB fragments           |   1,773 ms |    8.79 ms |
+| Evicted 18,159,882-byte history, next 100-entry page |    66.4 ms |    2.47 ms |
+| Logical bytes read for that page                     | 18,159,882 |  1,322,310 |
+| Thirty growing checkpoints, unique artifact bytes    | 51,746,561 |  5,519,177 |
+| 100 ready-selection calls on 1,000 assignments       |     102 ms |    5.96 ms |
+| Requested-schema CLI, compile cache disabled         |     731 ms |     663 ms |
+| Requested-schema CLI, cold compile cache             |     855 ms |     795 ms |
+| Requested-schema CLI, warm compile cache             |     635 ms |     571 ms |
+
+Timing probes use five alternating trials per version. IPC encoding writes to an
+in-memory sink; decoding has no socket or terminal paint cost. Conversation reads
+use in-memory immutable artifacts with SHA-256 validation. The evicted-page probe
+first validates the whole history, clears the cache, then follows its signed cursor.
+Its six new-format reads comprise the manifest and five overlapping chunks. The
+storage probe appends 100 entries per checkpoint, each with 1,024 text bytes, and
+verifies exact restoration. It excludes native Pi files, which remain in both versions.
+
+The ready-selection probe includes the first reducer transition and index construction,
+then selects from that retained immutable state. A separate raw-snapshot probe is
+also retained: repeatedly querying a deserialized object without indexes rebuilds the
+indexes each time and was slower. Runtime transitions carry the derived attachment;
+the optimization does not make every externally constructed state query cheaper.
+Schema startup measures a complete CLI subprocess, with separate cache directories
+per cold/warm pair. It does not isolate Pi backend initialization.
+
+Complete batches, probes, source references and intermediate results remain under
+`bench/results/performance-followups-20261112/`, ignored by Git. `summary.json`
+summarizes runtime batches; `probes.json` and `index-probe.json` retain individual
+probe trials. No macOS or Windows timing claim follows from this Linux comparison.
+
+The final full scripted suite passed 440 tests with seven skips. `npm run check`
+passed with the same five existing workspace warnings. Seventy focused tests passed
+on Node 22.19.0, and the installed-package smoke passed with the real Pi CLI and a
+scripted provider. Those checks cover implementation behavior and packaging; the
+separately authorized live media recording is demonstration evidence.
+
 ## 3. Process transport
 
-The current process path turns frequent activity updates into retained files and
-uses polling to discover work. The recommended design separates live activity from
-durable lifecycle, usage, outcome and cleanup records.
+The process path separates live activity from durable lifecycle, usage, outcome
+and cleanup records. Activity no longer creates an observation file for every update.
 
 Codex's rollout policy excludes text, reasoning and command-output deltas from the
 persisted event stream. Its app server bounds outgoing queues and can disconnect
@@ -76,31 +158,27 @@ local mailbox storage. That describes the agent-facing behavior; it does not pro
 that the implementation never polls the filesystem.
 [Claude agent teams](https://code.claude.com/docs/en/agent-teams)
 
-For Piñata, use an authenticated live channel owned by the supervisor so it survives
-coordinator detach. Reuse the existing supervisor transport where practical. Coalesce
-display bursts, initially testing a 16–33 ms window, with bounded queues and a fresh
-snapshot after reconnect. Keep activity sequence numbers separate from durable
-observation ordinals so an outcome's `throughOrdinal` still describes a contiguous,
-recoverable sequence.
+Piñata reuses the authenticated supervisor channel, which survives coordinator detach.
+It coalesces activity over 16 ms and retains a 4,096-character live tail in memory.
+Subscribers receive the latest snapshot after reconnect. Activity ordinals remain
+separate from durable observations, so an outcome's `throughOrdinal` still describes
+a contiguous, recoverable sequence. Relay queues and packets have explicit bounds.
 
-Write durable records before sending wake notifications. Treat notifications as
-hints, with a slower reconciliation scan for dropped hints and reconnects. Index
-retained commands by ID, rebuild the index on attach, and preserve duplicate-ID
-payload checks. Final content and usage must remain recoverable even if every live
-display update is lost.
+Durable records reach storage before wake notifications. A one-second reconciliation
+scan recovers dropped hints; notifications handle ordinary delivery. Retained commands
+are indexed by ID on attach, including duplicate-ID payload checks. Completed content,
+usage and cleanup remain durable even if every live display update is lost.
 
-Acceptance should cover lost wake notifications, coordinator replacement, slow viewers,
-duplicate commands, cancellation during streaming, complete usage and confirmed
-process cleanup. Compare idle wake events, file count, allocated bytes, CPU and update
-latency in attached and surviving process modes. This is the first recommended
-follow-up because it removes work throughout the process path.
+Scripted tests cover dropped notifications, channel reconnects, bounded snapshots,
+duplicate commands, cancellation, contiguous durable ordinals and confirmed cleanup.
+Legacy retained activity records remain readable. This change was implemented first
+because it removes work throughout the process path.
 
 ## 4. Assignment indexes
 
-Compute each canonical assignment key once per operation and pass it through
-internal helpers. Add derived indexes for attempts by assignment, unresolved
-effects, reverse dependencies, occupied capacity and ordered ready candidates.
-Update affected entries incrementally and rebuild indexes during replay.
+Internal helpers reuse canonical assignment keys. Derived indexes track attempts
+and effects by assignment, reverse dependencies, occupied capacity and ordered ready
+candidates. Transitions update affected buckets; replay rebuilds the indexes.
 
 Codex maintains a thread map and a reverse connection-to-thread index. Anthropic's
 SDK builds UUID and parent indexes when reconstructing transcript chains. These
@@ -109,23 +187,21 @@ for Piñata's dependency scheduler.
 [Codex thread state](https://github.com/openai/codex/blob/d2f76324729d7c4a2b3225cfe42c7dbf162d98b7/codex-rs/app-server/src/thread_state.rs#L393),
 [Claude transcript indexes](https://github.com/anthropics/claude-agent-sdk-python/blob/3cf3446b0fa6c97042e85b245bba07459f22f946/src/claude_agent_sdk/_internal/sessions.py#L948)
 
-Keep the shared core's readiness rules authoritative. Indexes select candidates;
-they must preserve ordering and cannot bypass readiness, cancellation or recovery
-checks. Use structural sharing for immutable state, without introducing a global
-mutable cache or copying every index on every transition. Wire identities and
-canonical hash inputs stay compatible.
+The shared core's readiness rules remain authoritative. Immutable index buckets
+share unchanged data across states. A private, non-enumerable state attachment keeps
+indexes out of persisted and wire formats; cloning or deserialization rebuilds them
+on demand. There is no global mutable cache. Canonical identities remain unchanged.
 
-Compare indexed results with the existing selectors over generated transition
-sequences, including replay, retries, dependencies and cancellation. Check that old
-states remain unchanged and indexes can always be rebuilt. Benchmark retained
-history and the existing queue/fan-in scale scenarios, including memory growth.
-This is the second recommended follow-up.
+Generated transition histories compare indexed results with the original scanning
+rules after each transition, including dependencies, follow-ups, cancellation,
+uncertain effects, cleanup and recovery. Tests also check old-state immutability and
+rebuilding after structured cloning.
 
 ## 5. IPC framing
 
-First replace repeated pending-buffer concatenation in `LineDecoder` with a queue
-of fragments. Scan newly received bytes, assemble each complete frame once, and
-enforce byte bounds while retaining partial UTF-8 characters correctly.
+`LineDecoder` stores incomplete input in bounded 64 KiB slabs, scans new bytes and
+assembles a complete frame once. Byte bounds apply before allocation, including
+one-byte fragments and partial UTF-8 characters.
 
 Anthropic's Python SDK already accumulates incomplete line fragments and joins them
 when a newline arrives. Both Claude's streaming CLI and Codex's stdio app server
@@ -134,25 +210,23 @@ use newline-delimited JSON. Codex uses JSON text frames over WebSocket.
 [Claude programmatic interface](https://code.claude.com/docs/en/headless),
 [OpenAI Docs: App Server](https://learn.chatgpt.com/docs/app-server)
 
-Then negotiate a version that carries ordinary messages directly as UTF-8 JSONL,
-removing the base64 payload and extra JSON envelope. Preserve the existing small
-authentication handshake and legacy fallback. Socket chunks must remain distinct
-from logical messages; a fragmented message still needs one overall size bound.
-Keep queued-byte limits, backpressure, acknowledgments and reconnect semantics.
+The authenticated hello negotiates version 2 for direct UTF-8 JSONL, removing
+base64 and the extra envelope. Discovery files remain version 1 compatible, and
+both new clients with old servers and old clients with new servers retain version 1
+framing. Server writes use bounded socket chunks; `messageBytes` bounds the complete
+reply. Client requests still obey `frameBytes`.
 
-Removing base64 alone predicts roughly 25% fewer encoded payload bytes; that is an
-encoding calculation, not a measured Piñata speedup. JSON remains inspectable and
-needs no new serialization dependency. Test one-byte fragmentation, UTF-8 text,
-multiple frames per chunk, truncated and oversized input, mixed protocol versions,
-failed authentication and slow readers. Measure copying, allocation and end-to-end
-message latency before considering a different encoding.
+Queued-byte limits, backpressure, acknowledgments and reconnect semantics remain.
+Tests cover fragmented UTF-8, multiple frames in one read, truncated and oversized
+input, both compatibility directions, authentication and slow readers. No binary
+serialization dependency was added.
 
 ## 6. Journal writes
 
-Start with a persistent append handle that remains subject to ownership checks.
-Then evaluate group commit in the runtime queue, where multiple eligible transitions
-can actually be staged together. Storage-only batching cannot help while callers
-await each append serially.
+The journal retains an append handle and checks ownership, file identity and observed
+metadata before and after writes. Runtime transactions stage consecutive deterministic
+transitions for a shared durability barrier. Preparation, workspace preparation and
+claimed input consumption use this path; arbitrary asynchronous operations do not.
 
 Codex's rollout recorder owns its file handle, retains an unwritten suffix after
 errors, and processes explicit persist/flush/shutdown barriers. The inspected write
@@ -165,25 +239,24 @@ unchanged.
 [Tokio file semantics](https://docs.rs/tokio/latest/tokio/fs/struct.File.html),
 [Claude session storage](https://code.claude.com/docs/en/agent-sdk/session-storage)
 
-The proposed sequence is: stage deterministic transitions, make referenced artifacts
-durable, append records in order, sync the journal once, recheck ownership, then
-publish commits, resolve callers and dispatch effects. Do not acknowledge a commit
-before its durability barrier. Preserve `commit_unknown` and exact command-ID
-reconciliation when the result of a write is uncertain. Keep directory synchronization
-rules until platform-specific evidence supports changing them.
+The sequence is: stage transitions, make referenced artifacts durable, append records
+in order, sync the journal once, recheck ownership, then publish commits, resolve
+callers and dispatch effects. No staged commit is acknowledged before the barrier.
+Uncertain writes retain `commit_unknown` and exact command-ID reconciliation.
+Directory synchronization remains in place.
 
-Inject failures at each boundary, including partial batches, sync failure, lost
-ownership and restart. Verify that committed effects dispatch only after the barrier,
-ambiguous writes remain discoverable, and no retry duplicates a committed command.
-Measure tail latency as well as throughput on matched storage. This has more recovery
-risk than transport and indexing, so it follows those changes.
+Fault tests cover partial batches, sync failures, lost ownership and file replacement.
+They check acknowledgment timing, retained prefixes and duplicate-command behavior.
+Closing releases the persistent handle even when an uncertain owner claim must remain.
 
 ## 7. Session history and recovery
 
-Store immutable Pi session chunks with manifests that share unchanged prefixes.
-Bind byte offsets to content digests and preserve original session and branch
-identities. Materialize the exact Pi JSONL file through supported APIs when Pi needs
-it. Index or checkpoint the references to avoid unbounded manifest-chain traversal.
+Large Pi sessions and assignment transcripts use immutable chunks and flat manifests
+that share unchanged prefixes. Chunks end at record boundaries, targeting 128 entries
+or 256 KiB; an individual large entry can exceed that byte target. Offsets bind to
+content digests. Original Pi session and branch identities remain unchanged, and
+restoration materializes exact JSONL bytes through supported Pi APIs. Short histories
+retain their existing single-artifact format.
 
 Codex's paginated fork path records a history boundary containing a thread ID,
 exclusive ordinal and byte offset. Its lineage reader follows parent segments, and
@@ -199,26 +272,31 @@ forking rewrites session and message identities. Piñata's restoration requireme
 therefore need the original session evidence, beyond a display-oriented message list.
 [Claude session storage](https://code.claude.com/docs/en/agent-sdk/session-storage)
 
-Separately, make engine checkpoints contain reduced state and the associated journal
-revision/hash instead of another copy of the whole journal. On recovery, verify the
-checkpoint and required prefix evidence before replaying the tail. Faster replay
-must preserve existing corruption detection; a checkpoint alone is not permission
-to trust an unchecked prefix.
+Engine checkpoints save reduced state and its journal revision/hash in one replaceable
+projection file, every 256 revisions and on confirmed close. Existing whole-journal
+checkpoint artifacts remain readable. Recovery verifies journal and artifact digests,
+recomputes the prefix state and compares it with the projection before using it.
+This preserves semantic corruption detection and does **not** eliminate prefix replay
+CPU. A failed projection save reports a diagnostic; the durable journal remains usable.
 
-Keep old formats readable and retain legacy evidence during migration. Extend
-conversation paging to read validated chunks so oversized and evicted sessions also
-benefit. Test exact restoration, forks, compaction, missing chunks, digest mismatch,
-old-format recovery and interrupted publication. Measure retained bytes and recovery
-time across growing histories. This is a separate storage-format change and should
-follow the smaller optimizations.
+Fresh conversation pages verify all chunks, parent links and the full content hash.
+A signed continuation cursor attests that validation. After cache eviction, paging
+reads the manifest and overlapping chunks, rechecking their digests. Chunks outside
+the page are revisited on a fresh first page or recovery. Native Pi session files and
+legacy evidence remain on disk; artifact savings do not remove those copies.
+
+Tests cover exact byte restoration, branching, compaction, missing and changed chunks,
+old formats, interrupted publication and modified reduced-state projections. Journal
+replay verifies referenced chunks even when they are not on the requested page.
 
 ## 8. Initialization and serialization
 
-Enable Node's compile cache before expensive imports and share its directory with
-child processes, respecting the opt-out and continuing normally if caching fails.
-Node 22.19 includes the enable and flush APIs; flushing before spawning children can
-make newly compiled entries available to them. Measure both cold and warm starts,
-since creating a cache has a cost.
+The public loader enables Node's compile cache before expensive imports, preserves
+an explicitly configured directory and shares a newly enabled root with children.
+`NODE_DISABLE_COMPILE_CACHE=1` opts out; cache failure leaves normal execution available.
+The supervisor flushes compiled entries before spawning children. Node 22.19 includes
+these APIs. Cold and warm starts have separate measurements because cache creation
+has a cost.
 [Node 22.19 compile cache](https://nodejs.org/download/release/v22.19.0/docs/api/module.html#module-compile-cache)
 
 Claude Code now distributes a native executable, and Codex publishes platform
@@ -230,22 +308,18 @@ so removing that work is not a compatible default optimization.
 [Codex distribution](https://github.com/openai/codex/tree/d2f76324729d7c4a2b3225cfe42c7dbf162d98b7#installing-and-running-codex),
 [Claude bare mode](https://code.claude.com/docs/en/headless#start-faster-with-bare-mode)
 
-Narrow Piñata's own imports and defer optional initialization while preserving
-grants, hooks, extensions and cleanup. Check installed Pi declarations and use only
-supported exports. Generate only requested JSON schemas and memoize immutable schema
-outputs. Reuse canonical bytes for immutable identities, while preserving every
-existing digest and boundary validation. Ordinary transport JSON need not perform
-canonical sorting unless its contract requires it.
+CLI viewer, tool catalog and definition commands load their optional modules when
+needed. Skill discovery loads Pi only when a skill was selected. Installed Pi exports
+do not expose the desired internal modules, so this change uses the supported root
+SDK rather than private import paths. Grants, hooks, extensions and cleanup remain.
 
-Test cold/warm startup, disabled caches, cache directories without write permission,
-child propagation, packaging and identical digest/schema output on supported Node
-versions and operating systems.
-Separate module-import, backend-setup and first-provider-request timings. Evaluate
-precompiled JavaScript only if those measurements justify the packaging cost.
-Compile caching and selective schema generation can proceed alongside the earlier
-items after review.
+Schema requests generate only the selected schema. A private memoized value supplies
+cloned results, preserving caller mutation isolation. Process records serialize
+canonical payload bytes once for hashing and publication, with byte-identity tests.
+Tests cover disabled and unavailable caches, child propagation, schema isolation,
+digest compatibility and installed-package operation on Node 22.19.0. Linux timings
+do not establish macOS or Windows performance.
 
-The recommended order is process transport, assignment indexes, and IPC framing,
-with the small initialization changes alongside them; then journal batching and
-session storage. Each proposal keeps orchestration in Piñata and workflow decisions
-with the coordinator. Items 3–8 remain proposals pending sign-off.
+Implementation followed the recommended order: process transport, assignment indexes,
+IPC and initialization, then journal batching and session storage. Orchestration
+stays in Piñata; the coordinator retains workflow decisions and acceptance.

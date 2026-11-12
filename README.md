@@ -1118,6 +1118,11 @@ projections and transient `activity`. Revisions order history; `ownerEpoch` iden
 ownership generations. Activity source and ordinal support deduplication. Subscribers
 can coalesce activity or reset to snapshots; activity gaps do not imply missing commits.
 
+Process workers send coalesced live activity through the authenticated supervisor
+channel. The latest tail stays in memory and is replayed after reconnect; lifecycle,
+usage, outcomes and cleanup remain durable. Wake notifications follow durable writes,
+with a slower reconciliation scan if a notification is lost.
+
 History records assignments, effect intent and observation, backend enrollment, input
 transport and consumption, conversations, usage, output, cleanup, snapshots, settlement,
 schedules and application. Results and notices use exact assignments, keeping earlier
@@ -1127,10 +1132,14 @@ Usage reconciles per assignment and attempt with uncached input, output, cache r
 and optional cost. Missing or conflicting coverage keeps totals unknown while retaining
 partial observations. Price estimates, invoices and context utilization are separate.
 
-IPC protocol 2 binds loopback and records run, server and owner identities with separate
+IPC binds loopback and records run, server and owner identities with separate
 viewer and control credentials. A versioned hello supplies role and token. Root control
 credentials must stay outside worker transports and model prompts. Exact handshakes,
 frames and limits are in `pinata.ipc-*.v1`.
+
+The hello negotiates protocol 2 direct UTF-8 JSONL or protocol 1 base64 parts.
+Discovery files remain compatible with protocol 1. Replies retain a complete-message
+byte bound across socket chunks; client requests retain the frame-size bound.
 
 Transport IDs and durable mutation IDs serve different purposes. After disconnect,
 query the mutation receipt. Chunking preserves full replies; bounded queues and
@@ -1144,6 +1153,13 @@ receipts deduplicate by stable ID, separately from consumption.
 Start with status, results, conversations and changes for the exact assignment; use
 `--saved` without an owner. Shared files, isolated snapshots and worktrees remain
 inspectable after failure or cancellation.
+
+Large conversations use immutable chunks and flat manifests that share unchanged
+prefixes. Restoration preserves exact Pi JSONL bytes and branch identities. Native
+session files and old artifacts remain available. Fresh first pages validate the whole
+conversation; continuation pages verify the chunks they read, including after cache
+eviction. Engine state checkpoints remain optional projections: recovery verifies
+journal evidence and recomputes their prefix state before using them.
 
 | Situation                 | Action                                                                     |
 | ------------------------- | -------------------------------------------------------------------------- |
@@ -1312,6 +1328,10 @@ Use Node 22.19+ and retain the lockfile. Pin direct development dependencies;
 Pi stays an optional host peer. Read [STYLE.md](STYLE.md) and [AGENTS.md](AGENTS.md)
 before editing source.
 
+The Node loader enables the compile cache when available and shares it with owned
+children. Set `NODE_DISABLE_COMPILE_CACHE=1` to disable it, or `NODE_COMPILE_CACHE`
+to select its directory. Unavailable caches do not prevent execution.
+
 ```sh
 npm ci --ignore-scripts
 npm run check
@@ -1405,6 +1425,9 @@ local terminology/vocabulary live under `.vale/styles/`. Use inline code for ide
 
 Scripted and HTTP loopback benchmarks measure coordination, storage, sessions and cleanup.
 Coding quality is evaluated separately.
+
+The [performance follow-up report](docs/performance-followups.md) records the
+implementation, source comparisons, matched measurements and remaining limits.
 
 ```sh
 npm run bench
