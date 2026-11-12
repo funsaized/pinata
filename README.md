@@ -149,7 +149,7 @@ and exact assignments. `pinata status RUN_DIRECTORY --saved --json` reads retain
 
 ## Fleet and conversations
 
-![Navigate a two-agent fleet: select a worker, open its conversation, switch workers, search, and show finished work.](media/pinata-navigation.gif)
+![Navigate a nine-agent fleet with two delegation levels: collapse branches, open conversations, switch workers, and search.](media/pinata-navigation.gif)
 
 The coordinator shows a compact Agents tree while work is active or queued.
 Workers have activity markers, model labels and execution state; real children
