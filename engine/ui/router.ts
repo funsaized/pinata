@@ -68,6 +68,9 @@ export class ScreenRouter {
   actions = false;
   actionIndex = 0;
   search = "";
+  searchBeforeEdit = "";
+  searchSelected?: AssignmentRef;
+  definitionScroll = 0;
   searching = false;
   history = false;
   filter: "all" | "active" | "failed" = "all";
@@ -209,14 +212,14 @@ export class ScreenRouter {
     this.changed();
   }
 
-  navigate(screen: ScreenName, ref?: AssignmentRef): void {
+  navigate(screen: ScreenName, ref?: AssignmentRef): boolean {
     if (
       ref &&
       (ref.run !== this.state.run || !Object.hasOwn(this.state.assignments, assignmentKey(ref)))
     ) {
       this.notice = "That assignment is unavailable in this run";
       this.changed();
-      return;
+      return false;
     }
     if (this.noticeTone === "success") this.notice = "";
     if (ref) {
@@ -233,6 +236,7 @@ export class ScreenRouter {
     this.changed();
     if (screen === "conversation" && this.selected)
       void this.loadConversation().catch((error: unknown) => this.fail(error));
+    return true;
   }
   cycleScreen(direction: number): void {
     const screens: ScreenName[] = ["main", "fleet", "conversation"];
@@ -429,6 +433,7 @@ export class ScreenRouter {
       return;
     }
     this.definition = definition;
+    this.definitionScroll = 0;
     this.selected = undefined;
     this.screen = "conversation";
     this.generation++;
@@ -458,6 +463,11 @@ export class ScreenRouter {
     return view;
   }
   scroll(lines: number): void {
+    if (this.screen === "conversation" && this.definition && !this.selected) {
+      this.definitionScroll = Math.max(0, this.definitionScroll + lines);
+      this.changed();
+      return;
+    }
     if (this.screen === "fleet") {
       this.fleetScroll = Math.max(0, this.fleetScroll + lines);
       this.changed();
@@ -550,6 +560,16 @@ export class ScreenRouter {
       )
         void this.loadConversation().catch((error: unknown) => this.fail(error));
     }
+  }
+
+  async refresh(): Promise<void> {
+    if (!this.source.capabilities.live && this.source.reconnect) {
+      await this.reconnect();
+      return;
+    }
+    this.state = this.source.snapshot().snapshot;
+    if (this.screen === "conversation" && this.selected) await this.loadConversation();
+    else this.refreshView();
   }
 
   async reconnect(): Promise<void> {
@@ -664,6 +684,8 @@ export class ScreenRouter {
       return this.unavailable("Select an assignment first");
     if (kind !== "inspect" && !this.source.capabilities.control)
       return this.unavailable("This source is read-only; control requires the owning runtime");
+    if (kind === "recover" && !this.source.capabilities.recover)
+      return this.unavailable("Recovery is unavailable from this source");
     const call =
       kind === "inspect"
         ? { method: "query", input: { kind: "result", ref } }

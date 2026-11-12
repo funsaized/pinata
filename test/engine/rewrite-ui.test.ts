@@ -1855,7 +1855,8 @@ test("help and footer follow fleet, transcript and composer context without swal
   router.navigate("fleet");
   screen.handleInput("?");
   assert.match(rendered(), /Pinata help · Fleet/);
-  assert.doesNotMatch(rendered(), /Send message|Follow latest|Previous assignment|\/steer/);
+  assert.match(rendered(), /alt\+left\s+Previous assignment/);
+  assert.doesNotMatch(rendered(), /Send message|Follow latest|\/steer/);
   screen.handleInput("?");
   router.navigate("conversation", ref());
   router.transcriptFocus = true;
@@ -1867,7 +1868,7 @@ test("help and footer follow fleet, transcript and composer context without swal
   screen.handleInput("\t");
   screen.handleInput("?");
   assert.match(rendered(), /Pinata help · Message/);
-  assert.match(rendered(), /Expand.*tool output/);
+  assert.match(rendered(), /Expand[\s\S]*tool[\s\S]*output/);
   assert.match(rendered(), /Show.*thinking/);
   assert.doesNotMatch(rendered(), /Cycle all/);
   screen.handleInput("?");

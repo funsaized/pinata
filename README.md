@@ -159,8 +159,10 @@ The fleet keeps the animated tree, with one aligned row per assignment and statu
 near the agent name. The animation travels along active branches; reduced and off
 motion settings keep the branches still.
 Queued stages are visible by default and show what they are waiting for. `Q` hides
-other queued stages while keeping the selected agent visible. Dependency
-edges do not create parent/child branches. Shared model settings appear once;
+other queued stages while keeping the selected agent visible. Search with `/`,
+apply with Enter, cancel with Escape, or clear with Ctrl+U. Cancelling restores the
+previous query and selected agent. Dependency edges do not create parent/child
+branches. Shared model settings appear once;
 mixed models get their own column when there is room. The selected agent's task
 and waiting reason appear in a separate panel, with `d` for execution details.
 Task previews and the selected panel expand to the terminal width. The Observed
@@ -209,7 +211,16 @@ use Ctrl+O and Ctrl+T; `ui.keys.expandTools` and `ui.keys.toggleThinking` overri
 A control draft clears only after durable acceptance. The composer labels whether
 text will steer, follow up or continue. Question marks inside a draft remain text.
 Ctrl+Left/Right, Ctrl+B and Ctrl+R retain editor behavior while composing; use Tab
-for transcript controls or the commands below.
+for transcript controls or the commands below. Help and back controls stay visible
+on narrow terminals; less common shortcuts remain in `?` help. Help and definition
+previews support arrow and page scrolling. Shortcut overrides must use a modifier
+or function key and preserve the reserved navigation and editing keys.
+
+Saved and disconnected views label their control limits. The actions menu explains
+unavailable controls and keeps inspection available. Message drafts remain editable
+for local commands; messages require a control connection. Earlier assignments
+identify when you need to select the latest assignment to send a message. Invalid
+navigation and replacement commands keep the draft and show usage or target errors.
 
 Inside a worker screen, `/worker <id> [assignment]`, `/assignment <number>`,
 `/fleet` and `/main` navigate. `/steer <text>`, `/follow-up <text>` and
@@ -224,7 +235,7 @@ menu or leaves the view without stopping work.
 
 Other controls are `/inspect`, `/more`, `/refresh`,
 `/recover`, `/reconnect`, `/background`, `/queued`, `/scroll up|down|N`,
-`/palette <name>` and `/help`. `/replace <definition> <task>` creates a worker
+`/palette <name>` and `/help`. `/replace <new-worker-id> <task>` creates a worker
 with the selected assignment recorded as origin.
 
 ### Agent mentions

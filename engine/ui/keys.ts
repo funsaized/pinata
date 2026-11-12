@@ -62,9 +62,21 @@ export function resolveKeys(config: Record<string, string>): UiKeys {
         "a",
         "d",
         "m",
+        "space",
+        "home",
+        "end",
+        "pageUp",
+        "pageDown",
+        "shift+enter",
+        "ctrl+enter",
+        "shift+q",
       ].includes(key)
     )
       throw new Error(`Pinata key is reserved by navigation: ${key}`);
+    if (/^(?:shift\+)?(?:[a-z0-9]|space)$/.test(key))
+      throw new Error(
+        `Pinata shortcut would intercept message text: ${key}; use a modifier or function key`,
+      );
     keys[name as keyof UiKeys] = key as KeyId;
   }
   if (new Set(Object.values(keys)).size !== Object.values(keys).length)

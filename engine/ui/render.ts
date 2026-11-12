@@ -1,7 +1,7 @@
 import { renderFleet } from "./fleet.ts";
 import { actionsPanel, helpPanel } from "./panels.ts";
 import { renderConversation, type ConversationPresentation } from "./conversation.ts";
-import { resolveKeys, resolveConversationKeys, type ConversationKeys } from "./keys.ts";
+import { resolveConversationKeys, type ConversationKeys } from "./keys.ts";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { assignmentKey, type AssignmentRef, type CoreState } from "../contracts/index.ts";
 import {
@@ -11,6 +11,7 @@ import {
   contextLabel,
   needsAttention,
   queueLabel,
+  steerTarget,
 } from "./projection.ts";
 import { agentAccent, modelAccent, type Paint } from "./palette.ts";
 import { displayText, fit, lines, padded } from "./text.ts";
@@ -257,6 +258,25 @@ export function fleetWidget(state: CoreState, options: TreeOptions): string[] {
   return output.map((line) => options.paint("background", padded(line, options.width)));
 }
 
+type Shortcut = [key: string, label: string];
+
+function shortcutLine(primary: Shortcut[], extra: Shortcut[], width: number, paint: Paint): string {
+  const pinned = primary.map(([key, label]): Shortcut => [key, label]);
+  const plain = (items: Shortcut[]) =>
+    items.map(([key, label]) => key + (label ? " " + label : "")).join(" · ");
+  for (let index = pinned.length - 1; index >= 0 && visibleWidth(plain(pinned)) > width; index--)
+    pinned[index][1] = "";
+  const chosen: Shortcut[] = [];
+  for (const hint of extra)
+    if (visibleWidth(plain([...chosen, hint, ...pinned])) <= width) chosen.push(hint);
+  return fit(
+    [...chosen, ...pinned]
+      .map(([key, label]) => paint("accent.cyan", key) + (label ? paint("muted", " " + label) : ""))
+      .join(paint("border", " · ")),
+    width,
+  );
+}
+
 export function renderScreen(router: ScreenRouter, options: RenderOptions): string[] {
   const width = Math.max(1, options.width);
   const height = Math.max(1, options.height);
@@ -274,7 +294,10 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
     paint("accent.pink", options.ascii ? "[P] Pinata" : "✦ Pinata") +
     paint("border", " › ") +
     paint("strong", paint("accent.blue", router.screen)) +
-    paint("muted", ` · ${router.source.capabilities.live ? "live" : "saved"} · ${router.mode}`) +
+    paint(
+      "muted",
+      ` · ${router.source.capabilities.live ? "live" : "saved"} · ${router.mode}${router.source.capabilities.control ? "" : " · read-only"}`,
+    ) +
     (router.details ? paint("muted", ` · ${displayText(router.state.run)}`) : "");
   const output = [fit(header, width)];
   const footer: string[] = [];
@@ -301,16 +324,21 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
     const assignment = selected ? router.state.assignments[assignmentKey(selected)] : undefined;
     if (!assignment && router.definition) {
       const { definition, path, digest } = router.definition;
-      output.push(
-        ...[
-          `Definition @${definition.name} · ${path} · ${digest}`,
-          definition.handoffDescription,
-          `${definition.pinata.access} · ${definition.pinata.workspace} · tools: ${definition.tools.join(", ") || "none"}`,
-          `Return to main and send @${definition.name} <task> to start a worker.`,
-          "",
-          definition.instructions,
-        ].flatMap((line) => lines(line, width)),
+      const body = [
+        `Definition @${definition.name}`,
+        definition.handoffDescription,
+        `${definition.pinata.access} · ${definition.pinata.workspace} · tools: ${definition.tools.join(", ") || "none"}`,
+        `Return to main and send @${definition.name} <task> to start an agent.`,
+        `Source: ${path} · ${digest}`,
+        "",
+        definition.instructions,
+      ].flatMap((line) => lines(line, width));
+      const available = Math.max(0, height - output.length - 2);
+      router.definitionScroll = Math.min(
+        router.definitionScroll,
+        Math.max(0, body.length - available),
       );
+      output.push(...body.slice(router.definitionScroll, router.definitionScroll + available));
     } else if (!assignment)
       output.push(fit("Select a worker in the fleet to browse its assignments.", width));
     else {
@@ -403,12 +431,20 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
       view.scroll = Math.min(view.scroll, view.maxScroll);
       const visible = body.slice(view.scroll, view.scroll + available);
       output.push(...Array.from({ length: available - visible.length }, () => ""), ...visible);
-      const action =
-        assignment.execution.phase !== "ended"
-          ? "Steer"
-          : assignment.execution.reason === "completed"
-            ? "Follow up"
-            : "Continue";
+      const current =
+        assignment.execution.phase === "ended"
+          ? router.state.latest[assignment.ref.worker] === assignment.ref.assignment
+          : steerTarget(router.state, assignment.ref.worker)?.assignment ===
+            assignment.ref.assignment;
+      const action = !router.source.capabilities.control
+        ? "read-only · commands only"
+        : !current
+          ? "earlier assignment · select latest to message"
+          : assignment.execution.phase !== "ended"
+            ? "Steer"
+            : assignment.execution.reason === "completed"
+              ? "Follow up"
+              : "Continue";
       footer.push(
         fit(
           paint("focus", router.transcriptFocus ? " TRANSCRIPT " : " AGENT MESSAGE ") +
@@ -430,60 +466,68 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
   if (router.notice || router.screen === "conversation")
     footer.push(fit(paint(router.noticeTone, displayText(router.notice)), width));
   const hasBranches = Object.values(router.state.workers).some((worker) => worker.parentAssignment);
-  const controls =
-    router.screen === "fleet"
+  const preview = router.screen === "conversation" && !router.selected;
+  const primary: Shortcut[] = router.searching
+    ? [
+        ["Enter", "apply"],
+        ["Esc", "cancel"],
+      ]
+    : router.screen === "fleet"
       ? [
-          ...(width < 40
-            ? [
-                ["a", "actions"],
-                ["?", "help"],
-              ]
-            : []),
-          ["↑↓", "select"],
-          ["Enter", "open"],
-          ...(width >= 40
-            ? [
-                ["a", "stop/actions"],
-                ["d", router.details ? "less" : "details"],
-              ]
-            : []),
-          ...(width < 70
-            ? []
-            : [
-                ...(hasBranches ? [["←→", "branches"]] : []),
-                ["/", "search"],
-                ["f", "filter"],
-                ["h", "history"],
-              ]),
-          ...(width >= 40 ? [["?", "help"]] : []),
+          ...(width >= 30 ? [["↑↓", "select"] as Shortcut] : []),
+          ["a", "actions"],
+          ["?", "help"],
+          ["Esc", "back"],
         ]
-      : router.transcriptFocus
+      : preview
         ? [
-            ["Tab", "message"],
-            ["d", "details"],
-            ["m", "older"],
             ["?", "help"],
+            ["Esc", "back"],
+          ]
+        : router.transcriptFocus
+          ? [
+              ["Tab", "message"],
+              ["?", "help"],
+              ["Esc", "back"],
+            ]
+          : [
+              ["Enter", router.source.capabilities.control ? "send" : "command"],
+              ["Tab", "transcript"],
+              ["?", "help (empty message)"],
+              ["Esc", "back"],
+            ];
+  const extra: Shortcut[] = router.searching
+    ? [
+        ["Ctrl+U", "clear"],
+        ["Backspace", "delete"],
+      ]
+    : router.screen === "fleet"
+      ? [
+          ["Enter", "open"],
+          ["d", router.details ? "less" : "details"],
+          ...(hasBranches ? [["←→", "branches"] as Shortcut] : []),
+          ["/", "search"],
+          ["f", "filter"],
+          ["h", "history"],
+        ]
+      : preview
+        ? [
+            ["↑↓", "scroll"],
+            ["PageUp/PageDown", "page"],
           ]
         : [
-            ["Tab", "transcript"],
-            ["Enter", "send"],
-            ["?", "help (empty message)"],
+            ...(router.transcriptFocus
+              ? ([
+                  ["↑↓", "scroll"],
+                  ["a", "actions"],
+                  ["d", "details"],
+                  ["m", "older"],
+                ] as Shortcut[])
+              : []),
+            [conversationKeys.expandTools.join(" / "), "tools"],
+            [conversationKeys.toggleThinking.join(" / "), "thinking"],
           ];
-  if (router.screen === "conversation") {
-    controls.unshift(
-      [conversationKeys.expandTools.join(" / "), "tools"],
-      [conversationKeys.toggleThinking.join(" / "), "thinking"],
-    );
-  }
-  controls.push([resolveKeys(router.keys).parentScreen, "back"]);
-  footer.push(
-    fit(
-      controls
-        .map(([key, label]) => paint("accent.cyan", key) + paint("muted", ` ${label}`))
-        .join(paint("border", " · ")),
-      width,
-    ),
-  );
+  footer.push(shortcutLine(primary, extra, width, paint));
   const bodyHeight = Math.max(0, height - footer.length);
   return [
     ...output.slice(0, bodyHeight),

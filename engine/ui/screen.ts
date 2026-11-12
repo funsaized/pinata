@@ -16,6 +16,7 @@ import { createPaint, type Paint } from "./palette.ts";
 import { renderScreen } from "./render.ts";
 import { ScreenRouter, type MessageAction } from "./router.ts";
 import type { ConversationPresentation } from "./conversation.ts";
+import { agentActions } from "./panels.ts";
 import { padded } from "./text.ts";
 
 import { resolveKeys, resolveConversationKeys, type UiKeys } from "./keys.ts";
@@ -161,29 +162,33 @@ export class PinataScreen implements Component, Focusable {
       else if (matchesKey(data, "up"))
         this.router.actionIndex = Math.max(0, this.router.actionIndex - 1);
       else if (matchesKey(data, "down"))
-        this.router.actionIndex = Math.min(5, this.router.actionIndex + 1);
+        this.router.actionIndex = Math.min(
+          agentActions(this.router).length - 1,
+          this.router.actionIndex + 1,
+        );
       else if (matchesKey(data, "enter")) {
-        const index = this.router.actionIndex;
+        const action = agentActions(this.router)[this.router.actionIndex];
+        if (!action || action.unavailable) {
+          this.requestRender();
+          return;
+        }
         this.router.actions = false;
         this.run(async () => {
-          const reply = await (index < 3
-            ? this.router.control(
-                "cancel",
-                ["assignment", "worker", "run"][index] as "assignment" | "worker" | "run",
-              )
-            : this.router.control(
-                index === 3 ? "background" : index === 4 ? "recover" : "inspect",
-              ));
-          if (index === 5 && reply.status === "ok") this.router.navigate("conversation");
+          const reply = await this.router.control(action.kind, action.scope);
+          if (action.kind === "inspect" && reply.status === "ok")
+            this.router.navigate("conversation");
         });
       }
       this.requestRender();
       return;
     }
     if (this.router.help) {
-      if (matchesKey(data, "down") || matchesKey(data, "pageDown")) this.router.helpScroll++;
-      if (matchesKey(data, "up") || matchesKey(data, "pageUp"))
-        this.router.helpScroll = Math.max(0, this.router.helpScroll - 1);
+      const page = Math.max(1, this.options.tui.terminal.rows - 5);
+      if (matchesKey(data, "down")) this.router.helpScroll++;
+      if (matchesKey(data, "pageDown")) this.router.helpScroll += page;
+      if (matchesKey(data, "up")) this.router.helpScroll = Math.max(0, this.router.helpScroll - 1);
+      if (matchesKey(data, "pageUp"))
+        this.router.helpScroll = Math.max(0, this.router.helpScroll - page);
       this.requestRender();
       if (matchesKey(data, "escape") || data === "?") {
         this.router.help = false;
@@ -192,7 +197,11 @@ export class PinataScreen implements Component, Focusable {
       return;
     }
     if (this.router.searching) {
-      if (matchesKey(data, "escape") || matchesKey(data, "enter")) this.router.searching = false;
+      if (matchesKey(data, "escape")) {
+        this.router.search = this.router.searchBeforeEdit;
+        this.router.searching = false;
+      } else if (matchesKey(data, "enter")) this.router.searching = false;
+      else if (matchesKey(data, "ctrl+u")) this.router.search = "";
       else if (matchesKey(data, "backspace"))
         this.router.search = [...this.router.search].slice(0, -1).join("");
       else if (
@@ -202,6 +211,15 @@ export class PinataScreen implements Component, Focusable {
       )
         this.router.search += data;
       this.router.refreshView();
+      const previous = this.router.searchSelected;
+      if (
+        matchesKey(data, "escape") &&
+        previous &&
+        this.router
+          .fleetAssignments()
+          .some((row) => assignmentKey(row.ref) === assignmentKey(previous))
+      )
+        this.router.navigate("fleet", previous);
       return;
     }
     if (this.router.screen === "conversation" && matchesKey(data, "tab")) {
@@ -209,7 +227,10 @@ export class PinataScreen implements Component, Focusable {
       this.requestRender();
       return;
     }
-    const composing = this.router.screen === "conversation" && !this.router.transcriptFocus;
+    const composing =
+      this.router.screen === "conversation" &&
+      Boolean(this.router.selected) &&
+      !this.router.transcriptFocus;
     if (this.router.screen === "conversation") {
       const keys = resolveConversationKeys(this.router.keys, this.options.keybindings);
       if (keys.expandTools.some((key) => matchesKey(data, key))) {
@@ -243,7 +264,10 @@ export class PinataScreen implements Component, Focusable {
       this.requestRender();
       return;
     }
-    if (matchesKey(data, this.keys.openFleet)) return this.router.navigate("fleet");
+    if (matchesKey(data, this.keys.openFleet)) {
+      this.router.navigate("fleet");
+      return;
+    }
     if (matchesKey(data, this.keys.previousScreen)) return this.move(-1);
     if (matchesKey(data, this.keys.nextScreen)) return this.move(1);
     if (matchesKey(data, this.keys.previousWorker)) return this.router.cycleWorker(-1);
@@ -262,12 +286,7 @@ export class PinataScreen implements Component, Focusable {
     if (matchesKey(data, this.keys.background))
       return this.run(() => this.router.control("background"));
     if (matchesKey(data, this.keys.recover)) return this.run(() => this.router.control("recover"));
-    if (matchesKey(data, this.keys.refresh))
-      return this.run(() =>
-        this.router.source.capabilities.live || !this.router.source.reconnect
-          ? this.router.loadConversation()
-          : this.router.reconnect(),
-      );
+    if (matchesKey(data, this.keys.refresh)) return this.run(() => this.router.refresh());
     if (
       matchesKey(data, "pageUp") ||
       matchesKey(data, "pageDown") ||
@@ -291,6 +310,8 @@ export class PinataScreen implements Component, Focusable {
         return;
       }
       if (data === "/") {
+        this.router.searchBeforeEdit = this.router.search;
+        this.router.searchSelected = this.router.selected;
         this.router.searching = true;
         this.requestRender();
         return;
@@ -315,6 +336,11 @@ export class PinataScreen implements Component, Focusable {
       if (matchesKey(data, "up")) this.moveRow(-1);
       else if (matchesKey(data, "down")) this.moveRow(1);
       else if (matchesKey(data, "enter")) this.router.navigate("conversation");
+      return;
+    }
+    if (this.router.screen === "conversation" && this.router.definition && !this.router.selected) {
+      if (matchesKey(data, "up")) this.router.scroll(-1);
+      if (matchesKey(data, "down")) this.router.scroll(1);
       return;
     }
     if (this.router.screen !== "conversation" || !this.router.selected) return;
@@ -408,7 +434,7 @@ export class PinataScreen implements Component, Focusable {
             await this.router.loadConversation(true);
             break;
           case "refresh":
-            await this.router.loadConversation();
+            await this.router.refresh();
             break;
           case "main":
             this.router.navigate("main");
@@ -422,20 +448,30 @@ export class PinataScreen implements Component, Focusable {
             this.router.navigate("fleet");
             break;
           case "worker": {
-            const [id, ordinal] = argument.trim().split(/\s+/);
-            this.router.navigate("conversation", {
-              run: this.router.state.run,
-              worker: id,
-              assignment: ordinal ? Number(ordinal) : this.router.state.latest[id],
-            });
+            const [id, ordinal, extra] = argument.trim().split(/\s+/);
+            if (!id || extra || (ordinal !== undefined && !/^[1-9]\d*$/.test(ordinal)))
+              throw new Error("Use /worker <id> [positive assignment number]");
+            if (
+              !this.router.navigate("conversation", {
+                run: this.router.state.run,
+                worker: id,
+                assignment: ordinal ? Number(ordinal) : this.router.state.latest[id],
+              })
+            )
+              return;
             break;
           }
           case "assignment":
-            if (this.router.selected)
-              this.router.navigate("conversation", {
+            if (!/^[1-9]\d*$/.test(argument.trim()))
+              throw new Error("Use /assignment <positive number>");
+            if (
+              this.router.selected &&
+              !this.router.navigate("conversation", {
                 ...this.router.selected,
                 assignment: Number(argument),
-              });
+              })
+            )
+              return;
             break;
           case "scroll": {
             const amount = argument === "up" ? -10 : argument === "down" ? 10 : Number(argument);
@@ -448,8 +484,9 @@ export class PinataScreen implements Component, Focusable {
             this.router.setPalette(paletteSchema.parse(argument));
             break;
           case "replace": {
-            const split = argument.indexOf(" ");
-            reply = await this.router.replace(argument.slice(0, split), argument.slice(split + 1));
+            const replacement = /^(\S+)\s+([\s\S]+)$/.exec(argument.trim());
+            if (!replacement) throw new Error("Use /replace <new-worker-id> <task>");
+            reply = await this.router.replace(replacement[1], replacement[2]);
             break;
           }
           case "continue":
