@@ -250,7 +250,7 @@ test("compact trees retain actual ancestry, queued totals and only witnessed ela
   const router = new ScreenRouter(source, { mode: "observe", now: () => now });
   await router.start();
   for (const target of [ref(), ref(2)]) {
-    source.state.assignments[assignmentKey(target)].execution = { phase: "running" };
+    source.state.assignments[assignmentKey(target)].execution = { phase: "preparing" };
     source.state.revision++;
     await source.emit({
       schemaVersion: 1,
@@ -258,7 +258,7 @@ test("compact trees retain actual ancestry, queued totals and only witnessed ela
       id: `start/${target.worker}`,
       ownerEpoch: source.epoch,
       revision: source.state.revision,
-      transition: { kind: "assignment_state", ref: target, execution: { phase: "running" } },
+      transition: { kind: "assignment_state", ref: target, execution: { phase: "preparing" } },
     });
   }
   now = 1800;

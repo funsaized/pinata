@@ -868,7 +868,7 @@ export class Runtime {
   async close(request: ShutdownRequest = { reason: "Runtime closed" }): Promise<ShutdownReceipt> {
     if (this.shutdown) return this.shutdown;
     this.closing = true;
-    this.shutdown = (async () => {
+    this.shutdown = (async (): Promise<ShutdownReceipt> => {
       await this.schedules?.close();
       const confirmed = (await this.execution?.close(request.reason)) ?? true;
       const applicationConfirmed = (await this.applications?.close()) ?? true;
@@ -886,7 +886,7 @@ export class Runtime {
         await this.store.close();
         return { status: "closed", revision: this.state.revision };
       });
-    })();
+    })().finally(() => this.conversations.clear());
     return this.shutdown;
   }
 }

@@ -13,6 +13,7 @@ import {
   type RuntimeEvent,
   type SurfaceReply,
 } from "../contracts/index.ts";
+import { reduce } from "../core/state.ts";
 import { type RuntimeSource, surfaceError } from "../sources/runtime.ts";
 import { assignments, isFinished, steerTarget } from "./projection.ts";
 import { type PaletteName } from "./palette.ts";
@@ -148,8 +149,10 @@ export class ScreenRouter {
   }
   private receive(event: RuntimeEvent): void {
     if (!this.alive) return;
-    if (event.ownerEpoch !== this.epoch) {
+    const changedOwner = event.ownerEpoch !== this.epoch;
+    if (changedOwner) {
       this.epoch = event.ownerEpoch;
+      this.generation++;
       this.activity.clear();
       this.activityOrdinals.clear();
       this.clearTiming();
@@ -170,8 +173,21 @@ export class ScreenRouter {
       return;
     }
     const previous = this.state;
-    this.state = this.source.snapshot().snapshot;
-    if (event.kind === "committed") {
+    if (event.kind === "snapshot") {
+      if (!changedOwner && event.revision < this.state.revision) return;
+      if (event.revision !== this.state.revision) this.clearTiming();
+      this.state = event.snapshot;
+    } else if (!changedOwner && event.revision <= this.state.revision) return;
+    else if (!changedOwner && event.revision === this.state.revision + 1)
+      this.state = reduce(this.state, event.transition, event.revision);
+    else {
+      // A gap or a new owner requires an authoritative reset. Ordinary commits
+      // use the shared reducer without copying the full retained run state.
+      this.clearTiming();
+      this.receive(this.source.snapshot());
+      return;
+    }
+    if (event.kind === "committed" && previous.assignments !== this.state.assignments) {
       for (const [key, assignment] of Object.entries(this.state.assignments)) {
         const before = previous.assignments[key]?.execution.phase;
         if (before === "queued" && !["queued", "ended"].includes(assignment.execution.phase))
@@ -180,13 +196,10 @@ export class ScreenRouter {
         if (timing && timing.end === undefined && assignment.execution.phase === "ended")
           timing.end = this.now();
       }
-      this.updateTicker();
     }
-    if (
-      event.kind === "committed" &&
-      event.transition.kind === "accepted" &&
-      event.transition.config
-    )
+    if (event.kind === "snapshot" || previous.assignments !== this.state.assignments)
+      this.updateTicker();
+    if (previous.config?.digest !== this.state.config?.digest)
       void this.loadSettings().catch((error: unknown) => this.fail(error));
     if (!this.selected && !this.definition) this.selected = assignments(this.state)[0]?.ref;
     if (this.screen === "fleet") {
@@ -514,7 +527,7 @@ export class ScreenRouter {
     try {
       // Keep the displayed transcript stable while collecting immutable pages.
       let cursor = more ? view.page?.cursor : undefined;
-      let entries = more ? [...(view.page?.entries ?? [])] : [];
+      const entries = more ? [...(view.page?.entries ?? [])] : [];
       let page: ConversationQueryResult;
       do {
         const reply = await this.source.request({
@@ -546,7 +559,7 @@ export class ScreenRouter {
           if (page.artifact?.digest !== view.page.artifact?.digest) view.newOutput = true;
           return;
         }
-        entries = [...entries, ...page.entries];
+        for (const entry of page.entries) entries.push(entry);
         cursor = page.cursor;
       } while (view.follow && !page.complete && cursor);
       view.page = { ...page, entries };

@@ -28,8 +28,9 @@ function deferred() {
   return { promise, resolve };
 }
 
-test("conversation pagination binds an immutable snapshot to its assignment and runtime", async () => {
+function conversationArtifacts() {
   const values = new Map<string, Uint8Array>();
+  const reads: string[] = [];
   const artifacts: ArtifactPort = {
     async put(bytes) {
       const ref = { digest: digestBytes(bytes), size: bytes.length };
@@ -37,11 +38,19 @@ test("conversation pagination binds an immutable snapshot to its assignment and 
       return ref;
     },
     async read(ref) {
+      reads.push(ref.digest);
       const bytes = values.get(ref.digest);
       assert(bytes, "a cursor can only read retained artifacts");
+      assert.equal(bytes.length, ref.size);
+      assert.equal(digestBytes(bytes), ref.digest);
       return bytes;
     },
   };
+  return { artifacts, values, reads };
+}
+
+test("conversation pagination binds an immutable snapshot to its assignment and runtime", async () => {
+  const { artifacts, reads } = conversationArtifacts();
   const ref: AssignmentRef = { run: "pagination", worker: "worker", assignment: 1 };
   const entries = Array.from({ length: 205 }, (_, index) => ({
     id: `${index}`,
@@ -70,6 +79,14 @@ test("conversation pagination binds an immutable snapshot to its assignment and 
   assert.deepEqual([...first.entries, ...second.entries, ...last.entries], entries);
   assert.equal(last.complete, true);
   assert.equal(last.cursor, undefined);
+  assert.equal(reads.length, 1, "One validated artifact serves every retained page");
+  const original = structuredClone(second.entries);
+  const edited = second.entries[0];
+  assert(edited && typeof edited === "object" && !Array.isArray(edited));
+  edited.text = "Caller edit must not change the cached snapshot";
+  const repeated = await queries.query({ kind: "conversation", ref, cursor: first.cursor });
+  assert.deepEqual(repeated.entries, original);
+  assert.equal(reads.length, 1);
   for (const request of [
     { kind: "conversation" as const, ref: { ...ref, assignment: 2 }, cursor: first.cursor },
     { kind: "conversation" as const, ref, cursor: `${first.cursor.slice(0, -5)}wrong` },
@@ -93,6 +110,163 @@ test("conversation pagination binds an immutable snapshot to its assignment and 
   await assert.rejects(
     queries.query({ kind: "conversation", ref }, { source: "checkpoint", artifact: incomplete }),
     /incomplete record/,
+  );
+});
+
+test("conversation cache retains immutable pages and rechecks evidence on a fresh first page", async () => {
+  const { artifacts, values, reads } = conversationArtifacts();
+  const ref = { run: "pagination", worker: "worker", assignment: 1 };
+  const entries = Array.from({ length: 101 }, (_, index) => ({ text: `Entry ${index}` }));
+  const bytes = Buffer.from(JSON.stringify({ schemaVersion: 1, ref, entries }));
+  const artifact = await artifacts.put(bytes);
+  const queries = new ConversationQueries(artifacts);
+  const first = await queries.query(
+    { kind: "conversation", ref },
+    { source: "assignment", artifact: { size: artifact.size, digest: artifact.digest } },
+  );
+  assert(first.cursor);
+  values.set(artifact.digest, Buffer.from("Corrupt retained bytes"));
+  const last = await queries.query({ kind: "conversation", ref, cursor: first.cursor });
+  assert.deepEqual(last.entries, entries.slice(100));
+  assert.equal(reads.length, 1, "Cursor pages retain the previously verified snapshot");
+  await assert.rejects(
+    queries.query({ kind: "conversation", ref }, { source: "assignment", artifact }),
+    /cannot be read/,
+  );
+  await assert.rejects(
+    queries.query({ kind: "conversation", ref, cursor: first.cursor }),
+    /cannot be read/,
+  );
+  values.set(artifact.digest, bytes);
+  assert.deepEqual(
+    (await queries.query({ kind: "conversation", ref, cursor: first.cursor })).entries,
+    entries.slice(100),
+    "A failed read does not poison future retries",
+  );
+});
+
+test("conversation cache coalesces concurrent reads and releases snapshots when cleared", async () => {
+  const { artifacts, reads } = conversationArtifacts();
+  const ref = { run: "pagination", worker: "worker", assignment: 1 };
+  const artifact = await artifacts.put(
+    Buffer.from(
+      JSON.stringify({
+        schemaVersion: 1,
+        ref,
+        entries: Array.from({ length: 201 }, (_, id) => id),
+      }),
+    ),
+  );
+  let gate = deferred();
+  const queries = new ConversationQueries({
+    async read(artifact) {
+      const bytes = await artifacts.read(artifact);
+      await gate.promise;
+      return bytes;
+    },
+  });
+  const request = { kind: "conversation" as const, ref };
+  const snapshot = { source: "assignment" as const, artifact };
+  const first = queries.query(request, snapshot);
+  const concurrent = queries.query(request, snapshot);
+  assert.equal(reads.length, 1);
+  gate.resolve();
+  const page = await first;
+  assert.deepEqual(await concurrent, page);
+  assert(page.cursor);
+  queries.clear();
+  gate = deferred();
+  const pending = queries.query({ ...request, cursor: page.cursor });
+  assert.equal(reads.length, 2);
+  queries.clear();
+  gate.resolve();
+  assert.deepEqual(
+    (await pending).entries,
+    Array.from({ length: 100 }, (_, i) => i + 100),
+  );
+  await queries.query({ ...request, cursor: page.cursor });
+  assert.equal(reads.length, 3, "A read started before clear cannot repopulate the cache");
+});
+
+test("conversation cache evicts old snapshots without invalidating signed cursors", async () => {
+  const { artifacts, reads } = conversationArtifacts();
+  const queries = new ConversationQueries(artifacts);
+  const pages = [];
+  for (let assignment = 1; assignment <= 9; assignment++) {
+    const ref = { run: "pagination", worker: "worker", assignment };
+    const entries = Array.from({ length: 101 }, (_, index) => `${assignment}/${index}`);
+    const artifact = await artifacts.put(
+      Buffer.from(JSON.stringify({ schemaVersion: 1, ref, entries })),
+    );
+    pages.push(
+      await queries.query({ kind: "conversation", ref }, { source: "assignment", artifact }),
+    );
+  }
+  assert.equal(reads.length, 9);
+  const latest = pages.at(-1);
+  assert(latest?.cursor);
+  await queries.query({ kind: "conversation", ref: latest.ref, cursor: latest.cursor });
+  assert.equal(reads.length, 9, "Recent snapshots remain available without IO");
+  const oldest = pages[0];
+  assert(oldest.cursor);
+  const final = await queries.query({
+    kind: "conversation",
+    ref: oldest.ref,
+    cursor: oldest.cursor,
+  });
+  assert.deepEqual(final.entries, ["1/100"]);
+  assert.equal(reads.length, 10, "An evicted snapshot is verified again from retained evidence");
+});
+
+test("conversation cache bounds retained source bytes and still pages oversized artifacts", async () => {
+  const { artifacts, reads } = conversationArtifacts();
+  const queries = new ConversationQueries(artifacts);
+  const ref = { run: "pagination", worker: "worker", assignment: 1 };
+  const entries = ["x".repeat(17 * 1024 * 1024), ...Array.from({ length: 100 }, (_, i) => i)];
+  const artifact = await artifacts.put(
+    Buffer.from(JSON.stringify({ schemaVersion: 1, ref, entries })),
+  );
+  const page = await queries.query(
+    { kind: "conversation", ref },
+    { source: "assignment", artifact },
+  );
+  assert(page.cursor);
+  const last = await queries.query({ kind: "conversation", ref, cursor: page.cursor });
+  assert.deepEqual(last.entries, [99]);
+  assert.equal(last.complete, true);
+  assert.equal(reads.length, 2, "Oversized snapshots remain readable but are not retained in RAM");
+});
+
+test("checkpoint pagination validates the full entry chain before serving cached pages", async () => {
+  const { artifacts, reads } = conversationArtifacts();
+  const queries = new ConversationQueries(artifacts);
+  const ref = { run: "pagination", worker: "worker", assignment: 1 };
+  const entries = Array.from({ length: 201 }, (_, index) => ({
+    type: "message",
+    id: `entry-${index}`,
+    parentId: index ? `entry-${index - 1}` : null,
+    message: { content: `Entry ${index}` },
+  }));
+  const checkpoint = (values: typeof entries) =>
+    Buffer.from(
+      [{ type: "session", id: "checkpoint" }, ...values]
+        .map((value) => JSON.stringify(value))
+        .join("\n") + "\n",
+    );
+  const artifact = await artifacts.put(checkpoint(entries));
+  let page = await queries.query({ kind: "conversation", ref }, { source: "checkpoint", artifact });
+  const found = [...page.entries];
+  while (page.cursor) {
+    page = await queries.query({ kind: "conversation", ref, cursor: page.cursor });
+    found.push(...page.entries);
+  }
+  assert.deepEqual(found, entries);
+  assert.equal(reads.length, 1);
+  entries[200].parentId = "missing";
+  const corrupt = await artifacts.put(checkpoint(entries));
+  await assert.rejects(
+    queries.query({ kind: "conversation", ref }, { source: "checkpoint", artifact: corrupt }),
+    /broken entry chain/,
   );
 });
 
