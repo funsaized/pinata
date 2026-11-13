@@ -27,8 +27,6 @@ pi install npm:pi-pinata
 [Implementation](#architecture-and-implementation-index) · [Development](#development)
 pinata-navigation.gif
 
-![A live Piñata fleet gif.](media/pinata-navigation.gif)
-
 ![A live Piñata fleet with nine agents, two levels of delegation, a scout and a queued reviewer.](media/pinata-fleet.png)
 
 
