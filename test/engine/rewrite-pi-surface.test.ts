@@ -32,12 +32,21 @@ import { openHost, type Host } from "../../engine/host/index.ts";
 import {
   surfaceReplySchema,
   toolPageSchema,
+  assignmentKey,
   type AssignmentRef,
   type Grants,
 } from "../../engine/contracts/index.ts";
 import { toolContentBytes } from "../../engine/sources/pages.ts";
 import { MemoryStore } from "../../engine/memory/index.ts";
 import { surfaceFixture } from "./rewrite-surface-fixture.ts";
+
+function deferred() {
+  let resolve = (): void => {};
+  const promise = new Promise<void>((ready) => {
+    resolve = ready;
+  });
+  return { promise, resolve };
+}
 
 async function fixture(
   t: TestContext,
@@ -650,6 +659,76 @@ test(
       JSON.stringify({ errors: f.errors, outbox: host.source.snapshot().snapshot.outbox }),
     );
     assert.deepEqual(f.errors, []);
+  },
+);
+
+test(
+  "streaming coordinator attempts each new worker notice once before retrying at turn end",
+  { timeout: 30_000 },
+  async (t) => {
+    const parent = deferred();
+    const worker = deferred();
+    const parentStarted = deferred();
+    const f = await fixture(t, {
+      respond: async (_context, _options, state) => {
+        if (state.callCount === 1) {
+          parentStarted.resolve();
+          await parent.promise;
+        } else await worker.promise;
+        return fauxAssistantMessage("Scripted turn complete");
+      },
+    });
+    await f.session.prompt("@scout");
+    const host = f.hosts[0];
+    const parentTurn = f.session.prompt("Hold this coordinator turn");
+    try {
+      await parentStarted.promise;
+      const receipt = await host.runtime.execute(
+        {
+          requestId: "held-worker",
+          command: {
+            kind: "create",
+            workers: [{ id: "sender", agent: "scout", task: "Hold for progress messages" }],
+          },
+        },
+        host.caller,
+      );
+      assert.equal(receipt.status, "accepted");
+      const ref = { run: host.caller.run, worker: "sender", assignment: 1 };
+      while (
+        host.source.snapshot().snapshot.assignments[assignmentKey(ref)].execution.phase !==
+        "running"
+      )
+        await delay(1, undefined, { signal: t.signal });
+      const messages = host.runtime.bindMessages(ref);
+      for (let index = 0; index < 12; index++) {
+        const message = await messages.send({ messageId: `progress-${index}`, text: "Progress" });
+        while (host.source.snapshot().snapshot.outbox[message.id]?.state !== "uncertain")
+          await delay(1, undefined, { signal: t.signal });
+      }
+      const notices = Object.values(host.source.snapshot().snapshot.outbox);
+      assert.equal(notices.length, 12);
+      assert(notices.every((notice) => notice.attempts.length === 2));
+      assert(
+        notices.every((notice) => new Set(notice.attempts.map((attempt) => attempt.id)).size === 1),
+      );
+      assert.equal(f.manager.getEntries().filter((entry) => noticeId(entry)).length, 0);
+      parent.resolve();
+      await parentTurn;
+      assert.equal(f.manager.getEntries().filter((entry) => noticeId(entry)).length, 12);
+      assert(
+        Object.values(host.source.snapshot().snapshot.outbox).every(
+          (notice) => notice.state === "delivered" && notice.attempts.length === 4,
+        ),
+      );
+      assert.equal(f.faux.state.callCount, 2, "Progress never starts another coordinator turn");
+      assert.deepEqual(f.errors, []);
+    } finally {
+      parent.resolve();
+      worker.resolve();
+      await parentTurn;
+    }
+    await host.runtime.wait({}, host.caller, t.signal);
   },
 );
 

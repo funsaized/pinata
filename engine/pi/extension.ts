@@ -158,8 +158,12 @@ export function createPinataExtension(options: PiExtensionOptions = {}): Extensi
               ))
           )
             return;
+          const notificationId =
+            event.transition.kind === "settled"
+              ? event.transition.notificationId
+              : event.transition.message.id;
           return created.runtime
-            .deliverNotifications(created.caller)
+            .deliverNotifications(created.caller, { notificationId })
             .then(() => {})
             .catch((error: unknown) => report(active?.context ?? context, error));
         });

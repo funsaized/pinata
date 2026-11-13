@@ -922,11 +922,14 @@ export class Runtime {
     return this.execution.recover(request.targets);
   }
 
-  async deliverNotifications(caller: CallerAuthority): Promise<NotificationDelivery[]> {
+  async deliverNotifications(
+    caller: CallerAuthority,
+    options: { notificationId?: string } = {},
+  ): Promise<NotificationDelivery[]> {
     this.authorize(caller, true);
     if (!this.delivery)
       throw new DomainError("unsupported", "No parent notification transport is attached");
-    return this.delivery.deliver();
+    return this.delivery.deliver(options.notificationId);
   }
 
   async recordNotificationConsumption(

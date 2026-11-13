@@ -51,13 +51,19 @@ export class CompletionDelivery {
       );
   }
 
-  async deliver(): Promise<NotificationDelivery[]> {
+  async deliver(notificationId?: string): Promise<NotificationDelivery[]> {
     if (this.controller.signal.aborted)
       throw new DomainError("conflict", "Notification delivery is closing");
     const notices = await this.host.transaction(async (transaction) => {
       const state = transaction.state();
       const claimed: Array<{ notice: NotificationNotice; attemptId: string }> = [];
-      for (const [id, record] of Object.entries(state.outbox)) {
+      const notices = notificationId === undefined ? Object.entries(state.outbox) : [];
+      if (notificationId !== undefined) {
+        if (!Object.hasOwn(state.outbox, notificationId))
+          throw new DomainError("invalid_input", "Unknown notification", "notificationId");
+        notices.push([notificationId, state.outbox[notificationId]]);
+      }
+      for (const [id, record] of notices) {
         if (record.state === "delivered" || record.state === "consumed" || this.inFlight.has(id))
           continue;
         let notice: NotificationNotice;
