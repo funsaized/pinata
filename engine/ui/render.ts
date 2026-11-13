@@ -112,7 +112,7 @@ function treeLines(state: CoreState, nodes: TreeNode[], options: TreeOptions): T
     const duration =
       elapsed === undefined
         ? ""
-        : ` · observed ${elapsed < 60_000 ? (elapsed / 1000).toFixed(1) + "s" : (elapsed / 60_000).toFixed(1) + "m"}`;
+        : ` · ${elapsed < 60_000 ? (elapsed / 1000).toFixed(1) + "s" : (elapsed / 60_000).toFixed(1) + "m"}`;
     const isSelected =
       options.selected && assignmentKey(options.selected) === assignmentKey(assignment.ref);
     const active = !["ended", "queued"].includes(assignment.execution.phase);

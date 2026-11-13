@@ -274,7 +274,7 @@ test("compact trees retain actual ancestry, queued totals and only witnessed ela
     }).join("\n");
   assert.match(render(), /● Agents/);
   assert.match(render(), /│  └───────   fixture worker-2\/1/);
-  assert.match(render(), /observed 1.7s/);
+  assert.match(render(), / · 1\.7s/);
   assert.match(render(), /└─ ○ 2 queued/);
   assert.match(render(), /Reading retained fixture output/);
   assert(!render().includes("thinking"));

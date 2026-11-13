@@ -257,7 +257,7 @@ export function renderFleet(router: ScreenRouter, options: FleetOptions): string
     padded("Agent", nameWidth) +
     "  " +
     padded("Status", statusWidth) +
-    (showAge ? "  " + padded("Observed", ageWidth) : "") +
+    (showAge ? " ".repeat(ageWidth + 2) : "") +
     (showModels ? "  " + padded("Model", modelWidth) : "") +
     (infoWidth ? `  ${router.mode === "observe" ? "Activity" : "Task"} / waiting for` : "");
   output.push("", fit(paint("muted", heading), width));

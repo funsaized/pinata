@@ -174,9 +174,10 @@ previous query and selected agent. Dependency edges do not create parent/child
 branches. Shared model settings appear once;
 mixed models get their own column when there is room. The selected agent's task
 and waiting reason appear in a separate panel, with `d` for execution details.
-Task previews and the selected panel expand to the terminal width. The Observed
-column measures time since this viewer witnessed an assignment start; a dash means
-the start is unknown. It is not an estimate of total execution time.
+Task previews and the selected panel expand to the terminal width. Elapsed time
+appears as a value with a unit, such as `1.7s`, and measures time since this viewer
+witnessed an assignment start. A dash means the start is unknown. It is not an
+estimate of total execution time.
 
 | Input                                             | Action                                                      |
 | ------------------------------------------------- | ----------------------------------------------------------- |
@@ -295,7 +296,7 @@ while preserving ordinary Unicode text.
 `mode: "lean"` keeps activity compact; `observe` adds excerpts. Both retain
 conversations. Context utilization comes from a timed source observation or stays
 unknown. Cumulative tokens do not establish current context size. Elapsed values
-labeled `observed` cover starts witnessed by that UI.
+cover starts witnessed by that UI.
 
 ## Workflows
 
