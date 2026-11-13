@@ -1,6 +1,6 @@
 // Paid Pinata/Pi contract check. Ordinary npm test never invokes this entry point.
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import { randomInt } from "node:crypto";
 import { appendFile, mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -72,7 +72,9 @@ function recordUsage(result: AssignmentResult): void {
 
 try {
   await Promise.all([mkdir(workspace), mkdir(definitions)]);
-  const first = randomUUID();
+  // Short random values exercise reads and continuation without UUID transcription noise.
+  // Disjoint ranges keep the updated challenge distinct from the original.
+  const first = String(randomInt(100_000, 500_000));
   await writeFile(join(workspace, "challenge.txt"), first + "\n");
   const host = await openHost({
     directory,
@@ -113,7 +115,7 @@ try {
     for (const assignment of [1, 2]) {
       let current = first;
       if (assignment === 2) {
-        current = randomUUID();
+        current = String(randomInt(500_000, 1_000_000));
         await writeFile(join(workspace, "challenge.txt"), current + "\n");
         const followed = await host.runtime.execute(
           {
@@ -138,6 +140,7 @@ try {
         { phase: "ended", reason: "completed", cleanup: "confirmed" },
         JSON.stringify(result),
       );
+      recordUsage(result);
       assert(
         result.report && !result.reportingError && !result.finalizationErrors?.length,
         JSON.stringify(result),
@@ -146,7 +149,6 @@ try {
         Buffer.from(await processArtifacts(host.directory).read(result.report)).toString("utf8"),
       );
       assert.deepEqual(liveReportSchema.parse(report.data), { first, current });
-      recordUsage(result);
       // The later assignment must not replace earlier result or conversation artifacts.
       for (const { query, expected } of queries)
         assert.deepEqual(await host.runtime.query(query, host.caller), expected);
