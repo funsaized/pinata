@@ -503,8 +503,12 @@ cleanup keeps that exclusion.
 
 Each application journals before and after blobs and cursor meaning. `rollback` reverses
 only matching destination content; later edits conflict. `reconcile` selects the
-retained operation and owner epoch. Preserve journals, worktrees and artifacts until
-the outcome is understood. See [recovery](#recovery).
+retained operation and owner epoch. Application blobs and helper evidence live in
+the destination's `.pinata/applications/artifacts`, so later runs can verify and
+recover earlier operations. Older journals copy missing blobs from the attached
+run when read. Reopen the originating run first if a legacy blob is unavailable;
+do not delete its artifacts. Preserve journals, worktrees and artifacts until the
+outcome is understood. See [recovery](#recovery).
 
 ## Custom agents
 
@@ -608,7 +612,9 @@ pinata run job.json --bootstrap ./pinata-agents.ts
 `defineAgent` defaults `schemaVersion` to 1. Typed and Markdown definitions cannot
 share a name. The optional `submit_result` worker tool submits a final report and
 ends the assignment on success. Use it only when ready to finish, never for
-progress updates. It accepts:
+progress updates. Later tool calls in the same batch are blocked, and queued
+input does not continue a reported assignment. The coordinator can start an
+explicit follow-up. It accepts:
 
 ```json
 {
@@ -1128,7 +1134,7 @@ backends and workspace, application port, scheduling owner, notifications and di
 | `bindChild(parentRef)`                                | Authority-bound child port.                                                    |
 | `parentCheckpoint(ref, caller)`                       | Supported parent conversation checkpoint.                                      |
 | `scheduleTick()`                                      | Evaluate injected scheduling clock.                                            |
-| `deliverNotifications(caller)`                        | Deliver durable notices through host port.                                     |
+| `deliverNotifications(caller, {notificationId}?)`     | Deliver one durable notice, or retry the outbox when no ID is supplied.        |
 | `recordNotificationConsumption(id, artifact, caller)` | Record exact notice consumption with retained checkpoint.                      |
 | `diagnostics()`                                       | Observer/execution diagnostics.                                                |
 | `dispatch(ref, caller)`                               | Injected inert test effect port.                                               |
