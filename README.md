@@ -448,10 +448,10 @@ a completion checkpoint.
 
 ### Dependency inputs and setup
 
-`inputs` composes exact immutable predecessor snapshots into an isolated destination.
-Pair it with appropriate `after` ordering. For a shared predecessor, set
-`observeWorkspace: true` when creating it. Missing requested snapshots fail preparation
-with retained evidence. For reports, use the dependency tool or quoted `context`.
+`inputs` composes exact immutable predecessor snapshots from worktrees into an isolated
+destination in the same Git repository. Pair it with appropriate `after` ordering.
+Shared observations cannot serve as file inputs. Missing requested snapshots fail
+preparation with retained evidence. For reports, use the dependency tool or quoted `context`.
 
 The source checkout's `.worktreeinclude` selects ignored local regular files, such as
 `.env.local` or `local/**`. Piñata freezes their identities at acceptance and copies
