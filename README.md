@@ -1402,8 +1402,10 @@ npm test
 `check` runs Oxfmt, Oxlint and TypeScript. Format changed files with
 `npm exec -- oxfmt --write <paths>`. The scripted test suite makes no paid model calls.
 It runs ordinary files with at most two concurrent files, then exhaustive apply and
-rollback fault matrices separately. Test timeouts supervise fixtures, rather than
-imposing production worker deadlines.
+rollback fault matrices separately. Each matrix reports named fault cases with
+30-second timeouts and allows 15 minutes for the complete file. A timed-out case
+reports its phase and last write boundary and aborts its fixture Git command.
+These limits supervise tests; production workers have no such deadlines.
 
 Focused and integration checks:
 

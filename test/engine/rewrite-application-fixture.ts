@@ -33,6 +33,13 @@ export class FixtureArtifacts implements ArtifactPort {
   }
 }
 export class FixtureGit extends GitCommands {
+  private readonly signal?: AbortSignal;
+
+  constructor(options: ConstructorParameters<typeof GitCommands>[0] & { signal?: AbortSignal }) {
+    super(options);
+    this.signal = options.signal;
+  }
+
   async close(): Promise<CleanupReceipt> {
     return { status: "stopped", ownerEpoch: this.ownerEpoch, identities: [], evidence: [] };
   }
@@ -46,6 +53,11 @@ export class FixtureGit extends GitCommands {
       allowFailure?: boolean;
     } = {},
   ): Promise<GitReply> {
+    const signal =
+      this.signal && options.signal
+        ? AbortSignal.any([this.signal, options.signal])
+        : (options.signal ?? this.signal);
+    signal?.throwIfAborted();
     return new Promise<GitReply>((resolve, reject) => {
       const child = execFile(
         "git",
@@ -54,7 +66,7 @@ export class FixtureGit extends GitCommands {
           cwd,
           env: { ...process.env, GIT_OPTIONAL_LOCKS: "0", ...options.env },
           encoding: "buffer",
-          signal: options.signal,
+          signal,
         },
         (error, stdout, stderr) => {
           if (error && !options.allowFailure) {
@@ -84,7 +96,10 @@ export type FixtureEntry = {
   objectId?: string;
 };
 
-export async function applicationFixture(fault?: FaultHook) {
+export async function applicationFixture(
+  fault?: FaultHook,
+  options: { signal?: AbortSignal } = {},
+) {
   const directory = await realpath(await mkdtemp(join(tmpdir(), "pinata-application-")));
   const root = join(directory, "checkout");
   await mkdir(root);
@@ -93,6 +108,7 @@ export async function applicationFixture(fault?: FaultHook) {
     directory: join(directory, "git"),
     ownerEpoch: "fixture",
     artifacts,
+    signal: options.signal,
   });
   await git.run(root, ["init", "-q"]);
   await git.run(root, ["config", "user.name", "Scripted application fixture"]);
@@ -201,7 +217,8 @@ export async function applicationFixture(fault?: FaultHook) {
   const applicationOptions = {
     destination: root,
     artifacts,
-    createGit: (options: ConstructorParameters<typeof GitCommands>[0]) => new FixtureGit(options),
+    createGit: (gitOptions: ConstructorParameters<typeof GitCommands>[0]) =>
+      new FixtureGit({ ...gitOptions, signal: options.signal }),
     recoverGit: async (_directory: string, ownerEpoch: string): Promise<CleanupReceipt> => ({
       status: "stopped",
       ownerEpoch,
