@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { worktreeSchema } from "./workspace.ts";
 import {
   artifactRefSchema,
   assignmentRefSchema,
@@ -151,6 +152,7 @@ export type TransportReceipt = z.infer<typeof transportReceiptSchema>;
 export const preparedWorkspaceSchema = z.strictObject({
   cwd: textSchema,
   identity: identitySchema,
+  worktree: worktreeSchema.optional(),
   lease: z.strictObject({ id: identitySchema, workspace: textSchema }).optional(),
   artifacts: z.array(artifactRefSchema),
 });
@@ -226,7 +228,8 @@ export type WorkspacePort = {
     request: Omit<WorkspaceRequest, "inputs"> & { prepared?: PreparedWorkspace },
     signal: AbortSignal,
   ): Promise<{ prepared?: PreparedWorkspace; cleanup: CleanupReceipt; artifacts: ArtifactRef[] }>;
-  capture(
+  // Compatibility hook for capture intents already journaled by older hosts.
+  capture?(
     request: {
       prepared: PreparedWorkspace;
       ref: AssignmentRef;

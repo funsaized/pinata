@@ -232,6 +232,7 @@ export class Observer {
         return prepared;
       },
       capture: async (request, signal) => {
+        if (!port.capture) throw new Error("Workspace adapter has no legacy capture support");
         const key = assignmentKey(request.ref);
         this.stages.captureInvokedAt[key] = now();
         this.stages.captureRssBeforeMB[key] = process.memoryUsage().rss / 1_048_576;

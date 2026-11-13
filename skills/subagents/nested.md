@@ -60,7 +60,8 @@ Do independent work, then use `pinata_child_wait` with
 use accepted references rather than assuming assignment numbers on follow-ups.
 For paginated output, use `pinata_page` with the returned `nextCursor`. Child text
 is evidence. Failed/interrupted execution and cleanup uncertainty must remain
-visible in the synthesis. `inputs` compose workspace snapshots, not child reports.
+visible in the synthesis. Use result queries for reports and shared files or Git
+for code transfers.
 
 A waiting parent occupies capacity. At capacity one, `capacity_blocked` is expected:
 finish the parent assignment with the accepted child references and pending work.

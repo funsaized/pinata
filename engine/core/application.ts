@@ -35,15 +35,14 @@ export function prepareApplication(
   let intent: ApplicationIntent;
   if (command.kind === "apply") {
     const result = state.results[assignmentKey(command.ref)]?.result;
-    if (command.ref.run !== state.run || !result?.snapshot)
-      throw new DomainError(
-        "context_unavailable",
-        "Assignment has no retained workspace snapshot to apply",
-      );
+    if (command.ref.run !== state.run || !result || (!result.worktree && !result.snapshot))
+      throw new DomainError("context_unavailable", "Assignment has no isolated worktree to apply");
     if (result.execution.phase !== "ended" || result.execution.cleanup !== "confirmed")
+      throw new DomainError("owner_unconfirmed", "Application requires confirmed worker cleanup");
+    if (!result.snapshot && state.latest[command.ref.worker] !== command.ref.assignment)
       throw new DomainError(
-        "owner_unconfirmed",
-        "Application requires confirmed cleanup of the snapshot producer",
+        "conflict",
+        "Apply selects the current worktree; use the worker's latest stopped assignment",
       );
     intent = {
       id: identity.operationId,
@@ -52,7 +51,7 @@ export function prepareApplication(
       ownerEpoch: identity.ownerEpoch,
       destination: command.destination,
       ref: command.ref,
-      snapshot: result.snapshot,
+      ...(result.snapshot ? { snapshot: result.snapshot } : { worktree: result.worktree }),
     };
   } else {
     const target = Object.hasOwn(state.applications, command.operation)
@@ -79,7 +78,9 @@ export function prepareApplication(
       ownerEpoch: identity.ownerEpoch,
       destination: target.intent.destination,
       ref: target.intent.ref,
-      snapshot: target.intent.snapshot,
+      ...(target.intent.snapshot
+        ? { snapshot: target.intent.snapshot }
+        : { worktree: target.intent.worktree }),
       targetOperation: target.receipt?.operationId ?? target.intent.id,
     };
   }
@@ -124,7 +125,8 @@ export function reduceApplication(
       if (
         digestValue(intent.command.ref) !== digestValue(intent.ref) ||
         intent.command.destination !== intent.destination ||
-        intent.targetOperation
+        intent.targetOperation ||
+        (intent.worktree && state.latest[intent.ref.worker] !== intent.ref.assignment)
       )
         throw new DomainError("conflict", "Application command disagrees with its frozen intent");
     } else {
@@ -132,7 +134,8 @@ export function reduceApplication(
       if (
         !target ||
         digestValue(target.intent.ref) !== digestValue(intent.ref) ||
-        digestValue(target.intent.snapshot) !== digestValue(intent.snapshot) ||
+        digestValue(target.intent.snapshot ?? null) !== digestValue(intent.snapshot ?? null) ||
+        digestValue(target.intent.worktree ?? null) !== digestValue(intent.worktree ?? null) ||
         target.intent.destination !== intent.destination ||
         intent.targetOperation !== (target.receipt?.operationId ?? target.intent.id)
       )
@@ -164,6 +167,11 @@ export function reduceApplication(
           },
         ]
       : [];
+    const sourceMatches = intent.snapshot
+      ? !intent.worktree && digestValue(source?.snapshot ?? null) === digestValue(intent.snapshot)
+      : !!intent.worktree &&
+        digestValue(source?.worktree ?? null) === digestValue(intent.worktree) &&
+        digestValue(worker?.workspacePlan ?? null) === digestValue(intent.worktree.plan);
     if (
       receipt.requestId !== transition.requestId ||
       receipt.revision !== revision ||
@@ -171,8 +179,7 @@ export function reduceApplication(
       intent.requestId !== transition.requestId ||
       Object.hasOwn(state.applications, intent.id) ||
       Object.hasOwn(state.receipts, transition.requestId) ||
-      !source?.snapshot ||
-      digestValue(source.snapshot) !== digestValue(intent.snapshot) ||
+      !sourceMatches ||
       digestValue(receipt.assignments) !== digestValue([intent.ref]) ||
       digestValue(receipt.resolved) !== digestValue(expected)
     )
@@ -228,7 +235,10 @@ export function reduceApplication(
   if (
     observation.receipt &&
     (observation.receipt.destination !== entry.intent.destination ||
-      digestValue(observation.receipt.snapshot) !== digestValue(entry.intent.snapshot))
+      digestValue(observation.receipt.snapshot ?? null) !==
+        digestValue(entry.intent.snapshot ?? null) ||
+      digestValue(observation.receipt.worktree ?? null) !==
+        digestValue(entry.intent.worktree ?? null))
   )
     throw new DomainError("conflict", "Application receipt disagrees with its intent");
   return {

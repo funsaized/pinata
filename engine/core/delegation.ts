@@ -113,11 +113,7 @@ export function checkChildCommand(
             `Child definition is not delegated: ${request.agent}`,
             "agent",
           );
-        for (const reference of [
-          ...request.after,
-          ...request.inputs,
-          ...(request.origin ? [request.origin] : []),
-        ]) {
+        for (const reference of [...request.after, ...(request.origin ? [request.origin] : [])]) {
           const worker = typeof reference === "string" ? reference : reference.worker;
           if (typeof reference !== "string" && reference.run !== state.run)
             throw new DomainError("capability_denied", "Child references cannot name another run");
@@ -128,7 +124,7 @@ export function checkChildCommand(
     }
     case "follow_up":
       allowed(command.worker);
-      for (const reference of [...command.after, ...command.inputs]) {
+      for (const reference of command.after) {
         if (typeof reference !== "string" && reference.run !== state.run)
           throw new DomainError("capability_denied", "Child references cannot name another run");
         const worker = typeof reference === "string" ? reference : reference.worker;

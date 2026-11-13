@@ -299,7 +299,22 @@ test(
     assert.equal(await readFile(join(world.workspace, "README.md"), "utf8"), "Original checkout\n");
     const changes = await invoke(["changes", directory, "worker", "1"]);
     assert.equal(changes.code, 0, changes.stdout + changes.stderr);
-    assert.match(changes.stdout, /README.md/);
+    assert.match(changes.stdout, /"source":"unavailable"/);
+    const result = await invoke(["result", directory, "worker", "1"]);
+    const query = surfaceReplySchema.parse(result.values[0]);
+    assert(
+      query.status === "ok" &&
+        query.response.method === "query" &&
+        query.response.result.kind === "result",
+    );
+    const isolated = query.response.result.result?.worktree;
+    assert(isolated);
+    assert.equal(query.response.result.result?.snapshot, undefined);
+    assert.equal(
+      await readFile(join(isolated.path, "README.md"), "utf8"),
+      "Scripted isolated change\n",
+    );
+    await writeFile(join(isolated.path, "README.md"), "Edit after worker completion\n");
     const applied = await invoke([
       "apply",
       directory,
@@ -318,7 +333,7 @@ test(
     assert(receipt.response.result.operationId);
     assert.equal(
       await readFile(join(world.workspace, "README.md"), "utf8"),
-      "Scripted isolated change\n",
+      "Edit after worker completion\n",
     );
     const undone = await invoke([
       "rollback",
@@ -334,6 +349,10 @@ test(
     const retained = await invoke(["changes", directory, "worker", "1", "--saved"]);
     assert.equal(retained.code, 0, retained.stdout + retained.stderr);
     assert.deepEqual(retained.values, changes.values);
+    assert.deepEqual(
+      (await invoke(["result", directory, "worker", "1", "--saved"])).values,
+      result.values,
+    );
   },
 );
 

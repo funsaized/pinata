@@ -45,7 +45,7 @@ export function assignmentDetails(state: CoreState, assignment: Assignment): str
   const received = messages.filter(
     (message) => message.to !== "coordinator" && assignmentKey(message.to) === key,
   ).length;
-  const application = Object.values(state.applications).find(
+  const application = Object.values(state.applications).findLast(
     (operation) => assignmentKey(operation.intent.ref) === key,
   );
   const status = executionLabel(assignment);
@@ -56,7 +56,7 @@ export function assignmentDetails(state: CoreState, assignment: Assignment): str
     `${assignment.ref.worker}/${assignment.ref.assignment} · ${status}${queue}`,
     mode,
     `cleanup ${assignment.execution.phase === "ended" ? assignment.execution.cleanup : "pending"}`,
-    `delivery: ${worker.workspace === "shared" ? "edits are in the shared workspace" : application?.receipt ? `${application.receipt.status} · ${application.receipt.operationId}` : "isolated snapshot; no application receipt"}`,
+    `delivery: ${worker.workspace === "shared" ? "edits are in the shared workspace" : application?.receipt ? `${application.receipt.status} · ${application.receipt.operationId}` : "isolated worktree; no application receipt"}`,
     `notification ${delivery?.state ?? "not recorded"}`,
     ...(sent || received ? [`messages: ${sent} sent · ${received} received`] : []),
     `reported assessment: ${result?.report ? "retained worker report" : "none"}${result?.reportingError ? ` · ${result.reportingError}` : ""}`,

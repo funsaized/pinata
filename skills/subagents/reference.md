@@ -42,9 +42,11 @@ current assignment. `pinata_wait` selects workers or exact `targets`; use `next:
 for the next pending completion. Aborting a wait does not stop its workers.
 
 `pinata_status` supports exact results/conversations, receipts, events, configuration,
-definitions, schemas and application operations. `pinata_changes` takes an exact
-`ref`. `pinata_integrate` takes `ref`, `destination` and optional request ID; the
-accepted receipt's `operationId` must be queried to observe application completion.
+definitions, schemas and application operations. Isolated results include
+`worktree.path` and `worktree.base` for inspection with Git. `pinata_integrate` takes
+the latest stopped assignment `ref`, `destination` and optional request ID; it
+applies current files. Query the accepted receipt's `operationId` to observe
+application completion.
 `pinata_cancel` selects assignment/worker/run scope and preserves partial output.
 
 Workers with delegated authority use `pinata_children`, `pinata_child_status` and
@@ -53,9 +55,9 @@ tools use a bound scope and CAS revision. See
 [the tool reference](../../README.md#tools) for availability and paging, or
 `pinata tools --json` for complete generated schemas.
 
-For report synthesis, `inputs` is the wrong field: it composes workspace snapshots.
-Read upstream `result` or `conversation` queries, then supply the report text in
-`context` (or the task). Use `after` for ordering. Shared read-only scouts normally
-produce no workspace snapshot. An upstream assignment with unconfirmed cleanup
-keeps its exact dependents queued until explicit reconciliation; a later follow-up
+For report synthesis, read upstream `result` or `conversation` queries, then
+supply the report text in `context` (or the task). Use `after` for ordering.
+Snapshot `inputs` and `observeWorkspace` are no longer accepted; use shared files
+or ordinary Git operations to transfer code. An upstream assignment with unconfirmed
+cleanup keeps its exact dependents queued until explicit reconciliation; a later follow-up
 does not retarget those dependencies.

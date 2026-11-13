@@ -1,6 +1,7 @@
 import { scheduleStateSchema, scheduleOccurrenceSchema } from "./schedule.ts";
 import { workerMessageSchema } from "./messages.ts";
 import { z } from "zod";
+import { worktreeSchema } from "./workspace.ts";
 import { applicationIntentSchema, applicationStateSchema } from "./application.ts";
 import {
   artifactRefSchema,
@@ -138,6 +139,8 @@ export const resultSchema = z.strictObject({
   artifacts: z.array(artifactRefSchema),
   transcript: artifactRefSchema.optional(),
   session: artifactRefSchema.optional(),
+  worktree: worktreeSchema.optional(),
+  // Retained only for reading results produced by older hosts.
   snapshot: artifactRefSchema.optional(),
   usage: usageCoverageSchema,
 });
@@ -415,7 +418,7 @@ export function transitionArtifacts(transition: Transition): z.infer<typeof arti
       if (transition.acceptance) artifacts.push(...transitionArtifacts(transition.acceptance));
       break;
     case "application_accepted":
-      artifacts.push(transition.intent.snapshot);
+      artifacts.push(transition.intent.snapshot, transition.intent.worktree?.plan);
       break;
     case "application_observed":
       artifacts.push(transition.observation.evidence, transition.observation.receipt?.snapshot);
@@ -441,6 +444,7 @@ export function transitionArtifacts(transition: Transition): z.infer<typeof arti
         transition.result.transcript,
         transition.result.session,
         transition.result.snapshot,
+        transition.result.worktree?.plan,
         ...transition.result.artifacts,
       );
       break;
@@ -455,10 +459,14 @@ export function transitionArtifacts(transition: Transition): z.infer<typeof arti
       artifacts.push(...transition.evidence);
       break;
     case "workspace_prepared":
-      artifacts.push(...transition.prepared.artifacts);
+      artifacts.push(...transition.prepared.artifacts, transition.prepared.worktree?.plan);
       break;
     case "workspace_recovered":
-      artifacts.push(...transition.prepared.artifacts, ...transition.evidence);
+      artifacts.push(
+        ...transition.prepared.artifacts,
+        transition.prepared.worktree?.plan,
+        ...transition.evidence,
+      );
       break;
     case "workspace_captured":
       artifacts.push(...transition.capture.artifacts, transition.capture.snapshot);

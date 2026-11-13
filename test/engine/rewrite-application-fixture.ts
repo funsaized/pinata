@@ -10,6 +10,7 @@ import type {
   RepositoryObservation,
   WorkspaceEntry,
   WorkspaceManifest,
+  Worktree,
 } from "../../engine/contracts/workspace.ts";
 import { ApplicationStore } from "../../engine/application/index.ts";
 import { GitCommands, type GitReply } from "../../engine/workspace/git.ts";
@@ -153,6 +154,27 @@ export async function applicationFixture(fault?: FaultHook) {
     return { value, artifact: await artifacts.put(Buffer.from(canonicalJson(value))), tree };
   }
   const base = await manifest(baseline);
+  async function worktree(): Promise<Worktree> {
+    const path = join(directory, `isolated-${sequence++}`);
+    await git.run(root, ["worktree", "add", "--detach", path, "HEAD"]);
+    const isolated = await repository(path, git);
+    if (!isolated?.head) throw new Error("Fixture worktree missing");
+    const plan = await artifacts.put(
+      Buffer.from(
+        canonicalJson({
+          schemaVersion: 1,
+          mode: "worktree",
+          source: root,
+          destination: path,
+          run: "application-fixture",
+          worker: "worker",
+          baseTree: base.tree,
+          repository: repo,
+        }),
+      ),
+    );
+    return { plan, path, gitDirectory: isolated.gitDirectory, base: isolated.head };
+  }
   async function snapshot(
     assignment: number,
     entries: FixtureEntry[],
@@ -198,6 +220,7 @@ export async function applicationFixture(fault?: FaultHook) {
     baseline,
     manifest,
     snapshot,
+    worktree,
     store,
     applicationOptions,
     reopen: (nextFault?: FaultHook) =>

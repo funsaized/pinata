@@ -43,6 +43,7 @@ import {
   workspaceManifestSchema,
   workspacePlanSchema,
   workspaceCheckpointSchema,
+  worktreeSchema,
 } from "./workspace.ts";
 import { commandEnvelopeSchema, jobSchema, workerRequestSchema } from "./commands.ts";
 import { configSchema, configLayerSchema } from "./config.ts";
@@ -111,6 +112,7 @@ export const schemaRegistry = {
   "pinata.child-wait.v1": childWaitSchema,
   "pinata.child-wait-result.v1": childWaitResultSchema,
   "pinata.workspace-checkpoint.v1": workspaceCheckpointSchema,
+  "pinata.worktree.v1": worktreeSchema,
   "pinata.loadout.v1": loadoutSchema,
   "pinata.conversation-seed.v1": conversationSeedSchema,
   "pinata.instruction-snapshot.v1": instructionSnapshotSchema,

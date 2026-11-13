@@ -105,6 +105,22 @@ async function fixture(t: TestContext, options: { git?: boolean; fault?: FaultHo
   return { root, directory, storeDirectory, artifacts, layer, request, cleanup, git };
 }
 
+// Model metadata written by releases that captured every isolated assignment.
+async function legacyCheckpoint(
+  world: Awaited<ReturnType<typeof fixture>>,
+  request: WorkspaceRequest,
+  checkpoint: "completion" | "none" = "completion",
+) {
+  const path = join(
+    world.storeDirectory,
+    "workspaces",
+    digestValue({ run: request.ref.run, worker: request.ref.worker }),
+    "current.json",
+  );
+  const record = JSON.parse(await readFile(path, "utf8"));
+  await writeFile(path, canonicalJson({ ...record, checkpoint }));
+}
+
 test("shared workspace release waits for another live checkout mutation without reconciling it", async (t) => {
   const world = await fixture(t, { git: false });
   const request = await world.request("finishing", "shared");
@@ -220,17 +236,22 @@ test(
       "Manual worker commit",
     );
     const manualHead = await world.git(prepared.cwd, "rev-parse", "HEAD");
-    const capture = await world.layer.capture(
-      {
-        prepared,
-        ref: request.ref,
-        cleanup: world.cleanup,
-        artifacts: world.artifacts,
-        reason: "completed",
-      },
+    assert(prepared.worktree);
+    assert.equal(prepared.worktree.path, prepared.cwd);
+    assert.equal(prepared.worktree.plan.digest, request.worker.workspacePlan?.digest);
+    const recovered = await world.layer.recover(
+      { ...request, prepared },
       new AbortController().signal,
     );
-    assert(capture.snapshot);
+    assert.deepEqual(recovered.prepared?.worktree, prepared.worktree);
+    await assert.rejects(
+      world.git(
+        prepared.cwd,
+        "rev-parse",
+        "--verify",
+        `${workspaceRefPrefix(request.ref)}/assignments/1`,
+      ),
+    );
     await world.layer.release({ prepared, cleanup: world.cleanup, artifacts: world.artifacts });
     const next = { ...request, ref: { ...request.ref, assignment: 2 } };
     const continued = await world.layer.prepare(next, new AbortController().signal);
@@ -242,10 +263,7 @@ test(
     );
     assert.equal(await world.git(world.root, "rev-parse", "HEAD"), sourceHead);
     assert.deepEqual(await readFile(join(world.root, ".git", "index")), sourceIndex);
-    await world.layer.capture(
-      { prepared: continued, ref: next.ref, cleanup: world.cleanup, artifacts: world.artifacts },
-      new AbortController().signal,
-    );
+    assert.deepEqual(continued.worktree, prepared.worktree);
     await world.layer.release({
       prepared: continued,
       cleanup: world.cleanup,
@@ -476,12 +494,13 @@ for (const boundary of [
 }
 
 test(
-  "isolated completion checkpoints retain manual HEADs and chain private commits without moving checkout state",
+  "legacy isolated completion checkpoints retain manual HEADs and chain private commits without moving checkout state",
   { skip: process.platform === "win32", timeout: 60_000 },
   async (t) => {
     const world = await fixture(t);
     const request = await world.request("checkpoints", "worktree");
     const prepared = await world.layer.prepare(request, new AbortController().signal);
+    await legacyCheckpoint(world, request);
     const sourceHead = await world.git(world.root, "rev-parse", "HEAD");
     const sourceIndex = await readFile(join(world.root, ".git", "index"));
     const gitDirectory = await world.git(prepared.cwd, "rev-parse", "--absolute-git-dir");
@@ -704,7 +723,7 @@ test(
 );
 
 test(
-  "completion checkpoint policy preserves base reuse and never commits failed, cancelled, disabled or shared work",
+  "legacy completion checkpoint policy preserves base reuse and never commits failed, cancelled, disabled or shared work",
   { skip: process.platform === "win32", timeout: 60_000 },
   async (t) => {
     const world = await fixture(t);
@@ -716,21 +735,9 @@ test(
       ["shared", "shared", "completed", false],
     ] as const) {
       const request = await world.request(id, mode);
-      if (disabled)
-        request.worker.definition = await world.artifacts.put(
-          Buffer.from(
-            canonicalJson(
-              definitionSchema.parse({
-                schemaVersion: 1,
-                name: "fixture",
-                handoffDescription: "Scripted workspace fixture",
-                instructions: "Preserve edits.",
-                pinata: { checkpoint: "none" },
-              }),
-            ),
-          ),
-        );
       const prepared = await world.layer.prepare(request, new AbortController().signal);
+      if (mode === "worktree")
+        await legacyCheckpoint(world, request, disabled ? "none" : "completion");
       if (id !== "unchanged")
         await writeFile(join(prepared.cwd, "file.txt"), `${id} partial content\n`);
       const capture = await world.layer.capture(
@@ -761,7 +768,7 @@ test(
 );
 
 test(
-  "checkpoint publication recovery reuses its retained intent and reports later changed capture without hiding files",
+  "legacy checkpoint publication recovery reuses its retained intent and reports later changed capture without hiding files",
   { skip: process.platform === "win32", timeout: 40_000 },
   async (t) => {
     let fail = true;
@@ -775,6 +782,7 @@ test(
     });
     const request = await world.request("checkpoint-retry", "worktree");
     const prepared = await world.layer.prepare(request, new AbortController().signal);
+    await legacyCheckpoint(world, request);
     await writeFile(join(prepared.cwd, "file.txt"), "checkpoint content\n");
     const first = await world.layer.capture(
       {

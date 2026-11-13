@@ -72,6 +72,11 @@ export function validateSettlement(
     throw new DomainError("conflict", "Settlement notification identity is not stable");
   const attempts = assignmentAttempts(state, key);
   const latest = attempts.at(-1);
+  if (
+    result.worktree &&
+    digestValue(result.worktree) !== digestValue(latest?.prepared?.worktree ?? null)
+  )
+    throw new DomainError("conflict", "Result worktree disagrees with its prepared checkout");
   if (!latest) {
     if (
       execution.reason !== "cancelled" ||

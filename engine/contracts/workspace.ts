@@ -57,6 +57,15 @@ export const workspacePlanSchema = z.strictObject({
   includedFiles: artifactRefSchema.optional(),
 });
 export type WorkspacePlan = z.infer<typeof workspacePlanSchema>;
+// The worktree remains mutable across assignments. This identifies its frozen
+// starting point and checkout, not a saved result of an assignment.
+export const worktreeSchema = z.strictObject({
+  plan: artifactRefSchema,
+  path: textSchema,
+  gitDirectory: textSchema,
+  base: gitObjectSchema,
+});
+export type Worktree = z.infer<typeof worktreeSchema>;
 export const retainedHeadSchema = z.strictObject({ commit: gitObjectSchema, ref: textSchema });
 export const workspaceCheckpointSchema = z.strictObject({
   schemaVersion: z.literal(1),

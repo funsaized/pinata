@@ -24,6 +24,15 @@ export function createApplicationPort(
       }
       switch (intent.command.kind) {
         case "apply":
+          if (intent.worktree)
+            return store.applyWorktree({
+              worktree: intent.worktree,
+              ref: intent.ref,
+              operationId: intent.id,
+              signal,
+            });
+          if (!intent.snapshot)
+            throw new DomainError("invalid_input", "Application has no worktree or legacy source");
           return store.apply({ snapshot: intent.snapshot, operationId: intent.id, signal });
         case "rollback":
           if (!intent.targetOperation)

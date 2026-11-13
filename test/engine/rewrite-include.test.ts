@@ -28,6 +28,7 @@ import {
   type WorkspaceRequest,
 } from "../../engine/contracts/index.ts";
 import { WorkspaceLayer } from "../../engine/workspace/index.ts";
+import { ApplicationStore } from "../../engine/application/index.ts";
 import { readIncluded } from "../../engine/workspace/include.ts";
 import { readManifest } from "../../engine/workspace/capture.ts";
 import { FixtureArtifacts } from "./rewrite-application-fixture.ts";
@@ -187,6 +188,23 @@ test(
     assert.equal(await contains(world.artifacts.directory, world.secret), false);
     assert.equal(await readFile(join(world.root, ".env.local"), "utf8"), world.secret);
     await world.layer.release({ prepared, cleanup: world.cleanup, artifacts: world.artifacts });
+    assert(prepared.worktree);
+    const application = await ApplicationStore.open({
+      destination: world.root,
+      artifacts: world.artifacts,
+    });
+    try {
+      const applied = await application.applyWorktree({
+        ref: request.ref,
+        worktree: prepared.worktree,
+      });
+      assert.equal(await readFile(join(world.root, "file.txt"), "utf8"), "deliver this\n");
+      assert.equal(await contains(world.artifacts.directory, world.secret), false);
+      assert.equal(await readFile(join(world.root, ".env.local"), "utf8"), world.secret);
+      await assert.rejects(world.git(prepared.cwd, "show", `${applied.tree}:.env.local`));
+    } finally {
+      await application.close();
+    }
   },
 );
 

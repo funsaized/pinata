@@ -58,7 +58,7 @@ agent definitions. Compose your own roles around the work you actually do.
 | Steering, follow-ups, continuation and cancellation       | [Control a worker](#control-a-worker)                                                                                |
 | Fleet tree, transcripts, drafts, search and controls      | [Fleet and conversations](#fleet-and-conversations)                                                                  |
 | Direct addressed input and explicit retry                 | [Agent mentions](#agent-mentions)                                                                                    |
-| Shared files, worktrees, snapshots and dependency inputs  | [Workspaces](#workspaces)                                                                                            |
+| Shared files, worktrees and explicit integration          | [Workspaces](#workspaces)                                                                                            |
 | Incremental application, rollback and writer exclusion    | [Apply isolated work](#apply-isolated-work)                                                                          |
 | Markdown agents, typed reports and frozen skills          | [Custom agents](#custom-agents)                                                                                      |
 | Models, reasoning, fallback candidates and tool providers | [Configuration](#configuration)                                                                                      |
@@ -349,8 +349,8 @@ For report pipelines, declare known stages together. Workers receive previews an
 `pinata_dependency` to list/read complete frozen result JSON. Use the returned
 `next` as the next `offset`. List offsets count entries; result offsets count UTF-16
 code units. Previews show at most eight short summaries. Pages fit within 32 KiB
-and retain artifact references without reading their contents. Use `inputs` for
-workspace snapshots and `context` for explicitly quoted report text.
+and retain artifact references without reading their contents. Use `context` for
+explicitly quoted report text. Share files through the checkout or ordinary Git operations.
 
 ### Control a worker
 
@@ -425,40 +425,40 @@ Piñata does not automatically commit it.
 | Mode       | Behavior                                                                                    |
 | ---------- | ------------------------------------------------------------------------------------------- |
 | `shared`   | Work in the authorized checkout, including non-Git projects. Edits are immediately visible. |
-| `worktree` | Start from a frozen Git base and apply a selected isolated snapshot explicitly.             |
+| `worktree` | Start from a frozen Git base and explicitly apply the worktree's current files.             |
 
-Tool access and workspace mode are independent. Shared workers retain conversations,
-results and cleanup evidence without a per-worker checkout scan or snapshot validation.
-Their edits are already in the checkout. Completion does not require the rest of the
-checkout to stop changing. The coordinator owns testing and review.
-
-Isolated workers retain snapshots for explicit application. Set `observeWorkspace: true`
-at creation to opt a shared worker into capture and validation. Shared observations
-can include user and other worker edits; they do not establish exclusive authorship.
-`changes` returning `source: "unavailable"` does not mean the checkout was unchanged.
-Snapshots record their observation interval and scope. Recovery still reconciles
-capture operations already recorded by an earlier host.
+Tool access and workspace mode are independent. Workers retain conversations,
+results and cleanup evidence without per-assignment file snapshots or completion
+commits. Shared edits are already in the checkout. The coordinator owns testing,
+review and integration; it can apply work within the user's authorization without
+asking for a separate approval each time.
 
 New worktrees include dirty starting content by default; `includeUncommitted: false`
 selects committed content. Follow-ups keep the worktree; changing modes needs a new
-worker. Manual commits, HEAD and index survive capture. Normal isolated completion
-can create a private checkpoint ref without moving HEAD or the user's index.
-`pinata.checkpoint: none` disables it. Failed/cancelled work stays available without
-a completion checkpoint.
+worker. Results expose `worktree.path` and `worktree.base` for inspection with Git.
+The worktree remains available after failure or cancellation. Its files are mutable:
+an old assignment reference does not preserve an old version. Use Git commits or
+patches when a workflow needs named versions or transfers between worktrees.
 
-### Dependency inputs and setup
+New requests no longer accept `observeWorkspace` or snapshot `inputs`.
+`pinata.checkpoint` in old definitions is ignored for new workspaces. Saved snapshots,
+input operations and checkpoint intents remain readable and recoverable; previously
+captured snapshots can still be applied. The legacy `changes` query reads that evidence
+and returns `source: "unavailable"` for new assignments, which says nothing about
+whether files changed. `pinata_changes` is no longer registered as a tool.
 
-`inputs` composes exact immutable predecessor snapshots from worktrees into an isolated
-destination in the same Git repository. Pair it with appropriate `after` ordering.
-Shared observations cannot serve as file inputs. Missing requested snapshots fail
-preparation with retained evidence. For reports, use the dependency tool or quoted `context`.
+### Dependencies and setup
+
+Use `after` for assignment ordering and the dependency tool or quoted `context` for
+reports. Use shared files or coordinator-selected Git operations to transfer code.
+Old saved schedules with snapshot inputs must be replaced before they can launch.
 
 The source checkout's `.worktreeinclude` selects ignored local regular files, such as
 `.env.local` or `local/**`. Piñata freezes their identities at acceptance and copies
 them during initial preparation. Changed sources, links and unsafe paths are refused
 or recorded as omitted; existing destination files and follow-up edits are preserved.
-Included contents are excluded from snapshots and application even if ignore rules
-change. Limits are 1,000 files and 16 MiB per file. Use setup for dependencies.
+Included contents are excluded from application even if ignore rules change.
+Limits are 1,000 files and 16 MiB per file. Use setup for dependencies.
 
 Setup runs only in writable isolated work. `setup: false` disables it; a string
 selects a shell command; omission can detect a root lockfile and package manager.
@@ -480,17 +480,26 @@ pinata serve examples/recipes/isolated-follow-up.json --workspace /path/to/proje
 In another terminal, use the printed directory and returned assignment numbers:
 
 ```sh
-pinata changes RUN_DIRECTORY experiment 1 --json
+pinata result RUN_DIRECTORY experiment 1 --json
+# Use worktree.path and worktree.base from the result:
+git -C WORKTREE_PATH diff BASE_COMMIT
+git -C WORKTREE_PATH status --short
 pinata follow-up RUN_DIRECTORY experiment "Add the agreed boundary case" --request-id experiment/follow-up
 pinata wait RUN_DIRECTORY experiment --json
 pinata apply RUN_DIRECTORY experiment 2 --destination /path/to/project --request-id experiment/apply
 ```
 
-Inspect the accepted `operationId` and its outcome. Later applications deliver the
-delta from the last applied snapshot. Apply checks paths, objects, destination
-identity and expected content. A checkout-level gate allows multiple shared writers
-and excludes application while writable work is active. Unconfirmed cleanup keeps
-that exclusion.
+Apply selects the current files, including untracked files, using the worker's
+latest stopped assignment reference. It does not select that assignment's past
+output. Inspect the accepted `operationId` and its outcome. Later applications
+deliver the delta from the last applied Git tree, even within the same assignment.
+Retry the same request ID to retrieve the original operation; use a new ID to
+select newer edits. Apply preserves HEAD and the index.
+
+Apply checks paths, objects, destination identity and expected content. It refuses
+registered source activity. A checkout-level gate allows multiple shared writers
+and excludes application while writable destination work is active. Unconfirmed
+cleanup keeps that exclusion.
 
 Each application journals before and after blobs and cursor meaning. `rollback` reverses
 only matching destination content; later edits conflict. `reconcile` selects the
@@ -556,7 +565,6 @@ a lowercase letter followed by up to 31 lowercase letters, digits or hyphens.
 | `pinata.inheritContext`          | Default `none`; `parent` requests a filtered checkpoint.                 |
 | `pinata.memory`                  | Default `{ "scope": "none", "access": "read" }`.                         |
 | `pinata.delegation.maxDepth`     | Default `0`; requires handoffs and a scoped host grant.                  |
-| `pinata.checkpoint`              | `completion` private isolated checkpoint or `none`.                      |
 
 Acceptance freezes the definition, model, grants, tool providers, skills and workspace
 plan. A new worker adopts edited frozen resources; follow-ups preserve the accepted
@@ -909,7 +917,6 @@ and effective capabilities. Inspect installed contracts with `pinata tools --jso
 | `pinata_wait`      | Optional `workers` or exact `targets`, and `next`.                                   |
 | `pinata_status`    | Canonical `query`, default status.                                                   |
 | `pinata_agents`    | Discover definitions, model defaults and effective grants.                           |
-| `pinata_changes`   | Exact `ref`; inspect retained workspace changes.                                     |
 | `pinata_integrate` | Exact `ref`, `destination`, optional `requestId`; observe its application operation. |
 | `pinata_rollback`  | `operation`, `destination`, optional `requestId`.                                    |
 | `pinata_schedule`  | `schedule` action, optional `requestId`.                                             |
@@ -942,20 +949,20 @@ receipts name the revision, exact assignments, messages and any application oper
 Stale expected revisions reject. Stable IDs make acceptance retries idempotent;
 they do not promise exactly-once arbitrary external tool effects.
 
-| Command                  | Behavior                                                             |
-| ------------------------ | -------------------------------------------------------------------- |
-| `create`, `add`          | Atomically accept worker batches; `create` can include config.       |
-| `follow_up`              | Queue with `worker`, `messageId`, `text`, optional `after`/`inputs`. |
-| `steer`, `continue`      | Address a worker with message ID/text.                               |
-| `cancel`                 | Assignment/worker/run scope; descendants default on.                 |
-| `background`, `capacity` | Release a wait or select positive/null `maxConcurrent`.              |
-| `schedule`               | Manage session triggers.                                             |
-| `apply`                  | Apply an exact snapshot to the frozen destination with exclusion.    |
-| `rollback`, `reconcile`  | Recover a selected journaled application.                            |
+| Command                  | Behavior                                                               |
+| ------------------------ | ---------------------------------------------------------------------- |
+| `create`, `add`          | Atomically accept worker batches; `create` can include config.         |
+| `follow_up`              | Queue with `worker`, `messageId`, `text`, optional `after`.            |
+| `steer`, `continue`      | Address a worker with message ID/text.                                 |
+| `cancel`                 | Assignment/worker/run scope; descendants default on.                   |
+| `background`, `capacity` | Release a wait or select positive/null `maxConcurrent`.                |
+| `schedule`               | Manage session triggers.                                               |
+| `apply`                  | Apply current worktree files to the frozen destination with exclusion. |
+| `rollback`, `reconcile`  | Recover a selected journaled application.                              |
 
 Worker requests require `id`, `agent`, `task`. Optional fields: `origin`, `messageId`,
-`after`, `inputs`, `workspace`, `observeWorkspace`, `model`, `backend`, `lifetime`,
-`context`, `inheritContext`, `memory`, `delegation`. `origin` identifies an earlier
+`after`, `workspace`, `model`, `backend`, `lifetime`, `context`, `inheritContext`,
+`memory`, `delegation`. `origin` identifies an earlier
 assignment in the same run. It copies no context or files and adds no dependency;
 supply these explicitly when replacing work.
 
@@ -1146,9 +1153,10 @@ acceptance. `BackendPort` advertises restoration, steering, context, skill, memo
 delegation, fallback, lifetime and cleanup capabilities. Start and reattach handles own
 input receipts, observations, completion, checkpoints and stop receipts.
 
-`WorkspacePort` owns prepare/recover/capture/release, retaining writer registration
-until confirmed cleanup. `Runtime.bindMessages(ref)` supplies a worker-bound
-`MessagePort` independently of child delegation. Built-in hosts attach it to each
+`WorkspacePort` owns prepare/recover/release, retaining writer registration
+until confirmed cleanup. Its optional `capture` method only reconciles older recorded
+capture intents; new assignments do not call it. `Runtime.bindMessages(ref)` supplies
+a worker-bound `MessagePort` independently of child delegation. Built-in hosts attach it to each
 backend; custom hosts can provide it through the backend's `messages` option.
 `RuntimeApplicationPort` performs journaled application
 outside command serialization. `NotificationPort` distinguishes stable notice
@@ -1170,8 +1178,8 @@ usage, outcomes and cleanup remain durable. Wake notifications follow durable wr
 with a slower reconciliation scan if a notification is lost.
 
 History records assignments, effect intent and observation, backend enrollment, input
-transport and consumption, worker messages, conversations, usage, output, cleanup, snapshots, settlement,
-schedules and application. Results and notices use exact assignments, keeping earlier
+transport and consumption, worker messages, conversations, usage, output, cleanup,
+worktrees, legacy snapshots, settlement, schedules and application. Results and notices use exact assignments, keeping earlier
 and later results distinct.
 
 Usage reconciles per assignment and attempt with uncached input, output, cache reads and writes
@@ -1196,8 +1204,9 @@ receipts deduplicate by stable ID, separately from consumption.
 
 ## Recovery
 
-Start with status, results, conversations and changes for the exact assignment; use
-`--saved` without an owner. Shared files, isolated snapshots and worktrees remain
+Start with status, results and conversations for the exact assignment; use `--saved`
+without an owner. Inspect current worktree files with Git; use `changes` for legacy
+snapshots. Shared files, worktrees and previously captured snapshots remain
 inspectable after failure or cancellation.
 
 Large conversations use immutable chunks and flat manifests that share unchanged
@@ -1344,7 +1353,7 @@ pinata/
 |   |-- agent/           # Pi sessions, tools, reporting and guards
 |   |-- backends/        # In-process, process and Herdr execution
 |   |   `-- supervision/ # Process ownership, output and Windows Job Objects
-|   |-- workspace/       # Worktrees, snapshots, setup and writer exclusion
+|   |-- workspace/       # Worktrees, setup, legacy capture and writer exclusion
 |   |-- application/     # Journaled apply, rollback and reconciliation
 |   |-- context/         # Instructions, filtering and restoration
 |   |-- memory/          # Scoped memory and revision history

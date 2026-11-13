@@ -176,25 +176,13 @@ test("configuration merges map entries while later supplied objects replace earl
   assert.throws(() => resolveConfig([{ ui: { unknown: true } }]));
 });
 
-test("checkout observation is frozen only from an explicit worker request", async (t) => {
+test("new worker requests reject removed observation and file-input options", async (t) => {
   const f = await fixture(t);
   assert.equal((await f.resolve()).observeWorkspace, undefined);
-  assert.equal((await f.resolve({}, { observeWorkspace: false })).observeWorkspace, false);
-  const request = workerRequestSchema.parse({
-    id: "reader",
-    agent: "reader",
-    task: "Read and retain a checkout observation",
-    observeWorkspace: true,
-  });
-  const resolved = await f.resolve({}, request);
-  assert.equal(resolved.observeWorkspace, true);
-  assert.equal(resolved.access, "read");
-  assert.equal(resolved.workspace, "shared");
-  checkResolvedWorker(request, resolved, caller);
-  assert.throws(
-    () => checkResolvedWorker(request, { ...resolved, observeWorkspace: undefined }, caller),
-    /observeWorkspace/,
-  );
+  for (const removed of [{ observeWorkspace: true }, { observeWorkspace: false }, { inputs: [] }])
+    assert.throws(() =>
+      workerRequestSchema.parse({ id: "reader", agent: "reader", task: "Read", ...removed }),
+    );
 });
 
 test("worker resolution freezes precedence, fallbacks and backend capabilities before launch", async (t) => {

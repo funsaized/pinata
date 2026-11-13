@@ -7,7 +7,6 @@ import {
   artifactRefSchema,
   canonicalJson,
   configSchema,
-  definitionSchema,
   digestValue,
   DomainError,
   PreparationFailure,
@@ -23,6 +22,7 @@ import {
   type WorkspacePlan,
   type WorkspacePort,
   type WorkspaceRequest,
+  type Worktree,
 } from "../contracts/index.ts";
 import { ApplicationStore } from "../application/index.ts";
 import {
@@ -60,7 +60,7 @@ const recordSchema = z.strictObject({
   baseTree: z.string(),
   baseCommit: z.string(),
   gitDirectory: z.string().optional(),
-  checkpoint: z.enum(["completion", "none"]).default("none"),
+  checkpoint: z.enum(["completion", "none"]).optional(),
 });
 type WorkspaceRecord = z.infer<typeof recordSchema>;
 
@@ -247,14 +247,6 @@ export class WorkspaceLayer implements WorkspacePort {
   async prepare(request: WorkspaceRequest, signal: AbortSignal): Promise<PreparedWorkspace> {
     signal.throwIfAborted();
     const { plan, artifact } = await this.loadPlan(request);
-    const checkpoint =
-      plan.mode === "worktree"
-        ? definitionSchema.parse(
-            JSON.parse(
-              Buffer.from(await request.artifacts.read(request.worker.definition)).toString("utf8"),
-            ),
-          ).pinata.checkpoint
-        : "none";
     for (const input of request.inputs)
       if (!input.result.snapshot)
         throw new DomainError(
@@ -265,6 +257,7 @@ export class WorkspaceLayer implements WorkspacePort {
     const retained: ArtifactRef[] = [artifact, await operations.initialize(artifact)];
     let lease: WriterLease | undefined;
     let git: GitCommands | undefined;
+    let worktree: Worktree | undefined;
     let helperCleanup: CleanupReceipt = {
       status: "stopped",
       ownerEpoch: request.ownerEpoch,
@@ -275,6 +268,7 @@ export class WorkspaceLayer implements WorkspacePort {
       cwd: plan.destination,
       identity: digestValue({ plan: artifact, ref: request.ref }),
       artifacts: [...retained],
+      ...(worktree ? { worktree } : {}),
       ...(lease ? { lease: { id: lease.id, workspace: lease.checkout.root } } : {}),
     });
     const registerWriter = async (root: string): Promise<WriterLease> => {
@@ -324,6 +318,12 @@ export class WorkspaceLayer implements WorkspacePort {
           await git.run(record.root, ["cat-file", "-e", `${record.baseCommit}^{commit}`], {
             signal,
           });
+          worktree = {
+            plan: artifact,
+            path: record.root,
+            gitDirectory: current.gitDirectory,
+            base: record.baseCommit,
+          };
           helperCleanup = await operations.closeHelper(git);
           retained.push(...helperCleanup.evidence);
           if (helperCleanup.status !== "stopped")
@@ -390,7 +390,6 @@ export class WorkspaceLayer implements WorkspacePort {
             base: plan.base,
             baseTree,
             baseCommit,
-            checkpoint,
           };
           retained.push(await this.saveRecord(request, record));
           await git.run(
@@ -499,6 +498,12 @@ export class WorkspaceLayer implements WorkspacePort {
               gitDirectory: checkout.gitDirectory,
             }),
           );
+          worktree = {
+            plan: artifact,
+            path: plan.destination,
+            gitDirectory: checkout.gitDirectory,
+            base: baseCommit,
+          };
         }
       }
       // Explicit saved inputs use the same journaled application protocol. They
@@ -872,6 +877,33 @@ export class WorkspaceLayer implements WorkspacePort {
       if (previous.id === lease?.id) continue;
       await this.releaseLease(previous, cleanup);
     }
+    let worktree: Worktree | undefined;
+    if (destinationExists && plan.mode === "worktree") {
+      try {
+        const workspace = recordSchema.parse(
+          JSON.parse(
+            await readFile(
+              join(this.recordDirectory(request.ref.run, request.ref.worker), "current.json"),
+              "utf8",
+            ),
+          ),
+        );
+        if (
+          workspace.root !== plan.destination ||
+          digestValue(workspace.plan) !== digestValue(artifact)
+        )
+          throw new DomainError("conflict", "Recovered worktree differs from its accepted plan");
+        if (workspace.phase === "ready" && workspace.gitDirectory)
+          worktree = {
+            plan: artifact,
+            path: workspace.root,
+            gitDirectory: workspace.gitDirectory,
+            base: workspace.baseCommit,
+          };
+      } catch (error) {
+        if (!isMissing(error)) throw error;
+      }
+    }
     return {
       ...(destinationExists
         ? {
@@ -879,6 +911,7 @@ export class WorkspaceLayer implements WorkspacePort {
               cwd: plan.destination,
               identity: digestValue({ plan: artifact, ref: request.ref }),
               artifacts: retained,
+              ...(worktree ? { worktree } : {}),
               ...(lease ? { lease: { id: lease.id, workspace: lease.checkout.root } } : {}),
             },
           }
@@ -927,7 +960,7 @@ export class WorkspaceLayer implements WorkspacePort {
   }
 
   async capture(
-    request: Parameters<WorkspacePort["capture"]>[0],
+    request: Parameters<NonNullable<WorkspacePort["capture"]>>[0],
     signal: AbortSignal,
   ): Promise<WorkspaceCapture> {
     const { prepared, ref, cleanup } = request;
@@ -945,7 +978,7 @@ export class WorkspaceLayer implements WorkspacePort {
     cleanup: CleanupReceipt,
     artifacts: ArtifactPort,
     signal: AbortSignal,
-    reason?: Parameters<WorkspacePort["capture"]>[0]["reason"],
+    reason?: Parameters<NonNullable<WorkspacePort["capture"]>>[0]["reason"],
   ): Promise<WorkspaceCapture> {
     const operations = this.operations(ref, cleanup.ownerEpoch, artifacts);
     const priorCleanup = await operations.recoverHelpers();

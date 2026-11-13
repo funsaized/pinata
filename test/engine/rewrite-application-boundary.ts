@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile, rm } from "node:fs/promises";
+import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { applicationFixture } from "./rewrite-application-fixture.ts";
 import { openCheckoutGate } from "../../engine/workspace/gate.ts";
@@ -9,17 +9,17 @@ export async function applicationBoundaryRecovery(direction: "apply" | "rollback
   const tracing = await applicationFixture((point) => {
     observed.add(point);
   });
-  const entries = [
-    { path: "nested/new.txt", content: "new nested bytes\n" },
-    {
-      path: "unrelated.txt",
-      content: "untouched\n",
-      mode: process.platform === "win32" ? ("100644" as const) : ("100755" as const),
-    },
-  ];
+  const ref = { run: "application-fixture", worker: "worker", assignment: 1 };
+  const edit = async (path: string) => {
+    await rm(join(path, "file.txt"));
+    await mkdir(join(path, "nested"));
+    await writeFile(join(path, "nested/new.txt"), "new nested bytes\n");
+    if (process.platform !== "win32") await chmod(join(path, "unrelated.txt"), 0o755);
+  };
   try {
-    const snapshot = await tracing.snapshot(1, entries);
-    const receipt = await tracing.store.apply({ snapshot });
+    const worktree = await tracing.worktree();
+    await edit(worktree.path);
+    const receipt = await tracing.store.applyWorktree({ ref, worktree });
     if (direction === "rollback") {
       observed.clear();
       await tracing.store.rollback(receipt.operationId);
@@ -45,13 +45,14 @@ export async function applicationBoundaryRecovery(direction: "apply" | "rollback
     });
     try {
       const index = await readFile(join(fixture.repo.gitDirectory, "index"));
-      const snapshot = await fixture.snapshot(1, entries);
+      const worktree = await fixture.worktree();
+      await edit(worktree.path);
       let applied;
-      if (direction === "rollback") applied = await fixture.store.apply({ snapshot });
+      if (direction === "rollback") applied = await fixture.store.applyWorktree({ ref, worktree });
       enabled = true;
       await assert.rejects(
         direction === "apply"
-          ? fixture.store.apply({ snapshot })
+          ? fixture.store.applyWorktree({ ref, worktree })
           : fixture.store.rollback(applied?.operationId ?? "missing"),
         /Injected/,
         boundary,
@@ -62,7 +63,7 @@ export async function applicationBoundaryRecovery(direction: "apply" | "rollback
       await recovered.reconcile();
       const journal = await recovered.inspect();
       if (direction === "apply") {
-        const receipt = await recovered.apply({ snapshot });
+        const receipt = await recovered.applyWorktree({ ref, worktree });
         assert(["applied", "already_recorded"].includes(receipt.status), boundary);
         assert.equal(
           await readFile(join(fixture.root, "nested/new.txt"), "utf8"),
@@ -80,7 +81,7 @@ export async function applicationBoundaryRecovery(direction: "apply" | "rollback
           await recovered.rollback(journal.operations.at(-1)?.id ?? "missing");
         assert.equal(await readFile(join(fixture.root, "file.txt"), "utf8"), "base\n", boundary);
         assert.deepEqual((await recovered.inspect()).cursors, {}, boundary);
-        await recovered.apply({ snapshot });
+        await recovered.applyWorktree({ ref, worktree });
         assert.equal(
           await readFile(join(fixture.root, "nested/new.txt"), "utf8"),
           "new nested bytes\n",

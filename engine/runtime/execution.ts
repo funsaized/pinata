@@ -824,14 +824,13 @@ export class ExecutionCoordinator {
     const { outcome } = completion;
     let { cleanup, checkpoint, capture } = completion;
     const finalizationErrors: string[] = [];
-    let captureRequested =
-      active.worker.workspace === "worktree" || active.worker.observeWorkspace === true;
+    let captureRequested = false;
     await this.host.transaction(async (transaction) => {
       const state = transaction.state();
       const entry = state.attempts[active.attemptId];
-      // Shared workers do not request automatic checkout observation. A retained
-      // capture intent still owns recovery work, including one from an older host.
-      captureRequested ||= Object.hasOwn(state.effects, `${active.attemptId}/capture`);
+      // New assignments never capture the checkout. Retained intents from older
+      // hosts still own their recovery work and evidence.
+      captureRequested = Object.hasOwn(state.effects, `${active.attemptId}/capture`);
       if (!entry.outcome) {
         const artifact = await this.host.artifacts.put(Buffer.from(canonicalJson(outcome)));
         await transaction.commit({
@@ -889,6 +888,8 @@ export class ExecutionCoordinator {
       await this.recordEffectIntent(active, "capture");
       try {
         await this.host.assertOwner();
+        if (!this.options.workspace.capture)
+          throw new Error("The workspace adapter cannot recover a legacy capture intent");
         // Cancellation must retain the final partial workspace too. Capture gets a
         // fresh signal because the model's cancellation has already been confirmed.
         capture = workspaceCaptureSchema.parse(
@@ -1020,6 +1021,7 @@ export class ExecutionCoordinator {
         ...(completion.outcome.transcript ? { transcript: completion.outcome.transcript } : {}),
         ...(completion.checkpoint ? { session: completion.checkpoint.artifact } : {}),
         ...(completion.capture?.snapshot ? { snapshot: completion.capture.snapshot } : {}),
+        ...(active.prepared?.worktree ? { worktree: active.prepared.worktree } : {}),
       };
       const resultArtifact = await this.host.artifacts.put(Buffer.from(canonicalJson(result)));
       await transaction.commit({

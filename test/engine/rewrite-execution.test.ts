@@ -355,9 +355,6 @@ async function world(
       tools,
       access,
       workspace: request.workspace ?? "shared",
-      ...(request.observeWorkspace !== undefined
-        ? { observeWorkspace: request.observeWorkspace }
-        : {}),
       backend: request.backend ?? "in-process",
       lifetime: request.lifetime ?? "attached",
       grants: {
@@ -1411,47 +1408,45 @@ for (const [access, workspace] of [
   ["read", "worktree"],
   ["write", "worktree"],
 ] as const) {
-  test(`automatic workspace capture respects ${access} access in ${workspace} mode`, async (t) => {
-    const fixture = await world(t, { access });
-    if (workspace === "shared")
+  for (const reason of ["completed", "failed"] as const) {
+    test(`${access} workers in ${workspace} mode settle ${reason} without checkout capture`, async (t) => {
+      const fixture = await world(t, { access });
       fixture.workspace.captureError = new Error("Checkout keeps changing during capture");
-    accepted(
-      await fixture.runtime.execute(
-        {
-          requestId: "create",
-          command: { kind: "create", workers: [{ ...worker("base"), workspace }] },
-        },
-        caller,
-      ),
-    );
-    const run = await fixture.backend.waitStarted(ref("base"));
-    const transcript = await run.launch.artifacts.put(Buffer.from("Retained worker transcript"));
-    const outcome: BackendOutcome = {
-      reason: "completed",
-      summary: "Completed worker report",
-      artifacts: [transcript],
-      transcript,
-      usage: { expectedAttempts: [run.launch.attemptId], observations: [], complete: false },
-    };
-    run.outcome = outcome;
-    run.done.resolve(outcome);
-    const result = (await fixture.runtime.wait({}, caller)).results[0];
-    const shouldCapture = workspace === "worktree";
-    assert.equal(fixture.workspace.captured.length, shouldCapture ? 1 : 0);
-    assert.equal(result.summary, outcome.summary);
-    assert.deepEqual(result.transcript, transcript);
-    assert(result.session);
-    assert(result.artifacts.some((artifact) => artifact.digest === transcript.digest));
-    assert.deepEqual(result.execution, {
-      phase: "ended",
-      reason: "completed",
-      cleanup: "confirmed",
-    });
-    const state = await fixture.status();
-    assert(state.attempts[run.launch.attemptId].prepared);
-    assert.deepEqual(state.attempts[run.launch.attemptId].outcome, outcome);
-    assert.equal(Object.hasOwn(state.effects, `${run.launch.attemptId}/capture`), shouldCapture);
-    if (!shouldCapture) {
+      accepted(
+        await fixture.runtime.execute(
+          {
+            requestId: "create",
+            command: { kind: "create", workers: [{ ...worker("base"), workspace }] },
+          },
+          caller,
+        ),
+      );
+      const run = await fixture.backend.waitStarted(ref("base"));
+      const transcript = await run.launch.artifacts.put(Buffer.from("Retained worker transcript"));
+      const outcome: BackendOutcome = {
+        reason,
+        summary: "Completed worker report",
+        artifacts: [transcript],
+        transcript,
+        usage: { expectedAttempts: [run.launch.attemptId], observations: [], complete: false },
+      };
+      run.outcome = outcome;
+      run.done.resolve(outcome);
+      const result = (await fixture.runtime.wait({}, caller)).results[0];
+      assert.equal(fixture.workspace.captured.length, 0);
+      assert.equal(result.summary, outcome.summary);
+      assert.deepEqual(result.transcript, transcript);
+      assert(result.session);
+      assert(result.artifacts.some((artifact) => artifact.digest === transcript.digest));
+      assert.deepEqual(result.execution, {
+        phase: "ended",
+        reason,
+        cleanup: "confirmed",
+      });
+      const state = await fixture.status();
+      assert(state.attempts[run.launch.attemptId].prepared);
+      assert.deepEqual(state.attempts[run.launch.attemptId].outcome, outcome);
+      assert.equal(Object.hasOwn(state.effects, `${run.launch.attemptId}/capture`), false);
       assert.equal(result.snapshot, undefined);
       assert.deepEqual(await fixture.runtime.query({ kind: "changes", ref: ref("base") }, caller), {
         kind: "changes",
@@ -1459,11 +1454,11 @@ for (const [access, workspace] of [
         source: "unavailable",
         changes: [],
       });
-    }
-    await fixture.runtime.close();
-    assert.deepEqual(fixture.workspace.released, [assignmentKey(ref("base"))]);
-    assert.equal(fixture.workspace.leases.size, 0);
-  });
+      await fixture.runtime.close();
+      assert.deepEqual(fixture.workspace.released, [assignmentKey(ref("base"))]);
+      assert.equal(fixture.workspace.leases.size, 0);
+    });
+  }
 }
 
 test(
@@ -1516,221 +1511,146 @@ test(
 );
 
 for (const access of ["read", "write"] as const) {
-  test(`explicit shared ${access} observation is retained and inherited by follow-ups after reopen`, async (t) => {
-    const fixture = await world(t, { access });
-    fixture.workspace.prepareHook = async (request) => {
-      const manifest = await request.artifacts.put(
-        Buffer.from(
-          JSON.stringify({
-            schemaVersion: 1,
-            entries: [],
-            observation: {
-              startedAt: "2026-11-08T00:00:00.000Z",
-              endedAt: "2026-11-08T00:00:00.000Z",
-              fingerprint: digestValue({ entries: [], repository: null }),
-              status: "stable",
-              scope: ["fixture checkout"],
-            },
-          }),
+  for (const workspace of ["shared", "worktree"] as const) {
+    test(`cancelling a ${workspace} ${access} worker preserves its session and cleanup without a checkout observation`, async (t) => {
+      const fixture = await world(t, { access });
+      accepted(
+        await fixture.runtime.execute(
+          {
+            requestId: "create",
+            command: { kind: "create", workers: [{ ...worker("base"), workspace }] },
+          },
+          caller,
         ),
       );
-      fixture.workspace.captureSnapshot = await request.artifacts.put(
-        Buffer.from(
-          JSON.stringify({
-            schemaVersion: 1,
-            kind: "workspace-snapshot",
-            ref: request.ref,
-            mode: "shared",
-            root: fixture.directory,
-            base: manifest,
-            manifest,
-          }),
+      const run = await fixture.backend.waitStarted(ref("base"));
+      accepted(
+        await fixture.runtime.execute(
+          {
+            requestId: "cancel",
+            command: { kind: "cancel", scope: "worker", worker: "base" },
+          },
+          caller,
         ),
       );
-    };
-    accepted(
-      await fixture.runtime.execute(
-        {
-          requestId: "create",
-          command: { kind: "create", workers: [{ ...worker("base"), observeWorkspace: true }] },
-        },
-        caller,
-      ),
-    );
-    for (const assignment of [1, 2]) {
-      if (assignment === 2) {
-        await fixture.reopen();
-        accepted(
-          await fixture.runtime.execute(
-            {
-              requestId: "follow",
-              command: {
-                kind: "follow_up",
-                worker: "base",
-                messageId: "next",
-                text: "Observe again",
-              },
-            },
-            caller,
-          ),
-        );
-      }
-      const target = ref("base", assignment);
-      await fixture.backend.complete(target);
-      await fixture.runtime.wait({ targets: [target] }, caller);
-      const changes = await fixture.runtime.query({ kind: "changes", ref: target }, caller);
-      assert.equal(changes.kind, "changes");
-      if (changes.kind !== "changes") throw new Error("Expected retained changes");
-      assert.equal(changes.source, "snapshot");
-      assert.deepEqual(changes.snapshot, fixture.workspace.captureSnapshot);
-      assert.equal((await fixture.status()).workers.base.observeWorkspace, true);
-    }
-    assert.equal(fixture.workspace.captured.length, 2);
-  });
-
-  test(`cancelling a shared ${access} worker preserves its session and cleanup without a checkout observation`, async (t) => {
-    const fixture = await world(t, { access });
-    accepted(
-      await fixture.runtime.execute(
-        { requestId: "create", command: { kind: "create", workers: [worker("base")] } },
-        caller,
-      ),
-    );
-    const run = await fixture.backend.waitStarted(ref("base"));
-    accepted(
-      await fixture.runtime.execute(
-        {
-          requestId: "cancel",
-          command: { kind: "cancel", scope: "worker", worker: "base" },
-        },
-        caller,
-      ),
-    );
-    const result = (await fixture.runtime.wait({}, caller)).results[0];
-    assert.deepEqual(result.execution, {
-      phase: "ended",
-      reason: "cancelled",
-      cleanup: "confirmed",
-    });
-    assert(result.session);
-    assert.equal(result.snapshot, undefined);
-    assert.equal(fixture.workspace.captured.length, 0);
-    assert.equal(
-      Object.hasOwn((await fixture.status()).effects, `${run.launch.attemptId}/capture`),
-      false,
-    );
-    await fixture.runtime.close();
-    assert.equal(fixture.workspace.leases.size, 0);
-  });
-
-  test(`recovery completes a shared ${access} worker's previously journaled capture intent`, async (t) => {
-    const fixture = await world(t, { access, execution: false });
-    accepted(
-      await fixture.runtime.execute(
-        { requestId: "create", command: { kind: "create", workers: [worker("base")] } },
-        caller,
-      ),
-    );
-    await fixture.runtime.close();
-    const store = await DurableStore.open({ directory: fixture.directory });
-    const attemptId = `${assignmentKey(ref("base"))}/attempt/1`;
-    const ownerEpoch = store.owner.epoch;
-    const identity: BackendIdentity = { id: "stopped-worker", kind: "in-process", ownerEpoch };
-    const evidence = await store.putArtifact(Buffer.from("Retained stopped worker evidence"));
-    const prepared: PreparedWorkspace = {
-      identity: assignmentKey(ref("base")),
-      cwd: fixture.directory,
-      artifacts: [evidence],
-      lease: { id: assignmentKey(ref("base")), workspace: fixture.directory },
-    };
-    fixture.workspace.leases.add(prepared.identity);
-    const outcome: BackendOutcome = {
-      reason: "completed",
-      summary: "Worker completed before capture interruption",
-      artifacts: [evidence],
-      usage: { expectedAttempts: [attemptId], observations: [], complete: false },
-    };
-    const artifact = await store.putArtifact(Buffer.from(JSON.stringify(outcome)));
-    const transitions: Transition[] = [
-      { kind: "assignment_state", ref: ref("base"), execution: { phase: "preparing" } },
-      {
-        kind: "attempt_started",
-        attempt: { id: attemptId, ref: ref("base"), ordinal: 1, backend: "in-process", ownerEpoch },
-      },
-      { kind: "workspace_prepared", attemptId, prepared },
-      {
-        kind: "effect_intent",
-        effect: { id: `${attemptId}/launch`, ref: ref("base"), kind: "launch" },
-      },
-      { kind: "backend_enrolled", attemptId, identity, evidence: [evidence] },
-      { kind: "attempt_outcome", attemptId, outcome, artifact },
-      { kind: "assignment_state", ref: ref("base"), execution: { phase: "finalizing" } },
-      {
-        kind: "cleanup_observed",
-        attemptId,
-        receipt: { status: "stopped", ownerEpoch, identities: [identity.id], evidence: [evidence] },
-      },
-      {
-        kind: "effect_intent",
-        effect: { id: `${attemptId}/capture`, ref: ref("base"), kind: "capture" },
-      },
-    ];
-    for (const [index, transition] of transitions.entries())
-      await store.append({
-        requestId: `worker-capture-${index}`,
-        payloadDigest: digestValue(transition),
-        transition,
-        artifacts: transitionArtifacts(transition),
+      const result = (await fixture.runtime.wait({}, caller)).results[0];
+      assert.deepEqual(result.execution, {
+        phase: "ended",
+        reason: "cancelled",
+        cleanup: "confirmed",
       });
-    await store.close();
-    await fixture.reopen();
-    assert.equal((await fixture.runtime.recover({}, caller))[0].status, "finalizing");
-    const result = (await fixture.runtime.wait({}, caller)).results[0];
-    assert.equal(result.summary, outcome.summary);
-    assert.equal(fixture.workspace.captured.length, 1);
-    assert.equal((await fixture.status()).effects[`${attemptId}/capture`].status, "completed");
-    await fixture.runtime.close();
-    assert.equal(fixture.workspace.leases.size, 0);
-  });
-}
-
-test(
-  "workspace checkpoint diagnostics keep the completed result and usable snapshot visible",
-  { timeout: 10_000 },
-  async (t) => {
-    const fixture = await world(t);
-    fixture.workspace.captureErrors = ["Workspace checkpoint failed: ref publication interrupted"];
-    fixture.workspace.prepareHook = async (request) => {
-      fixture.workspace.captureSnapshot = await request.artifacts.put(
-        Buffer.from("Retained completed snapshot"),
+      assert(result.session);
+      assert.equal(result.snapshot, undefined);
+      assert.equal(fixture.workspace.captured.length, 0);
+      assert.equal(
+        Object.hasOwn((await fixture.status()).effects, `${run.launch.attemptId}/capture`),
+        false,
       );
-    };
-    accepted(
-      await fixture.runtime.execute(
-        {
-          requestId: "create",
-          command: { kind: "create", workers: [{ ...worker("base"), workspace: "worktree" }] },
-        },
-        caller,
-      ),
-    );
-    await fixture.backend.waitStarted(ref("base"));
-    await fixture.backend.complete(ref("base"), "Completed useful work");
-    const result = (await fixture.runtime.wait({}, caller)).results[0];
-    assert.deepEqual(result.execution, {
-      phase: "ended",
-      reason: "completed",
-      cleanup: "confirmed",
+      await fixture.runtime.close();
+      assert.equal(fixture.workspace.leases.size, 0);
     });
-    assert.deepEqual(result.snapshot, fixture.workspace.captureSnapshot);
-    assert.deepEqual(result.finalizationErrors, fixture.workspace.captureErrors);
-    assert.equal(result.summary, "Completed useful work");
-  },
-);
+  }
+
+  for (const captureState of ["completed", "failed", "diagnostic"] as const) {
+    test(`legacy shared ${access} capture recovery retains ${captureState} evidence`, async (t) => {
+      const fixture = await world(t, { access, execution: false });
+      accepted(
+        await fixture.runtime.execute(
+          { requestId: "create", command: { kind: "create", workers: [worker("base")] } },
+          caller,
+        ),
+      );
+      await fixture.runtime.close();
+      const store = await DurableStore.open({ directory: fixture.directory });
+      if (captureState === "failed")
+        fixture.workspace.captureError = new Error("Legacy capture unavailable");
+      if (captureState === "diagnostic")
+        fixture.workspace.captureErrors = ["Legacy checkpoint publication interrupted"];
+      const attemptId = `${assignmentKey(ref("base"))}/attempt/1`;
+      const ownerEpoch = store.owner.epoch;
+      const identity: BackendIdentity = { id: "stopped-worker", kind: "in-process", ownerEpoch };
+      const evidence = await store.putArtifact(Buffer.from("Retained stopped worker evidence"));
+      const prepared: PreparedWorkspace = {
+        identity: assignmentKey(ref("base")),
+        cwd: fixture.directory,
+        artifacts: [evidence],
+        lease: { id: assignmentKey(ref("base")), workspace: fixture.directory },
+      };
+      fixture.workspace.leases.add(prepared.identity);
+      const outcome: BackendOutcome = {
+        reason: "completed",
+        summary: "Worker completed before capture interruption",
+        artifacts: [evidence],
+        usage: { expectedAttempts: [attemptId], observations: [], complete: false },
+      };
+      const artifact = await store.putArtifact(Buffer.from(JSON.stringify(outcome)));
+      const transitions: Transition[] = [
+        { kind: "assignment_state", ref: ref("base"), execution: { phase: "preparing" } },
+        {
+          kind: "attempt_started",
+          attempt: {
+            id: attemptId,
+            ref: ref("base"),
+            ordinal: 1,
+            backend: "in-process",
+            ownerEpoch,
+          },
+        },
+        { kind: "workspace_prepared", attemptId, prepared },
+        {
+          kind: "effect_intent",
+          effect: { id: `${attemptId}/launch`, ref: ref("base"), kind: "launch" },
+        },
+        { kind: "backend_enrolled", attemptId, identity, evidence: [evidence] },
+        { kind: "attempt_outcome", attemptId, outcome, artifact },
+        { kind: "assignment_state", ref: ref("base"), execution: { phase: "finalizing" } },
+        {
+          kind: "cleanup_observed",
+          attemptId,
+          receipt: {
+            status: "stopped",
+            ownerEpoch,
+            identities: [identity.id],
+            evidence: [evidence],
+          },
+        },
+        {
+          kind: "effect_intent",
+          effect: { id: `${attemptId}/capture`, ref: ref("base"), kind: "capture" },
+        },
+      ];
+      for (const [index, transition] of transitions.entries())
+        await store.append({
+          requestId: `worker-capture-${index}`,
+          payloadDigest: digestValue(transition),
+          transition,
+          artifacts: transitionArtifacts(transition),
+        });
+      await store.close();
+      await fixture.reopen();
+      assert.equal((await fixture.runtime.recover({}, caller))[0].status, "finalizing");
+      const result = (await fixture.runtime.wait({}, caller)).results[0];
+      assert.equal(result.summary, outcome.summary);
+      assert.equal(fixture.workspace.captured.length, captureState === "failed" ? 0 : 1);
+      assert.equal(
+        (await fixture.status()).effects[`${attemptId}/capture`].status,
+        captureState === "failed" ? "failed" : "completed",
+      );
+      assert.equal(
+        result.execution.phase === "ended" && result.execution.reason,
+        captureState === "failed" ? "failed" : "completed",
+      );
+      if (captureState === "diagnostic")
+        assert.deepEqual(result.finalizationErrors, fixture.workspace.captureErrors);
+      await fixture.runtime.close();
+      assert.equal(fixture.workspace.leases.size, 0);
+    });
+  }
+}
 
 for (const failure of ["checkpoint", "capture"] as const) {
   test(
-    `${failure} failure preserves the completed backend result and records finalization evidence`,
+    `${failure} errors preserve backend evidence and only requested finalization affects completion`,
     { timeout: 10_000 },
     async (t) => {
       const fixture = await world(t);
@@ -1783,10 +1703,14 @@ for (const failure of ["checkpoint", "capture"] as const) {
       assert.equal(result.usage.total?.input, 7);
       assert.deepEqual(result.execution, {
         phase: "ended",
-        reason: "failed",
+        reason: failure === "checkpoint" ? "failed" : "completed",
         cleanup: "confirmed",
       });
-      assert(result.finalizationErrors?.some((error) => error.includes(`${failure} unavailable`)));
+      if (failure === "checkpoint")
+        assert(
+          result.finalizationErrors?.some((error) => error.includes(`${failure} unavailable`)),
+        );
+      else assert.equal(result.finalizationErrors, undefined);
       assert.deepEqual((await fixture.status()).attempts[run.launch.attemptId].outcome, outcome);
       if (failure === "capture") {
         const history = await fixture.runtime.query({ kind: "events", since: 0 }, caller);

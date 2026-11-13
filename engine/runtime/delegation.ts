@@ -65,7 +65,6 @@ export class ChildBindings {
                 origin: worker.origin ? localRef(worker.origin) : undefined,
                 ...(worker.messageId ? { messageId: scopedId(worker.messageId) } : {}),
                 after: worker.after.map((ref) => (typeof ref === "string" ? ref : localRef(ref))),
-                inputs: worker.inputs.map(localRef),
               })),
             };
             break;
@@ -74,7 +73,6 @@ export class ChildBindings {
               ...command,
               messageId: scopedId(command.messageId),
               after: command.after.map((ref) => (typeof ref === "string" ? ref : localRef(ref))),
-              inputs: command.inputs.map(localRef),
             };
             break;
           case "steer":
