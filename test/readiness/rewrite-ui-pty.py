@@ -194,6 +194,8 @@ try:
     assert finished and finished[-1]["parentUnchanged"] and finished[-1]["workerDrafts"], events[-10:]
     assert finished[-1]["disposals"] == 3
     assert not [event for event in events if event["phase"] in ("provider-request", "error")]
+    lifecycle = [event for event in events if event["phase"] == "lifecycle"]
+    assert len(lifecycle) == 1 and lifecycle[0]["attempts"] == 4 and lifecycle[0]["revision"] == 16, lifecycle
     assert all(event["overlay"] for event in events if event["phase"] == "custom")
     assert all(event["parentUnchanged"] for event in events if event["phase"] == "restored")
     assert all(stage == 7 for stage in stages.values())
