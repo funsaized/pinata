@@ -7,6 +7,7 @@ import {
 } from "./common.ts";
 import { resultSchema } from "./lifecycle.ts";
 import { runtimeEventSchema } from "./runtime.ts";
+import { messageNoticeSchema } from "./messages.ts";
 import {
   surfaceCallSchema,
   surfaceCapabilitiesSchema,
@@ -109,12 +110,15 @@ export const clientFrameSchema = z.discriminatedUnion("type", [
   }),
 ]);
 export type ClientFrame = z.infer<typeof clientFrameSchema>;
-export const notificationNoticeSchema = z.strictObject({
-  id: identitySchema,
-  ref: assignmentRefSchema,
-  result: resultSchema,
-  artifact: artifactRefSchema,
-});
+export const notificationNoticeSchema = z.union([
+  z.strictObject({
+    id: identitySchema,
+    ref: assignmentRefSchema,
+    result: resultSchema,
+    artifact: artifactRefSchema,
+  }),
+  messageNoticeSchema,
+]);
 export const serverMessageSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("reply"), id: transportIdSchema, reply: surfaceReplySchema }),
   z.strictObject({

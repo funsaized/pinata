@@ -55,12 +55,14 @@ import {
 } from "./process-transport.ts";
 import type { ChildPort } from "../contracts/delegation.ts";
 import { serveFileChildren } from "./delegation-transport.ts";
+import type { MessagePort } from "../contracts/messages.ts";
 import { ProcessSignals } from "./process-signals.ts";
 
 type Observe = (observation: BackendObservation, source?: ObservationSource) => Promise<void>;
 export type ProcessBackendOptions = WorkerProcessOptions & {
   commandTimeoutMs?: number;
   children?(ref: BackendLaunch["ref"]): ChildPort;
+  messages?(ref: BackendLaunch["ref"]): MessagePort;
 };
 export type WorkerProcessHandle = BackendHandle & {
   detach(): Promise<void>;
@@ -119,6 +121,7 @@ export class ProcessHandle implements BackendHandle {
   private removeAbort: () => void = () => {};
   private children?: ReturnType<typeof serveFileChildren>;
   private readonly childPort?: ChildPort;
+  private readonly messagePort?: MessagePort;
   private readonly signals: ProcessSignals;
   private readonly removeSupervisorEvents: () => void;
   private commandIndex?: Map<string, ProcessCommand>;
@@ -133,6 +136,7 @@ export class ProcessHandle implements BackendHandle {
     runtimeOwnerEpoch: string;
     commandTimeoutMs: number;
     children?: ChildPort;
+    messages?: MessagePort;
   }) {
     this.identity = structuredClone(options.manifest.identity);
     this.directory = options.directory;
@@ -142,6 +146,7 @@ export class ProcessHandle implements BackendHandle {
     this.runtimeOwnerEpoch = options.runtimeOwnerEpoch;
     this.commandTimeoutMs = options.commandTimeoutMs;
     this.childPort = options.children;
+    this.messagePort = options.messages;
     this.signals = new ProcessSignals(this.supervisor.identity, "coordinator");
     this.removeSupervisorEvents = this.supervisor.events(() => this.signals.wake());
     this.done = new Promise((resolve, reject) => {
@@ -154,8 +159,13 @@ export class ProcessHandle implements BackendHandle {
   }
 
   begin(signal: AbortSignal): void {
-    if (this.childPort) {
-      this.children = serveFileChildren(this.directory, this.childPort, this.signals);
+    if (this.childPort || this.messagePort) {
+      this.children = serveFileChildren(
+        this.directory,
+        this.childPort,
+        this.signals,
+        this.messagePort,
+      );
       void this.children.done.catch((error: unknown) => this.rejectDone(error));
     }
     const abort = () => {
@@ -444,6 +454,7 @@ export class ProcessBackend implements BackendPort {
   private readonly options: WorkerProcessOptions;
   private readonly commandTimeoutMs: number;
   private readonly children?: ProcessBackendOptions["children"];
+  private readonly messages?: ProcessBackendOptions["messages"];
 
   constructor(options: ProcessBackendOptions) {
     this.options = processOptionsSchema.parse({
@@ -458,6 +469,7 @@ export class ProcessBackend implements BackendPort {
     });
     this.commandTimeoutMs = options.commandTimeoutMs ?? 30_000;
     this.children = options.children;
+    this.messages = options.messages;
     const capability = supervisionCapability();
     this.capabilities = {
       ...capability,
@@ -469,6 +481,7 @@ export class ProcessBackend implements BackendPort {
       fallbacks: true,
       surviving: true,
       delegation: Boolean(options.children),
+      messaging: Boolean(options.messages),
     };
   }
 
@@ -500,6 +513,7 @@ export class ProcessBackend implements BackendPort {
       schemaVersion: 1,
       identity,
       options: this.options,
+      messaging: Boolean(this.messages),
       launch: { ...wire, initialMessages, brief },
     });
     await writeRecord(join(directory, "manifest.json"), manifest);
@@ -551,6 +565,7 @@ export class ProcessBackend implements BackendPort {
         observe,
         runtimeOwnerEpoch: launch.ownerEpoch,
         commandTimeoutMs: this.commandTimeoutMs,
+        messages: this.messages?.(launch.ref),
         ...(launch.worker.grants.delegation.maxDepth
           ? { children: this.children?.(launch.ref) }
           : {}),
@@ -632,6 +647,7 @@ export class ProcessBackend implements BackendPort {
       observe,
       runtimeOwnerEpoch: request.runtimeOwnerEpoch,
       commandTimeoutMs: this.commandTimeoutMs,
+      ...(manifest.messaging ? { messages: this.messages?.(request.ref) } : {}),
       ...(manifest.launch.worker.grants.delegation.maxDepth
         ? { children: this.children?.(request.ref) }
         : {}),

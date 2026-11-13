@@ -39,6 +39,8 @@ import { checkpointConversation, openConversation } from "../agent/conversation.
 import { reportTool, workerExtension } from "../agent/extension.ts";
 import { memoryTools } from "../agent/memory.ts";
 import { childExtension, childTools } from "../agent/delegation.ts";
+import { messageExtension, messageTool } from "../agent/messages.ts";
+import type { MessagePort } from "../contracts/messages.ts";
 import { dependencyExtension, dependencyList, dependencyTool } from "../agent/dependencies.ts";
 import { ToolPages } from "../sources/pages.ts";
 import type { ChildPort } from "../contracts/delegation.ts";
@@ -60,6 +62,7 @@ export type InProcessOptions = {
   extensions?: string[];
   memoryProject?: string;
   children?(launch: BackendLaunch): ChildPort;
+  messages?(launch: BackendLaunch): MessagePort;
   createProcesses?(launch: BackendLaunch): SessionProcesses;
 };
 
@@ -83,6 +86,7 @@ export class InProcessBackend implements BackendPort {
   constructor(options: InProcessOptions) {
     this.options = options;
     this.capabilities.delegation = Boolean(options.children);
+    this.capabilities.messaging = Boolean(options.messages);
   }
 
   async start(
@@ -100,6 +104,7 @@ export class InProcessBackend implements BackendPort {
       : undefined;
     if (launch.worker.grants.delegation.maxDepth && !children)
       throw new DomainError("unsupported", "Delegation requires a host-bound child command port");
+    const messages = this.options.messages?.(launch);
     const definition = definitionSchema.parse(
       JSON.parse(
         Buffer.from(await launch.artifacts.read(launch.worker.definition)).toString("utf8"),
@@ -232,6 +237,7 @@ export class InProcessBackend implements BackendPort {
         ...dependencyTools,
         ...(memory?.names ?? []),
         ...(children ? childTools : []),
+        ...(messages ? [messageTool] : []),
       ]);
 
       const enqueue = (operation: () => Promise<void>): void => {
@@ -276,6 +282,7 @@ export class InProcessBackend implements BackendPort {
         runtimeTools: [
           ...(memory?.names ?? []),
           ...(children ? childTools : []),
+          ...(messages ? [messageTool] : []),
           ...dependencyTools,
         ],
         async onReport(report) {
@@ -334,6 +341,7 @@ export class InProcessBackend implements BackendPort {
         extensionFactories: [
           extension,
           processExtension,
+          ...(messages ? [messageExtension(messages)] : []),
           ...(memory ? [memory.extension] : []),
           ...(children
             ? [
@@ -373,6 +381,7 @@ export class InProcessBackend implements BackendPort {
           ...dependencyTools,
           ...(memory?.names ?? []),
           ...(children ? childTools : []),
+          ...(messages ? [messageTool] : []),
           ...(this.options.codemode ? ["codemode"] : []),
         ],
       });

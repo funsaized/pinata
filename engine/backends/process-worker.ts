@@ -107,6 +107,7 @@ async function runSession(
       : undefined;
     await bootstrap?.configureModelRuntime?.(modelRuntime, manifest);
     await modelRuntime.refresh({ allowNetwork: false });
+    const control = fileChildClient(directory, signals);
     const backend = new InProcessBackend({
       modelRuntime: async () => modelRuntime,
       bootstrap,
@@ -114,9 +115,8 @@ async function runSession(
       memoryProject: manifest.options.memoryProject,
       codemode: manifest.options.codemode,
       extensions: manifest.options.extensions,
-      ...(launch.worker.grants.delegation.maxDepth
-        ? { children: () => fileChildClient(directory, signals) }
-        : {}),
+      ...(manifest.messaging ? { messages: () => control } : {}),
+      ...(launch.worker.grants.delegation.maxDepth ? { children: () => control } : {}),
       createProcesses: (request) =>
         supervisedSessionProcesses(request, {
           nodeCommand: manifest.options.nodeCommand,

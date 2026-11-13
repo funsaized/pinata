@@ -7,6 +7,7 @@ import {
   type AssignmentRef,
 } from "../contracts/common.ts";
 import type { AssignmentResult } from "../contracts/lifecycle.ts";
+import type { MessageNotice } from "../contracts/messages.ts";
 import type { ExecutionHost } from "./execution.ts";
 import { immutable } from "./immutable.ts";
 
@@ -16,13 +17,14 @@ export type CompletionNotice = {
   result: AssignmentResult;
   artifact: ArtifactRef;
 };
+export type NotificationNotice = CompletionNotice | MessageNotice;
 
 export type NotificationPort = {
   // Retrying after a lost receipt can send the same ID again. The recipient owns
   // deduplication of that ID in its conversation, not of the rendered text.
   deduplicates: true;
   deliver(
-    notice: CompletionNotice,
+    notice: NotificationNotice,
     context: { artifacts: ArtifactPort; signal: AbortSignal },
   ): Promise<{ status: "delivered" | "undelivered" }>;
 };
@@ -54,13 +56,22 @@ export class CompletionDelivery {
       throw new DomainError("conflict", "Notification delivery is closing");
     const notices = await this.host.transaction(async (transaction) => {
       const state = transaction.state();
-      const claimed: Array<{ notice: CompletionNotice; attemptId: string }> = [];
+      const claimed: Array<{ notice: NotificationNotice; attemptId: string }> = [];
       for (const [id, record] of Object.entries(state.outbox)) {
         if (record.state === "delivered" || record.state === "consumed" || this.inFlight.has(id))
           continue;
-        const result = state.results[assignmentKey(record.ref)];
-        if (!result)
-          throw new DomainError("context_unavailable", `Completion result is missing: ${id}`);
+        let notice: NotificationNotice;
+        if ("messageId" in record) {
+          const message = state.messages[record.messageId];
+          if (!message)
+            throw new DomainError("context_unavailable", `Worker message is missing: ${id}`);
+          notice = { kind: "message", id, ref: record.ref, text: message.text };
+        } else {
+          const result = state.results[assignmentKey(record.ref)];
+          if (!result)
+            throw new DomainError("context_unavailable", `Completion result is missing: ${id}`);
+          notice = { id, ref: record.ref, result: result.result, artifact: record.result };
+        }
         const attemptId = randomUUID();
         this.inFlight.add(id);
         await transaction.commit({
@@ -70,7 +81,7 @@ export class CompletionDelivery {
           state: "dispatch_intent",
         });
         claimed.push({
-          notice: { id, ref: record.ref, result: result.result, artifact: record.result },
+          notice,
           attemptId,
         });
       }
@@ -87,7 +98,7 @@ export class CompletionDelivery {
     return Promise.all(deliveries);
   }
 
-  private async send(notice: CompletionNotice, attemptId: string): Promise<NotificationDelivery> {
+  private async send(notice: NotificationNotice, attemptId: string): Promise<NotificationDelivery> {
     let state: "delivered" | "uncertain" = "uncertain";
     try {
       await this.host.assertOwner();

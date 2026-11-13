@@ -38,9 +38,9 @@ export function workerExtension(options: {
   return (pi) => {
     pi.registerTool({
       name: reportTool,
-      label: "Report result",
+      label: "Submit final result",
       description:
-        "Optionally report your result and observed evidence. Use only summary, data, and assessment at the top level. Put task-specific fields inside data, following its schema. Checks and assessments are attributed claims; the coordinator decides acceptance.",
+        "Submit your final result and observed evidence, ending this assignment. Call only when you are ready to finish. Use pinata_message, when available, for progress updates. This tool is optional; ordinary final text is also valid. Use only summary, data, and assessment at the top level. Put task-specific fields inside data, following its schema. Checks and assessments are attributed claims; the coordinator decides acceptance.",
       parameters: piParameters(reportSchema),
       executionMode: "sequential",
       async execute(

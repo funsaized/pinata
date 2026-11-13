@@ -593,7 +593,9 @@ pinata run job.json --bootstrap ./pinata-agents.ts
 ```
 
 `defineAgent` defaults `schemaVersion` to 1. Typed and Markdown definitions cannot
-share a name. The optional `submit_result` worker tool accepts:
+share a name. The optional `submit_result` worker tool submits a final report and
+ends the assignment on success. Use it only when ready to finish, never for
+progress updates. It accepts:
 
 ```json
 {
@@ -616,6 +618,39 @@ Workers freeze the selected bootstrap path, source bytes, digest and schema desc
 Missing or changed bootstraps fail before execution. Editing an already loaded module
 requires a fresh host process and worker. Only host code or explicit `--bootstrap`
 can select executable definitions.
+
+### Worker messages
+
+Workers can use `pinata_message` for progress, findings and questions while they
+continue working:
+
+```json
+{
+  "messageId": "registry-ready",
+  "to": "coordinator",
+  "text": "The initial registry is ready; discovery is continuing."
+}
+```
+
+Omit `to` to address the worker's original parent assignment, or the coordinator
+for a root worker. Use `"coordinator"` explicitly to reach the primary agent, or
+`{"worker":"builder"}` to address another active or queued worker in the same run.
+Add `assignment` to select an exact assignment. Stopped or canceled recipients
+reject new messages; a message never starts or resumes an assignment.
+
+The host supplies the sender identity. The receipt confirms durable recording;
+delivery and consumption remain separate observations. Reusing `messageId` with
+the same input returns the original receipt; changing its content rejects the
+retry. Messages arrive as attributed worker data and grant no command authority.
+Pi displays coordinator messages and includes them in its next provider request
+without starting an extra coordinator turn. Peer messages use the existing input
+queue, including its consumption checkpoints. Concurrent completion or cancellation
+can leave a recorded message unread.
+
+Read retained messages with `pinata_status` and
+`{"query":{"kind":"messages","since":0}}`. The returned `cursor` is the next
+`since` value; an optional `worker` filter selects messages sent or received by that
+worker. The query also works through the CLI, IPC and saved-run viewer.
 
 ## Configuration
 
@@ -876,15 +911,16 @@ and effective capabilities. Inspect installed contracts with `pinata tools --jso
 | `pinata_recover`   | Optional exact `targets`; inspect/reattach original attempts.                        |
 | `pinata_page`      | `cursor` returned from a paged tool reply.                                           |
 
-| Worker tool                                 | Availability                                                 |
-| ------------------------------------------- | ------------------------------------------------------------ |
-| `submit_result`                             | Optional report; `outputType` can refine `data`.             |
-| `pinata_dependency`                         | Exact frozen dependency results only.                        |
-| `pinata_children`                           | Explicit scoped delegation grant.                            |
-| `pinata_child_status`, `pinata_child_wait`  | Same grant; descendants only.                                |
-| `pinata_page`                               | Previously exposed child-tool output in this worker session. |
-| `pinata_memory_read`                        | Granted worker/project-agent memory.                         |
-| `pinata_memory_edit`, `pinata_memory_clear` | Scoped memory write grant and expected revision.             |
+| Worker tool                                 | Availability                                                                           |
+| ------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `submit_result`                             | Optional final report; ends the assignment on success. `outputType` can refine `data`. |
+| `pinata_message`                            | Send to the coordinator, parent or a pending peer without ending the assignment.       |
+| `pinata_dependency`                         | Exact frozen dependency results only.                                                  |
+| `pinata_children`                           | Explicit scoped delegation grant.                                                      |
+| `pinata_child_status`, `pinata_child_wait`  | Same grant; descendants only.                                                          |
+| `pinata_page`                               | Previously exposed child-tool output in this worker session.                           |
+| `pinata_memory_read`                        | Granted worker/project-agent memory.                                                   |
+| `pinata_memory_edit`, `pinata_memory_clear` | Scoped memory write grant and expected revision.                                       |
 
 Coordinator `details` retain `pinata.surface-reply.v1`; `pinata_page` returns
 `pinata.tool-page-reply.v1`. Model content fits within 32 KiB. Larger replies return
@@ -918,10 +954,11 @@ Worker requests require `id`, `agent`, `task`. Optional fields: `origin`, `messa
 assignment in the same run. It copies no context or files and adds no dependency;
 supply these explicitly when replacing work.
 
-Queries: `status`, `config`, `receipt`, `result`, `events`, `schemas`, `definitions`,
+Queries: `status`, `messages`, `config`, `receipt`, `result`, `events`, `schemas`, `definitions`,
 `conversation`, `changes`, `application`, `wait`. Result/conversation/changes select
 `ref`; receipt selects `requestId`; application selects `operationId`. Conversation
-paging uses returned `cursor`; events use `since`. Unnamed model-facing schema
+paging uses returned `cursor`; events and messages use `since`. Messages can filter
+by `worker`. Unnamed model-facing schema
 discovery returns an index. Request a named schema or tool for its fields.
 
 ### Errors and versions
@@ -1105,7 +1142,10 @@ delegation, fallback, lifetime and cleanup capabilities. Start and reattach hand
 input receipts, observations, completion, checkpoints and stop receipts.
 
 `WorkspacePort` owns prepare/recover/capture/release, retaining writer registration
-until confirmed cleanup. `RuntimeApplicationPort` performs journaled application
+until confirmed cleanup. `Runtime.bindMessages(ref)` supplies a worker-bound
+`MessagePort` independently of child delegation. Built-in hosts attach it to each
+backend; custom hosts can provide it through the backend's `messages` option.
+`RuntimeApplicationPort` performs journaled application
 outside command serialization. `NotificationPort` distinguishes stable notice
 transport from model consumption; Pi needs the complete notice in the outgoing
 provider payload and a retained parent branch to record consumption. `onDiagnostic`
@@ -1125,7 +1165,7 @@ usage, outcomes and cleanup remain durable. Wake notifications follow durable wr
 with a slower reconciliation scan if a notification is lost.
 
 History records assignments, effect intent and observation, backend enrollment, input
-transport and consumption, conversations, usage, output, cleanup, snapshots, settlement,
+transport and consumption, worker messages, conversations, usage, output, cleanup, snapshots, settlement,
 schedules and application. Results and notices use exact assignments, keeping earlier
 and later results distinct.
 

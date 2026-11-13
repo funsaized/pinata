@@ -286,7 +286,12 @@ test(
     );
     assert.equal(observation.summary, dependencyAnswer);
     assert(observation.pages > 1 && observation.initialBriefBytes < 15_000);
-    assert.deepEqual(observation.tools.sort(), ["pinata_dependency", "read", "submit_result"]);
+    assert.deepEqual(observation.tools.sort(), [
+      "pinata_dependency",
+      "pinata_message",
+      "read",
+      "submit_result",
+    ]);
     const state = await host.runtime.query({ kind: "status" }, host.caller);
     assert(state.kind === "status");
     assert.equal(state.state.workers.consumer.access, "read");

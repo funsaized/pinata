@@ -4,6 +4,11 @@ import type { z } from "zod";
 import { DomainError } from "./common.ts";
 import { jsonSchema } from "./json-schema.ts";
 import { dependencyQuerySchema, dependencyPageSchema } from "./dependencies.ts";
+import {
+  workerMessageRequestSchema,
+  workerMessageReceiptSchema,
+  workerMessageSchema,
+} from "./messages.ts";
 import { grantsSchema, commandErrorSchema } from "./common.ts";
 import {
   ipcLimitsSchema,
@@ -80,6 +85,9 @@ import { loadoutSchema } from "./loadout.ts";
 import { conversationSeedSchema, instructionSnapshotSchema } from "./context.ts";
 
 export const schemaRegistry = {
+  "pinata.worker-message-request.v1": workerMessageRequestSchema,
+  "pinata.worker-message-receipt.v1": workerMessageReceiptSchema,
+  "pinata.worker-message.v1": workerMessageSchema,
   "pinata.tool-page-request.v1": toolPageRequestSchema,
   "pinata.tool-page.v1": toolPageSchema,
   "pinata.tool-page-reply.v1": toolPageReplySchema,

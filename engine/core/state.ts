@@ -1,4 +1,5 @@
 import { reduceSchedule } from "./schedule.ts";
+import { recordMessage } from "./messages.ts";
 import {
   assignmentKey,
   DomainError,
@@ -26,6 +27,7 @@ export function initialState(run: string): CoreState {
     assignments: {},
     latest: {},
     inbox: {},
+    messages: {},
     receipts: {},
     effects: {},
     applications: {},
@@ -69,6 +71,8 @@ function reduceTransition(state: CoreState, value: Transition, revision: number)
   const transition = structuredClone(value);
   next.revision = revision;
   switch (transition.kind) {
+    case "message_sent":
+      return recordMessage(state, transition.message, revision);
     case "schedule_changed":
     case "schedule_occurrence":
       return reduceSchedule(state, transition, revision, reduce);

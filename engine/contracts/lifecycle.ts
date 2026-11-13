@@ -1,4 +1,5 @@
 import { scheduleStateSchema, scheduleOccurrenceSchema } from "./schedule.ts";
+import { workerMessageSchema } from "./messages.ts";
 import { z } from "zod";
 import { applicationIntentSchema, applicationStateSchema } from "./application.ts";
 import {
@@ -54,7 +55,8 @@ export const inboxMessageSchema = z.strictObject({
   id: identitySchema,
   target: assignmentRefSchema,
   sender: identitySchema,
-  kind: z.enum(["initial", "follow_up", "steer", "notice"]),
+  kind: z.enum(["initial", "follow_up", "steer", "notice", "message"]),
+  from: assignmentRefSchema.optional(),
   text: textSchema,
   state: z.enum([
     "recorded",
@@ -172,6 +174,7 @@ export const outboxObservationStateSchema = z.enum([
 ]);
 export const transitionSchema = z.discriminatedUnion("kind", [
   acceptedTransitionSchema,
+  z.strictObject({ kind: z.literal("message_sent"), message: workerMessageSchema }),
   z.strictObject({
     kind: z.literal("schedule_changed"),
     requestId: identitySchema,
@@ -331,6 +334,16 @@ export const attemptStateSchema = z.strictObject({
   responses: z.record(z.string(), z.enum(["started", "completed", "interrupted"])),
 });
 export type AttemptState = z.infer<typeof attemptStateSchema>;
+const notificationDeliveryFields = {
+  state: z.enum(["recorded", "dispatch_intent", "delivered", "consumed", "uncertain"]),
+  attempts: z.array(
+    z.strictObject({
+      id: identitySchema,
+      state: outboxObservationStateSchema,
+      checkpoint: artifactRefSchema.optional(),
+    }),
+  ),
+};
 export const coreStateSchema = z.strictObject({
   run: identitySchema,
   revision: revisionSchema,
@@ -340,6 +353,7 @@ export const coreStateSchema = z.strictObject({
   assignments: z.record(z.string(), assignmentSchema),
   latest: z.record(z.string(), revisionSchema.positive()),
   inbox: z.record(z.string(), inboxMessageSchema),
+  messages: z.record(z.string(), workerMessageSchema).default({}),
   receipts: z.record(
     z.string(),
     z.strictObject({ payloadDigest: digestSchema, receipt: acceptedReceiptSchema }),
@@ -358,18 +372,18 @@ export const coreStateSchema = z.strictObject({
   ),
   outbox: z.record(
     z.string(),
-    z.strictObject({
-      ref: assignmentRefSchema,
-      result: artifactRefSchema,
-      state: z.enum(["recorded", "dispatch_intent", "delivered", "consumed", "uncertain"]),
-      attempts: z.array(
-        z.strictObject({
-          id: identitySchema,
-          state: outboxObservationStateSchema,
-          checkpoint: artifactRefSchema.optional(),
-        }),
-      ),
-    }),
+    z.union([
+      z.strictObject({
+        ref: assignmentRefSchema,
+        result: artifactRefSchema,
+        ...notificationDeliveryFields,
+      }),
+      z.strictObject({
+        ref: assignmentRefSchema,
+        messageId: identitySchema,
+        ...notificationDeliveryFields,
+      }),
+    ]),
   ),
   maxConcurrent: revisionSchema.positive().nullable(),
   history: z

@@ -13,6 +13,7 @@ type LifecycleTransition = Exclude<
   {
     kind:
       | "accepted"
+      | "message_sent"
       | "schedule_changed"
       | "schedule_occurrence"
       | "application_accepted"

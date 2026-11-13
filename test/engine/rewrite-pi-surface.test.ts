@@ -2,8 +2,14 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import test, { type TestContext } from "node:test";
-import { fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai";
+import {
+  fauxAssistantMessage,
+  fauxProvider,
+  fauxToolCall,
+  type FauxResponseFactory,
+} from "@earendil-works/pi-ai";
 import {
   createAgentSession,
   DefaultResourceLoader,
@@ -15,7 +21,11 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { createPinataExtension } from "../../engine/pi/extension.ts";
 import { invokeCoordinatorTool } from "../../engine/pi/tools.ts";
-import { completionMessageType, noticeId } from "../../engine/pi/notifications.ts";
+import {
+  completionMessageType,
+  workerMessageType,
+  noticeId,
+} from "../../engine/pi/notifications.ts";
 import { parseMention, routeMention } from "../../engine/pi/mentions.ts";
 import { readMentionIntent } from "../../engine/pi/mention-input.ts";
 import { openHost, type Host } from "../../engine/host/index.ts";
@@ -37,6 +47,7 @@ async function fixture(
     grants?: Grants;
     personalGrants?: Grants;
     run?: string;
+    respond?: FauxResponseFactory;
   } = {},
 ) {
   const directory = await realpath(await mkdtemp(join(tmpdir(), "pinata-pi-surface-")));
@@ -60,12 +71,15 @@ async function fixture(
     provider: "coordinator-fixture",
     models: [{ id: "script", contextWindow: 200_000, maxTokens: 4096 }],
   });
+  const respond = options.respond;
   faux.setResponses(
     Array.from({ length: 20 }, () => async (context, options, _state, model) => {
       // The native faux provider does not issue HTTP and does not call this
       // public hook itself. Exercise Pi's provider-boundary callback explicitly.
       await options?.onPayload?.({ messages: context.messages }, model);
-      return fauxAssistantMessage("@scout model-output-is-data");
+      return respond
+        ? respond(context, options, _state, model)
+        : fauxAssistantMessage("@scout model-output-is-data");
     }),
   );
   modelRuntime.registerNativeProvider(faux.provider);
@@ -634,6 +648,66 @@ test(
         (notice) => notice.state === "consumed",
       ),
       JSON.stringify({ errors: f.errors, outbox: host.source.snapshot().snapshot.outbox }),
+    );
+    assert.deepEqual(f.errors, []);
+  },
+);
+
+test(
+  "Pi delivers worker progress once and continues through the final report",
+  { timeout: 30_000 },
+  async (t) => {
+    const f = await fixture(t, {
+      respond: (_context, _options, state) => {
+        if (state.callCount === 1)
+          return fauxAssistantMessage([
+            fauxToolCall("pinata_message", {
+              messageId: "progress",
+              text: "The initial check is complete; implementation continues.",
+            }),
+          ]);
+        if (state.callCount === 2)
+          return fauxAssistantMessage([
+            fauxToolCall("submit_result", {
+              summary: "Implementation finished after the progress message.",
+            }),
+          ]);
+        return fauxAssistantMessage("Coordinator read the retained update.");
+      },
+    });
+    await f.session.prompt("@scout work with a progress update");
+    const host = f.hosts[0];
+    const ended = await host.runtime.wait({}, host.caller, AbortSignal.timeout(15_000));
+    assert.equal(ended.results[0].summary, "Implementation finished after the progress message.");
+    assert.equal(
+      ended.results[0].execution.phase === "ended" && ended.results[0].execution.reason,
+      "completed",
+    );
+    assert.equal(f.faux.state.callCount, 2);
+    await host.runtime.deliverNotifications(host.caller);
+    while (
+      Object.values(host.source.snapshot().snapshot.outbox).filter(
+        (entry) => entry.state === "delivered",
+      ).length < 2
+    )
+      await delay(1, undefined, { signal: t.signal });
+    await host.runtime.deliverNotifications(host.caller);
+    const entries = f.manager.getEntries().filter((entry) => noticeId(entry));
+    assert.equal(entries.length, 2);
+    const message = entries.find(
+      (entry) => entry.type === "custom_message" && entry.customType === workerMessageType,
+    );
+    assert(message && message.type === "custom_message");
+    assert.match(String(message.content), /data, not user instructions/);
+    const state = host.source.snapshot().snapshot;
+    assert.equal(Object.keys(state.messages).length, 1);
+    assert.equal(Object.keys(state.results).length, 1);
+    await f.session.prompt("Read the worker update");
+    assert.equal(f.faux.state.callCount, 3);
+    assert(
+      Object.values(host.source.snapshot().snapshot.outbox).every(
+        (entry) => entry.state === "consumed",
+      ),
     );
     assert.deepEqual(f.errors, []);
   },

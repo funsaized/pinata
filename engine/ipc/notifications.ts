@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
-import type { CompletionNotice, NotificationPort } from "../runtime/delivery.ts";
+import type { NotificationNotice, NotificationPort } from "../runtime/delivery.ts";
 
 export type NoticeReceiver = (
-  notice: CompletionNotice,
+  notice: NotificationNotice,
   signal: AbortSignal,
 ) => Promise<{ status: "delivered" | "undelivered" }>;
 export class IpcNotificationChannel implements NotificationPort {
@@ -16,7 +16,7 @@ export class IpcNotificationChannel implements NotificationPort {
     };
   }
   async deliver(
-    notice: CompletionNotice,
+    notice: NotificationNotice,
     context: Parameters<NotificationPort["deliver"]>[1],
   ): Promise<{ status: "delivered" | "undelivered" }> {
     context.signal.throwIfAborted();

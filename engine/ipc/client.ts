@@ -29,12 +29,12 @@ import {
   type IpcRole,
   type ServerMessage,
 } from "./protocol.ts";
-import type { CompletionNotice } from "../runtime/delivery.ts";
+import type { NotificationNotice } from "../runtime/delivery.ts";
 
 export type NotificationSink = {
   deduplicates: true;
   receive(
-    notice: CompletionNotice,
+    notice: NotificationNotice,
     signal: AbortSignal,
   ): Promise<{ status: "delivered" | "undelivered" }>;
 };

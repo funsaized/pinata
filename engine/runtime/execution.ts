@@ -229,6 +229,11 @@ export class ExecutionCoordinator {
           this.track(this.deliverInputs(active));
       }
     }
+    if (transition.kind === "message_sent" && transition.message.to !== "coordinator") {
+      const active = this.active.get(assignmentKey(transition.message.to));
+      if (active?.handle && !active.controller.signal.aborted)
+        this.track(this.deliverInputs(active));
+    }
     if (transition.kind === "settled") {
       const parent = state.workers[transition.result.ref.worker].parentAssignment;
       const active = parent ? this.active.get(assignmentKey(parent)) : undefined;

@@ -44,6 +44,7 @@ export const backendCapabilitiesSchema = z.strictObject({
   skills: z.boolean().optional(),
   memory: z.boolean().optional(),
   delegation: z.boolean().optional(),
+  messaging: z.boolean().optional(),
   fallbacks: z.boolean().optional(),
   surviving: z.boolean(),
   cleanup: z.enum(["confirmed", "unverified"]),

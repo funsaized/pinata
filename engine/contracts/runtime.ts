@@ -19,6 +19,7 @@ import {
 import { idSchema } from "./common.ts";
 import { definitionSummarySchema } from "./definition.ts";
 import { configSchema } from "./config.ts";
+import { workerMessageSchema } from "./messages.ts";
 
 export const waitRequestSchema = z
   .strictObject({
@@ -54,6 +55,11 @@ export type RecoveryReceipt = z.infer<typeof recoveryReceiptSchema>;
 export const runtimeQuerySchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("wait"), wait: waitRequestSchema }),
   z.strictObject({ kind: z.literal("status") }),
+  z.strictObject({
+    kind: z.literal("messages"),
+    since: revisionSchema.default(0),
+    worker: idSchema.optional(),
+  }),
   z.strictObject({ kind: z.literal("config") }),
   z.strictObject({ kind: z.literal("receipt"), requestId: identitySchema }),
   z.strictObject({ kind: z.literal("result"), ref: assignmentRefSchema }),
@@ -159,6 +165,11 @@ export const queryResultSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("application"), operation: applicationStateSchema.nullable() }),
   z.strictObject({ kind: z.literal("wait"), wait: waitResultSchema }),
   z.strictObject({ kind: z.literal("status"), state: coreStateSchema }),
+  z.strictObject({
+    kind: z.literal("messages"),
+    messages: z.array(workerMessageSchema),
+    cursor: revisionSchema,
+  }),
   receiptQueryResultSchema,
   assignmentQueryResultSchema,
   conversationQueryResultSchema,

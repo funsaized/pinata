@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { dependencyQuerySchema } from "../contracts/dependencies.ts";
 import { toolPageRequestSchema } from "../contracts/pages.ts";
+import { workerMessageRequestSchema } from "../contracts/messages.ts";
 import {
   childCommandEnvelopeSchema,
   childQuerySchema,
@@ -11,8 +12,14 @@ import {
 } from "../contracts/index.ts";
 
 // These are the schemas registered by the worker extensions. Discovery never
-// grants the corresponding tools; availability follows the frozen worker grants.
+// grants the corresponding tools; availability follows host ports and frozen grants.
 export const workerToolSchemas = {
+  pinata_message: {
+    input: workerMessageRequestSchema,
+    output: "pinata.worker-message-receipt.v1",
+    availability:
+      "With a host-bound messaging port; sends to the coordinator, parent or another pending worker in this run without ending the sender's assignment.",
+  },
   pinata_page: {
     input: toolPageRequestSchema,
     output: "pinata.tool-page-reply.v1",
@@ -28,7 +35,8 @@ export const workerToolSchemas = {
   submit_result: {
     input: reportedResultSchema,
     output: "pinata.report-tool-result.v1",
-    availability: "Optional reporting; outputType may refine the data field.",
+    availability:
+      "Optional final report that ends the assignment on success; not for progress updates. outputType may refine the data field.",
   },
   pinata_children: {
     input: childCommandEnvelopeSchema,

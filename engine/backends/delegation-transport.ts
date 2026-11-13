@@ -11,11 +11,12 @@ import {
 import { isMissing } from "../storage/io.ts";
 import { numberedPath, readRecord, writeRecord } from "./process-transport.ts";
 import type { TransportSignals } from "./process-signals.ts";
+import { workerMessageReceiptSchema, type MessagePort } from "../contracts/messages.ts";
 
 const requestSchema = z.strictObject({
   id: z.uuid(),
   ordinal: z.number().int().positive(),
-  method: z.enum(["execute", "query", "wait"]),
+  method: z.enum(["execute", "query", "wait", "message"]),
   input: z.unknown(),
 });
 const responseSchema = z.discriminatedUnion("status", [
@@ -36,11 +37,14 @@ async function boundedRecord<T>(path: string, schema: z.ZodType<T>): Promise<T |
   return readRecord(path, schema);
 }
 
-export function fileChildClient(directory: string, signals?: TransportSignals): ChildPort {
+export function fileChildClient(
+  directory: string,
+  signals?: TransportSignals,
+): ChildPort & MessagePort {
   let ordinal = 0;
   let publication = Promise.resolve();
   async function request(
-    method: "execute" | "query" | "wait",
+    method: "execute" | "query" | "wait" | "message",
     input: unknown,
     signal?: AbortSignal,
   ) {
@@ -87,6 +91,8 @@ export function fileChildClient(directory: string, signals?: TransportSignals): 
     }
   }
   return {
+    send: async (input, signal) =>
+      workerMessageReceiptSchema.parse(await request("message", input, signal)),
     execute: async (input, signal) =>
       commandReceiptSchema.parse(await request("execute", input, signal)),
     query: async (input, signal) =>
@@ -98,8 +104,9 @@ export function fileChildClient(directory: string, signals?: TransportSignals): 
 
 export function serveFileChildren(
   directory: string,
-  port: ChildPort,
+  port: ChildPort | undefined,
   signals?: TransportSignals,
+  messages?: MessagePort,
 ): { close(): Promise<void>; done: Promise<void> } {
   let closed = false;
   let ordinal = 1;
@@ -140,10 +147,24 @@ export function serveFileChildren(
       const operation = (async () => {
         let reply: z.infer<typeof responseSchema>;
         try {
-          const result =
-            record.method === "wait"
-              ? await port.wait(record.input, controller.signal)
-              : await port[record.method](record.input);
+          const cancelled = await boundedRecord(
+            numberedPath(directory, "child-cancel", index),
+            cancelSchema,
+          );
+          if (cancelled?.id === record.id) controller.abort();
+          controller.signal.throwIfAborted();
+          let result: unknown;
+          if (record.method === "message") {
+            if (!messages) throw new DomainError("unsupported", "Worker messaging is unavailable");
+            result = await messages.send(record.input, controller.signal);
+          } else {
+            if (!port)
+              throw new DomainError("capability_denied", "Child delegation is unavailable");
+            result =
+              record.method === "wait"
+                ? await port.wait(record.input, controller.signal)
+                : await port[record.method](record.input);
+          }
           reply = { id: record.id, status: "ok", result };
           if (Buffer.byteLength(canonicalJson(reply)) > maxBytes / 2)
             throw new Error(

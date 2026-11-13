@@ -33,6 +33,13 @@ export async function configureModelRuntime(
         await delay(30_000, undefined, { signal: options?.signal });
       if (brief.task.includes("shell") && state.callCount === 1)
         return fauxAssistantMessage([fauxToolCall("bash", { command: "printf process-shell" })]);
+      if (brief.task === "message-progress" && state.callCount === 1)
+        return fauxAssistantMessage([
+          fauxToolCall("pinata_message", {
+            messageId: "progress",
+            text: "Progress before the final response",
+          }),
+        ]);
       return fauxAssistantMessage(`process-response-${state.callCount}`);
     }),
   );

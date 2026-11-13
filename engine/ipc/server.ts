@@ -18,7 +18,7 @@ import {
   type IpcLink,
 } from "./protocol.ts";
 import { MessageWriter } from "./writer.ts";
-import type { CompletionNotice } from "../runtime/delivery.ts";
+import type { NotificationNotice } from "../runtime/delivery.ts";
 
 export type IpcServerOptions = {
   directory: string;
@@ -338,7 +338,7 @@ class Connection {
     this.track(pending);
   }
   private notice(
-    notice: CompletionNotice,
+    notice: NotificationNotice,
     signal: AbortSignal,
   ): Promise<{ status: "delivered" | "undelivered" }> {
     if (this.closed)

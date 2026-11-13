@@ -7,6 +7,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import test, { type TestContext } from "node:test";
 import { ProcessBackend } from "../../engine/backends/process.ts";
+import type { MessagePort } from "../../engine/contracts/messages.ts";
 import { HerdrBackend, herdrCommandLine } from "../../engine/backends/herdr.ts";
 import {
   HerdrCommandError,
@@ -35,7 +36,12 @@ import { DurableStore } from "../../engine/storage/index.ts";
 
 async function fixture(
   t: TestContext,
-  options: { lifetime?: "attached" | "surviving"; task?: string; shell?: boolean } = {},
+  options: {
+    lifetime?: "attached" | "surviving";
+    task?: string;
+    shell?: boolean;
+    messages?: MessagePort;
+  } = {},
 ) {
   const directory = await realpath(await mkdtemp(join(tmpdir(), "pinata-process-backend-")));
   const storeDirectory = join(directory, "run");
@@ -101,8 +107,10 @@ async function fixture(
     ],
     brief: { task: options.task ?? "first-task-marker", context: [], dependencies: [] },
   };
+  const messages = options.messages;
   const backend = new ProcessBackend({
     agentDir,
+    ...(messages ? { messages: () => messages } : {}),
     bootstrapModule: fileURLToPath(
       new URL("./fixtures/rewrite-process-provider.ts", import.meta.url),
     ),
@@ -135,6 +143,41 @@ async function fixture(
   };
 }
 const supported = ["linux", "darwin", "win32"].includes(process.platform);
+
+test(
+  "process worker messaging remains available without delegation and does not terminate the turn",
+  {
+    skip: !supported,
+    timeout: 30_000,
+  },
+  async (t) => {
+    const sent: unknown[] = [];
+    const world = await fixture(t, {
+      task: "message-progress",
+      messages: {
+        async send(input) {
+          sent.push(input);
+          return {
+            status: "recorded",
+            id: "recorded-progress",
+            from: world.launch.ref,
+            to: "coordinator",
+            revision: 1,
+          };
+        },
+      },
+    });
+    const handle = await world.start();
+    const outcome = await handle.done;
+    assert.deepEqual(sent, [{ messageId: "progress", text: "Progress before the final response" }]);
+    assert.equal(outcome.reason, "completed");
+    assert.equal(outcome.summary, "process-response-2");
+    assert.equal((await handle.stop("Messaging complete")).cleanup.status, "stopped");
+    const turns = (await readFile(join(world.agentDir, "turns.jsonl"), "utf8")).trim().split("\n");
+    assert.equal(turns.length, 2);
+    assert.match(turns[1], /recorded-progress/);
+  },
+);
 
 test(
   "replacement process backend retains consumed inputs, usage, transcript and continuation",

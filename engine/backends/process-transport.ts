@@ -39,6 +39,7 @@ export const processManifestSchema = z.strictObject({
   identity: backendIdentitySchema,
   launch: backendLaunchWireSchema,
   options: processOptionsSchema,
+  messaging: z.boolean().optional(),
 });
 export type ProcessManifest = z.infer<typeof processManifestSchema>;
 export const processBriefSchema = z.strictObject({

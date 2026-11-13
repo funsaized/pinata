@@ -11,6 +11,7 @@ import {
   type SurfaceReply,
 } from "../contracts/index.ts";
 import { initialState, reduce } from "../core/state.ts";
+import { queryMessages } from "../core/messages.ts";
 import { inspectStore } from "../storage/journal.ts";
 import { StorageError } from "../storage/io.ts";
 import { verifyArtifactBytes } from "../storage/journal.ts";
@@ -110,6 +111,11 @@ export async function openSavedSource(directory: string): Promise<RuntimeSource>
           );
         const query = runtimeQuerySchema.parse(call.input);
         switch (query.kind) {
+          case "messages":
+            return {
+              status: "ok",
+              response: { method: "query", result: structuredClone(queryMessages(state, query)) },
+            };
           case "application":
             return {
               status: "ok",

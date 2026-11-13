@@ -49,6 +49,12 @@ import { StorageError, type FaultHook } from "../storage/io.ts";
 import { RuntimeApplications, type RuntimeApplicationPort } from "./application.ts";
 import { readChanges } from "./changes.ts";
 import { ChildBindings } from "./delegation.ts";
+import { messageReceipt, messageTarget, queryMessages, validateMessage } from "../core/messages.ts";
+import {
+  workerMessageRequestSchema,
+  type MessagePort,
+  type WorkerMessage,
+} from "../contracts/messages.ts";
 import type { ChildPort } from "../contracts/delegation.ts";
 import { checkChildCaller, checkChildCommand } from "../core/delegation.ts";
 import { immutable } from "./immutable.ts";
@@ -66,7 +72,12 @@ import {
 
 export type { ExecutionOptions } from "./execution.ts";
 export type { RuntimeApplicationPort } from "./application.ts";
-export type { CompletionNotice, NotificationDelivery, NotificationPort } from "./delivery.ts";
+export type {
+  CompletionNotice,
+  NotificationNotice,
+  NotificationDelivery,
+  NotificationPort,
+} from "./delivery.ts";
 
 export type WorkerResolver = (
   requests: readonly WorkerRequest[],
@@ -406,6 +417,58 @@ export class Runtime {
     return this.children.bind(parentAssignment);
   }
 
+  bindMessages(sender: AssignmentRef): MessagePort {
+    const from = immutable(sender);
+    return {
+      send: async (input, signal) => {
+        signal?.throwIfAborted();
+        const request = workerMessageRequestSchema.parse(input);
+        const id = `worker-message:${digestValue([from, request.messageId])}`;
+        const requestDigest = digestValue(request);
+        return this.serialize(async () => {
+          signal?.throwIfAborted();
+          if (this.closing) throw new DomainError("conflict", "Runtime is closing");
+          await this.store.assertOwner();
+          const previous = this.state.messages[id];
+          if (previous) {
+            if (previous.requestDigest !== requestDigest)
+              throw new DomainError(
+                "conflict",
+                "Message ID already has different content",
+                "messageId",
+              );
+            return immutable(messageReceipt(previous));
+          }
+          const message: WorkerMessage = {
+            id,
+            from,
+            to: messageTarget(this.state, from, request.to),
+            text: request.text,
+            requestDigest,
+            revision: this.state.revision + 1,
+          };
+          validateMessage(this.state, message);
+          if (message.to !== "coordinator" && this.options.execution) {
+            const target = this.state.assignments[assignmentKey(message.to)];
+            const worker = this.state.workers[message.to.worker];
+            const backend = this.options.execution.backends[worker.backend];
+            if (target.execution.phase !== "queued" && !backend?.capabilities.steer)
+              throw new DomainError(
+                "unsupported",
+                `Backend ${worker.backend} cannot receive live messages`,
+              );
+          }
+          await this.commit({
+            requestId: id,
+            payloadDigest: requestDigest,
+            transition: { kind: "message_sent", message },
+          });
+          return immutable(messageReceipt(message));
+        });
+      },
+    };
+  }
+
   async parentCheckpoint(
     ref: AssignmentRef,
     caller: CallerAuthority,
@@ -601,6 +664,8 @@ export class Runtime {
       switch (request.kind) {
         case "status":
           return immutable({ kind: "status", state: this.state });
+        case "messages":
+          return immutable(queryMessages(this.state, request));
         case "application":
           return immutable({
             kind: "application",

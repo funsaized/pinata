@@ -2,12 +2,13 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Box, Text } from "@earendil-works/pi-tui";
 import { assignmentRefSchema, commandReceiptSchema } from "../contracts/index.ts";
 import { displayText } from "../ui/text.ts";
-import { completionMessageType } from "./notifications.ts";
+import { completionMessageType, workerMessageType } from "./notifications.ts";
 
 // Keep persisted custom types stable; these labels belong only to presentation.
 export function registerPinataMessageRenderers(pi: ExtensionAPI): void {
   const labels = {
     [completionMessageType]: "Subagent result",
+    [workerMessageType]: "Subagent message",
     "pinata.control.v1": "Subagent update",
     "pinata.addressed.v1": "Subagent assignment",
     "pinata.memory.v1": "Pinata memory",
@@ -24,13 +25,21 @@ export function registerPinataMessageRenderers(pi: ExtensionAPI): void {
           content = `Update queued${workers.length ? ` for ${workers.join(", ")}` : ""} · expand for details`;
         }
       }
-      if (type === completionMessageType) {
+      if (type === completionMessageType || type === workerMessageType) {
         content = content.replace(/\n\[pinata-notice:[^\n]+\]$/, "");
         const details = message.details;
         const ref = assignmentRefSchema.safeParse(
           details && typeof details === "object" && "ref" in details ? details.ref : undefined,
         );
         if (ref.success) {
+          if (
+            type === workerMessageType &&
+            details &&
+            typeof details === "object" &&
+            "text" in details &&
+            typeof details.text === "string"
+          )
+            content = `${ref.data.worker}/${ref.data.assignment}: ${details.text}`;
           content = content.replace(/\nFull result: [^\n]+$/, "");
           content += `\nOpen conversation: /pinata-conversation ${ref.data.worker} ${ref.data.assignment}`;
           if (options.expanded) content += `\nRun: ${ref.data.run}`;

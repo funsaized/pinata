@@ -22,3 +22,4 @@ export * from "./schedule.ts";
 export * from "./ipc.ts";
 export * from "./pages.ts";
 export * from "./dependencies.ts";
+export * from "./messages.ts";

@@ -127,7 +127,7 @@ export const coordinatorTools: readonly ToolOperation[] = [
   {
     name: "pinata_status",
     description:
-      "Inspect state, exact results, immutable conversation pages, schema discovery, receipts or an application outcome. Tool input schemas are already supplied: no schema query is needed before launching. For discovery use name: pinata.command.v1, or a tool name such as pinata_run; avoid fetching the entire registry. Results are execution observations, not acceptance decisions.",
+      "Inspect state, worker messages, exact results, immutable conversation pages, schema discovery, receipts or an application outcome. Use kind: messages with optional since and worker to read retained messages. Tool input schemas are already supplied: no schema query is needed before launching. For discovery use name: pinata.command.v1, or a tool name such as pinata_run; avoid fetching the entire registry. Results are execution observations, not acceptance decisions.",
     schema: z.strictObject({ query: runtimeQuerySchema.default({ kind: "status" }) }),
     request: ({ query }) => ({ method: "query", input: query }),
   },
