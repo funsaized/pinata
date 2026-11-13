@@ -7,7 +7,8 @@ import {
   type ExecutionState,
   type Transition,
 } from "../contracts/index.ts";
-import { readiness } from "./readiness.ts";
+import { readinessFor } from "./readiness.ts";
+import { assignmentAttempts, assignmentEffects } from "./indexes.ts";
 import { assignmentUsage } from "./usage.ts";
 
 export function validateExecutionTransition(
@@ -34,7 +35,11 @@ export function validateExecutionTransition(
       "conflict",
       `Invalid execution transition ${current} -> ${execution.phase}`,
     );
-  if (current === "queued" && execution.phase === "preparing" && readiness(state)[key] !== "ready")
+  if (
+    current === "queued" &&
+    execution.phase === "preparing" &&
+    readinessFor(state, key) !== "ready"
+  )
     throw new DomainError("conflict", "Assignment is not ready to occupy an execution slot");
   if (
     current === "queued" &&
@@ -44,12 +49,8 @@ export function validateExecutionTransition(
     throw new DomainError("conflict", "Queued stop lacks a cancellation intent");
   if (
     execution.phase === "running" &&
-    !Object.values(state.attempts).some(
-      (entry) =>
-        assignmentKey(entry.attempt.ref) === key &&
-        entry.identity &&
-        !entry.outcome &&
-        !entry.cleanup,
+    !assignmentAttempts(state, key).some(
+      (entry) => entry.identity && !entry.outcome && !entry.cleanup,
     )
   )
     throw new DomainError("conflict", "Running execution lacks an enrolled backend attempt");
@@ -69,10 +70,13 @@ export function validateSettlement(
     `${result.ref.run}/${result.ref.worker}/${result.ref.assignment}/completed`
   )
     throw new DomainError("conflict", "Settlement notification identity is not stable");
-  const attempts = Object.values(state.attempts)
-    .filter((entry) => assignmentKey(entry.attempt.ref) === key)
-    .sort((left, right) => left.attempt.ordinal - right.attempt.ordinal);
+  const attempts = assignmentAttempts(state, key);
   const latest = attempts.at(-1);
+  if (
+    result.worktree &&
+    digestValue(result.worktree) !== digestValue(latest?.prepared?.worktree ?? null)
+  )
+    throw new DomainError("conflict", "Result worktree disagrees with its prepared checkout");
   if (!latest) {
     if (
       execution.reason !== "cancelled" ||
@@ -101,10 +105,9 @@ export function validateSettlement(
           "conflict",
           "Confirmed execution must finish finalization before settlement",
         );
-      const finalizationFailed = Object.values(state.effects).some(
+      const finalizationFailed = assignmentEffects(state, key).some(
         (effect) =>
           (effect.effect.kind === "capture" || effect.effect.kind === "checkpoint") &&
-          assignmentKey(effect.effect.ref) === key &&
           effect.status === "failed",
       );
       const expectedReason = Object.hasOwn(state.cancelled, key)

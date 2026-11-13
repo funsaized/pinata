@@ -14,6 +14,7 @@ import {
   type SeedMessage,
 } from "../contracts/context.ts";
 import { canonicalJson } from "../contracts/digest.ts";
+import { materializeConversation } from "../storage/conversation.ts";
 import { digestBytes } from "../storage/io.ts";
 
 const privateKey =
@@ -98,12 +99,7 @@ export async function freezeConversationSeed(options: {
     const checkpoint = options.checkpoint;
     if (checkpoint.format !== "pi")
       throw new DomainError("context_unavailable", "Parent checkpoint format is unsupported");
-    const bytes = Buffer.from(await options.artifacts.read(checkpoint.artifact));
-    if (
-      bytes.length !== checkpoint.artifact.size ||
-      digestBytes(bytes) !== checkpoint.artifact.digest
-    )
-      throw new DomainError("context_unavailable", "Parent checkpoint content changed");
+    const bytes = await materializeConversation(checkpoint.artifact, options.artifacts);
     if (validateConversation(bytes).id !== checkpoint.id)
       throw new DomainError("context_unavailable", "Parent checkpoint identity changed");
     const entries = parseSessionEntries(bytes.toString("utf8")).filter(

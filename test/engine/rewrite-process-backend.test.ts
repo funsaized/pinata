@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import test, { type TestContext } from "node:test";
 import { ProcessBackend } from "../../engine/backends/process.ts";
+import type { MessagePort } from "../../engine/contracts/messages.ts";
 import { HerdrBackend, herdrCommandLine } from "../../engine/backends/herdr.ts";
 import {
   HerdrCommandError,
@@ -15,6 +16,7 @@ import {
   type HerdrControl,
 } from "../../engine/backends/herdr-control.ts";
 import { processArtifacts, readCommands } from "../../engine/backends/process-transport.ts";
+import { ProcessSignals } from "../../engine/backends/process-signals.ts";
 import {
   assignmentKey,
   canonicalJson,
@@ -34,7 +36,12 @@ import { DurableStore } from "../../engine/storage/index.ts";
 
 async function fixture(
   t: TestContext,
-  options: { lifetime?: "attached" | "surviving"; task?: string; shell?: boolean } = {},
+  options: {
+    lifetime?: "attached" | "surviving";
+    task?: string;
+    shell?: boolean;
+    messages?: MessagePort;
+  } = {},
 ) {
   const directory = await realpath(await mkdtemp(join(tmpdir(), "pinata-process-backend-")));
   const storeDirectory = join(directory, "run");
@@ -100,8 +107,10 @@ async function fixture(
     ],
     brief: { task: options.task ?? "first-task-marker", context: [], dependencies: [] },
   };
+  const messages = options.messages;
   const backend = new ProcessBackend({
     agentDir,
+    ...(messages ? { messages: () => messages } : {}),
     bootstrapModule: fileURLToPath(
       new URL("./fixtures/rewrite-process-provider.ts", import.meta.url),
     ),
@@ -136,6 +145,41 @@ async function fixture(
 const supported = ["linux", "darwin", "win32"].includes(process.platform);
 
 test(
+  "process worker messaging remains available without delegation and does not terminate the turn",
+  {
+    skip: !supported,
+    timeout: 30_000,
+  },
+  async (t) => {
+    const sent: unknown[] = [];
+    const world = await fixture(t, {
+      task: "message-progress",
+      messages: {
+        async send(input) {
+          sent.push(input);
+          return {
+            status: "recorded",
+            id: "recorded-progress",
+            from: world.launch.ref,
+            to: "coordinator",
+            revision: 1,
+          };
+        },
+      },
+    });
+    const handle = await world.start();
+    const outcome = await handle.done;
+    assert.deepEqual(sent, [{ messageId: "progress", text: "Progress before the final response" }]);
+    assert.equal(outcome.reason, "completed");
+    assert.equal(outcome.summary, "process-response-2");
+    assert.equal((await handle.stop("Messaging complete")).cleanup.status, "stopped");
+    const turns = (await readFile(join(world.agentDir, "turns.jsonl"), "utf8")).trim().split("\n");
+    assert.equal(turns.length, 2);
+    assert.match(turns[1], /recorded-progress/);
+  },
+);
+
+test(
   "replacement process backend retains consumed inputs, usage, transcript and continuation",
   { skip: !supported, timeout: 40_000 },
   async (t) => {
@@ -153,7 +197,28 @@ test(
       ),
     );
     assert(world.observed.some(({ observation }) => observation.kind === "usage"));
-    assert(world.observed.every(({ source }) => source?.sourceId === first.identity.id));
+    const transport = join(world.storeDirectory, "workers", digestValue(world.launch.attemptId));
+    const names = (await readdir(join(transport, "observations"))).sort();
+    const records = await Promise.all(
+      names.map(
+        async (name) =>
+          JSON.parse(await readFile(join(transport, "observations", name), "utf8")).payload,
+      ),
+    );
+    assert(records.every((record) => record.observation.kind !== "activity"));
+    assert.deepEqual(
+      records.map((record) => record.ordinal),
+      records.map((_, index) => index + 1),
+    );
+    assert.equal(
+      JSON.parse(await readFile(join(transport, "outcome.json"), "utf8")).payload.throughOrdinal,
+      records.length,
+    );
+    assert(
+      world.observed.every(({ observation, source }) =>
+        observation.kind === "activity" ? !source : source?.sourceId === first.identity.id,
+      ),
+    );
     const stopped = await first.stop("First complete");
     assert.equal(stopped.cleanup.status, "stopped", JSON.stringify(stopped.cleanup));
     const secondRef = { ...world.launch.ref, assignment: 2 };
@@ -195,6 +260,10 @@ test(
     };
     const receipt = await original.input(message);
     assert.deepEqual(await original.input({ ...message, state: "transport_handled" }), receipt);
+    await assert.rejects(
+      original.input({ ...message, text: "different payload" }),
+      /different input/,
+    );
     const nextEpoch = randomUUID();
     await original.handoff(nextEpoch);
     const replay: typeof world.observed = [];
@@ -222,10 +291,11 @@ test(
           observation.kind === "input_consumed" && observation.messageId === "steer",
       ),
     );
-    assert(replay.every(({ source }) => source?.sourceId === original.identity.id));
+    const durable = replay.filter(({ observation }) => observation.kind !== "activity");
+    assert(durable.every(({ source }) => source?.sourceId === original.identity.id));
     assert.deepEqual(
-      replay.map(({ source }) => source?.ordinal),
-      replay.map((_, index) => index + 1),
+      durable.map(({ source }) => source?.ordinal),
+      durable.map((_, index) => index + 1),
     );
     assert.deepEqual(await recovered.input(message), receipt);
     const commands = await readCommands(
@@ -239,10 +309,11 @@ test(
 );
 
 test(
-  "replacement process cancellation keeps partial outcome and confirms shell descendants",
+  "replacement process cancellation reconciles dropped wake notifications and keeps its partial outcome",
   { skip: !supported, timeout: 40_000 },
   async (t) => {
     const world = await fixture(t, { task: "cancel" });
+    t.mock.method(ProcessSignals.prototype, "notify", () => {});
     const handle = await world.start();
     await delay(100);
     const stopped = await handle.stop("Cancel fixture");

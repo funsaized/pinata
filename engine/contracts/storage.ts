@@ -6,7 +6,7 @@ import {
   revisionSchema,
   textSchema,
 } from "./common.ts";
-import { transitionArtifacts, transitionSchema } from "./lifecycle.ts";
+import { coreStateSchema, transitionArtifacts, transitionSchema } from "./lifecycle.ts";
 
 export const manifestSchema = z.strictObject({
   schemaVersion: z.literal(1),
@@ -81,5 +81,7 @@ export const checkpointSchema = z.strictObject({
   revision: revisionSchema,
   digest: z.union([z.literal(""), digestSchema]),
   state: artifactRefSchema.optional(),
+  projection: z.literal("core").optional(),
+  snapshot: coreStateSchema.optional(),
 });
 export type Checkpoint = z.infer<typeof checkpointSchema>;

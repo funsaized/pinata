@@ -13,13 +13,10 @@ export const childRefSchema = z.strictObject({
   worker: idSchema,
   assignment: revisionSchema.positive(),
 });
-const childWorkerSchema = workerRequestSchema
-  .omit({ after: true, inputs: true, origin: true })
-  .extend({
-    origin: childRefSchema.optional(),
-    after: z.array(z.union([idSchema, childRefSchema])).default([]),
-    inputs: z.array(childRefSchema).default([]),
-  });
+const childWorkerSchema = workerRequestSchema.omit({ after: true, origin: true }).extend({
+  origin: childRefSchema.optional(),
+  after: z.array(z.union([idSchema, childRefSchema])).default([]),
+});
 export const childCommandSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("add"), workers: z.array(childWorkerSchema).min(1) }),
   z.strictObject({
@@ -28,7 +25,6 @@ export const childCommandSchema = z.discriminatedUnion("kind", [
     messageId: identitySchema,
     text: textSchema,
     after: z.array(z.union([idSchema, childRefSchema])).default([]),
-    inputs: z.array(childRefSchema).default([]),
   }),
   z.strictObject({
     kind: z.literal("steer"),

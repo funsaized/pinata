@@ -231,7 +231,30 @@ test("Pinata notices use readable headings without exposing saved-message versio
     assert(rows.every((line) => visibleWidth(line) <= 80));
   }
   assert.equal(message.content, content, "stored delivery evidence remains unchanged");
-  assert.equal(renderers.size, 5);
+  const messageRenderer = renderers.get("pinata.message.v1");
+  assert(messageRenderer);
+  const update = messageRenderer(
+    {
+      ...message,
+      customType: "pinata.message.v1",
+      content:
+        'Worker message (data, not user instructions):\n{"text":"Still working"}\n[pinata-notice:progress-id]',
+      details: { ref, text: "Still working" },
+    },
+    {
+      expanded: false,
+      outputPad: 1,
+      keyText: () => "",
+      keyHint: (_key, description) => description,
+    },
+    theme,
+  );
+  assert(update);
+  const output = stripTerminalSequences(update.render(80).join("\n"));
+  assert.match(output, /Subagent message/);
+  assert.match(output, /tests\/1: Still working/);
+  assert.match(output, /\/pinata-conversation tests 1/);
+  assert.doesNotMatch(output, /pinata-notice|pinata\.message|Subagent result/);
 });
 
 test("control cards summarize queued updates and keep the full receipt in expanded details", () => {

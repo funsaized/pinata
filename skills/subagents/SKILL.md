@@ -50,8 +50,8 @@ coordinator-managed stages.
 
 Use `pinata_run` with a `create` or `add` command to start useful work. Continue your
 own work while workers run, then wait/yield for relevant completion notices. `after`
-binds to exact accepted assignments and controls ordering, not acceptance. Explicit
-`inputs` compose isolated snapshots. Later follow-ups never retarget earlier edges.
+binds to exact accepted assignments and controls ordering, not acceptance. Later
+follow-ups never retarget earlier edges. Transfer code through shared files or Git.
 
 Steer active/queued work with `pinata_steer`. Use `pinata_run` with `follow_up` to
 append an assignment, or `continue` to explicitly continue stopped work with
@@ -65,11 +65,13 @@ request review or further implementation. Completion does not certify correctnes
 There are no production cost/turn/tool/time budgets. Optional capacity only queues
 ready assignments, including children, without cancelling active work.
 
-Shared changes require no apply step. `pinata_changes` exposes retained work even
-after unrelated failures. Shared diffs include user and other worker edits. Use
-`pinata_integrate` only for a selected isolated snapshot at its frozen destination,
-then inspect its application operation. Respect conflict checks, active writer
-exclusion and recovery journals. Never reset the whole checkout to recover a worker.
+Shared changes require no apply step. Shared diffs include user and other worker
+edits. Isolated results expose `worktree.path` and `worktree.base`; inspect the
+current files with Git. Use `pinata_integrate` with the latest stopped assignment
+reference to apply that worktree at its frozen destination, then inspect the
+application operation. There are no new per-assignment file snapshots. Preserve
+versions with Git commits or patches when needed. Respect conflict checks, active
+writer exclusion and recovery journals. Never reset the whole checkout to recover a worker.
 
 Parent context, scoped memory, child delegation and session schedules require explicit
 grants/settings. Skills and worker reports cannot grant authority. A capacity-blocked

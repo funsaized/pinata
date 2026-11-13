@@ -11,9 +11,10 @@ import {
   type SurfaceReply,
 } from "../contracts/index.ts";
 import { initialState, reduce } from "../core/state.ts";
+import { queryMessages } from "../core/messages.ts";
 import { inspectStore } from "../storage/journal.ts";
 import { StorageError } from "../storage/io.ts";
-import { verifyArtifact } from "../storage/index.ts";
+import { verifyArtifactBytes } from "../storage/journal.ts";
 import { ConversationQueries, savedConversation } from "../runtime/queries.ts";
 import { readChanges } from "../runtime/changes.ts";
 import { surfaceError, type RuntimeSource, type SnapshotEvent } from "./runtime.ts";
@@ -46,7 +47,9 @@ export async function openSavedSource(directory: string): Promise<RuntimeSource>
     ownerEpoch,
     transition: frame.record.transition,
   }));
-  const conversations = new ConversationQueries({ read: (ref) => verifyArtifact(directory, ref) });
+  const conversations = new ConversationQueries({
+    read: (ref) => verifyArtifactBytes(directory, ref),
+  });
   const source: RuntimeSource = {
     run: state.run,
     capabilities: {
@@ -108,6 +111,11 @@ export async function openSavedSource(directory: string): Promise<RuntimeSource>
           );
         const query = runtimeQuerySchema.parse(call.input);
         switch (query.kind) {
+          case "messages":
+            return {
+              status: "ok",
+              response: { method: "query", result: structuredClone(queryMessages(state, query)) },
+            };
           case "application":
             return {
               status: "ok",
@@ -130,7 +138,7 @@ export async function openSavedSource(directory: string): Promise<RuntimeSource>
               response: {
                 method: "query",
                 result: await readChanges(query.ref, state.results[key]?.result.snapshot, {
-                  read: (ref) => verifyArtifact(directory, ref),
+                  read: (ref) => verifyArtifactBytes(directory, ref),
                 }),
               },
             };
@@ -145,7 +153,7 @@ export async function openSavedSource(directory: string): Promise<RuntimeSource>
                   config: state.config
                     ? configSchema.parse(
                         JSON.parse(
-                          Buffer.from(await verifyArtifact(directory, state.config)).toString(
+                          Buffer.from(await verifyArtifactBytes(directory, state.config)).toString(
                             "utf8",
                           ),
                         ),
@@ -208,20 +216,14 @@ export async function openSavedSource(directory: string): Promise<RuntimeSource>
               },
             };
           case "schemas": {
-            const schemas = exportSchemas();
-            if (query.name && !Object.hasOwn(schemas, query.name))
-              throw new DomainError(
-                "invalid_input",
-                `Unknown schema: ${query.name}. Use a canonical name such as pinata.command.v1.`,
-                "name",
-              );
+            const schemas = exportSchemas(query.name);
             return {
               status: "ok",
               response: {
                 method: "query",
                 result: queryResultSchema.parse({
                   kind: "schemas",
-                  schemas: query.name ? { [query.name]: schemas[query.name] } : schemas,
+                  schemas,
                 }),
               },
             };

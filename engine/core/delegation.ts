@@ -8,6 +8,7 @@ import {
   type RuntimeCommand,
 } from "../contracts/index.ts";
 import { digestValue } from "../contracts/digest.ts";
+import { assignmentAttempts } from "./indexes.ts";
 
 export function descendantWorkers(state: CoreState, parent: string): Set<string> {
   const descendants = new Set<string>();
@@ -29,24 +30,20 @@ export function descendantWorkers(state: CoreState, parent: string): Set<string>
 }
 
 export function childAuthority(state: CoreState, parent: AssignmentRef): CallerAuthority {
-  const assignment = state.assignments[assignmentKey(parent)];
+  const key = assignmentKey(parent);
+  const assignment = state.assignments[key];
   const worker = state.workers[parent.worker];
   // A backend may begin its first turn before start() returns. Enrollment is
   // durable before tools become available, so that boundary is also active.
   const enrolled =
     assignment?.execution.phase === "preparing" &&
-    Object.values(state.attempts).some(
-      (entry) =>
-        assignmentKey(entry.attempt.ref) === assignmentKey(parent) &&
-        entry.identity &&
-        !entry.cleanup,
-    );
+    assignmentAttempts(state, key).some((entry) => entry.identity && !entry.cleanup);
   if (
     parent.run !== state.run ||
     !assignment ||
     !worker ||
     (assignment.execution.phase !== "running" && !enrolled) ||
-    Object.hasOwn(state.cancelled, assignmentKey(parent))
+    Object.hasOwn(state.cancelled, key)
   )
     throw new DomainError(
       "capability_denied",
@@ -56,7 +53,7 @@ export function childAuthority(state: CoreState, parent: AssignmentRef): CallerA
   if (!delegated.maxDepth)
     throw new DomainError("capability_denied", "Nested delegation is disabled for this worker");
   return {
-    id: `worker:${assignmentKey(parent)}`,
+    id: `worker:${key}`,
     kind: "worker",
     run: state.run,
     parentAssignment: structuredClone(parent),
@@ -116,11 +113,7 @@ export function checkChildCommand(
             `Child definition is not delegated: ${request.agent}`,
             "agent",
           );
-        for (const reference of [
-          ...request.after,
-          ...request.inputs,
-          ...(request.origin ? [request.origin] : []),
-        ]) {
+        for (const reference of [...request.after, ...(request.origin ? [request.origin] : [])]) {
           const worker = typeof reference === "string" ? reference : reference.worker;
           if (typeof reference !== "string" && reference.run !== state.run)
             throw new DomainError("capability_denied", "Child references cannot name another run");
@@ -131,7 +124,7 @@ export function checkChildCommand(
     }
     case "follow_up":
       allowed(command.worker);
-      for (const reference of [...command.after, ...command.inputs]) {
+      for (const reference of command.after) {
         if (typeof reference !== "string" && reference.run !== state.run)
           throw new DomainError("capability_denied", "Child references cannot name another run");
         const worker = typeof reference === "string" ? reference : reference.worker;

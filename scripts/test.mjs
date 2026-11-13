@@ -13,13 +13,15 @@ const engine = readdirSync("test/engine", { recursive: true })
   .filter((file) => !boundarySuites.includes(file));
 const suites = [engine];
 if (process.platform !== "win32") suites.push(["test/*.test.mjs"]);
-// Each exhaustive durability matrix has its own existing 300-second bound.
-// Run them separately so unrelated suites do not share their filesystem load.
+// Run exhaustive matrices separately so unrelated suites do not share their
+// filesystem load. Their named fault cases each have a 30-second timeout; allow
+// the complete matrix more time on slower filesystems without hiding a stuck case.
 suites.push(...boundarySuites.map((file) => [file]));
 for (const files of suites) {
+  const timeout = files.some((file) => boundarySuites.includes(file)) ? 900_000 : 300_000;
   const outcome = spawnSync(
     process.execPath,
-    ["--test", "--test-concurrency=2", "--test-timeout=300000", ...files],
+    ["--test", "--test-concurrency=2", `--test-timeout=${timeout}`, ...files],
     { stdio: "inherit" },
   );
   if (outcome.error) throw outcome.error;

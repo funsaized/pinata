@@ -5,7 +5,7 @@ import { chmod, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
-import { applicationFixture, FixtureGit } from "./rewrite-application-fixture.ts";
+import { applicationFixture, FixtureArtifacts, FixtureGit } from "./rewrite-application-fixture.ts";
 import { openCheckoutGate } from "../../engine/workspace/gate.ts";
 import { ApplicationStore } from "../../engine/application/index.ts";
 
@@ -13,6 +13,132 @@ const after = (content: string) => [
   { path: "file.txt", content },
   { path: "unrelated.txt", content: "untouched\n" },
 ];
+
+test(
+  "application history and rollback survive different run artifact stores",
+  { timeout: 30_000 },
+  async (t) => {
+    const fixture = await applicationFixture();
+    let next: ApplicationStore | undefined;
+    t.after(async () => {
+      await next?.close();
+      await fixture.store.close();
+      await rm(fixture.directory, { recursive: true, force: true });
+    });
+    const firstWorktree = await fixture.worktree();
+    const secondWorktree = await fixture.worktree();
+    const secondArtifacts = new FixtureArtifacts(join(fixture.directory, "second-run-artifacts"));
+    const plan = JSON.parse(
+      Buffer.from(await fixture.artifacts.read(secondWorktree.plan)).toString("utf8"),
+    );
+    secondWorktree.plan = await secondArtifacts.put(
+      Buffer.from(JSON.stringify({ ...plan, run: "second-run", worker: "second" })),
+    );
+    await writeFile(join(firstWorktree.path, "file.txt"), "first run\n");
+    await writeFile(join(secondWorktree.path, "unrelated.txt"), "second run\n");
+    const index = await readFile(join(fixture.repo.gitDirectory, "index"));
+    const first = await fixture.store.applyWorktree({
+      ref: { run: "application-fixture", worker: "worker", assignment: 1 },
+      worktree: firstWorktree,
+    });
+    await fixture.store.close();
+    await rm(fixture.artifacts.directory, { recursive: true });
+    next = await ApplicationStore.open({
+      ...fixture.applicationOptions,
+      artifacts: secondArtifacts,
+    });
+    assert.equal((await next.inspect()).operations.length, 1);
+    await next.rollback(first.operationId);
+    assert.equal(await readFile(join(fixture.root, "file.txt"), "utf8"), "base\n");
+    const second = await next.applyWorktree({
+      ref: { run: "second-run", worker: "second", assignment: 1 },
+      worktree: secondWorktree,
+    });
+    assert.equal(await readFile(join(fixture.root, "file.txt"), "utf8"), "base\n");
+    assert.equal(await readFile(join(fixture.root, "unrelated.txt"), "utf8"), "second run\n");
+    await next.rollback(second.operationId);
+    assert.equal(await readFile(join(fixture.root, "file.txt"), "utf8"), "base\n");
+    assert.equal(await readFile(join(fixture.root, "unrelated.txt"), "utf8"), "untouched\n");
+    assert.deepEqual((await next.inspect()).cursors, {});
+    assert.deepEqual(await readFile(join(fixture.repo.gitDirectory, "index")), index);
+  },
+);
+
+test(
+  "a later run reconciles an interrupted application without the source run or worktree",
+  { timeout: 30_000 },
+  async (t) => {
+    const fixture = await applicationFixture((point) => {
+      if (point === "application.file.file.txt.rename.before") throw new Error("Interrupted apply");
+    });
+    let next: ApplicationStore | undefined;
+    t.after(async () => {
+      await next?.close();
+      await fixture.store.close();
+      await rm(fixture.directory, { recursive: true, force: true });
+    });
+    const worktree = await fixture.worktree();
+    await writeFile(join(worktree.path, "file.txt"), "recover from checkout evidence\n");
+    await assert.rejects(
+      fixture.store.applyWorktree({
+        ref: { run: "application-fixture", worker: "worker", assignment: 1 },
+        worktree,
+      }),
+      /Interrupted apply/,
+    );
+    await fixture.store.close();
+    await rm(fixture.artifacts.directory, { recursive: true });
+    await rm(worktree.path, { recursive: true });
+    next = await ApplicationStore.open({
+      ...fixture.applicationOptions,
+      artifacts: new FixtureArtifacts(join(fixture.directory, "recovery-run-artifacts")),
+    });
+    const receipt = await next.reconcile();
+    assert.equal(receipt?.status, "applied");
+    assert.equal(
+      await readFile(join(fixture.root, "file.txt"), "utf8"),
+      "recover from checkout evidence\n",
+    );
+    assert.equal((await next.inspect()).operations.at(-1)?.phase, "applied");
+  },
+);
+
+test(
+  "legacy application blobs migrate from the original run and corrupt retained blobs fail closed",
+  { timeout: 30_000 },
+  async (t) => {
+    const fixture = await applicationFixture();
+    let next: ApplicationStore | undefined;
+    t.after(async () => {
+      await next?.close();
+      await fixture.store.close();
+      await rm(fixture.directory, { recursive: true, force: true });
+    });
+    const snapshot = await fixture.snapshot(1, after("legacy bytes\n"));
+    const receipt = await fixture.store.apply({ snapshot });
+    const retained = join(fixture.store.directory, "artifacts");
+    await rm(retained, { recursive: true });
+    const secondArtifacts = new FixtureArtifacts(join(fixture.directory, "second-run-artifacts"));
+    next = await ApplicationStore.open({
+      ...fixture.applicationOptions,
+      artifacts: secondArtifacts,
+    });
+    await assert.rejects(next.inspect(), /Reopen the originating run/);
+    assert.equal(await readFile(join(fixture.root, "file.txt"), "utf8"), "legacy bytes\n");
+    const journal = await fixture.store.inspect();
+    const changed = journal.operations[0].changes.find((change) => change.after)?.after;
+    assert(changed);
+    const path = join(retained, changed.blob.digest);
+    const original = await readFile(path);
+    await writeFile(path, "corrupt retained blob");
+    await assert.rejects(fixture.store.inspect(), /Application artifact is corrupt/);
+    await writeFile(path, original);
+    await rm(fixture.artifacts.directory, { recursive: true });
+    assert.equal((await next.inspect()).operations.length, 1);
+    await next.rollback(receipt.operationId);
+    assert.equal(await readFile(join(fixture.root, "file.txt"), "utf8"), "base\n");
+  },
+);
 
 test(
   "application refuses FIFO destinations without waiting for a writer",

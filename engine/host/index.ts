@@ -137,6 +137,7 @@ export async function openHost(options: HostOptions): Promise<Host> {
     bootstrapModule: bootstrap?.path,
     nodeCommand: options.nodeCommand,
     children: (ref: AssignmentRef) => runtime.bindChild(ref),
+    messages: (ref: AssignmentRef) => runtime.bindMessages(ref),
   };
   const backends: Partial<Record<BackendPort["kind"], BackendPort>> = {
     "in-process": new InProcessBackend({
@@ -148,6 +149,7 @@ export async function openHost(options: HostOptions): Promise<Host> {
       createProcesses: (launch) =>
         supervisedSessionProcesses(launch, { nodeCommand: options.nodeCommand }),
       children: (launch) => runtime.bindChild(launch.ref),
+      messages: (launch) => runtime.bindMessages(launch.ref),
     }),
     process: new ProcessBackend(processOptions),
     "herdr-pi": new HerdrBackend(processOptions),

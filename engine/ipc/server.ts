@@ -9,6 +9,7 @@ import {
   clientFrameSchema,
   DEFAULT_LIMITS,
   IPC_VERSION,
+  IPC_VERSIONS,
   ipcLimitsSchema,
   ipcLinkSchema,
   type ClientFrame,
@@ -17,7 +18,7 @@ import {
   type IpcLink,
 } from "./protocol.ts";
 import { MessageWriter } from "./writer.ts";
-import type { CompletionNotice } from "../runtime/delivery.ts";
+import type { NotificationNotice } from "../runtime/delivery.ts";
 
 export type IpcServerOptions = {
   directory: string;
@@ -210,13 +211,14 @@ class Connection {
     }
   }
   private authenticate(frame: Extract<ClientFrame, { type: "hello" }>): void {
-    if (!frame.versions.includes(IPC_VERSION)) {
+    const version = IPC_VERSIONS.find((candidate) => frame.versions.includes(candidate));
+    if (!version) {
       this.fail(
         {
           code: "protocol_version",
-          message: `IPC protocol ${IPC_VERSION} is required; use a matching Pinata executable`,
+          message: `IPC protocol ${IPC_VERSIONS.join(" or ")} is required; use a matching Pinata executable`,
         },
-        [IPC_VERSION],
+        [...IPC_VERSIONS],
       );
       return;
     }
@@ -241,13 +243,14 @@ class Connection {
         code: "capability_denied",
         message: "This IPC connection cannot receive parent notifications",
       });
+    this.writer.setVersion(version);
     this.source = source;
     clearTimeout(this.helloTimeout);
     this.socket.write(
       encodeFrame(
         {
           type: "welcome",
-          version: IPC_VERSION,
+          version,
           run: link.run,
           serverId: link.serverId,
           ownerEpoch: link.ownerEpoch,
@@ -335,7 +338,7 @@ class Connection {
     this.track(pending);
   }
   private notice(
-    notice: CompletionNotice,
+    notice: NotificationNotice,
     signal: AbortSignal,
   ): Promise<{ status: "delivered" | "undelivered" }> {
     if (this.closed)

@@ -39,12 +39,22 @@ import type {
 } from "../contracts/lifecycle.ts";
 import type { RecoveryReceipt } from "../contracts/runtime.ts";
 import { readyAssignments } from "../core/readiness.ts";
+import {
+  assignmentAttempts,
+  assignmentEffects,
+  hasQueuedAssignments,
+  occupiedAssignments,
+  occupiedCount,
+  queuedAssignments,
+} from "../core/indexes.ts";
 import { dependencyResults } from "../core/state.ts";
 import { assignmentUsage } from "../core/usage.ts";
+import { verifyConversationArtifact } from "../storage/conversation.ts";
 import { immutable } from "./immutable.ts";
 
 export type ExecutionTransaction = {
   state(): CoreState;
+  commitAll(transitions: readonly Transition[]): Promise<void>;
   commit(
     transition: Transition,
     identity?: { requestId: string; payloadDigest: string },
@@ -111,7 +121,7 @@ export class ExecutionCoordinator {
     const checkpoint = sessionCheckpointSchema.parse(await active.handle.checkpoint());
     if (checkpoint.worker !== ref.worker)
       throw new DomainError("context_unavailable", "Live checkpoint belongs to another worker");
-    await this.host.artifacts.read(checkpoint.artifact);
+    await verifyConversationArtifact(checkpoint.artifact, this.host.artifacts);
     await this.host.assertOwner();
     return checkpoint;
   }
@@ -178,7 +188,7 @@ export class ExecutionCoordinator {
             "worker",
           );
         try {
-          await this.host.artifacts.read(checkpoint.artifact);
+          await verifyConversationArtifact(checkpoint.artifact, this.host.artifacts);
         } catch (error) {
           throw new DomainError(
             "context_unavailable",
@@ -219,6 +229,11 @@ export class ExecutionCoordinator {
           this.track(this.deliverInputs(active));
       }
     }
+    if (transition.kind === "message_sent" && transition.message.to !== "coordinator") {
+      const active = this.active.get(assignmentKey(transition.message.to));
+      if (active?.handle && !active.controller.signal.aborted)
+        this.track(this.deliverInputs(active));
+    }
     if (transition.kind === "settled") {
       const parent = state.workers[transition.result.ref.worker].parentAssignment;
       const active = parent ? this.active.get(assignmentKey(parent)) : undefined;
@@ -227,10 +242,7 @@ export class ExecutionCoordinator {
     }
     // A replayed in-flight assignment has no live handle here. Its persisted phase
     // continues to occupy capacity until explicit backend reconciliation.
-    if (
-      Object.values(state.assignments).some((assignment) => assignment.execution.phase === "queued")
-    )
-      this.wake();
+    if (hasQueuedAssignments(state)) this.wake();
   }
 
   wake(): void {
@@ -262,13 +274,10 @@ export class ExecutionCoordinator {
       while (!this.closing && !this.halted) {
         const selected = await this.host.transaction(async (transaction) => {
           const state = transaction.state();
-          const cancelled = Object.values(state.assignments).find(
-            (assignment) =>
-              assignment.execution.phase === "queued" &&
-              Object.hasOwn(state.cancelled, assignmentKey(assignment.ref)) &&
-              !this.active.has(assignmentKey(assignment.ref)),
+          const cancelled = queuedAssignments(state, true).find(
+            (assignment) => !this.active.has(assignmentKey(assignment.ref)),
           );
-          const assignment = cancelled ?? readyAssignments(state)[0];
+          const assignment = cancelled ?? readyAssignments(state, 1)[0];
           if (!assignment) return undefined;
           const key = assignmentKey(assignment.ref);
           if (this.active.has(key)) return undefined;
@@ -291,25 +300,27 @@ export class ExecutionCoordinator {
           };
           this.active.set(key, active);
           if (!cancelled) {
-            await transaction.commit({
-              kind: "assignment_state",
-              ref: assignment.ref,
-              execution: { phase: "preparing" },
-            });
-            await transaction.commit({
-              kind: "attempt_started",
-              attempt: {
-                id: active.attemptId,
+            await transaction.commitAll([
+              {
+                kind: "assignment_state",
                 ref: assignment.ref,
-                ordinal: 1,
-                backend: worker.backend,
-                ownerEpoch: this.host.ownerEpoch,
+                execution: { phase: "preparing" },
               },
-            });
-            await transaction.commit({
-              kind: "effect_intent",
-              effect: { id: `${active.attemptId}/prepare`, ref: assignment.ref, kind: "prepare" },
-            });
+              {
+                kind: "attempt_started",
+                attempt: {
+                  id: active.attemptId,
+                  ref: assignment.ref,
+                  ordinal: 1,
+                  backend: worker.backend,
+                  ownerEpoch: this.host.ownerEpoch,
+                },
+              },
+              {
+                kind: "effect_intent",
+                effect: { id: `${active.attemptId}/prepare`, ref: assignment.ref, kind: "prepare" },
+              },
+            ]);
           }
           const inputs: SelectedInput[] = cancelled
             ? []
@@ -337,24 +348,13 @@ export class ExecutionCoordinator {
       throw new DomainError("conflict", "Runtime execution is closing or halted");
     const selected = await this.host.transaction(async (transaction) => {
       const state = transaction.state();
-      const refs =
-        targets ??
-        Object.values(state.assignments)
-          .filter(
-            (assignment) =>
-              assignment.execution.phase !== "queued" &&
-              (assignment.execution.phase !== "ended" ||
-                assignment.execution.cleanup === "unconfirmed"),
-          )
-          .map((assignment) => assignment.ref);
+      const refs = targets ?? occupiedAssignments(state).map((assignment) => assignment.ref);
       return refs.map((ref) => {
         const key = assignmentKey(ref);
         const assignment = state.assignments[key];
         if (!assignment)
           throw new DomainError("dependency_missing", "Recovery assignment does not exist");
-        const entry = Object.values(state.attempts)
-          .filter((attempt) => assignmentKey(attempt.attempt.ref) === key)
-          .sort((left, right) => right.attempt.ordinal - left.attempt.ordinal)[0];
+        const entry = assignmentAttempts(state, key).at(-1);
         if (this.active.has(key))
           return { receipt: { ref, attemptId: entry?.attempt.id, status: "active" as const } };
         if (
@@ -599,19 +599,21 @@ export class ExecutionCoordinator {
       );
       active.prepared = prepared;
       // Publish the consecutive preparation/launch records in one queue turn.
-      // Each frame still has its own durability boundary; other workers do not
-      // create a barrier between a prepared workspace and its launch intent.
+      // Deterministic preparation records share one durability barrier. Launch
+      // still waits for durable inputs and its own committed intent.
       const launch = await this.host.transaction(async (transaction) => {
-        await transaction.commit({
-          kind: "workspace_prepared",
-          attemptId: active.attemptId,
-          prepared,
-        });
-        await transaction.commit({
-          kind: "effect_observed",
-          effectId: `${active.attemptId}/prepare`,
-          status: "completed",
-        });
+        await transaction.commitAll([
+          {
+            kind: "workspace_prepared",
+            attemptId: active.attemptId,
+            prepared,
+          },
+          {
+            kind: "effect_observed",
+            effectId: `${active.attemptId}/prepare`,
+            status: "completed",
+          },
+        ]);
         if (active.controller.signal.aborted) return undefined;
         const state = transaction.state();
         const continuation = Object.hasOwn(state.sessions, active.worker.id)
@@ -624,7 +626,7 @@ export class ExecutionCoordinator {
           );
         if (continuation) {
           try {
-            await this.host.artifacts.read(continuation.artifact);
+            await verifyConversationArtifact(continuation.artifact, this.host.artifacts);
           } catch (cause) {
             throw new DomainError(
               "context_unavailable",
@@ -822,16 +824,13 @@ export class ExecutionCoordinator {
     const { outcome } = completion;
     let { cleanup, checkpoint, capture } = completion;
     const finalizationErrors: string[] = [];
-    let captureRequested =
-      active.worker.workspace === "worktree" ||
-      active.worker.access === "write" ||
-      active.worker.observeWorkspace === true;
+    let captureRequested = false;
     await this.host.transaction(async (transaction) => {
       const state = transaction.state();
       const entry = state.attempts[active.attemptId];
-      // Shared readers do not request automatic checkout observation. A retained
-      // capture intent still owns recovery work, including one from an older host.
-      captureRequested ||= Object.hasOwn(state.effects, `${active.attemptId}/capture`);
+      // New assignments never capture the checkout. Retained intents from older
+      // hosts still own their recovery work and evidence.
+      captureRequested = Object.hasOwn(state.effects, `${active.attemptId}/capture`);
       if (!entry.outcome) {
         const artifact = await this.host.artifacts.put(Buffer.from(canonicalJson(outcome)));
         await transaction.commit({
@@ -889,6 +888,8 @@ export class ExecutionCoordinator {
       await this.recordEffectIntent(active, "capture");
       try {
         await this.host.assertOwner();
+        if (!this.options.workspace.capture)
+          throw new Error("The workspace adapter cannot recover a legacy capture intent");
         // Cancellation must retain the final partial workspace too. Capture gets a
         // fresh signal because the model's cancellation has already been confirmed.
         capture = workspaceCaptureSchema.parse(
@@ -975,11 +976,11 @@ export class ExecutionCoordinator {
       const ref = active.assignment.ref;
       // A recovery may prove cleanup after an interrupted result was already delivered.
       // Preserve that immutable result and its stable completion notification.
-      if (Object.hasOwn(state.results, assignmentKey(ref))) return;
-      const failedFinalization = Object.values(state.effects)
+      const key = assignmentKey(ref);
+      if (Object.hasOwn(state.results, key)) return;
+      const failedFinalization = assignmentEffects(state, key)
         .filter(
           (entry) =>
-            assignmentKey(entry.effect.ref) === assignmentKey(ref) &&
             (entry.effect.kind === "checkpoint" || entry.effect.kind === "capture") &&
             entry.status === "failed",
         )
@@ -987,7 +988,7 @@ export class ExecutionCoordinator {
       const finalizationErrors = [
         ...new Set([...completion.finalizationErrors, ...failedFinalization]),
       ];
-      const cancelled = Object.hasOwn(state.cancelled, assignmentKey(ref));
+      const cancelled = Object.hasOwn(state.cancelled, key);
       const reason =
         completion.cleanup.status === "unconfirmed"
           ? "interrupted"
@@ -1020,6 +1021,7 @@ export class ExecutionCoordinator {
         ...(completion.outcome.transcript ? { transcript: completion.outcome.transcript } : {}),
         ...(completion.checkpoint ? { session: completion.checkpoint.artifact } : {}),
         ...(completion.capture?.snapshot ? { snapshot: completion.capture.snapshot } : {}),
+        ...(active.prepared?.worktree ? { worktree: active.prepared.worktree } : {}),
       };
       const resultArtifact = await this.host.artifacts.put(Buffer.from(canonicalJson(result)));
       await transaction.commit({
@@ -1061,15 +1063,15 @@ export class ExecutionCoordinator {
         message.state === "recorded" &&
         !active.sending.has(message.id),
     );
-    for (const message of messages) {
-      active.sending.add(message.id);
-      await transaction.commit({
+    await transaction.commitAll(
+      messages.map((message) => ({
         kind: "inbox_state",
         messageId: message.id,
         state: "dispatch_intent",
         attemptId: `${active.attemptId}/input/${message.id}`,
-      });
-    }
+      })),
+    );
+    for (const message of messages) active.sending.add(message.id);
     return immutable(messages);
   }
 
@@ -1358,15 +1360,7 @@ export class ExecutionCoordinator {
     while (this.tasks.size) await Promise.all(this.tasks);
     return this.host.transaction(async (transaction) => {
       const state = transaction.state();
-      return (
-        !this.halted &&
-        !Object.values(state.assignments).some(
-          (assignment) =>
-            assignment.execution.phase !== "queued" &&
-            (assignment.execution.phase !== "ended" ||
-              assignment.execution.cleanup === "unconfirmed"),
-        )
-      );
+      return !this.halted && occupiedCount(state) === 0;
     });
   }
 }

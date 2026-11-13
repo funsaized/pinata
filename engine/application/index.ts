@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { lstat, mkdir, readFile, realpath, rename } from "node:fs/promises";
 import { join } from "node:path";
 import type { ArtifactPort, CleanupReceipt } from "../contracts/backend.ts";
-import { DomainError, type ArtifactRef } from "../contracts/common.ts";
+import { DomainError, type ArtifactRef, type AssignmentRef } from "../contracts/common.ts";
 import { canonicalJson, digestValue } from "../contracts/digest.ts";
 import {
   workspaceManifestSchema,
@@ -11,6 +11,7 @@ import {
   type WorkspaceEntry,
   type WorkspaceManifest,
   type WorkspaceSnapshot,
+  type Worktree,
 } from "../contracts/workspace.ts";
 import {
   isMissing,
@@ -26,7 +27,10 @@ import {
   type ExclusiveLease,
 } from "../workspace/gate.ts";
 import { ApplicationHelpers, type ApplicationHelperOptions } from "./helpers.ts";
+import { applicationArtifacts } from "./artifacts.ts";
 import { repository } from "../workspace/location.ts";
+import { manifestAtTree } from "../workspace/tree.ts";
+import { selectWorktree } from "./worktree.ts";
 import {
   applicationJournalSchema,
   type ApplicationChange,
@@ -93,11 +97,11 @@ export class ApplicationStore {
     this.destination = gate.checkout.root;
     this.directory = directory;
     this.gate = gate;
-    this.artifacts = options.artifacts;
+    this.artifacts = applicationArtifacts(directory, options.artifacts, options.fault);
     this.fault = options.fault;
     this.helpers = new ApplicationHelpers({
       directory,
-      artifacts: options.artifacts,
+      artifacts: this.artifacts,
       ownerEpoch: this.ownerEpoch,
       fault: options.fault,
       createGit: options.createGit,
@@ -109,6 +113,8 @@ export class ApplicationStore {
     const gate = await openCheckoutGate(options.destination);
     const directory = join(gate.checkout.root, ".pinata", "applications");
     await ensureDirectory(directory);
+    await ensureDirectory(join(directory, "artifacts"));
+    await syncDirectory(directory);
     return new ApplicationStore(options, gate, await realpath(directory));
   }
 
@@ -171,6 +177,26 @@ export class ApplicationStore {
       )
         throw new DomainError("conflict", "Application journal contains inconsistent authority");
       ids.add(operation.id);
+      if (operation.direction === "apply" && operation.worktree) {
+        const selected = Object.entries(operation.afterCursors).filter(
+          ([, cursor]) => cursor.operationId === operation.id,
+        );
+        const [key, cursor] = selected[0] ?? [];
+        if (
+          selected.length !== 1 ||
+          !cursor ||
+          key !== JSON.stringify([cursor.ref.run, cursor.ref.worker]) ||
+          cursor.destination !== this.destination ||
+          cursor.tree !== operation.tree ||
+          digestValue(cursor.worktree ?? null) !== digestValue(operation.worktree) ||
+          digestValue(operation.afterCursors) !==
+            digestValue({ ...operation.beforeCursors, [key]: cursor })
+        )
+          throw new DomainError(
+            "conflict",
+            "Worktree application cursor disagrees with its selected tree",
+          );
+      }
       const paths = new Set<string>();
       for (const change of operation.changes) {
         validateApplicationPath(change.path);
@@ -189,6 +215,9 @@ export class ApplicationStore {
           !original ||
           original.direction !== "apply" ||
           original.phase !== "applied" ||
+          digestValue(original.snapshot ?? null) !== digestValue(operation.snapshot ?? null) ||
+          digestValue(original.worktree ?? null) !== digestValue(operation.worktree ?? null) ||
+          original.tree !== operation.tree ||
           digestValue(
             original.changes.map((change) => ({
               path: change.path,
@@ -415,6 +444,107 @@ export class ApplicationStore {
     return changes;
   }
 
+  async applyWorktree(request: {
+    ref: AssignmentRef;
+    worktree: Worktree;
+    operationId?: string;
+    signal?: AbortSignal;
+  }): Promise<ApplicationReceipt> {
+    return serialize(this.destination, async () => {
+      const id = request.operationId ?? randomUUID();
+      const lease = await this.gate.acquireExclusive(
+        { operationId: id, ownerEpoch: this.ownerEpoch, purpose: "apply" },
+        request.signal,
+      );
+      this.lease = lease;
+      this.helpers.attach(lease);
+      let intent = false;
+      try {
+        const journal = await this.readJournal();
+        if (journal.operations.at(-1)?.phase === "pending")
+          throw new DomainError(
+            "conflict",
+            "Reconcile the pending application before starting another operation",
+          );
+        const key = JSON.stringify([request.ref.run, request.ref.worker]);
+        const recorded = journal.operations.find((operation) => operation.id === id);
+        if (recorded) {
+          if (
+            recorded.direction !== "apply" ||
+            digestValue(recorded.worktree ?? null) !== digestValue(request.worktree) ||
+            digestValue(recorded.afterCursors[key]?.ref ?? null) !== digestValue(request.ref)
+          )
+            throw new DomainError("conflict", "Application identity names another operation");
+          return await this.receipt(journal, recorded, "already_recorded");
+        }
+        const git = await this.helpers.git();
+        const selected = await selectWorktree({
+          ...request,
+          destination: this.destination,
+          artifacts: this.artifacts,
+          git,
+        });
+        await this.fault?.("application.validation.after");
+        const cursor = Object.hasOwn(journal.cursors, key) ? journal.cursors[key] : undefined;
+        if (cursor?.worktree && digestValue(cursor.worktree) !== digestValue(request.worktree))
+          throw new DomainError("conflict", "Previously applied worktree identity changed");
+        const before = await manifestAtTree(
+          this.destination,
+          cursor?.tree ?? selected.baseTree,
+          git,
+          this.artifacts,
+          request.signal,
+        );
+        const changes = this.changes(before, selected.current);
+        for (const change of changes)
+          if (!sameFile(await readApplicationFile(this.destination, change.path), change.before))
+            throw new DomainError(
+              "conflict",
+              `Destination has conflicting changes: ${change.path}`,
+            );
+        await this.assertRepository(selected.repository, request.signal);
+        // Git retains the selected tree for subsequent applications. Before/after
+        // file blobs in the journal remain sufficient for interrupted writes.
+        await git.run(
+          this.destination,
+          ["update-ref", `refs/pinata/applications/${digestValue(id)}`, selected.tree],
+          { signal: request.signal },
+        );
+        const next: ApplicationCursor = {
+          destination: this.destination,
+          ref: request.ref,
+          worktree: request.worktree,
+          tree: selected.tree,
+          operationId: id,
+        };
+        const operation: ApplicationOperation = {
+          id,
+          direction: "apply",
+          mode: "delivery",
+          phase: "pending",
+          destination: this.destination,
+          repository: selected.repository,
+          worktree: request.worktree,
+          tree: selected.tree,
+          changes,
+          beforeCursors: journal.cursors,
+          afterCursors: { ...journal.cursors, [key]: next },
+          lease,
+        };
+        const pending = {
+          ...journal,
+          revision: journal.revision + 1,
+          operations: [...journal.operations, operation],
+        };
+        intent = true;
+        await this.publishJournal(pending, "intent");
+        return await this.finish(pending, operation, lease, request.signal);
+      } finally {
+        if (!intent) await this.release(lease);
+      }
+    });
+  }
+
   async apply(request: {
     snapshot: ArtifactRef;
     operationId?: string;
@@ -455,7 +585,7 @@ export class ApplicationStore {
         await this.fault?.("application.validation.after");
         const key = cursorKey(loaded.snapshot);
         const cursor = Object.hasOwn(journal.cursors, key) ? journal.cursors[key] : undefined;
-        if (cursor && sameArtifact(cursor.snapshot, request.snapshot)) {
+        if (cursor?.snapshot && sameArtifact(cursor.snapshot, request.snapshot)) {
           const original = journal.operations.find(
             (operation) => operation.id === cursor.operationId,
           );
@@ -468,6 +598,11 @@ export class ApplicationStore {
           throw new DomainError("conflict", "Application operation identity is already recorded");
         let before = loaded.base;
         if (cursor) {
+          if (!cursor.snapshot || !cursor.manifest)
+            throw new DomainError(
+              "conflict",
+              "Worktree application has advanced beyond legacy assignment snapshots",
+            );
           if (cursor.ref.assignment >= loaded.snapshot.ref.assignment)
             throw new DomainError(
               "conflict",
@@ -569,7 +704,9 @@ export class ApplicationStore {
           rollbackOf: original.id,
           destination: this.destination,
           repository: original.repository,
-          snapshot: original.snapshot,
+          ...(original.snapshot
+            ? { snapshot: original.snapshot }
+            : { worktree: original.worktree, tree: original.tree }),
           changes,
           beforeCursors: journal.cursors,
           afterCursors: original.beforeCursors,
@@ -661,7 +798,9 @@ export class ApplicationStore {
           operationId: operation.id,
           destination: this.destination,
           revision: journal.revision,
-          snapshot: operation.snapshot,
+          ...(operation.snapshot
+            ? { snapshot: operation.snapshot }
+            : { worktree: operation.worktree, tree: operation.tree }),
           freshness: "matching",
         };
         await this.release(lease);
@@ -723,7 +862,9 @@ export class ApplicationStore {
       operationId: operation.id,
       destination: this.destination,
       revision: committed.revision,
-      snapshot: operation.snapshot,
+      ...(operation.snapshot
+        ? { snapshot: operation.snapshot }
+        : { worktree: operation.worktree, tree: operation.tree }),
       freshness: "matching",
     };
     await this.release(lease);
@@ -749,7 +890,9 @@ export class ApplicationStore {
       operationId: operation.id,
       destination: this.destination,
       revision: journal.revision,
-      snapshot: operation.snapshot,
+      ...(operation.snapshot
+        ? { snapshot: operation.snapshot }
+        : { worktree: operation.worktree, tree: operation.tree }),
       freshness,
     };
   }

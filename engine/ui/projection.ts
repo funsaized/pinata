@@ -37,8 +37,15 @@ export function assignmentDetails(state: CoreState, assignment: Assignment): str
   const key = assignmentKey(assignment.ref);
   const worker = state.workers[assignment.ref.worker];
   const result = state.results[key]?.result;
-  const delivery = Object.values(state.outbox).find((notice) => assignmentKey(notice.ref) === key);
-  const application = Object.values(state.applications).find(
+  const delivery = Object.values(state.outbox).find(
+    (notice) => "result" in notice && assignmentKey(notice.ref) === key,
+  );
+  const messages = Object.values(state.messages);
+  const sent = messages.filter((message) => assignmentKey(message.from) === key).length;
+  const received = messages.filter(
+    (message) => message.to !== "coordinator" && assignmentKey(message.to) === key,
+  ).length;
+  const application = Object.values(state.applications).findLast(
     (operation) => assignmentKey(operation.intent.ref) === key,
   );
   const status = executionLabel(assignment);
@@ -49,8 +56,9 @@ export function assignmentDetails(state: CoreState, assignment: Assignment): str
     `${assignment.ref.worker}/${assignment.ref.assignment} · ${status}${queue}`,
     mode,
     `cleanup ${assignment.execution.phase === "ended" ? assignment.execution.cleanup : "pending"}`,
-    `delivery: ${worker.workspace === "shared" ? "edits are in the shared workspace" : application?.receipt ? `${application.receipt.status} · ${application.receipt.operationId}` : "isolated snapshot; no application receipt"}`,
+    `delivery: ${worker.workspace === "shared" ? "edits are in the shared workspace" : application?.receipt ? `${application.receipt.status} · ${application.receipt.operationId}` : "isolated worktree; no application receipt"}`,
     `notification ${delivery?.state ?? "not recorded"}`,
+    ...(sent || received ? [`messages: ${sent} sent · ${received} received`] : []),
     `reported assessment: ${result?.report ? "retained worker report" : "none"}${result?.reportingError ? ` · ${result.reportingError}` : ""}`,
     "acceptance: no decision recorded · correctness: unknown",
     contextLabel(state, assignment.ref),
@@ -70,13 +78,14 @@ export function assignmentDetails(state: CoreState, assignment: Assignment): str
   ];
 }
 
+export function isFinished(assignment: Assignment): boolean {
+  return assignment.execution.phase === "ended" && assignment.execution.cleanup === "confirmed";
+}
+
 export function needsAttention(state: CoreState, assignment: Assignment): boolean {
   if (assignment.execution.phase !== "ended") return false;
-  if (
-    !["failed", "interrupted"].includes(assignment.execution.reason) &&
-    assignment.execution.cleanup !== "unconfirmed"
-  )
-    return false;
+  if (assignment.execution.cleanup === "unconfirmed") return true;
+  if (!["failed", "interrupted"].includes(assignment.execution.reason)) return false;
   return (
     state.latest[assignment.ref.worker] === assignment.ref.assignment ||
     Object.values(state.assignments).some(

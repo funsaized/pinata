@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -7,6 +7,7 @@ import { childCommandEnvelopeSchema, type ChildPort } from "../../engine/contrac
 import type { CommandReceipt } from "../../engine/contracts/lifecycle.ts";
 import { fileChildClient, serveFileChildren } from "../../engine/backends/delegation-transport.ts";
 import { numberedPath } from "../../engine/backends/process-transport.ts";
+import { workerMessageRequestSchema } from "../../engine/contracts/messages.ts";
 
 function deferred() {
   let resolve: () => void = () => {};
@@ -15,6 +16,58 @@ function deferred() {
   });
   return { promise, resolve };
 }
+
+test(
+  "oversized requests leave no ordinal gap before concurrent worker messages",
+  { timeout: 10_000 },
+  async (t) => {
+    const directory = await mkdtemp(join(tmpdir(), "pinata-child-request-limit-"));
+    const release = deferred();
+    const received: string[] = [];
+    const server = serveFileChildren(directory, undefined, undefined, {
+      async send(input) {
+        const message = workerMessageRequestSchema.parse(input);
+        received.push(message.messageId);
+        if (message.messageId === "first") await release.promise;
+        return {
+          status: "recorded",
+          id: message.messageId,
+          from: { run: "transport", worker: "worker", assignment: 1 },
+          to: "coordinator",
+          revision: 1,
+        };
+      },
+    });
+    t.after(async () => {
+      release.resolve();
+      await server.close();
+      await rm(directory, { recursive: true, force: true });
+    });
+    const client = fileChildClient(directory);
+    await assert.rejects(
+      client.send({ messageId: "oversized", text: "x".repeat(32 * 1024 * 1024) }, t.signal),
+      /exceeds the message limit/,
+    );
+    const first = client.send({ messageId: "first", text: "Wait for later replies" }, t.signal);
+    const second = client.send({ messageId: "second", text: "Second" }, t.signal);
+    const third = client.send({ messageId: "third", text: "Third" }, t.signal);
+    try {
+      assert.deepEqual(
+        (await Promise.all([second, third])).map((receipt) => receipt.id),
+        ["second", "third"],
+      );
+      assert.deepEqual(received, ["first", "second", "third"]);
+    } finally {
+      release.resolve();
+    }
+    assert.equal((await first).id, "first");
+    assert.equal((await readdir(join(directory, "child-requests"))).length, 3);
+    const request = JSON.parse(
+      await readFile(numberedPath(directory, "child-requests", 1), "utf8"),
+    );
+    assert.equal(request.payload.input.messageId, "first");
+  },
+);
 
 test(
   "child transport resumes an unacknowledged scoped command and preserves its accepted identity",

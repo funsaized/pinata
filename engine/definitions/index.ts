@@ -381,9 +381,6 @@ export function createWorkerResolver(options: WorkerResolverOptions): WorkerReso
           tools: selectedTools,
           access,
           workspace,
-          ...(request.observeWorkspace !== undefined
-            ? { observeWorkspace: request.observeWorkspace }
-            : {}),
           backend,
           lifetime,
           grants: {

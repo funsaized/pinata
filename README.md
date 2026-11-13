@@ -26,6 +26,10 @@ pi install npm:pi-pinata
 [Tools](#tools) · [CLI](#cli-reference) · [API](#package-api) ·
 [Implementation](#architecture-and-implementation-index) · [Development](#development)
 
+![A live Piñata fleet with nine agents, two levels of delegation, a scout and a queued reviewer.](media/pinata-fleet.png)
+
+[Watch the fleet run (6× speed)](media/pinata-fleet.mp4) · [Recording details](media/README.md)
+
 ## Why Piñata
 
 - Delegate independent work in parallel and add workers as the task develops.
@@ -54,7 +58,7 @@ agent definitions. Compose your own roles around the work you actually do.
 | Steering, follow-ups, continuation and cancellation       | [Control a worker](#control-a-worker)                                                                                |
 | Fleet tree, transcripts, drafts, search and controls      | [Fleet and conversations](#fleet-and-conversations)                                                                  |
 | Direct addressed input and explicit retry                 | [Agent mentions](#agent-mentions)                                                                                    |
-| Shared files, worktrees, snapshots and dependency inputs  | [Workspaces](#workspaces)                                                                                            |
+| Shared files, worktrees and explicit integration          | [Workspaces](#workspaces)                                                                                            |
 | Incremental application, rollback and writer exclusion    | [Apply isolated work](#apply-isolated-work)                                                                          |
 | Markdown agents, typed reports and frozen skills          | [Custom agents](#custom-agents)                                                                                      |
 | Models, reasoning, fallback candidates and tool providers | [Configuration](#configuration)                                                                                      |
@@ -145,10 +149,15 @@ and exact assignments. `pinata status RUN_DIRECTORY --saved --json` reads retain
 
 ## Fleet and conversations
 
+![Navigate a live nine-agent fleet with animated activity and two delegation levels: collapse branches, open conversations, switch workers, and search.](media/pinata-navigation.gif)
+
 The coordinator shows a compact Agents tree while work is active or queued.
 Workers have activity markers, model labels and execution state; real children
-branch beneath their parent. Dependencies appear as `after:` references. Failed
-or interrupted work that needs attention stays visible. `/pinata` opens an idle fleet.
+branch beneath their parent. Dependencies appear as `after:` references. Finished
+work disappears from the compact widget and is hidden in the fleet by default.
+Use `h` in the fleet to show finished work and older assignments. Work awaiting
+cleanup stays visible, and active children retain their parent branch for context.
+Results and recovery evidence remain available. `/pinata` opens an idle fleet.
 
 Fleet and conversation screens fill the terminal. Pi renders user cards, Markdown,
 syntax highlighting and tool output using its theme. Completion cards show
@@ -158,16 +167,17 @@ Backend and context metadata remain available through the details control.
 The fleet keeps the animated tree, with one aligned row per assignment and status
 near the agent name. The animation travels along active branches; reduced and off
 motion settings keep the branches still.
-Queued stages are visible by default and show what they are waiting for. `Q` hides
+Queued stages are visible by default and show what they are waiting for. `w` hides
 other queued stages while keeping the selected agent visible. Search with `/`,
 apply with Enter, cancel with Escape, or clear with Ctrl+U. Cancelling restores the
 previous query and selected agent. Dependency edges do not create parent/child
 branches. Shared model settings appear once;
 mixed models get their own column when there is room. The selected agent's task
 and waiting reason appear in a separate panel, with `d` for execution details.
-Task previews and the selected panel expand to the terminal width. The Observed
-column measures time since this viewer witnessed an assignment start; a dash means
-the start is unknown. It is not an estimate of total execution time.
+Task previews and the selected panel expand to the terminal width. Elapsed time
+appears as a value with a unit, such as `1.7s`, and measures time since this viewer
+witnessed an assignment start. A dash means the start is unknown. It is not an
+estimate of total execution time.
 
 | Input                                             | Action                                                      |
 | ------------------------------------------------- | ----------------------------------------------------------- |
@@ -180,7 +190,9 @@ the start is unknown. It is not an estimate of total execution time.
 | Mouse click/double click                          | Select/open a fleet row.                                    |
 | Mouse wheel, PageUp/PageDown, Alt+PageUp/PageDown | Scroll the selected view.                                   |
 | `/` in the fleet                                  | Search workers/tasks; Enter keeps the filter.               |
-| `f`, `h`, `Q` in the fleet                        | Cycle all/active/failed, include history, show queued work. |
+| `f` in the fleet                                  | Cycle all/unfinished/failed.                                |
+| `h` in the fleet                                  | Show/hide finished work and assignment history.             |
+| `w` in the fleet                                  | Show/hide waiting and queued work.                          |
 | `a` in the fleet                                  | Show stop actions for an assignment, agent or entire fleet. |
 | `d` in the fleet                                  | Expand details for the selected assignment.                 |
 | Tab in a conversation                             | Switch composer/transcript focus.                           |
@@ -284,7 +296,7 @@ while preserving ordinary Unicode text.
 `mode: "lean"` keeps activity compact; `observe` adds excerpts. Both retain
 conversations. Context utilization comes from a timed source observation or stays
 unknown. Cumulative tokens do not establish current context size. Elapsed values
-labeled `observed` cover starts witnessed by that UI.
+cover starts witnessed by that UI.
 
 ## Workflows
 
@@ -337,8 +349,8 @@ For report pipelines, declare known stages together. Workers receive previews an
 `pinata_dependency` to list/read complete frozen result JSON. Use the returned
 `next` as the next `offset`. List offsets count entries; result offsets count UTF-16
 code units. Previews show at most eight short summaries. Pages fit within 32 KiB
-and retain artifact references without reading their contents. Use `inputs` for
-workspace snapshots and `context` for explicitly quoted report text.
+and retain artifact references without reading their contents. Use `context` for
+explicitly quoted report text. Share files through the checkout or ordinary Git operations.
 
 ### Control a worker
 
@@ -413,35 +425,40 @@ Piñata does not automatically commit it.
 | Mode       | Behavior                                                                                    |
 | ---------- | ------------------------------------------------------------------------------------------- |
 | `shared`   | Work in the authorized checkout, including non-Git projects. Edits are immediately visible. |
-| `worktree` | Start from a frozen Git base and apply a selected isolated snapshot explicitly.             |
+| `worktree` | Start from a frozen Git base and explicitly apply the worktree's current files.             |
 
-Tool access and workspace mode are independent. Shared observations can include
-user and other worker edits; they do not establish exclusive authorship.
-Shared writers and isolated workers retain snapshots when capture succeeds.
-Shared readers retain conversations and results without an automatic checkout scan.
-Set `observeWorkspace: true` at creation to request that observation too.
-`changes` returning `source: "unavailable"` does not mean the checkout was unchanged.
-Snapshots record their observation interval and scope.
+Tool access and workspace mode are independent. Workers retain conversations,
+results and cleanup evidence without per-assignment file snapshots or completion
+commits. Shared edits are already in the checkout. The coordinator owns testing,
+review and integration; it can apply work within the user's authorization without
+asking for a separate approval each time.
 
 New worktrees include dirty starting content by default; `includeUncommitted: false`
 selects committed content. Follow-ups keep the worktree; changing modes needs a new
-worker. Manual commits, HEAD and index survive capture. Normal isolated completion
-can create a private checkpoint ref without moving HEAD or the user's index.
-`pinata.checkpoint: none` disables it. Failed/cancelled work stays available without
-a completion checkpoint.
+worker. Results expose `worktree.path` and `worktree.base` for inspection with Git.
+The worktree remains available after failure or cancellation. Its files are mutable:
+an old assignment reference does not preserve an old version. Use Git commits or
+patches when a workflow needs named versions or transfers between worktrees.
 
-### Dependency inputs and setup
+New requests no longer accept `observeWorkspace` or snapshot `inputs`.
+`pinata.checkpoint` in old definitions is ignored for new workspaces. Saved snapshots,
+input operations and checkpoint intents remain readable and recoverable; previously
+captured snapshots can still be applied. The legacy `changes` query reads that evidence
+and returns `source: "unavailable"` for new assignments, which says nothing about
+whether files changed. `pinata_changes` is no longer registered as a tool.
 
-`inputs` composes exact immutable predecessor snapshots into an isolated destination.
-Pair it with appropriate `after` ordering. Missing requested snapshots fail preparation
-with retained evidence. For reports, use the dependency tool or quoted `context`.
+### Dependencies and setup
+
+Use `after` for assignment ordering and the dependency tool or quoted `context` for
+reports. Use shared files or coordinator-selected Git operations to transfer code.
+Old saved schedules with snapshot inputs must be replaced before they can launch.
 
 The source checkout's `.worktreeinclude` selects ignored local regular files, such as
 `.env.local` or `local/**`. Piñata freezes their identities at acceptance and copies
 them during initial preparation. Changed sources, links and unsafe paths are refused
 or recorded as omitted; existing destination files and follow-up edits are preserved.
-Included contents are excluded from snapshots and application even if ignore rules
-change. Limits are 1,000 files and 16 MiB per file. Use setup for dependencies.
+Included contents are excluded from application even if ignore rules change.
+Limits are 1,000 files and 16 MiB per file. Use setup for dependencies.
 
 Setup runs only in writable isolated work. `setup: false` disables it; a string
 selects a shell command; omission can detect a root lockfile and package manager.
@@ -463,22 +480,35 @@ pinata serve examples/recipes/isolated-follow-up.json --workspace /path/to/proje
 In another terminal, use the printed directory and returned assignment numbers:
 
 ```sh
-pinata changes RUN_DIRECTORY experiment 1 --json
+pinata result RUN_DIRECTORY experiment 1 --json
+# Use worktree.path and worktree.base from the result:
+git -C WORKTREE_PATH diff BASE_COMMIT
+git -C WORKTREE_PATH status --short
 pinata follow-up RUN_DIRECTORY experiment "Add the agreed boundary case" --request-id experiment/follow-up
 pinata wait RUN_DIRECTORY experiment --json
 pinata apply RUN_DIRECTORY experiment 2 --destination /path/to/project --request-id experiment/apply
 ```
 
-Inspect the accepted `operationId` and its outcome. Later applications deliver the
-delta from the last applied snapshot. Apply checks paths, objects, destination
-identity and expected content. A checkout-level gate allows multiple shared writers
-and excludes application while writable work is active. Unconfirmed cleanup keeps
-that exclusion.
+Apply selects the current files, including untracked files, using the worker's
+latest stopped assignment reference. It does not select that assignment's past
+output. Inspect the accepted `operationId` and its outcome. Later applications
+deliver the delta from the last applied Git tree, even within the same assignment.
+Retry the same request ID to retrieve the original operation; use a new ID to
+select newer edits. Apply preserves HEAD and the index.
+
+Apply checks paths, objects, destination identity and expected content. It refuses
+registered source activity. A checkout-level gate allows multiple shared writers
+and excludes application while writable destination work is active. Unconfirmed
+cleanup keeps that exclusion.
 
 Each application journals before and after blobs and cursor meaning. `rollback` reverses
 only matching destination content; later edits conflict. `reconcile` selects the
-retained operation and owner epoch. Preserve journals, worktrees and artifacts until
-the outcome is understood. See [recovery](#recovery).
+retained operation and owner epoch. Application blobs and helper evidence live in
+the destination's `.pinata/applications/artifacts`, so later runs can verify and
+recover earlier operations. Older journals copy missing blobs from the attached
+run when read. Reopen the originating run first if a legacy blob is unavailable;
+do not delete its artifacts. Preserve journals, worktrees and artifacts until the
+outcome is understood. See [recovery](#recovery).
 
 ## Custom agents
 
@@ -539,7 +569,6 @@ a lowercase letter followed by up to 31 lowercase letters, digits or hyphens.
 | `pinata.inheritContext`          | Default `none`; `parent` requests a filtered checkpoint.                 |
 | `pinata.memory`                  | Default `{ "scope": "none", "access": "read" }`.                         |
 | `pinata.delegation.maxDepth`     | Default `0`; requires handoffs and a scoped host grant.                  |
-| `pinata.checkpoint`              | `completion` private isolated checkpoint or `none`.                      |
 
 Acceptance freezes the definition, model, grants, tool providers, skills and workspace
 plan. A new worker adopts edited frozen resources; follow-ups preserve the accepted
@@ -581,7 +610,11 @@ pinata run job.json --bootstrap ./pinata-agents.ts
 ```
 
 `defineAgent` defaults `schemaVersion` to 1. Typed and Markdown definitions cannot
-share a name. The optional `submit_result` worker tool accepts:
+share a name. The optional `submit_result` worker tool submits a final report and
+ends the assignment on success. Use it only when ready to finish, never for
+progress updates. Later tool calls in the same batch are blocked, and queued
+input does not continue a reported assignment. The coordinator can start an
+explicit follow-up. It accepts:
 
 ```json
 {
@@ -604,6 +637,39 @@ Workers freeze the selected bootstrap path, source bytes, digest and schema desc
 Missing or changed bootstraps fail before execution. Editing an already loaded module
 requires a fresh host process and worker. Only host code or explicit `--bootstrap`
 can select executable definitions.
+
+### Worker messages
+
+Workers can use `pinata_message` for progress, findings and questions while they
+continue working:
+
+```json
+{
+  "messageId": "registry-ready",
+  "to": "coordinator",
+  "text": "The initial registry is ready; discovery is continuing."
+}
+```
+
+Omit `to` to address the worker's original parent assignment, or the coordinator
+for a root worker. Use `"coordinator"` explicitly to reach the primary agent, or
+`{"worker":"builder"}` to address another active or queued worker in the same run.
+Add `assignment` to select an exact assignment. Stopped or canceled recipients
+reject new messages; a message never starts or resumes an assignment.
+
+The host supplies the sender identity. The receipt confirms durable recording;
+delivery and consumption remain separate observations. Reusing `messageId` with
+the same input returns the original receipt; changing its content rejects the
+retry. Messages arrive as attributed worker data and grant no command authority.
+Pi displays coordinator messages and includes them in its next provider request
+without starting an extra coordinator turn. Peer messages use the existing input
+queue, including its consumption checkpoints. Concurrent completion or cancellation
+can leave a recorded message unread.
+
+Read retained messages with `pinata_status` and
+`{"query":{"kind":"messages","since":0}}`. The returned `cursor` is the next
+`since` value; an optional `worker` filter selects messages sent or received by that
+worker. The query also works through the CLI, IPC and saved-run viewer.
 
 ## Configuration
 
@@ -857,22 +923,22 @@ and effective capabilities. Inspect installed contracts with `pinata tools --jso
 | `pinata_wait`      | Optional `workers` or exact `targets`, and `next`.                                   |
 | `pinata_status`    | Canonical `query`, default status.                                                   |
 | `pinata_agents`    | Discover definitions, model defaults and effective grants.                           |
-| `pinata_changes`   | Exact `ref`; inspect retained workspace changes.                                     |
 | `pinata_integrate` | Exact `ref`, `destination`, optional `requestId`; observe its application operation. |
 | `pinata_rollback`  | `operation`, `destination`, optional `requestId`.                                    |
 | `pinata_schedule`  | `schedule` action, optional `requestId`.                                             |
 | `pinata_recover`   | Optional exact `targets`; inspect/reattach original attempts.                        |
 | `pinata_page`      | `cursor` returned from a paged tool reply.                                           |
 
-| Worker tool                                 | Availability                                                 |
-| ------------------------------------------- | ------------------------------------------------------------ |
-| `submit_result`                             | Optional report; `outputType` can refine `data`.             |
-| `pinata_dependency`                         | Exact frozen dependency results only.                        |
-| `pinata_children`                           | Explicit scoped delegation grant.                            |
-| `pinata_child_status`, `pinata_child_wait`  | Same grant; descendants only.                                |
-| `pinata_page`                               | Previously exposed child-tool output in this worker session. |
-| `pinata_memory_read`                        | Granted worker/project-agent memory.                         |
-| `pinata_memory_edit`, `pinata_memory_clear` | Scoped memory write grant and expected revision.             |
+| Worker tool                                 | Availability                                                                           |
+| ------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `submit_result`                             | Optional final report; ends the assignment on success. `outputType` can refine `data`. |
+| `pinata_message`                            | Send to the coordinator, parent or a pending peer without ending the assignment.       |
+| `pinata_dependency`                         | Exact frozen dependency results only.                                                  |
+| `pinata_children`                           | Explicit scoped delegation grant.                                                      |
+| `pinata_child_status`, `pinata_child_wait`  | Same grant; descendants only.                                                          |
+| `pinata_page`                               | Previously exposed child-tool output in this worker session.                           |
+| `pinata_memory_read`                        | Granted worker/project-agent memory.                                                   |
+| `pinata_memory_edit`, `pinata_memory_clear` | Scoped memory write grant and expected revision.                                       |
 
 Coordinator `details` retain `pinata.surface-reply.v1`; `pinata_page` returns
 `pinata.tool-page-reply.v1`. Model content fits within 32 KiB. Larger replies return
@@ -889,27 +955,28 @@ receipts name the revision, exact assignments, messages and any application oper
 Stale expected revisions reject. Stable IDs make acceptance retries idempotent;
 they do not promise exactly-once arbitrary external tool effects.
 
-| Command                  | Behavior                                                             |
-| ------------------------ | -------------------------------------------------------------------- |
-| `create`, `add`          | Atomically accept worker batches; `create` can include config.       |
-| `follow_up`              | Queue with `worker`, `messageId`, `text`, optional `after`/`inputs`. |
-| `steer`, `continue`      | Address a worker with message ID/text.                               |
-| `cancel`                 | Assignment/worker/run scope; descendants default on.                 |
-| `background`, `capacity` | Release a wait or select positive/null `maxConcurrent`.              |
-| `schedule`               | Manage session triggers.                                             |
-| `apply`                  | Apply an exact snapshot to the frozen destination with exclusion.    |
-| `rollback`, `reconcile`  | Recover a selected journaled application.                            |
+| Command                  | Behavior                                                               |
+| ------------------------ | ---------------------------------------------------------------------- |
+| `create`, `add`          | Atomically accept worker batches; `create` can include config.         |
+| `follow_up`              | Queue with `worker`, `messageId`, `text`, optional `after`.            |
+| `steer`, `continue`      | Address a worker with message ID/text.                                 |
+| `cancel`                 | Assignment/worker/run scope; descendants default on.                   |
+| `background`, `capacity` | Release a wait or select positive/null `maxConcurrent`.                |
+| `schedule`               | Manage session triggers.                                               |
+| `apply`                  | Apply current worktree files to the frozen destination with exclusion. |
+| `rollback`, `reconcile`  | Recover a selected journaled application.                              |
 
 Worker requests require `id`, `agent`, `task`. Optional fields: `origin`, `messageId`,
-`after`, `inputs`, `workspace`, `observeWorkspace`, `model`, `backend`, `lifetime`,
-`context`, `inheritContext`, `memory`, `delegation`. `origin` identifies an earlier
+`after`, `workspace`, `model`, `backend`, `lifetime`, `context`, `inheritContext`,
+`memory`, `delegation`. `origin` identifies an earlier
 assignment in the same run. It copies no context or files and adds no dependency;
 supply these explicitly when replacing work.
 
-Queries: `status`, `config`, `receipt`, `result`, `events`, `schemas`, `definitions`,
+Queries: `status`, `messages`, `config`, `receipt`, `result`, `events`, `schemas`, `definitions`,
 `conversation`, `changes`, `application`, `wait`. Result/conversation/changes select
 `ref`; receipt selects `requestId`; application selects `operationId`. Conversation
-paging uses returned `cursor`; events use `since`. Unnamed model-facing schema
+paging uses returned `cursor`; events and messages use `since`. Messages can filter
+by `worker`. Unnamed model-facing schema
 discovery returns an index. Request a named schema or tool for its fields.
 
 ### Errors and versions
@@ -1067,7 +1134,7 @@ backends and workspace, application port, scheduling owner, notifications and di
 | `bindChild(parentRef)`                                | Authority-bound child port.                                                    |
 | `parentCheckpoint(ref, caller)`                       | Supported parent conversation checkpoint.                                      |
 | `scheduleTick()`                                      | Evaluate injected scheduling clock.                                            |
-| `deliverNotifications(caller)`                        | Deliver durable notices through host port.                                     |
+| `deliverNotifications(caller, {notificationId}?)`     | Deliver one durable notice, or retry the outbox when no ID is supplied.        |
 | `recordNotificationConsumption(id, artifact, caller)` | Record exact notice consumption with retained checkpoint.                      |
 | `diagnostics()`                                       | Observer/execution diagnostics.                                                |
 | `dispatch(ref, caller)`                               | Injected inert test effect port.                                               |
@@ -1092,8 +1159,12 @@ acceptance. `BackendPort` advertises restoration, steering, context, skill, memo
 delegation, fallback, lifetime and cleanup capabilities. Start and reattach handles own
 input receipts, observations, completion, checkpoints and stop receipts.
 
-`WorkspacePort` owns prepare/recover/capture/release, retaining writer registration
-until confirmed cleanup. `RuntimeApplicationPort` performs journaled application
+`WorkspacePort` owns prepare/recover/release, retaining writer registration
+until confirmed cleanup. Its optional `capture` method only reconciles older recorded
+capture intents; new assignments do not call it. `Runtime.bindMessages(ref)` supplies
+a worker-bound `MessagePort` independently of child delegation. Built-in hosts attach it to each
+backend; custom hosts can provide it through the backend's `messages` option.
+`RuntimeApplicationPort` performs journaled application
 outside command serialization. `NotificationPort` distinguishes stable notice
 transport from model consumption; Pi needs the complete notice in the outgoing
 provider payload and a retained parent branch to record consumption. `onDiagnostic`
@@ -1107,19 +1178,28 @@ projections and transient `activity`. Revisions order history; `ownerEpoch` iden
 ownership generations. Activity source and ordinal support deduplication. Subscribers
 can coalesce activity or reset to snapshots; activity gaps do not imply missing commits.
 
+Process workers send coalesced live activity through the authenticated supervisor
+channel. The latest tail stays in memory and is replayed after reconnect; lifecycle,
+usage, outcomes and cleanup remain durable. Wake notifications follow durable writes,
+with a slower reconciliation scan if a notification is lost.
+
 History records assignments, effect intent and observation, backend enrollment, input
-transport and consumption, conversations, usage, output, cleanup, snapshots, settlement,
-schedules and application. Results and notices use exact assignments, keeping earlier
+transport and consumption, worker messages, conversations, usage, output, cleanup,
+worktrees, legacy snapshots, settlement, schedules and application. Results and notices use exact assignments, keeping earlier
 and later results distinct.
 
 Usage reconciles per assignment and attempt with uncached input, output, cache reads and writes
 and optional cost. Missing or conflicting coverage keeps totals unknown while retaining
 partial observations. Price estimates, invoices and context utilization are separate.
 
-IPC protocol 2 binds loopback and records run, server and owner identities with separate
+IPC binds loopback and records run, server and owner identities with separate
 viewer and control credentials. A versioned hello supplies role and token. Root control
 credentials must stay outside worker transports and model prompts. Exact handshakes,
 frames and limits are in `pinata.ipc-*.v1`.
+
+The hello negotiates protocol 2 direct UTF-8 JSONL or protocol 1 base64 parts.
+Discovery files remain compatible with protocol 1. Replies retain a complete-message
+byte bound across socket chunks; client requests retain the frame-size bound.
 
 Transport IDs and durable mutation IDs serve different purposes. After disconnect,
 query the mutation receipt. Chunking preserves full replies; bounded queues and
@@ -1130,9 +1210,17 @@ receipts deduplicate by stable ID, separately from consumption.
 
 ## Recovery
 
-Start with status, results, conversations and changes for the exact assignment; use
-`--saved` without an owner. Shared files, isolated snapshots and worktrees remain
+Start with status, results and conversations for the exact assignment; use `--saved`
+without an owner. Inspect current worktree files with Git; use `changes` for legacy
+snapshots. Shared files, worktrees and previously captured snapshots remain
 inspectable after failure or cancellation.
+
+Large conversations use immutable chunks and flat manifests that share unchanged
+prefixes. Restoration preserves exact Pi JSONL bytes and branch identities. Native
+session files and old artifacts remain available. Fresh first pages validate the whole
+conversation; continuation pages verify the chunks they read, including after cache
+eviction. Engine state checkpoints remain optional projections: recovery verifies
+journal evidence and recomputes their prefix state before using them.
 
 | Situation                 | Action                                                                     |
 | ------------------------- | -------------------------------------------------------------------------- |
@@ -1271,7 +1359,7 @@ pinata/
 |   |-- agent/           # Pi sessions, tools, reporting and guards
 |   |-- backends/        # In-process, process and Herdr execution
 |   |   `-- supervision/ # Process ownership, output and Windows Job Objects
-|   |-- workspace/       # Worktrees, snapshots, setup and writer exclusion
+|   |-- workspace/       # Worktrees, setup, legacy capture and writer exclusion
 |   |-- application/     # Journaled apply, rollback and reconciliation
 |   |-- context/         # Instructions, filtering and restoration
 |   |-- memory/          # Scoped memory and revision history
@@ -1301,6 +1389,10 @@ Use Node 22.19+ and retain the lockfile. Pin direct development dependencies;
 Pi stays an optional host peer. Read [STYLE.md](STYLE.md) and [AGENTS.md](AGENTS.md)
 before editing source.
 
+The Node loader enables the compile cache when available and shares it with owned
+children. Set `NODE_DISABLE_COMPILE_CACHE=1` to disable it, or `NODE_COMPILE_CACHE`
+to select its directory. Unavailable caches do not prevent execution.
+
 ```sh
 npm ci --ignore-scripts
 npm run check
@@ -1310,8 +1402,10 @@ npm test
 `check` runs Oxfmt, Oxlint and TypeScript. Format changed files with
 `npm exec -- oxfmt --write <paths>`. The scripted test suite makes no paid model calls.
 It runs ordinary files with at most two concurrent files, then exhaustive apply and
-rollback fault matrices separately. Test timeouts supervise fixtures, rather than
-imposing production worker deadlines.
+rollback fault matrices separately. Each matrix reports named fault cases with
+30-second timeouts and allows 15 minutes for the complete file. A timed-out case
+reports its phase and last write boundary and aborts its fixture Git command.
+These limits supervise tests; production workers have no such deadlines.
 
 Focused and integration checks:
 

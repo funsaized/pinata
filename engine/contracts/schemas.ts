@@ -1,7 +1,14 @@
 import { scheduleStateSchema, scheduleOccurrenceSchema } from "./schedule.ts";
 import { toolPageRequestSchema, toolPageSchema, toolPageReplySchema } from "./pages.ts";
-import { z } from "zod";
+import type { z } from "zod";
+import { DomainError } from "./common.ts";
+import { jsonSchema } from "./json-schema.ts";
 import { dependencyQuerySchema, dependencyPageSchema } from "./dependencies.ts";
+import {
+  workerMessageRequestSchema,
+  workerMessageReceiptSchema,
+  workerMessageSchema,
+} from "./messages.ts";
 import { grantsSchema, commandErrorSchema } from "./common.ts";
 import {
   ipcLimitsSchema,
@@ -36,6 +43,7 @@ import {
   workspaceManifestSchema,
   workspacePlanSchema,
   workspaceCheckpointSchema,
+  worktreeSchema,
 } from "./workspace.ts";
 import { commandEnvelopeSchema, jobSchema, workerRequestSchema } from "./commands.ts";
 import { configSchema, configLayerSchema } from "./config.ts";
@@ -78,6 +86,9 @@ import { loadoutSchema } from "./loadout.ts";
 import { conversationSeedSchema, instructionSnapshotSchema } from "./context.ts";
 
 export const schemaRegistry = {
+  "pinata.worker-message-request.v1": workerMessageRequestSchema,
+  "pinata.worker-message-receipt.v1": workerMessageReceiptSchema,
+  "pinata.worker-message.v1": workerMessageSchema,
   "pinata.tool-page-request.v1": toolPageRequestSchema,
   "pinata.tool-page.v1": toolPageSchema,
   "pinata.tool-page-reply.v1": toolPageReplySchema,
@@ -101,6 +112,7 @@ export const schemaRegistry = {
   "pinata.child-wait.v1": childWaitSchema,
   "pinata.child-wait-result.v1": childWaitResultSchema,
   "pinata.workspace-checkpoint.v1": workspaceCheckpointSchema,
+  "pinata.worktree.v1": worktreeSchema,
   "pinata.loadout.v1": loadoutSchema,
   "pinata.conversation-seed.v1": conversationSeedSchema,
   "pinata.instruction-snapshot.v1": instructionSnapshotSchema,
@@ -156,13 +168,15 @@ export type SchemaName = keyof typeof schemaRegistry;
 
 // Cross-field grants, graph references, receipt/journal consistency and NUL rejection
 // require canonical validation after transport normalization; JSON Schema is not authority.
-export function exportSchemas(): Record<string, z.core.JSONSchema.JSONSchema> {
-  return Object.fromEntries(
-    Object.entries(schemaRegistry).map(([name, schema]) => [
-      name,
-      z.toJSONSchema(schema, { target: "draft-07", io: "input" }),
-    ]),
-  );
+export function exportSchemas(name?: string): Record<string, z.core.JSONSchema.JSONSchema> {
+  if (name && !Object.hasOwn(schemaRegistry, name))
+    throw new DomainError(
+      "invalid_input",
+      `Unknown schema: ${name}. Available names: ${Object.keys(schemaRegistry).join(", ")}`,
+      "name",
+    );
+  const names = name ? [name as SchemaName] : (Object.keys(schemaRegistry) as SchemaName[]);
+  return Object.fromEntries(names.map((key) => [key, jsonSchema(schemaRegistry[key])]));
 }
 
 export function parseSchema(

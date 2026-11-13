@@ -3,6 +3,7 @@ import { connect, type Socket } from "node:net";
 import {
   controlPacketSchema,
   type ControlAction,
+  type RelayMessage,
   type SupervisorEvent,
   type SupervisorIdentity,
 } from "./contracts.ts";
@@ -25,6 +26,7 @@ export class ControlClient {
     socket: Socket,
     identity: SupervisorIdentity,
     consume: (event: SupervisorEvent) => void,
+    relay: (message: RelayMessage) => void,
   ) {
     this.socket = socket;
     this.identity = identity;
@@ -46,6 +48,7 @@ export class ControlClient {
         try {
           const packet = controlPacketSchema.parse(JSON.parse(line));
           if (packet.kind === "event") this.consume(packet.event);
+          else if (packet.kind === "relay") relay(packet);
           else {
             const request = this.pending.get(packet.id);
             if (!request) continue;
@@ -72,9 +75,10 @@ export class ControlClient {
   static async open(
     identity: SupervisorIdentity,
     consume: (event: SupervisorEvent) => void,
+    relay: (message: RelayMessage) => void = () => {},
   ): Promise<ControlClient> {
     const socket = connect(identity.endpoint);
-    const client = new ControlClient(socket, identity, consume);
+    const client = new ControlClient(socket, identity, consume, relay);
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => {
         socket.destroy();

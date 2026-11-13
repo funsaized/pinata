@@ -22,7 +22,7 @@ import {
   type ArtifactPort,
 } from "../contracts/index.ts";
 import { digestBytes, isMissing, publishImmutable } from "../storage/io.ts";
-import { verifyArtifact } from "../storage/journal.ts";
+import { verifyArtifactBytes } from "../storage/journal.ts";
 import { supervisorIdentitySchema } from "./supervision/contracts.ts";
 
 export const processOptionsSchema = z.strictObject({
@@ -39,6 +39,7 @@ export const processManifestSchema = z.strictObject({
   identity: backendIdentitySchema,
   launch: backendLaunchWireSchema,
   options: processOptionsSchema,
+  messaging: z.boolean().optional(),
 });
 export type ProcessManifest = z.infer<typeof processManifestSchema>;
 export const processBriefSchema = z.strictObject({
@@ -124,9 +125,11 @@ const transportFrameSchema = z.strictObject({
   payload: z.unknown(),
 });
 export async function writeRecord(path: string, value: unknown): Promise<void> {
+  const payload = canonicalJson(value);
+  const digest = digestBytes(Buffer.from(payload));
   await publishImmutable(
     path,
-    Buffer.from(canonicalJson({ schemaVersion: 1, digest: digestValue(value), payload: value })),
+    Buffer.from(`{"digest":"${digest}","payload":${payload},"schemaVersion":1}`),
     "process-transport",
   );
 }
@@ -173,6 +176,6 @@ export function processArtifacts(storeDirectory: string): ArtifactPort {
       );
       return reference;
     },
-    read: (reference) => verifyArtifact(storeDirectory, reference),
+    read: (reference) => verifyArtifactBytes(storeDirectory, reference),
   };
 }

@@ -1,7 +1,6 @@
 import { chmod, lstat, mkdir, open, readFile, readdir, realpath } from "node:fs/promises";
 import { constants } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
-import { loadSkills } from "@earendil-works/pi-coding-agent";
 import { DomainError, type ArtifactRef } from "../contracts/common.ts";
 import { type ArtifactPort } from "../contracts/backend.ts";
 import { digestValue } from "../contracts/digest.ts";
@@ -85,6 +84,7 @@ export async function freezeSkills(
     const sourcePath = await skillSource(selected, options.cwd);
     const root = dirname(sourcePath);
     const initial = await resource(sourcePath);
+    const { loadSkills } = await import("@earendil-works/pi-coding-agent");
     const loaded = loadSkills({
       cwd: options.cwd,
       agentDir: options.agentDir,

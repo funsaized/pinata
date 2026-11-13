@@ -250,7 +250,7 @@ test("compact trees retain actual ancestry, queued totals and only witnessed ela
   const router = new ScreenRouter(source, { mode: "observe", now: () => now });
   await router.start();
   for (const target of [ref(), ref(2)]) {
-    source.state.assignments[assignmentKey(target)].execution = { phase: "running" };
+    source.state.assignments[assignmentKey(target)].execution = { phase: "preparing" };
     source.state.revision++;
     await source.emit({
       schemaVersion: 1,
@@ -258,7 +258,7 @@ test("compact trees retain actual ancestry, queued totals and only witnessed ela
       id: `start/${target.worker}`,
       ownerEpoch: source.epoch,
       revision: source.state.revision,
-      transition: { kind: "assignment_state", ref: target, execution: { phase: "running" } },
+      transition: { kind: "assignment_state", ref: target, execution: { phase: "preparing" } },
     });
   }
   now = 1800;
@@ -274,7 +274,7 @@ test("compact trees retain actual ancestry, queued totals and only witnessed ela
     }).join("\n");
   assert.match(render(), /● Agents/);
   assert.match(render(), /│  └───────   fixture worker-2\/1/);
-  assert.match(render(), /observed 1.7s/);
+  assert.match(render(), / · 1\.7s/);
   assert.match(render(), /└─ ○ 2 queued/);
   assert.match(render(), /Reading retained fixture output/);
   assert(!render().includes("thinking"));
@@ -1460,6 +1460,73 @@ test("worker detail fills the viewport and anchors the composer through resize",
   router.dispose();
 });
 
+for (const text of ["More detail, please.", "/follow-up More detail, please."])
+  test(`completed conversation accepts a follow-up through Enter: ${text}`, async (t) => {
+    const state = uiState(1);
+    state.assignments[assignmentKey(ref())].execution = {
+      phase: "ended",
+      reason: "completed",
+      cleanup: "confirmed",
+    };
+    const source = new UiSource(state);
+    let executed = 0;
+    source.respond = async (input) => {
+      const call = surfaceCallSchema.parse(input);
+      if (call.method !== "execute")
+        return conversationReply(ref(1, source.state.latest["worker-1"]), "Retained answer");
+      const envelope = commandEnvelopeSchema.parse(call.input);
+      assert.equal(envelope.command.kind, "follow_up");
+      assert("text" in envelope.command);
+      assert.equal(envelope.command.text, "More detail, please.");
+      executed++;
+      source.state.latest["worker-1"] = 2;
+      source.state.assignments[assignmentKey(ref(1, 2))] = {
+        ...source.state.assignments[assignmentKey(ref())],
+        ref: ref(1, 2),
+        sequence: 2,
+        execution: { phase: "queued" },
+      };
+      source.state.revision++;
+      await source.emit(source.snapshot());
+      return {
+        status: "ok",
+        response: {
+          method: "execute",
+          result: {
+            status: "accepted",
+            requestId: envelope.requestId,
+            revision: source.state.revision,
+            assignments: [ref(1, 2)],
+            resolved: [],
+          },
+        },
+      };
+    };
+    const router = new ScreenRouter(source);
+    t.after(() => router.dispose());
+    await router.start();
+    router.navigate("conversation", ref());
+    await tick();
+    const tui = new TuiAltScreen(new MemoryTerminal());
+    tui.requestRender = () => {};
+    const errors: unknown[] = [];
+    const screen = new PinataScreen({
+      tui,
+      router,
+      main() {},
+      error: (error) => errors.push(error),
+    });
+    t.after(() => screen.dispose());
+    screen.handleInput(text);
+    screen.handleInput("\r");
+    await tick();
+    assert.deepEqual(errors, []);
+    assert.equal(executed, 1);
+    assert.deepEqual(router.selected, ref(1, 2));
+    assert.equal(router.draft, "");
+    assert.equal(router.noticeTone, "success");
+  });
+
 test("short conversations and send feedback stay beside the composer without shifting controls", async () => {
   const source = new UiSource(uiState(1));
   let answer = "A short reply";
@@ -1802,6 +1869,7 @@ test("fleet retains completed dependency references without inventing ancestry",
   source.state.assignments[assignmentKey(ref(3))].after = [ref(), ref(2)];
   const router = new ScreenRouter(source);
   await router.start();
+  router.history = true;
   router.navigate("fleet", ref(3));
   const rows = renderScreen(router, {
     width: 100,

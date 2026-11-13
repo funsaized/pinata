@@ -1,5 +1,4 @@
 import { join } from "node:path";
-import { setTimeout as delay } from "node:timers/promises";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { z } from "zod";
 import {
@@ -20,6 +19,7 @@ import {
   processBriefSchema,
   processCommandSchema,
   processManifestSchema,
+  processEnrollmentSchema,
   processObservationSchema,
   processOutcomeSchema,
   processReadySchema,
@@ -27,11 +27,29 @@ import {
   readRecord,
   writeRecord,
   type ProcessResponse,
+  type ProcessManifest,
 } from "./process-transport.ts";
+import { ProcessSignals } from "./process-signals.ts";
 
 async function runWorker(directory: string): Promise<void> {
   const manifest = await readRecord(join(directory, "manifest.json"), processManifestSchema);
   if (!manifest) throw new Error("Worker launch manifest is missing");
+  const enrollment = await readRecord(join(directory, "enrollment.json"), processEnrollmentSchema);
+  if (!enrollment) throw new Error("Worker supervisor enrollment is missing");
+  const signals = new ProcessSignals(enrollment.supervisor, "worker");
+  try {
+    await signals.connect();
+    await runSession(directory, manifest, signals);
+  } finally {
+    signals.close();
+  }
+}
+
+async function runSession(
+  directory: string,
+  manifest: ProcessManifest,
+  signals: ProcessSignals,
+): Promise<void> {
   const artifacts = processArtifacts(manifest.launch.storeDirectory);
   const initialMessages = z
     .array(inboxMessageSchema)
@@ -54,15 +72,20 @@ async function runWorker(directory: string): Promise<void> {
   let observations = Promise.resolve();
   const observe = (observation: BackendObservation): Promise<void> => {
     if (observation.kind === "enrolled") return Promise.resolve();
+    if (observation.kind === "activity") {
+      signals.publishActivity({ ...observation, source: manifest.identity.id });
+      return Promise.resolve();
+    }
     const record = processObservationSchema.parse({
       schemaVersion: 1,
       sourceId: manifest.identity.id,
       ordinal: ++ordinal,
       observation,
     });
-    observations = observations.then(() =>
-      writeRecord(numberedPath(directory, "observations", record.ordinal), record),
-    );
+    observations = observations.then(async () => {
+      await writeRecord(numberedPath(directory, "observations", record.ordinal), record);
+      signals.notify();
+    });
     return observations;
   };
   let handle: BackendHandle;
@@ -84,6 +107,7 @@ async function runWorker(directory: string): Promise<void> {
       : undefined;
     await bootstrap?.configureModelRuntime?.(modelRuntime, manifest);
     await modelRuntime.refresh({ allowNetwork: false });
+    const control = fileChildClient(directory, signals);
     const backend = new InProcessBackend({
       modelRuntime: async () => modelRuntime,
       bootstrap,
@@ -91,9 +115,8 @@ async function runWorker(directory: string): Promise<void> {
       memoryProject: manifest.options.memoryProject,
       codemode: manifest.options.codemode,
       extensions: manifest.options.extensions,
-      ...(launch.worker.grants.delegation.maxDepth
-        ? { children: () => fileChildClient(directory) }
-        : {}),
+      ...(manifest.messaging ? { messages: () => control } : {}),
+      ...(launch.worker.grants.delegation.maxDepth ? { children: () => control } : {}),
       createProcesses: (request) =>
         supervisedSessionProcesses(request, {
           nodeCommand: manifest.options.nodeCommand,
@@ -101,6 +124,7 @@ async function runWorker(directory: string): Promise<void> {
     });
     handle = await backend.start(launch, observe, new AbortController().signal);
     await writeRecord(join(directory, "ready.json"), processReadySchema.parse({ status: "ready" }));
+    signals.notify();
   } catch (error) {
     await writeRecord(
       join(directory, "ready.json"),
@@ -118,6 +142,8 @@ async function runWorker(directory: string): Promise<void> {
               },
       }),
     );
+    signals.notify();
+    await signals.flush();
     return;
   }
   const outcome = handle.done.then(async (value) => {
@@ -130,22 +156,26 @@ async function runWorker(directory: string): Promise<void> {
         outcome: value,
       }),
     );
+    signals.notify();
+    await signals.flush();
   });
   // A failed durable output is not converted to a successful worker response.
   let outcomeFailure: unknown;
   void outcome.catch((error: unknown) => {
     outcomeFailure = error;
+    signals.wake();
   });
   let runtimeOwnerEpoch = manifest.launch.ownerEpoch;
   let commandOrdinal = 1;
   while (true) {
+    const version = signals.version;
     if (outcomeFailure) throw outcomeFailure;
     const command = await readRecord(
       numberedPath(directory, "commands", commandOrdinal),
       processCommandSchema,
     );
     if (!command) {
-      await delay(20);
+      await signals.wait(version);
       continue;
     }
     if (command.ordinal !== commandOrdinal) throw new Error("Worker command ordinal mismatch");
@@ -199,8 +229,12 @@ async function runWorker(directory: string): Promise<void> {
       numberedPath(directory, "responses", commandOrdinal),
       processResponseSchema.parse(response),
     );
+    signals.notify();
     commandOrdinal++;
-    if (stopping) return;
+    if (stopping) {
+      await signals.flush();
+      return;
+    }
   }
 }
 

@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import {
   BackendStartFailure,
@@ -49,17 +48,21 @@ import {
   readRecord,
   writeRecord,
   type ProcessAction,
+  type ProcessCommand,
   type ProcessManifest,
   type ProcessResponse,
   type WorkerProcessOptions,
 } from "./process-transport.ts";
 import type { ChildPort } from "../contracts/delegation.ts";
 import { serveFileChildren } from "./delegation-transport.ts";
+import type { MessagePort } from "../contracts/messages.ts";
+import { ProcessSignals } from "./process-signals.ts";
 
 type Observe = (observation: BackendObservation, source?: ObservationSource) => Promise<void>;
 export type ProcessBackendOptions = WorkerProcessOptions & {
   commandTimeoutMs?: number;
   children?(ref: BackendLaunch["ref"]): ChildPort;
+  messages?(ref: BackendLaunch["ref"]): MessagePort;
 };
 export type WorkerProcessHandle = BackendHandle & {
   detach(): Promise<void>;
@@ -118,6 +121,11 @@ export class ProcessHandle implements BackendHandle {
   private removeAbort: () => void = () => {};
   private children?: ReturnType<typeof serveFileChildren>;
   private readonly childPort?: ChildPort;
+  private readonly messagePort?: MessagePort;
+  private readonly signals: ProcessSignals;
+  private readonly removeSupervisorEvents: () => void;
+  private commandIndex?: Map<string, ProcessCommand>;
+  private commandOrdinal = 0;
 
   constructor(options: {
     directory: string;
@@ -128,6 +136,7 @@ export class ProcessHandle implements BackendHandle {
     runtimeOwnerEpoch: string;
     commandTimeoutMs: number;
     children?: ChildPort;
+    messages?: MessagePort;
   }) {
     this.identity = structuredClone(options.manifest.identity);
     this.directory = options.directory;
@@ -137,6 +146,9 @@ export class ProcessHandle implements BackendHandle {
     this.runtimeOwnerEpoch = options.runtimeOwnerEpoch;
     this.commandTimeoutMs = options.commandTimeoutMs;
     this.childPort = options.children;
+    this.messagePort = options.messages;
+    this.signals = new ProcessSignals(this.supervisor.identity, "coordinator");
+    this.removeSupervisorEvents = this.supervisor.events(() => this.signals.wake());
     this.done = new Promise((resolve, reject) => {
       this.resolveDone = resolve;
       this.rejectDone = reject;
@@ -147,8 +159,13 @@ export class ProcessHandle implements BackendHandle {
   }
 
   begin(signal: AbortSignal): void {
-    if (this.childPort) {
-      this.children = serveFileChildren(this.directory, this.childPort);
+    if (this.childPort || this.messagePort) {
+      this.children = serveFileChildren(
+        this.directory,
+        this.childPort,
+        this.signals,
+        this.messagePort,
+      );
       void this.children.done.catch((error: unknown) => this.rejectDone(error));
     }
     const abort = () => {
@@ -164,7 +181,21 @@ export class ProcessHandle implements BackendHandle {
 
   private async pollObservations(): Promise<void> {
     let ordinal = 1;
+    let activityOrdinal = -1;
+    let inspectAt = 0;
     while (this.active) {
+      const version = this.signals.version;
+      const activity = this.signals.activity;
+      if (activity && activity.ordinal > activityOrdinal) {
+        activityOrdinal = activity.ordinal;
+        await this.observe({
+          kind: "activity",
+          source: activity.source,
+          ordinal: activity.ordinal,
+          text: activity.text,
+          snapshot: true,
+        });
+      }
       const record = await readRecord(
         numberedPath(this.directory, "observations", ordinal),
         processObservationSchema,
@@ -191,50 +222,72 @@ export class ProcessHandle implements BackendHandle {
         this.resolveDone(ended.outcome);
         return;
       }
-      const status = await this.supervisor.inspect();
-      if (status.exit || status.phase === "failed") {
-        if (await readRecord(join(this.directory, "outcome.json"), processOutcomeSchema)) continue;
-        throw new Error("Worker process ended before publishing its durable outcome");
+      if (performance.now() >= inspectAt) {
+        const status = await this.supervisor.inspect();
+        inspectAt = performance.now() + 1000;
+        if (status.exit || status.phase === "failed") {
+          if (await readRecord(join(this.directory, "outcome.json"), processOutcomeSchema))
+            continue;
+          throw new Error("Worker process ended before publishing its durable outcome");
+        }
       }
-      await delay(20);
+      await this.signals.wait(version);
     }
   }
 
   async waitReady(): Promise<void> {
+    await this.signals.connect();
     const deadline = performance.now() + this.commandTimeoutMs;
+    let inspectAt = 0;
     while (true) {
+      const version = this.signals.version;
       const ready = await readRecord(join(this.directory, "ready.json"), processReadySchema);
       if (ready?.status === "ready") return;
       if (ready?.status === "failed") throw new Error(`Worker setup failed: ${ready.error}`);
-      const status = await this.supervisor.inspect();
-      if (status.exit || status.phase === "failed") {
-        if (await readRecord(join(this.directory, "ready.json"), processReadySchema)) continue;
-        throw new Error("Worker exited during setup");
+      if (performance.now() >= inspectAt) {
+        const status = await this.supervisor.inspect();
+        inspectAt = performance.now() + 1000;
+        if (status.exit || status.phase === "failed") {
+          if (await readRecord(join(this.directory, "ready.json"), processReadySchema)) continue;
+          throw new Error("Worker exited during setup");
+        }
       }
       if (performance.now() >= deadline) throw new Error("Worker setup acknowledgment timed out");
-      await delay(20);
+      await this.signals.wait(version);
     }
   }
 
   private request(id: string, command: ProcessAction): Promise<ProcessResponse> {
     const operation = this.commands.then(async () => {
       if (!this.active) throw new Error("Worker handle is detached or stopped");
-      const prior = await readCommands(this.directory);
-      let record = prior.find((entry) => entry.id === id);
+      if (!this.commandIndex) {
+        const prior = await readCommands(this.directory);
+        const index = new Map(prior.map((entry) => [entry.id, entry]));
+        if (index.size !== prior.length)
+          throw new Error("Worker command stream reuses a command identity");
+        this.commandIndex = index;
+        this.commandOrdinal = prior.length;
+      }
+      let record = this.commandIndex.get(id);
       if (record && canonicalJson(record.command) !== canonicalJson(command))
         throw new Error("Worker command identity was reused with different input");
       if (!record) {
         record = {
           schemaVersion: 1,
           id,
-          ordinal: prior.length + 1,
+          ordinal: this.commandOrdinal + 1,
           runtimeOwnerEpoch: this.runtimeOwnerEpoch,
           command,
         };
         await writeRecord(numberedPath(this.directory, "commands", record.ordinal), record);
+        this.commandIndex.set(id, record);
+        this.commandOrdinal = record.ordinal;
       }
+      this.signals.notify();
       const deadline = performance.now() + this.commandTimeoutMs;
+      let inspectAt = 0;
       while (true) {
+        const version = this.signals.version;
         const response = await readRecord(
           numberedPath(this.directory, "responses", record.ordinal),
           processResponseSchema,
@@ -245,20 +298,24 @@ export class ProcessHandle implements BackendHandle {
           if (response.status === "error") throw new Error(response.error);
           return response;
         }
-        const status = await this.supervisor.inspect();
-        if (status.exit || status.phase === "failed") {
-          if (
-            await readRecord(
-              numberedPath(this.directory, "responses", record.ordinal),
-              processResponseSchema,
+        if (performance.now() >= inspectAt) {
+          const status = await this.supervisor.inspect();
+          inspectAt = performance.now() + 1000;
+          if (status.exit || status.phase === "failed") {
+            if (
+              await readRecord(
+                numberedPath(this.directory, "responses", record.ordinal),
+                processResponseSchema,
+              )
             )
-          )
-            continue;
-          throw new Error("Worker ended before its command acknowledgment");
+              continue;
+            throw new Error("Worker ended before its command acknowledgment");
+          }
         }
         if (performance.now() >= deadline)
           throw new Error("Worker command acknowledgment timed out");
-        await delay(20);
+        if (!this.active) throw new Error("Worker handle is detached or stopped");
+        await this.signals.wait(version);
       }
     });
     this.commands = operation.then(
@@ -308,6 +365,8 @@ export class ProcessHandle implements BackendHandle {
       throw new DomainError("unsupported", "Attached workers cannot detach from their runtime");
     this.active = false;
     this.removeAbort();
+    this.signals.close();
+    this.removeSupervisorEvents();
     await this.polling;
     await this.children?.close();
     this.supervisor.detach();
@@ -344,6 +403,8 @@ export class ProcessHandle implements BackendHandle {
     const guardianCleanup = await this.supervisor.stop({ reason });
     if (guardianCleanup.status === "unconfirmed") reasons.push(...guardianCleanup.reasons);
     this.active = false;
+    this.signals.close();
+    this.removeSupervisorEvents();
     await this.polling;
     const evidence = [...(stopped?.cleanup.evidence ?? [])];
     let output: ArtifactRef[] = [];
@@ -393,6 +454,7 @@ export class ProcessBackend implements BackendPort {
   private readonly options: WorkerProcessOptions;
   private readonly commandTimeoutMs: number;
   private readonly children?: ProcessBackendOptions["children"];
+  private readonly messages?: ProcessBackendOptions["messages"];
 
   constructor(options: ProcessBackendOptions) {
     this.options = processOptionsSchema.parse({
@@ -407,6 +469,7 @@ export class ProcessBackend implements BackendPort {
     });
     this.commandTimeoutMs = options.commandTimeoutMs ?? 30_000;
     this.children = options.children;
+    this.messages = options.messages;
     const capability = supervisionCapability();
     this.capabilities = {
       ...capability,
@@ -418,6 +481,7 @@ export class ProcessBackend implements BackendPort {
       fallbacks: true,
       surviving: true,
       delegation: Boolean(options.children),
+      messaging: Boolean(options.messages),
     };
   }
 
@@ -449,6 +513,7 @@ export class ProcessBackend implements BackendPort {
       schemaVersion: 1,
       identity,
       options: this.options,
+      messaging: Boolean(this.messages),
       launch: { ...wire, initialMessages, brief },
     });
     await writeRecord(join(directory, "manifest.json"), manifest);
@@ -500,6 +565,7 @@ export class ProcessBackend implements BackendPort {
         observe,
         runtimeOwnerEpoch: launch.ownerEpoch,
         commandTimeoutMs: this.commandTimeoutMs,
+        messages: this.messages?.(launch.ref),
         ...(launch.worker.grants.delegation.maxDepth
           ? { children: this.children?.(launch.ref) }
           : {}),
@@ -581,6 +647,7 @@ export class ProcessBackend implements BackendPort {
       observe,
       runtimeOwnerEpoch: request.runtimeOwnerEpoch,
       commandTimeoutMs: this.commandTimeoutMs,
+      ...(manifest.messaging ? { messages: this.messages?.(request.ref) } : {}),
       ...(manifest.launch.worker.grants.delegation.maxDepth
         ? { children: this.children?.(request.ref) }
         : {}),

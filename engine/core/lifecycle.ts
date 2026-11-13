@@ -6,12 +6,14 @@ import {
   type CoreState,
   type Transition,
 } from "../contracts/index.ts";
+import { assignmentAttempts } from "./indexes.ts";
 
 type LifecycleTransition = Exclude<
   Transition,
   {
     kind:
       | "accepted"
+      | "message_sent"
       | "schedule_changed"
       | "schedule_occurrence"
       | "application_accepted"
@@ -86,7 +88,8 @@ export function reduceLifecycle(
     }
     case "attempt_started": {
       const attempt = transition.attempt;
-      const assignment = state.assignments[assignmentKey(attempt.ref)];
+      const key = assignmentKey(attempt.ref);
+      const assignment = state.assignments[key];
       if (
         !assignment ||
         assignment.execution.phase !== "preparing" ||
@@ -94,9 +97,7 @@ export function reduceLifecycle(
       )
         throw new DomainError("conflict", "Attempt requires one reserved preparing assignment");
       const worker = state.workers[attempt.ref.worker];
-      const previous = Object.values(state.attempts).filter(
-        (entry) => assignmentKey(entry.attempt.ref) === assignmentKey(attempt.ref),
-      );
+      const previous = assignmentAttempts(state, key);
       if (
         attempt.ordinal !== previous.length + 1 ||
         attempt.backend !== worker.backend ||

@@ -49,6 +49,12 @@ import { StorageError, type FaultHook } from "../storage/io.ts";
 import { RuntimeApplications, type RuntimeApplicationPort } from "./application.ts";
 import { readChanges } from "./changes.ts";
 import { ChildBindings } from "./delegation.ts";
+import { messageReceipt, messageTarget, queryMessages, validateMessage } from "../core/messages.ts";
+import {
+  workerMessageRequestSchema,
+  type MessagePort,
+  type WorkerMessage,
+} from "../contracts/messages.ts";
 import type { ChildPort } from "../contracts/delegation.ts";
 import { checkChildCaller, checkChildCommand } from "../core/delegation.ts";
 import { immutable } from "./immutable.ts";
@@ -66,7 +72,12 @@ import {
 
 export type { ExecutionOptions } from "./execution.ts";
 export type { RuntimeApplicationPort } from "./application.ts";
-export type { CompletionNotice, NotificationDelivery, NotificationPort } from "./delivery.ts";
+export type {
+  CompletionNotice,
+  NotificationNotice,
+  NotificationDelivery,
+  NotificationPort,
+} from "./delivery.ts";
 
 export type WorkerResolver = (
   requests: readonly WorkerRequest[],
@@ -113,6 +124,7 @@ export class Runtime {
   private state: ReturnType<typeof initialState>;
   private pending: Promise<void> = Promise.resolve();
   private closing = false;
+  private checkpointAttemptRevision = 0;
   private readonly subscribers = new Set<Subscriber>();
   private readonly failures: RuntimeDiagnostic[] = [];
   private readonly execution?: ExecutionCoordinator;
@@ -134,9 +146,11 @@ export class Runtime {
     this.children = new ChildBindings(this, () =>
       this.serialize(async () => immutable(this.state)),
     );
-    let state = initialState(store.manifest.run);
+    let state = store.replayState ?? initialState(store.manifest.run);
+    this.checkpointAttemptRevision = state.revision;
     for (const frame of store.frames) {
-      state = reduce(state, frame.record.transition, frame.record.revision);
+      if (frame.record.revision > state.revision)
+        state = reduce(state, frame.record.transition, frame.record.revision);
       this.committedRequests.set(frame.record.requestId, {
         payloadDigest: frame.record.payloadDigest,
         transitionDigest: digestValue(frame.record.transition),
@@ -149,6 +163,14 @@ export class Runtime {
       this.serialize(() =>
         operation({
           state: () => this.state,
+          commitAll: (transitions) =>
+            this.commitBatch(
+              transitions.map((transition) => ({
+                requestId: randomUUID(),
+                payloadDigest: digestValue(transition),
+                transition,
+              })),
+            ),
           commit: async (transition, identity) =>
             this.commit({
               requestId: identity?.requestId ?? randomUUID(),
@@ -395,6 +417,58 @@ export class Runtime {
     return this.children.bind(parentAssignment);
   }
 
+  bindMessages(sender: AssignmentRef): MessagePort {
+    const from = immutable(sender);
+    return {
+      send: async (input, signal) => {
+        signal?.throwIfAborted();
+        const request = workerMessageRequestSchema.parse(input);
+        const id = `worker-message:${digestValue([from, request.messageId])}`;
+        const requestDigest = digestValue(request);
+        return this.serialize(async () => {
+          signal?.throwIfAborted();
+          if (this.closing) throw new DomainError("conflict", "Runtime is closing");
+          await this.store.assertOwner();
+          const previous = this.state.messages[id];
+          if (previous) {
+            if (previous.requestDigest !== requestDigest)
+              throw new DomainError(
+                "conflict",
+                "Message ID already has different content",
+                "messageId",
+              );
+            return immutable(messageReceipt(previous));
+          }
+          const message: WorkerMessage = {
+            id,
+            from,
+            to: messageTarget(this.state, from, request.to),
+            text: request.text,
+            requestDigest,
+            revision: this.state.revision + 1,
+          };
+          validateMessage(this.state, message);
+          if (message.to !== "coordinator" && this.options.execution) {
+            const target = this.state.assignments[assignmentKey(message.to)];
+            const worker = this.state.workers[message.to.worker];
+            const backend = this.options.execution.backends[worker.backend];
+            if (target.execution.phase !== "queued" && !backend?.capabilities.steer)
+              throw new DomainError(
+                "unsupported",
+                `Backend ${worker.backend} cannot receive live messages`,
+              );
+          }
+          await this.commit({
+            requestId: id,
+            payloadDigest: requestDigest,
+            transition: { kind: "message_sent", message },
+          });
+          return immutable(messageReceipt(message));
+        });
+      },
+    };
+  }
+
   async parentCheckpoint(
     ref: AssignmentRef,
     caller: CallerAuthority,
@@ -445,41 +519,98 @@ export class Runtime {
     transition: Transition;
     artifacts?: ArtifactRef[];
   }): Promise<void> {
-    const transition = transitionSchema.parse(input.transition);
-    const previous = this.committedRequests.get(input.requestId);
-    const transitionDigest = digestValue(transition);
-    if (previous) {
-      if (
-        previous.payloadDigest !== input.payloadDigest ||
-        previous.transitionDigest !== transitionDigest
-      )
-        throw new DomainError(
-          "conflict",
-          "A committed source identity was reused with different content",
-        );
+    await this.commitBatch([input]);
+  }
+
+  private async commitBatch(
+    inputs: readonly {
+      requestId: string;
+      payloadDigest: string;
+      transition: Transition;
+      artifacts?: ArtifactRef[];
+    }[],
+  ): Promise<void> {
+    let next = this.state;
+    const staged = new Map<
+      string,
+      {
+        input: {
+          requestId: string;
+          payloadDigest: string;
+          transition: Transition;
+          artifacts: ArtifactRef[];
+        };
+        state: ReturnType<typeof initialState>;
+        transitionDigest: string;
+      }
+    >();
+    for (const input of inputs) {
+      const transition = transitionSchema.parse(input.transition);
+      const transitionDigest = digestValue(transition);
+      const pending = staged.get(input.requestId);
+      const previous = pending
+        ? { payloadDigest: pending.input.payloadDigest, transitionDigest: pending.transitionDigest }
+        : this.committedRequests.get(input.requestId);
+      if (previous) {
+        if (
+          previous.payloadDigest !== input.payloadDigest ||
+          previous.transitionDigest !== transitionDigest
+        )
+          throw new DomainError(
+            "conflict",
+            "A committed source identity was reused with different content",
+          );
+        continue;
+      }
+      next = reduce(next, transition, next.revision + 1);
+      const artifacts = [
+        ...new Map(
+          [...(input.artifacts ?? []), ...transitionArtifacts(transition)].map((artifact) => [
+            `${artifact.digest}/${artifact.size}`,
+            artifact,
+          ]),
+        ).values(),
+      ];
+      staged.set(input.requestId, {
+        input: { ...input, transition, artifacts },
+        state: next,
+        transitionDigest,
+      });
+    }
+    if (!staged.size) {
       await this.store.assertOwner();
       return;
     }
-    const next = reduce(this.state, transition, this.state.revision + 1);
-    const artifacts = [
-      ...new Map(
-        [...(input.artifacts ?? []), ...transitionArtifacts(transition)].map((artifact) => [
-          `${artifact.digest}/${artifact.size}`,
-          artifact,
-        ]),
-      ).values(),
-    ];
-    const frame = await this.store.append({ ...input, artifacts });
-    this.state = next;
-    this.committedRequests.set(input.requestId, {
-      payloadDigest: input.payloadDigest,
-      transitionDigest,
-    });
-    const event = this.event(frame);
-    const subscribers = [...this.subscribers];
-    for (const subscriber of subscribers) this.deliver(subscriber, event);
-    this.execution?.committed(transition, this.state);
-    this.schedules?.changed(this.state);
+    // Stage only deterministic transitions. No state, receipt, subscriber event
+    // or execution effect becomes visible until the complete sync barrier passes.
+    const entries = [...staged.values()];
+    const frames = await this.store.appendBatch(entries.map((entry) => entry.input));
+    for (const [index, entry] of entries.entries()) {
+      this.state = entry.state;
+      this.committedRequests.set(entry.input.requestId, {
+        payloadDigest: entry.input.payloadDigest,
+        transitionDigest: entry.transitionDigest,
+      });
+      const event = this.event(frames[index]);
+      const subscribers = [...this.subscribers];
+      for (const subscriber of subscribers) this.deliver(subscriber, event);
+      this.execution?.committed(entry.input.transition, this.state);
+      this.schedules?.changed(this.state);
+    }
+    await this.checkpoint();
+  }
+
+  private async checkpoint(force = false): Promise<void> {
+    if (!force && this.state.revision - this.checkpointAttemptRevision < 256) return;
+    this.checkpointAttemptRevision = this.state.revision;
+    try {
+      await this.store.checkpoint(this.state);
+    } catch (error) {
+      this.diagnostic({
+        kind: "execution_failed",
+        message: `Checkpoint projection was not saved; the journal remains authoritative: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    }
   }
 
   async query(input: unknown, caller: CallerAuthority): Promise<QueryResult> {
@@ -533,6 +664,8 @@ export class Runtime {
       switch (request.kind) {
         case "status":
           return immutable({ kind: "status", state: this.state });
+        case "messages":
+          return immutable(queryMessages(this.state, request));
         case "application":
           return immutable({
             kind: "application",
@@ -563,17 +696,11 @@ export class Runtime {
             cursor: this.state.revision,
           });
         case "schemas": {
-          const schemas = exportSchemas();
-          if (request.name && !Object.hasOwn(schemas, request.name))
-            throw new DomainError(
-              "invalid_input",
-              `Unknown schema: ${request.name}. Available names: ${Object.keys(schemas).join(", ")}`,
-              "name",
-            );
+          const schemas = exportSchemas(request.name);
           return immutable(
             queryResultSchema.parse({
               kind: "schemas",
-              schemas: request.name ? { [request.name]: schemas[request.name] } : schemas,
+              schemas,
             }),
           );
         }
@@ -776,6 +903,7 @@ export class Runtime {
       revision: this.state.revision,
       ref,
       text: observation.text,
+      ...(observation.snapshot ? { snapshot: true as const } : {}),
     };
     const subscribers = [...this.subscribers];
     for (const subscriber of subscribers) this.deliver(subscriber, event);
@@ -794,11 +922,14 @@ export class Runtime {
     return this.execution.recover(request.targets);
   }
 
-  async deliverNotifications(caller: CallerAuthority): Promise<NotificationDelivery[]> {
+  async deliverNotifications(
+    caller: CallerAuthority,
+    options: { notificationId?: string } = {},
+  ): Promise<NotificationDelivery[]> {
     this.authorize(caller, true);
     if (!this.delivery)
       throw new DomainError("unsupported", "No parent notification transport is attached");
-    return this.delivery.deliver();
+    return this.delivery.deliver(options.notificationId);
   }
 
   async recordNotificationConsumption(
@@ -868,7 +999,7 @@ export class Runtime {
   async close(request: ShutdownRequest = { reason: "Runtime closed" }): Promise<ShutdownReceipt> {
     if (this.shutdown) return this.shutdown;
     this.closing = true;
-    this.shutdown = (async () => {
+    this.shutdown = (async (): Promise<ShutdownReceipt> => {
       await this.schedules?.close();
       const confirmed = (await this.execution?.close(request.reason)) ?? true;
       const applicationConfirmed = (await this.applications?.close()) ?? true;
@@ -877,16 +1008,19 @@ export class Runtime {
         for (const cancel of this.waitCancellations) cancel();
         for (const subscriber of this.subscribers) subscriber.active = false;
         this.subscribers.clear();
-        if (!confirmed || !applicationConfirmed)
+        if (!confirmed || !applicationConfirmed) {
+          await this.store.close({ retainOwner: true });
           return {
             status: "owner_unconfirmed",
             revision: this.state.revision,
             reason: "Owned activity is unconfirmed; the run claim and writer leases are retained",
           };
+        }
+        await this.checkpoint(true);
         await this.store.close();
         return { status: "closed", revision: this.state.revision };
       });
-    })();
+    })().finally(() => this.conversations.clear());
     return this.shutdown;
   }
 }

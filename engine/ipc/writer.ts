@@ -3,7 +3,7 @@ import type { Socket } from "node:net";
 import type { RuntimeEvent } from "../contracts/index.ts";
 import { SurfaceFailure, type SnapshotEvent } from "../sources/runtime.ts";
 import { encodeFrame } from "./framing.ts";
-import type { IpcLimits, ServerMessage } from "./protocol.ts";
+import type { IpcLimits, IpcVersion, ServerMessage } from "./protocol.ts";
 
 type Reply = { kind: "reply"; bytes: Buffer; resolve(): void; reject(error: unknown): void };
 type Event = {
@@ -25,6 +25,7 @@ export class MessageWriter {
   private eventCount = 0;
   private replyBytes = 0;
   private pumping = false;
+  private version: IpcVersion = 1;
   private closed = false;
   private readonly lagging = new Set<string>();
   private readonly waiting = new Map<string, string>();
@@ -34,6 +35,9 @@ export class MessageWriter {
     this.socket = socket;
     this.limits = limits;
     this.failed = failed;
+  }
+  setVersion(version: IpcVersion): void {
+    this.version = version;
   }
   send(message: Exclude<ServerMessage, { type: "event" }>): Promise<void> {
     try {
@@ -166,44 +170,55 @@ export class MessageWriter {
     }
   }
   private async writeMessage(bytes: Buffer): Promise<void> {
+    if (this.version === 2) {
+      // Socket chunks are not message boundaries. Splitting writes limits the
+      // socket backlog without encoding an extra envelope or base64 payload.
+      for (let offset = 0; offset < bytes.length; offset += this.limits.frameBytes)
+        await this.write(bytes.subarray(offset, offset + this.limits.frameBytes));
+      await this.write(Buffer.from("\n"));
+      return;
+    }
     const id = randomUUID();
     const chunkBytes = Math.floor(((this.limits.frameBytes - 256) * 3) / 4);
-    for (let offset = 0; offset < bytes.length; offset += chunkBytes) {
-      if (this.closed || this.socket.destroyed) throw this.closedError();
-      const packet = encodeFrame(
-        {
-          type: "part",
-          id,
-          offset,
-          total: bytes.length,
-          data: bytes.subarray(offset, offset + chunkBytes).toString("base64"),
-        },
-        this.limits.frameBytes,
+    for (let offset = 0; offset < bytes.length; offset += chunkBytes)
+      await this.write(
+        encodeFrame(
+          {
+            type: "part",
+            id,
+            offset,
+            total: bytes.length,
+            data: bytes.subarray(offset, offset + chunkBytes).toString("base64"),
+          },
+          this.limits.frameBytes,
+        ),
       );
-      if (this.socket.write(packet)) continue;
-      await new Promise<void>((resolve, reject) => {
-        const clear = () => {
-          this.socket.removeListener("drain", drained);
-          this.socket.removeListener("close", ended);
-          this.socket.removeListener("error", errored);
-        };
-        const drained = () => {
-          clear();
-          resolve();
-        };
-        const ended = () => {
-          clear();
-          reject(this.closedError());
-        };
-        const errored = (error: Error) => {
-          clear();
-          reject(error);
-        };
-        this.socket.once("drain", drained);
-        this.socket.once("close", ended);
-        this.socket.once("error", errored);
-      });
-    }
+  }
+  private async write(packet: Buffer): Promise<void> {
+    if (this.closed || this.socket.destroyed) throw this.closedError();
+    if (this.socket.write(packet)) return;
+    await new Promise<void>((resolve, reject) => {
+      const clear = () => {
+        this.socket.removeListener("drain", drained);
+        this.socket.removeListener("close", ended);
+        this.socket.removeListener("error", errored);
+      };
+      const drained = () => {
+        clear();
+        resolve();
+      };
+      const ended = () => {
+        clear();
+        reject(this.closedError());
+      };
+      const errored = (error: Error) => {
+        clear();
+        reject(error);
+      };
+      this.socket.once("drain", drained);
+      this.socket.once("close", ended);
+      this.socket.once("error", errored);
+    });
   }
   private closedError(): SurfaceFailure {
     return new SurfaceFailure({

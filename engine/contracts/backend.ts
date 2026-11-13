@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { worktreeSchema } from "./workspace.ts";
 import {
   artifactRefSchema,
   assignmentRefSchema,
@@ -44,6 +45,7 @@ export const backendCapabilitiesSchema = z.strictObject({
   skills: z.boolean().optional(),
   memory: z.boolean().optional(),
   delegation: z.boolean().optional(),
+  messaging: z.boolean().optional(),
   fallbacks: z.boolean().optional(),
   surviving: z.boolean(),
   cleanup: z.enum(["confirmed", "unverified"]),
@@ -134,6 +136,7 @@ export const backendObservationSchema = z.discriminatedUnion("kind", [
     source: identitySchema,
     ordinal: revisionSchema,
     text: z.string(),
+    snapshot: z.literal(true).optional(),
   }),
 ]);
 export type BackendObservation = z.infer<typeof backendObservationSchema>;
@@ -149,6 +152,7 @@ export type TransportReceipt = z.infer<typeof transportReceiptSchema>;
 export const preparedWorkspaceSchema = z.strictObject({
   cwd: textSchema,
   identity: identitySchema,
+  worktree: worktreeSchema.optional(),
   lease: z.strictObject({ id: identitySchema, workspace: textSchema }).optional(),
   artifacts: z.array(artifactRefSchema),
 });
@@ -224,7 +228,8 @@ export type WorkspacePort = {
     request: Omit<WorkspaceRequest, "inputs"> & { prepared?: PreparedWorkspace },
     signal: AbortSignal,
   ): Promise<{ prepared?: PreparedWorkspace; cleanup: CleanupReceipt; artifacts: ArtifactRef[] }>;
-  capture(
+  // Compatibility hook for capture intents already journaled by older hosts.
+  capture?(
     request: {
       prepared: PreparedWorkspace;
       ref: AssignmentRef;

@@ -149,9 +149,21 @@ export function createPinataExtension(options: PiExtensionOptions = {}): Extensi
           }),
         };
         active.unsubscribe = created.runtime.subscribe({}, created.caller, (event) => {
-          if (event.kind !== "committed" || event.transition.kind !== "settled") return;
+          if (
+            event.kind !== "committed" ||
+            (event.transition.kind !== "settled" &&
+              !(
+                event.transition.kind === "message_sent" &&
+                event.transition.message.to === "coordinator"
+              ))
+          )
+            return;
+          const notificationId =
+            event.transition.kind === "settled"
+              ? event.transition.notificationId
+              : event.transition.message.id;
           return created.runtime
-            .deliverNotifications(created.caller)
+            .deliverNotifications(created.caller, { notificationId })
             .then(() => {})
             .catch((error: unknown) => report(active?.context ?? context, error));
         });

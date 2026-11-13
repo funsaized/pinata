@@ -7,7 +7,7 @@ import {
   revisionSchema,
   textSchema,
 } from "./common.ts";
-import { gitObjectSchema, repositoryObservationSchema } from "./workspace.ts";
+import { gitObjectSchema, repositoryObservationSchema, worktreeSchema } from "./workspace.ts";
 import { exclusiveLeaseSchema } from "./gate.ts";
 
 export const applicationFileSchema = z.strictObject({
@@ -21,31 +21,45 @@ export const applicationChangeSchema = z.strictObject({
   after: applicationFileSchema.nullable(),
 });
 export type ApplicationChange = z.infer<typeof applicationChangeSchema>;
-export const applicationCursorSchema = z.strictObject({
-  destination: textSchema,
-  ref: assignmentRefSchema,
-  snapshot: artifactRefSchema,
-  manifest: artifactRefSchema,
-  tree: gitObjectSchema,
-  operationId: identitySchema,
-});
+export const applicationCursorSchema = z
+  .strictObject({
+    destination: textSchema,
+    ref: assignmentRefSchema,
+    snapshot: artifactRefSchema.optional(),
+    manifest: artifactRefSchema.optional(),
+    worktree: worktreeSchema.optional(),
+    tree: gitObjectSchema,
+    operationId: identitySchema,
+  })
+  .refine(
+    (value) =>
+      value.snapshot ? !!value.manifest && !value.worktree : !!value.worktree && !value.manifest,
+    "Expected one worktree or legacy snapshot source",
+  );
 export type ApplicationCursor = z.infer<typeof applicationCursorSchema>;
 export const applicationCursorsSchema = z.record(z.string(), applicationCursorSchema);
 export type ApplicationCursors = z.infer<typeof applicationCursorsSchema>;
-export const applicationOperationSchema = z.strictObject({
-  id: identitySchema,
-  direction: z.enum(["apply", "rollback"]),
-  mode: z.enum(["delivery", "input"]).default("delivery"),
-  phase: z.enum(["pending", "applied", "rolled_back"]),
-  rollbackOf: identitySchema.optional(),
-  destination: textSchema,
-  repository: repositoryObservationSchema,
-  snapshot: artifactRefSchema,
-  changes: z.array(applicationChangeSchema),
-  beforeCursors: applicationCursorsSchema,
-  afterCursors: applicationCursorsSchema,
-  lease: exclusiveLeaseSchema,
-});
+export const applicationOperationSchema = z
+  .strictObject({
+    id: identitySchema,
+    direction: z.enum(["apply", "rollback"]),
+    mode: z.enum(["delivery", "input"]).default("delivery"),
+    phase: z.enum(["pending", "applied", "rolled_back"]),
+    rollbackOf: identitySchema.optional(),
+    destination: textSchema,
+    repository: repositoryObservationSchema,
+    snapshot: artifactRefSchema.optional(),
+    worktree: worktreeSchema.optional(),
+    tree: gitObjectSchema.optional(),
+    changes: z.array(applicationChangeSchema),
+    beforeCursors: applicationCursorsSchema,
+    afterCursors: applicationCursorsSchema,
+    lease: exclusiveLeaseSchema,
+  })
+  .refine(
+    (value) => (value.snapshot ? !value.worktree && !value.tree : !!value.worktree && !!value.tree),
+    "Expected one worktree or legacy snapshot source",
+  );
 export type ApplicationOperation = z.infer<typeof applicationOperationSchema>;
 export const applicationJournalSchema = z.strictObject({
   schemaVersion: z.literal(1),
@@ -56,14 +70,21 @@ export const applicationJournalSchema = z.strictObject({
   operations: z.array(applicationOperationSchema),
 });
 export type ApplicationJournal = z.infer<typeof applicationJournalSchema>;
-export const applicationReceiptSchema = z.strictObject({
-  status: z.enum(["applied", "rolled_back", "already_recorded"]),
-  operationId: identitySchema,
-  destination: textSchema,
-  revision: revisionSchema,
-  snapshot: artifactRefSchema,
-  freshness: z.enum(["matching", "changed", "unknown"]),
-});
+export const applicationReceiptSchema = z
+  .strictObject({
+    status: z.enum(["applied", "rolled_back", "already_recorded"]),
+    operationId: identitySchema,
+    destination: textSchema,
+    revision: revisionSchema,
+    snapshot: artifactRefSchema.optional(),
+    worktree: worktreeSchema.optional(),
+    tree: gitObjectSchema.optional(),
+    freshness: z.enum(["matching", "changed", "unknown"]),
+  })
+  .refine(
+    (value) => (value.snapshot ? !value.worktree && !value.tree : !!value.worktree && !!value.tree),
+    "Expected one worktree or legacy snapshot source",
+  );
 export type ApplicationReceipt = z.infer<typeof applicationReceiptSchema>;
 
 export const applicationCommandSchema = z.discriminatedUnion("kind", [
@@ -80,16 +101,22 @@ export const applicationCommandSchema = z.discriminatedUnion("kind", [
   }),
 ]);
 export type ApplicationCommand = z.infer<typeof applicationCommandSchema>;
-export const applicationIntentSchema = z.strictObject({
-  id: identitySchema,
-  requestId: identitySchema,
-  command: applicationCommandSchema,
-  ownerEpoch: identitySchema,
-  destination: textSchema,
-  ref: assignmentRefSchema,
-  snapshot: artifactRefSchema,
-  targetOperation: identitySchema.optional(),
-});
+export const applicationIntentSchema = z
+  .strictObject({
+    id: identitySchema,
+    requestId: identitySchema,
+    command: applicationCommandSchema,
+    ownerEpoch: identitySchema,
+    destination: textSchema,
+    ref: assignmentRefSchema,
+    snapshot: artifactRefSchema.optional(),
+    worktree: worktreeSchema.optional(),
+    targetOperation: identitySchema.optional(),
+  })
+  .refine(
+    (value) => !!value.snapshot !== !!value.worktree,
+    "Expected one worktree or legacy snapshot source",
+  );
 export type ApplicationIntent = z.infer<typeof applicationIntentSchema>;
 export const applicationStateSchema = z.strictObject({
   intent: applicationIntentSchema,

@@ -65,6 +65,8 @@ let terminationStarted = false;
 let hostLost = !process.connected;
 const observationErrors: string[] = [];
 const observers = new Set<Socket>();
+const subscriptions = new Map<Socket, Set<string>>();
+const relaySnapshots = new Map<string, string>();
 const outputFiles = new Map<"stdout" | "stderr", FileHandle>();
 const eventFile = await open(join(directory, "events.jsonl"), "a", 0o600);
 for (const stream of ["stdout", "stderr"] as const)
@@ -88,6 +90,15 @@ function broadcast(event: SupervisorEvent): void {
     }
     socket.write(packet);
   }
+}
+
+function sendRelay(socket: Socket, packet: string): void {
+  if (socket.destroyed || socket.writableLength + Buffer.byteLength(packet) > MAX_CLIENT_BACKLOG) {
+    subscriptions.delete(socket);
+    socket.destroy();
+    return;
+  }
+  socket.write(packet);
 }
 
 async function publish(event: SupervisorEvent): Promise<void> {
@@ -368,6 +379,27 @@ async function handleRequest(socket: Socket, input: unknown): Promise<void> {
         observers.add(socket);
         value = status;
         break;
+      case "subscribe":
+        subscriptions.set(socket, new Set(request.command.topics));
+        for (const topic of request.command.topics) {
+          const snapshot = relaySnapshots.get(topic);
+          if (snapshot) sendRelay(socket, snapshot);
+        }
+        value = { subscribed: true };
+        break;
+      case "relay": {
+        const { topic, value: payload } = request.command;
+        const packet = JSON.stringify({ kind: "relay", topic, value: payload }) + "\n";
+        if (Buffer.byteLength(packet) > 32 * 1024)
+          throw new Error("Supervisor relay message exceeded its bound");
+        if (!relaySnapshots.has(topic) && relaySnapshots.size >= 16)
+          throw new Error("Supervisor relay topic limit exceeded");
+        relaySnapshots.set(topic, packet);
+        for (const [subscriber, topics] of subscriptions)
+          if (topics.has(topic)) sendRelay(subscriber, packet);
+        value = { relayed: true };
+        break;
+      }
       case "inspect":
         await refreshEnrollment();
         value = status;
@@ -453,9 +485,11 @@ const server = createServer((socket) => {
   });
   socket.on("error", () => {
     observers.delete(socket);
+    subscriptions.delete(socket);
   });
   socket.on("close", () => {
     observers.delete(socket);
+    subscriptions.delete(socket);
   });
 });
 process.on("SIGTERM", () => {});

@@ -627,3 +627,15 @@ test("production import graph has one runtime and keeps core independent of side
     }
   }
 });
+
+test("named schema export preserves the full catalog and isolates cached output from caller edits", () => {
+  const name = "pinata.command.v1";
+  const first = exportSchemas(name);
+  assert.deepEqual(Object.keys(first), [name]);
+  const original = structuredClone(first[name]);
+  first[name].type = "null";
+  assert.deepEqual(exportSchemas(name)[name], original);
+  assert.deepEqual(exportSchemas()[name], original);
+  assert.throws(() => exportSchemas("constructor"), /Unknown schema/);
+  assert.throws(() => exportSchemas("pinata.missing.v1"), /Unknown schema/);
+});

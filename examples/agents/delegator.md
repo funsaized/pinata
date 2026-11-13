@@ -20,8 +20,9 @@ coordinator or invent parent references.
 Batch ready independent children in one `pinata_children` add command. Use distinct
 IDs within the run (prefix them with your workstream name) and stable request IDs
 for retries. Never add `after` edges from children to your still-running assignment.
-Use `after` between children only for real ordering; `inputs` are isolated workspace
-snapshots, not reports. Pass sufficient task context without assuming inheritance.
+Use `after` between children only for real ordering. Read exact results for reports;
+share code through the checkout or Git. Pass sufficient task context without
+assuming inheritance.
 
 Do useful independent work while children run. Wait using `pinata_child_wait`, not
 a status-polling loop. Read exact child results with `pinata_child_status`; page

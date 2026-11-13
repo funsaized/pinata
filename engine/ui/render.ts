@@ -10,6 +10,7 @@ import {
   executionLabel,
   contextLabel,
   needsAttention,
+  isFinished,
   queueLabel,
   steerTarget,
 } from "./projection.ts";
@@ -111,7 +112,7 @@ function treeLines(state: CoreState, nodes: TreeNode[], options: TreeOptions): T
     const duration =
       elapsed === undefined
         ? ""
-        : ` · observed ${elapsed < 60_000 ? (elapsed / 1000).toFixed(1) + "s" : (elapsed / 60_000).toFixed(1) + "m"}`;
+        : ` · ${elapsed < 60_000 ? (elapsed / 1000).toFixed(1) + "s" : (elapsed / 60_000).toFixed(1) + "m"}`;
     const isSelected =
       options.selected && assignmentKey(options.selected) === assignmentKey(assignment.ref);
     const active = !["ended", "queued"].includes(assignment.execution.phase);
@@ -159,20 +160,9 @@ function treeLines(state: CoreState, nodes: TreeNode[], options: TreeOptions): T
     const suffix =
       options.paint(statusToken(status), ` · ${status}`) +
       options.paint("muted", options.width >= 60 ? duration : "");
-    const task =
-      displayText(assignment.task)
-        .split("\n")
-        .find((line) => line.trim())
-        ?.trim() ?? "";
     const identityWidth = Math.max(1, options.width - visibleWidth(suffix));
-    const compactPrefix = fit(prefix, identityWidth);
-    const taskWidth = Math.max(0, options.width - visibleWidth(compactPrefix + suffix) - 1);
-    const taskText =
-      taskWidth && visibleWidth(task) > taskWidth
-        ? (taskWidth > 1 ? fit(task, taskWidth - 1) : "") + "…"
-        : fit(task, Math.max(1, taskWidth));
     output.push({
-      text: compactPrefix + (taskWidth ? ` ${taskText}` : "") + suffix,
+      text: fit(prefix, identityWidth) + suffix,
       ref: assignment.ref,
       worker: true,
     });
@@ -233,11 +223,14 @@ export function fleetWidget(state: CoreState, options: TreeOptions): string[] {
     (assignment) => !["queued", "ended"].includes(assignment.execution.phase),
   ).length;
   const queued = all.filter((assignment) => assignment.execution.phase === "queued").length;
-  const attention = all.filter((assignment) => needsAttention(state, assignment)).length;
+  const attention = all.filter(
+    (assignment) => !isFinished(assignment) && needsAttention(state, assignment),
+  ).length;
   if (!active && !queued && !attention) return [];
   const nodes = assignmentTree(state, {
     ascii: options.ascii,
     activeOnly: true,
+    finished: false,
     attention: true,
     limit: 4,
     trailing: queued > 0 || active > 4,
@@ -503,12 +496,13 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
       ]
     : router.screen === "fleet"
       ? [
-          ["Enter", "open"],
+          ...(router.selected ? [["Enter", "open"] as Shortcut] : []),
           ["d", router.details ? "less" : "details"],
           ...(hasBranches ? [["←→", "branches"] as Shortcut] : []),
           ["/", "search"],
           ["f", "filter"],
-          ["h", "history"],
+          ["h", "finished/history"],
+          ["w", "queued"],
         ]
       : preview
         ? [

@@ -1,4 +1,5 @@
 import { reduceSchedule } from "./schedule.ts";
+import { recordMessage } from "./messages.ts";
 import {
   assignmentKey,
   DomainError,
@@ -12,6 +13,7 @@ import { reduceApplication } from "./application.ts";
 import { validateAcceptance } from "./invariants.ts";
 import { reduceLifecycle } from "./lifecycle.ts";
 import { validateExecutionTransition, validateSettlement } from "./execution.ts";
+import { indexTransition } from "./indexes.ts";
 
 export type { CoreState, EffectState } from "../contracts/index.ts";
 export type State = CoreState;
@@ -25,6 +27,7 @@ export function initialState(run: string): CoreState {
     assignments: {},
     latest: {},
     inbox: {},
+    messages: {},
     receipts: {},
     effects: {},
     applications: {},
@@ -58,12 +61,18 @@ function requireAssignment(state: CoreState, key: string): Assignment {
 
 // Transition validation happens once at the journal boundary. The reducer never performs IO.
 export function reduce(state: CoreState, value: Transition, revision: number): CoreState {
+  return indexTransition(state, reduceTransition(state, value, revision), value);
+}
+
+function reduceTransition(state: CoreState, value: Transition, revision: number): CoreState {
   if (revision !== state.revision + 1)
     throw new DomainError("conflict", "Journal revision is not contiguous");
   const next = { ...state };
   const transition = structuredClone(value);
   next.revision = revision;
   switch (transition.kind) {
+    case "message_sent":
+      return recordMessage(state, transition.message, revision);
     case "schedule_changed":
     case "schedule_occurrence":
       return reduceSchedule(state, transition, revision, reduce);

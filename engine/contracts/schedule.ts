@@ -25,7 +25,17 @@ export const scheduleStateSchema = z.strictObject({
   status: z.enum(["paused", "active", "completed", "deleted", "closed"]),
   target: z.strictObject({ worker: idSchema }),
   task: textSchema,
-  template: z.strictObject({ request: workerRequestSchema, worker: frozenWorkerSchema }).optional(),
+  template: z
+    .strictObject({
+      request: workerRequestSchema.extend({
+        // Existing schedule records remain readable; these fields are no longer
+        // accepted by new worker requests.
+        inputs: z.array(assignmentRefSchema).optional(),
+        observeWorkspace: z.boolean().optional(),
+      }),
+      worker: frozenWorkerSchema,
+    })
+    .optional(),
   nextAt: z.iso.datetime().nullable(),
   lastLocalKey: textSchema.optional(),
   activatedAt: z.iso.datetime().optional(),

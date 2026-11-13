@@ -194,7 +194,6 @@ export class Schedules {
             agent: worker.agent,
             task: assignment.task,
             after: [],
-            inputs: [],
             context: [],
           },
           worker,
@@ -357,6 +356,11 @@ export class Schedules {
             try {
               const exists = Object.hasOwn(state.workers, schedule.target.worker);
               const template = schedule.template;
+              if (template?.request.inputs?.length)
+                throw new DomainError(
+                  "unsupported",
+                  "This saved schedule uses removed snapshot inputs; replace it with a task that uses Git or shared files",
+                );
               if (
                 exists &&
                 template &&
@@ -376,11 +380,15 @@ export class Schedules {
                   messageId: requestId,
                   text: schedule.task,
                   after: [],
-                  inputs: [],
                 };
               else {
                 if (!template) throw new DomainError("conflict", "Missing schedule template");
-                command = { kind: "add", workers: [{ ...template.request, messageId: requestId }] };
+                const {
+                  inputs: _inputs,
+                  observeWorkspace: _observeWorkspace,
+                  ...request
+                } = template.request;
+                command = { kind: "add", workers: [{ ...request, messageId: requestId }] };
               }
               await this.host.validate(command, state);
               acceptance = prepareCommand(

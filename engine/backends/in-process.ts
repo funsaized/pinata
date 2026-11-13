@@ -34,10 +34,13 @@ import {
   type Usage,
   type UsageObservation,
 } from "../contracts/index.ts";
+import { storeConversation } from "../storage/conversation.ts";
 import { checkpointConversation, openConversation } from "../agent/conversation.ts";
 import { reportTool, workerExtension } from "../agent/extension.ts";
 import { memoryTools } from "../agent/memory.ts";
 import { childExtension, childTools } from "../agent/delegation.ts";
+import { messageExtension, messageTool } from "../agent/messages.ts";
+import type { MessagePort } from "../contracts/messages.ts";
 import { dependencyExtension, dependencyList, dependencyTool } from "../agent/dependencies.ts";
 import { ToolPages } from "../sources/pages.ts";
 import type { ChildPort } from "../contracts/delegation.ts";
@@ -59,6 +62,7 @@ export type InProcessOptions = {
   extensions?: string[];
   memoryProject?: string;
   children?(launch: BackendLaunch): ChildPort;
+  messages?(launch: BackendLaunch): MessagePort;
   createProcesses?(launch: BackendLaunch): SessionProcesses;
 };
 
@@ -82,6 +86,7 @@ export class InProcessBackend implements BackendPort {
   constructor(options: InProcessOptions) {
     this.options = options;
     this.capabilities.delegation = Boolean(options.children);
+    this.capabilities.messaging = Boolean(options.messages);
   }
 
   async start(
@@ -99,6 +104,7 @@ export class InProcessBackend implements BackendPort {
       : undefined;
     if (launch.worker.grants.delegation.maxDepth && !children)
       throw new DomainError("unsupported", "Delegation requires a host-bound child command port");
+    const messages = this.options.messages?.(launch);
     const definition = definitionSchema.parse(
       JSON.parse(
         Buffer.from(await launch.artifacts.read(launch.worker.definition)).toString("utf8"),
@@ -231,6 +237,7 @@ export class InProcessBackend implements BackendPort {
         ...dependencyTools,
         ...(memory?.names ?? []),
         ...(children ? childTools : []),
+        ...(messages ? [messageTool] : []),
       ]);
 
       const enqueue = (operation: () => Promise<void>): void => {
@@ -275,6 +282,7 @@ export class InProcessBackend implements BackendPort {
         runtimeTools: [
           ...(memory?.names ?? []),
           ...(children ? childTools : []),
+          ...(messages ? [messageTool] : []),
           ...dependencyTools,
         ],
         async onReport(report) {
@@ -333,6 +341,7 @@ export class InProcessBackend implements BackendPort {
         extensionFactories: [
           extension,
           processExtension,
+          ...(messages ? [messageExtension(messages)] : []),
           ...(memory ? [memory.extension] : []),
           ...(children
             ? [
@@ -372,11 +381,25 @@ export class InProcessBackend implements BackendPort {
           ...dependencyTools,
           ...(memory?.names ?? []),
           ...(children ? childTools : []),
+          ...(messages ? [messageTool] : []),
           ...(this.options.codemode ? ["codemode"] : []),
         ],
       });
       session = created.session;
       const activeSession = session;
+      const finishTurn = activeSession.agent.finishTurn;
+      activeSession.agent.finishTurn = async (turn, signal) => {
+        const decision = await finishTurn?.(turn, signal);
+        // Preserve Pi's boundary persistence, then finish before steering or
+        // follow-up queues can schedule another request after a retained report.
+        // The session also drains queues after Agent.finishTurn ends its loop.
+        // Their durable inbox records remain unconsumed in the runtime.
+        if (reported) {
+          activeSession.clearQueue();
+          return { action: "end" };
+        }
+        return decision ?? undefined;
+      };
       const recordContext = async (): Promise<void> => {
         const current = activeSession.getContextUsage();
         await observe({
@@ -754,17 +777,17 @@ export class InProcessBackend implements BackendPort {
         let transcript: ArtifactRef | undefined;
         try {
           saved = await checkpoint();
-          transcript = await launch.artifacts.put(
-            Buffer.from(
-              canonicalJson({
-                schemaVersion: 1,
-                ref: launch.ref,
-                session: saved.id,
-                fromEntry: initialBranch,
-                throughEntry: saved.branch,
-                entries: manager.getEntries().slice(initialEntryCount),
-              }),
-            ),
+          const entries = manager.getEntries().slice(initialEntryCount);
+          transcript = await storeConversation(
+            Buffer.from(entries.map((entry) => JSON.stringify(entry) + "\n").join("")),
+            {
+              kind: "assignment",
+              ref: launch.ref,
+              session: saved.id,
+              fromEntry: initialBranch,
+              throughEntry: saved.branch,
+            },
+            launch.artifacts,
           );
         } catch (error) {
           errorMessage ??= error instanceof Error ? error.message : String(error);
@@ -826,7 +849,7 @@ export class InProcessBackend implements BackendPort {
         stop,
         checkpoint,
         async input(message) {
-          if (isFinished || isStopping || !activeSession.isStreaming)
+          if (reported || isFinished || isStopping || !activeSession.isStreaming)
             return { status: "undelivered" };
           if (pendingInputs.has(message.id) || consumed.has(message.id))
             return { status: "transport_handled" };

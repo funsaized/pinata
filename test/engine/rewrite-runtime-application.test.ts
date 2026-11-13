@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile, readdir, rm } from "node:fs/promises";
+import { readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 import { createApplicationPort } from "../../engine/application/runtime.ts";
@@ -42,10 +42,7 @@ function deferred() {
 
 async function fixture(t: TestContext, port?: RuntimeApplicationPort) {
   const f = await applicationFixture();
-  const snapshot = await f.snapshot(1, [
-    { path: "file.txt", content: "changed\n" },
-    { path: "unrelated.txt", content: "untouched\n" },
-  ]);
+  const worktree = await f.worktree();
   const resolveWorkers: WorkerResolver = async (requests, _caller, artifacts) => {
     for (const name of await readdir(f.artifacts.directory))
       await artifacts.putArtifact(await readFile(join(f.artifacts.directory, name)));
@@ -58,6 +55,7 @@ async function fixture(t: TestContext, port?: RuntimeApplicationPort) {
       tools: ["read", "write"],
       access: "write",
       workspace: "worktree",
+      workspacePlan: worktree.plan,
       backend: "in-process",
       lifetime: "attached",
       grants: caller.grants,
@@ -66,10 +64,12 @@ async function fixture(t: TestContext, port?: RuntimeApplicationPort) {
   };
   const workspace: WorkspacePort = {
     async prepare() {
-      return { cwd: f.root, identity: "fixture-workspace", artifacts: [] };
-    },
-    async capture() {
-      return { artifacts: [snapshot], snapshot };
+      return {
+        cwd: worktree.path,
+        identity: "fixture-workspace",
+        worktree,
+        artifacts: [worktree.plan],
+      };
     },
     async release() {},
   };
@@ -84,6 +84,7 @@ async function fixture(t: TestContext, port?: RuntimeApplicationPort) {
       cleanup: "confirmed",
     },
     async start(launch, observe) {
+      await writeFile(join(launch.cwd, "file.txt"), "changed\n");
       const evidence = await launch.artifacts.put(Buffer.from("Scripted cleanup receipt"));
       const identity = {
         id: launch.attemptId,
@@ -157,10 +158,11 @@ async function fixture(t: TestContext, port?: RuntimeApplicationPort) {
   assert.equal(accepted.status, "accepted", JSON.stringify(accepted));
   const settled = await runtime.wait({}, caller);
   assert.equal(settled.status, "settled");
-  assert.equal(settled.results[0].snapshot?.digest, snapshot.digest);
+  assert.equal(settled.results[0].snapshot, undefined);
+  assert.deepEqual(settled.results[0].worktree, worktree);
   return {
     ...f,
-    snapshot,
+    worktree,
     runtimeDirectory: directory,
     get runtime() {
       return runtime;
@@ -175,14 +177,14 @@ async function fixture(t: TestContext, port?: RuntimeApplicationPort) {
   };
 }
 
-test("runtime application and rollback use durable receipts and expose exact immutable changes", async (t) => {
+test("runtime applies a retained worktree without completion snapshots and journals rollback", async (t) => {
   const f = await fixture(t);
   const changes = await f.runtime.query({ kind: "changes", ref }, caller);
   assert.equal(changes.kind, "changes");
   if (changes.kind === "changes")
     assert.deepEqual(
       changes.changes.map((change) => change.path),
-      ["file.txt"],
+      [],
     );
   const request = { requestId: "apply", command: { kind: "apply", ref, destination: f.root } };
   const receipt = await f.runtime.execute(request, caller);
@@ -244,6 +246,35 @@ test("runtime application and rollback use durable receipts and expose exact imm
   assert.equal(await readFile(join(f.root, "file.txt"), "utf8"), "base\n");
 });
 
+test("current-worktree apply rejects an earlier assignment after a follow-up is accepted", async (t) => {
+  const f = await fixture(t);
+  const followup = await f.runtime.execute(
+    {
+      requestId: "followup",
+      command: { kind: "follow_up", worker: ref.worker, messageId: "followup", text: "Continue" },
+    },
+    caller,
+  );
+  assert.equal(followup.status, "accepted");
+  const stale = await f.runtime.execute(
+    { requestId: "old-apply", command: { kind: "apply", ref, destination: f.root } },
+    caller,
+  );
+  assert.equal(stale.status, "rejected");
+  if (stale.status === "rejected") assert.match(stale.error.message, /latest stopped assignment/);
+  const settled = await f.runtime.wait({}, caller);
+  assert.equal(settled.status, "settled");
+  const applied = await f.runtime.execute(
+    {
+      requestId: "latest-apply",
+      command: { kind: "apply", ref: { ...ref, assignment: 2 }, destination: f.root },
+    },
+    caller,
+  );
+  assert.equal(applied.status, "accepted", JSON.stringify(applied));
+  assert.equal(await readFile(join(f.root, "file.txt"), "utf8"), "changed\n");
+});
+
 test("application wait leaves status and stop commands responsive and exact retries dispatch once", async (t) => {
   const started = deferred();
   const finish = deferred();
@@ -258,7 +289,8 @@ test("application wait leaves status and stop commands responsive and exact retr
         operationId: intent.id,
         destination: intent.destination,
         revision: 1,
-        snapshot: intent.snapshot,
+        worktree: intent.worktree,
+        tree: f.base.tree,
         freshness: "matching",
       } satisfies ApplicationReceipt;
     },
@@ -292,7 +324,8 @@ test("uncertain application effects remain inspectable across reopen and require
         operationId: intent.targetOperation,
         destination: intent.destination,
         revision: 1,
-        snapshot: intent.snapshot,
+        worktree: intent.worktree,
+        tree: f.base.tree,
         freshness: "unknown",
       };
     },

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, realpath, rm } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
@@ -641,4 +641,44 @@ test("runtime freezes resolved config layers without turning omitted fields into
   if (state.kind !== "status") throw new Error("Expected status");
   assert.equal(state.state.maxConcurrent, 2);
   assert.equal(state.state.workers.later.workspace, "worktree");
+});
+
+test("reduced state checkpoints preserve replayed tails, exact receipts and semantic validation", async (t) => {
+  const world = await fixture(t);
+  accepted(await world.runtime.execute(create, caller));
+  for (let index = 1; index <= 260; index++)
+    accepted(
+      await world.runtime.execute(
+        {
+          requestId: `capacity-${index}`,
+          command: { kind: "capacity", maxConcurrent: 1 + (index % 3) },
+        },
+        caller,
+      ),
+    );
+  const path = join(world.directory, "checkpoints", "latest.json");
+  const prior = await readFile(path);
+  const checkpoint = JSON.parse(prior.toString("utf8"));
+  assert.equal(checkpoint.projection, "core");
+  assert.equal(checkpoint.revision, 256);
+  const projection = checkpoint.snapshot;
+  assert.equal(projection.revision, 256);
+  assert.equal(Array.isArray(projection), false);
+  const expected = await world.runtime.query({ kind: "status" }, caller);
+  const receipt = await world.runtime.execute(create, caller);
+  await world.runtime.close();
+  await writeFile(path, prior);
+  await world.reopen();
+  assert.deepEqual(await world.runtime.query({ kind: "status" }, caller), expected);
+  assert.deepEqual(await world.runtime.execute(create, caller), receipt);
+  await world.runtime.close();
+  // A schema-valid replacement projection cannot substitute for journal state.
+  projection.maxConcurrent = 99;
+  await writeFile(path, JSON.stringify({ ...checkpoint, snapshot: projection }));
+  const store = await DurableStore.open({ directory: world.directory });
+  assert.equal(store.replayState, undefined);
+  assert.match(store.replayWarnings[0], /does not match journal/);
+  await store.close();
+  await world.reopen();
+  assert.deepEqual(await world.runtime.query({ kind: "status" }, caller), expected);
 });

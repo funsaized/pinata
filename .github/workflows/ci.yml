@@ -60,6 +60,9 @@ jobs:
       - name: In-process execution checks and advisory performance measurements
         if: ${{ !cancelled() && steps.benchmark_pi.outcome == 'success' }}
         run: node scripts/bench-ci.mjs engine --expose-gc bench/run.ts --host pi
+      - name: Offline Pi terminal controls at 120, 60 and 30 columns
+        if: ${{ !cancelled() && steps.benchmark_pi.outcome == 'success' }}
+        run: python3 test/readiness/rewrite-ui-pty.py --root "$PWD" --out bench/results/pty --pi "$PINATA_PI"
       - name: Process measurements with advisory timing
         if: ${{ !cancelled() && steps.benchmark_pi.outcome == 'success' }}
         timeout-minutes: 12

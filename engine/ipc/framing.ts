@@ -2,47 +2,76 @@ import { SurfaceFailure } from "../sources/runtime.ts";
 import { serverMessageSchema, type ServerFrame, type ServerMessage } from "./protocol.ts";
 
 export class LineDecoder {
-  private pending = Buffer.alloc(0);
+  private readonly fragments: Buffer[] = [];
+  private pendingBytes = 0;
+  private tailBytes = 0;
   private maxBytes: number;
   constructor(maxBytes: number) {
     this.maxBytes = maxBytes;
   }
   setLimit(maxBytes: number): void {
     this.maxBytes = maxBytes;
-    if (this.pending.length > maxBytes)
+    this.checkLimit(this.pendingBytes);
+  }
+  private checkLimit(bytes: number): void {
+    if (bytes > this.maxBytes)
       throw new SurfaceFailure({
         code: "transport_limit",
         message: "IPC frame exceeds the negotiated byte limit",
       });
   }
-  push(bytes: Uint8Array): unknown[] {
-    this.pending = Buffer.concat([this.pending, bytes]);
-    const frames: unknown[] = [];
-    while (true) {
-      const end = this.pending.indexOf(10);
-      if (end < 0) break;
-      if (end > this.maxBytes)
-        throw new SurfaceFailure({
-          code: "transport_limit",
-          message: "IPC frame exceeds the negotiated byte limit",
-        });
-      const line = this.pending.subarray(0, end);
-      this.pending = this.pending.subarray(end + 1);
+  private append(bytes: Buffer): void {
+    this.checkLimit(this.pendingBytes + bytes.length);
+    let offset = 0;
+    while (offset < bytes.length) {
+      let tail = this.fragments.at(-1);
+      if (!tail || this.tailBytes === tail.length) {
+        tail = Buffer.allocUnsafe(Math.min(64 * 1024, this.maxBytes - this.pendingBytes));
+        this.fragments.push(tail);
+        this.tailBytes = 0;
+      }
+      const length = Math.min(bytes.length - offset, tail.length - this.tailBytes);
+      bytes.copy(tail, this.tailBytes, offset, offset + length);
+      this.tailBytes += length;
+      this.pendingBytes += length;
+      offset += length;
+    }
+  }
+  // Yield between frames so authentication can change the limit even when
+  // welcome and the first large message arrive in the same socket read.
+  *frames(input: Uint8Array): Generator<unknown> {
+    const bytes = Buffer.isBuffer(input) ? input : Buffer.from(input);
+    let offset = 0;
+    while (offset < bytes.length) {
+      const end = bytes.indexOf(10, offset);
+      if (end < 0) {
+        this.append(bytes.subarray(offset));
+        return;
+      }
+      this.checkLimit(this.pendingBytes + end - offset);
+      let line = bytes.subarray(offset, end);
+      if (this.pendingBytes) {
+        this.append(line);
+        const tail = this.fragments.pop();
+        if (tail) this.fragments.push(tail.subarray(0, this.tailBytes));
+        line = Buffer.concat(this.fragments, this.pendingBytes);
+        this.fragments.length = 0;
+        this.pendingBytes = 0;
+        this.tailBytes = 0;
+      }
+      offset = end + 1;
       try {
-        frames.push(JSON.parse(line.toString("utf8")));
+        yield JSON.parse(line.toString("utf8"));
       } catch {
         throw new SurfaceFailure({ code: "invalid_input", message: "IPC frame is not valid JSON" });
       }
     }
-    if (this.pending.length > this.maxBytes)
-      throw new SurfaceFailure({
-        code: "transport_limit",
-        message: "IPC frame exceeds the negotiated byte limit",
-      });
-    return frames;
+  }
+  push(bytes: Uint8Array): unknown[] {
+    return [...this.frames(bytes)];
   }
   finish(): void {
-    if (this.pending.length)
+    if (this.pendingBytes)
       throw new SurfaceFailure({ code: "invalid_input", message: "IPC ended inside a JSON frame" });
   }
 }

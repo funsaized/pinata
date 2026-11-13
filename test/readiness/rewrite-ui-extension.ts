@@ -6,7 +6,10 @@ import {
   assignmentKey,
   runtimeQuerySchema,
   surfaceCallSchema,
+  transitionSchema,
+  type Transition,
 } from "../../engine/contracts/index.ts";
+import { reduce } from "../../engine/core/state.ts";
 import { installCoordinatorUi } from "../../engine/ui/pi.ts";
 import { UiSource, uiState, conversationReply } from "../engine/rewrite-ui-fixture.ts";
 
@@ -103,19 +106,52 @@ export default function rewriteUiCapture(pi: ExtensionAPI): void {
     const router = await ui.bind(context);
     for (let index = 1; index <= 4; index++) {
       const ref = { run: source.run, worker: `worker-${index}`, assignment: 1 };
-      for (const phase of ["preparing", "running"] as const) {
-        source.state.assignments[assignmentKey(ref)].execution = { phase };
-        source.state.revision++;
+      const attemptId = `capture/attempt-${index}`;
+      const transitions: Transition[] = [
+        { kind: "assignment_state", ref, execution: { phase: "preparing" } },
+        {
+          kind: "attempt_started",
+          attempt: {
+            id: attemptId,
+            ref,
+            ordinal: 1,
+            backend: "in-process",
+            ownerEpoch: source.epoch,
+          },
+        },
+        {
+          kind: "backend_enrolled",
+          attemptId,
+          identity: {
+            id: `capture/backend-${index}`,
+            kind: "in-process",
+            ownerEpoch: source.epoch,
+          },
+          evidence: [],
+        },
+        { kind: "assignment_state", ref, execution: { phase: "running" } },
+      ];
+      for (const transition of transitions) {
+        source.state = reduce(
+          source.state,
+          transitionSchema.parse(transition),
+          source.state.revision + 1,
+        );
         await source.emit({
           schemaVersion: 1,
           kind: "committed",
           id: `capture/${source.state.revision}`,
           revision: source.state.revision,
           ownerEpoch: source.epoch,
-          transition: { kind: "assignment_state", ref, execution: { phase } },
+          transition,
         });
       }
     }
+    record({
+      phase: "lifecycle",
+      attempts: Object.keys(source.state.attempts).length,
+      revision: source.state.revision,
+    });
     context.ui.setEditorText(parentDraft);
     timer = setInterval(() => {
       ticks++;

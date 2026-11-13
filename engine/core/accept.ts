@@ -142,7 +142,7 @@ export function checkResolvedWorker(
       `Delegation exceeds caller authority for ${worker.id}`,
       "delegation",
     );
-  for (const field of ["workspace", "observeWorkspace", "backend", "lifetime"] as const) {
+  for (const field of ["workspace", "backend", "lifetime"] as const) {
     if (request[field] !== undefined && request[field] !== worker[field])
       throw new DomainError(
         "unsupported",
@@ -258,7 +258,7 @@ export function prepareCommand(
           sequence: firstSequence + assignments.length,
           task: request.task,
           after: resolveReferences(state, request.after, names),
-          inputs: resolveReferences(state, request.inputs, new Set()),
+          inputs: [],
           context: request.context,
           execution: { phase: "queued" },
         });
@@ -305,11 +305,7 @@ export function prepareCommand(
         sequence: firstSequence,
         task: command.text,
         after,
-        inputs: resolveReferences(
-          state,
-          command.kind === "follow_up" ? command.inputs : [],
-          new Set(),
-        ),
+        inputs: [],
         context: [],
         execution: { phase: "queued" },
       });

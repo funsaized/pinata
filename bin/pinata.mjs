@@ -21,5 +21,5 @@ try {
 } finally {
   process.removeListener("SIGINT", interrupt);
   process.removeListener("SIGTERM", interrupt);
-  hooks.deregister();
+  hooks?.deregister();
 }

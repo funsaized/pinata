@@ -52,7 +52,8 @@ export const definitionSchema = z.strictObject({
       inheritContext: z.enum(["none", "parent"]).default("none"),
       memory: memorySchema.default({ scope: "none", access: "read" }),
       delegation: z.strictObject({ maxDepth: revisionSchema }).default({ maxDepth: 0 }),
-      checkpoint: z.enum(["completion", "none"]).default("completion"),
+      // Retained definitions may contain this former completion-capture policy.
+      checkpoint: z.enum(["completion", "none"]).optional(),
     })
     .default({
       access: "read",
@@ -62,7 +63,6 @@ export const definitionSchema = z.strictObject({
       inheritContext: "none",
       memory: { scope: "none", access: "read" },
       delegation: { maxDepth: 0 },
-      checkpoint: "completion",
     }),
 });
 export type AgentDefinition = z.infer<typeof definitionSchema>;

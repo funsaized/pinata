@@ -85,7 +85,7 @@ export const coordinatorTools: readonly ToolOperation[] = [
   {
     name: "pinata_run",
     description:
-      'Create or extend a run, queue a follow-up, explicitly continue stopped work, change optional capacity, or release a foreground wait. Start with command: {kind: "create", workers: [{id: "worker", agent: "builder", task: "Your assignment"}]}. Put workspace, backend, lifetime, observeWorkspace and context in each worker entry; optional run configuration belongs in command.config. Omit inheritContext unless parent conversation import is explicitly granted; include needed context in task. Workers use frozen definitions and grants; the coordinator decides testing and acceptance.',
+      'Create or extend a run, queue a follow-up, explicitly continue stopped work, change optional capacity, or release a foreground wait. Start with command: {kind: "create", workers: [{id: "worker", agent: "builder", task: "Your assignment"}]}. Put workspace, backend, lifetime and context in each worker entry; optional run configuration belongs in command.config. Omit inheritContext unless parent conversation import is explicitly granted; include needed context in task. Workers use frozen definitions and grants; the coordinator decides testing and acceptance.',
     schema: z.strictObject({ requestId: identitySchema.optional(), command: z.union(runCommands) }),
     request: ({ requestId, command }, callId) => ({
       method: "execute",
@@ -105,7 +105,7 @@ export const coordinatorTools: readonly ToolOperation[] = [
   commandTool(
     "pinata_integrate",
     "apply",
-    "Explicitly apply a selected isolated snapshot with destination exclusion and conflict checks. This does not certify correctness. Inspect the application outcome using its operation ID.",
+    "Apply the current files of a retained worktree to its frozen destination, using the worker's latest stopped assignment ref. Includes destination exclusion and conflict checks. This does not certify correctness. Inspect the application outcome using its operation ID.",
   ),
   commandTool(
     "pinata_rollback",
@@ -127,7 +127,7 @@ export const coordinatorTools: readonly ToolOperation[] = [
   {
     name: "pinata_status",
     description:
-      "Inspect state, exact results, immutable conversation pages, schema discovery, receipts or an application outcome. Tool input schemas are already supplied: no schema query is needed before launching. For discovery use name: pinata.command.v1, or a tool name such as pinata_run; avoid fetching the entire registry. Results are execution observations, not acceptance decisions.",
+      "Inspect state, worker messages, exact results, immutable conversation pages, schema discovery, receipts or an application outcome. Use kind: messages with optional since and worker to read retained messages. Tool input schemas are already supplied: no schema query is needed before launching. For discovery use name: pinata.command.v1, or a tool name such as pinata_run; avoid fetching the entire registry. Results are execution observations, not acceptance decisions.",
     schema: z.strictObject({ query: runtimeQuerySchema.default({ kind: "status" }) }),
     request: ({ query }) => ({ method: "query", input: query }),
   },
@@ -135,11 +135,6 @@ export const coordinatorTools: readonly ToolOperation[] = [
     "pinata_agents",
     "definitions",
     "Discover compact agent descriptions, defaults and effective launch grants. Full instructions remain available through pinata_status query kind definitions.",
-  ),
-  queryTool(
-    "pinata_changes",
-    "changes",
-    "Inspect a selected assignment's retained workspace snapshot, including failed or cancelled partial work.",
   ),
   {
     name: "pinata_recover",

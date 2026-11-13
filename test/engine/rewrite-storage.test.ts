@@ -17,6 +17,8 @@ import test, { type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { digestValue } from "../../engine/contracts/digest.ts";
+import { initialState } from "../../engine/core/state.ts";
+import { parseConversationManifest, storeConversation } from "../../engine/storage/conversation.ts";
 import { digestBytes } from "../../engine/storage/io.ts";
 import { DurableStore, inspectStore, reconcileStore } from "../../engine/storage/index.ts";
 
@@ -573,6 +575,28 @@ test("rewrite store: checkpoint publication failures preserve authoritative repl
   }
 });
 
+test("rewrite store: checkpoint captures validated state before queued publication", async (t) => {
+  const directory = await temporaryStore(t);
+  const store = await DurableStore.open({ directory, manifest: manifest(directory) });
+  const state = initialState(store.manifest.run);
+  const expected = structuredClone(state);
+  const pending = store.checkpoint(state);
+  state.maxConcurrent = 99;
+  await pending;
+  const checkpoint = JSON.parse(
+    await readFile(join(directory, "checkpoints", "latest.json"), "utf8"),
+  );
+  assert.deepEqual(checkpoint.snapshot, expected);
+  await assert.rejects(store.checkpoint({ ...state, run: "another-run" }), /run revision/);
+  await assert.rejects(store.checkpoint({ ...state, revision: 1 }), /run revision/);
+  assert.throws(() => store.checkpoint({ ...state, maxConcurrent: -1 }));
+  await store.close();
+  const recovered = await DurableStore.open({ directory });
+  assert.equal(recovered.replayWarnings.length, 0);
+  assert.deepEqual(recovered.replayState, expected);
+  await recovered.close();
+});
+
 test("rewrite store: invalid checkpoint projections cannot overwrite journal authority", async (t) => {
   const directory = await temporaryStore(t);
   const store = await DurableStore.open({ directory, manifest: manifest(directory) });
@@ -896,3 +920,150 @@ test(
     assert.deepEqual(await readFile(join(directory, "journal.jsonl")), journal);
   },
 );
+
+test("journal groups retain exact request identities and wait for a shared sync before acknowledging", async (t) => {
+  const directory = await temporaryStore(t);
+  let release: () => void = () => {};
+  let reached: () => void = () => {};
+  const blocked = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const entered = new Promise<void>((resolve) => {
+    reached = resolve;
+  });
+  let syncs = 0;
+  const store = await DurableStore.open({
+    directory,
+    manifest: manifest(directory),
+    fault: async (point) => {
+      if (point === "journal.sync.before") {
+        syncs++;
+        reached();
+        await blocked;
+      }
+    },
+  });
+  const requests = [entry("first"), entry("second"), entry("third")];
+  let acknowledged = false;
+  const pending = store.appendBatch(requests).then((frames) => {
+    acknowledged = true;
+    return frames;
+  });
+  await entered;
+  assert.equal(acknowledged, false);
+  assert.equal(store.frames.length, 0);
+  release();
+  const frames = await pending;
+  assert.equal(syncs, 1);
+  assert.deepEqual(
+    frames.map((frame) => frame.record.revision),
+    [1, 2, 3],
+  );
+  assert.deepEqual(await store.appendBatch([requests[2], requests[0], requests[1]]), [
+    frames[2],
+    frames[0],
+    frames[1],
+  ]);
+  assert.equal(syncs, 1);
+  await assert.rejects(
+    store.appendBatch([
+      entry("fourth"),
+      { ...requests[0], payloadDigest: digestValue("conflict") },
+    ]),
+    { code: "conflict" },
+  );
+  assert.equal(store.frames.length, 3);
+  const [fourth, duplicate, fifth] = await store.appendBatch([
+    entry("fourth"),
+    requests[0],
+    entry("fifth"),
+  ]);
+  assert.equal(fourth.record.revision, 4);
+  assert.equal(duplicate.record.revision, 1);
+  assert.equal(fifth.record.previousDigest, fourth.digest);
+  await store.close();
+  assert.equal((await inspectStore(directory)).frames.length, 5);
+});
+
+test("journal group failures retain complete prefixes without acknowledging any staged frame", async (t) => {
+  for (const boundary of [
+    "journal.write.before",
+    "journal.write.after",
+    "journal.sync.before",
+    "journal.sync.after",
+    "journal.directory-sync.before",
+    "journal.directory-sync.after",
+    "owner-loss",
+  ]) {
+    const directory = await temporaryStore(t);
+    const store = await DurableStore.open({
+      directory,
+      manifest: manifest(directory),
+      fault: async (point) => {
+        if (point === boundary) throw new Error(`injected ${boundary}`);
+        if (boundary === "owner-loss" && point === "journal.sync.after") {
+          const path = join(directory, "owner", "claim.json");
+          const claim = JSON.parse(await readFile(path, "utf8"));
+          await writeFile(path, JSON.stringify({ ...claim, token: randomUUID() }));
+        }
+      },
+    });
+    await assert.rejects(store.appendBatch([entry("first"), entry("second")]), {
+      code: "commit_unknown",
+    });
+    assert.equal(store.frames.length, 0);
+    await assert.rejects(store.close(), { code: "commit_unknown" });
+    const frames = (await inspectStore(directory)).frames;
+    const count =
+      boundary === "journal.write.before" ? 0 : boundary === "journal.write.after" ? 1 : 2;
+    assert.deepEqual(
+      frames.map((frame) => frame.record.requestId),
+      ["first", "second"].slice(0, count),
+    );
+  }
+});
+
+test("persistent journal handles fence external edits and replacements without overwriting evidence", async (t) => {
+  for (const replacement of [false, true]) {
+    const directory = await temporaryStore(t);
+    const store = await DurableStore.open({ directory, manifest: manifest(directory) });
+    await store.append(entry("first"));
+    const path = join(directory, "journal.jsonl");
+    const original = await readFile(path);
+    if (replacement) await rename(path, join(directory, "original.jsonl"));
+    const edited = replacement ? original : Buffer.from("user edited journal");
+    await writeFile(path, edited);
+    await assert.rejects(store.append(entry("second")), { code: "commit_unknown" });
+    await assert.rejects(store.close(), { code: "commit_unknown" });
+    assert.deepEqual(await readFile(path), edited);
+    if (replacement) assert.deepEqual(await readFile(join(directory, "original.jsonl")), original);
+  }
+});
+
+test("journal replay verifies chunks referenced by conversation manifests", async (t) => {
+  const directory = await temporaryStore(t);
+  const store = await DurableStore.open({ directory, manifest: manifest(directory) });
+  const artifacts = {
+    put: (bytes: Uint8Array) => store.putArtifact(bytes),
+    read: (ref: { digest: string; size: number }) => store.readArtifact(ref),
+  };
+  const artifact = await storeConversation(
+    Buffer.from(
+      Array.from({ length: 300 }, (_, index) => JSON.stringify({ index }) + "\n").join(""),
+    ),
+    {
+      kind: "assignment",
+      ref: { run: "storage-run", worker: "base", assignment: 1 },
+      session: "session",
+      fromEntry: null,
+      throughEntry: "last",
+    },
+    artifacts,
+  );
+  await store.append({ ...entry(), artifacts: [artifact] });
+  const saved = parseConversationManifest(await artifacts.read(artifact));
+  assert(saved);
+  await store.close();
+  await rm(join(directory, "artifacts", saved.chunks[1].artifact.digest));
+  await assert.rejects(inspectStore(directory), /Corrupt committed journal frame/);
+});
