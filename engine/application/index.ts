@@ -27,6 +27,7 @@ import {
   type ExclusiveLease,
 } from "../workspace/gate.ts";
 import { ApplicationHelpers, type ApplicationHelperOptions } from "./helpers.ts";
+import { applicationArtifacts } from "./artifacts.ts";
 import { repository } from "../workspace/location.ts";
 import { manifestAtTree } from "../workspace/tree.ts";
 import { selectWorktree } from "./worktree.ts";
@@ -96,11 +97,11 @@ export class ApplicationStore {
     this.destination = gate.checkout.root;
     this.directory = directory;
     this.gate = gate;
-    this.artifacts = options.artifacts;
+    this.artifacts = applicationArtifacts(directory, options.artifacts, options.fault);
     this.fault = options.fault;
     this.helpers = new ApplicationHelpers({
       directory,
-      artifacts: options.artifacts,
+      artifacts: this.artifacts,
       ownerEpoch: this.ownerEpoch,
       fault: options.fault,
       createGit: options.createGit,
@@ -112,6 +113,8 @@ export class ApplicationStore {
     const gate = await openCheckoutGate(options.destination);
     const directory = join(gate.checkout.root, ".pinata", "applications");
     await ensureDirectory(directory);
+    await ensureDirectory(join(directory, "artifacts"));
+    await syncDirectory(directory);
     return new ApplicationStore(options, gate, await realpath(directory));
   }
 
