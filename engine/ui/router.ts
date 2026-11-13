@@ -657,7 +657,7 @@ export class ScreenRouter {
             worker: ref.worker,
             messageId: `ui/message/${id}`,
             text,
-            ...(action === "follow_up" ? { after: [], inputs: [] } : {}),
+            ...(action === "follow_up" ? { after: [] } : {}),
           },
         }),
       };

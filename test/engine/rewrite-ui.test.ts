@@ -1460,6 +1460,73 @@ test("worker detail fills the viewport and anchors the composer through resize",
   router.dispose();
 });
 
+for (const text of ["More detail, please.", "/follow-up More detail, please."])
+  test(`completed conversation accepts a follow-up through Enter: ${text}`, async (t) => {
+    const state = uiState(1);
+    state.assignments[assignmentKey(ref())].execution = {
+      phase: "ended",
+      reason: "completed",
+      cleanup: "confirmed",
+    };
+    const source = new UiSource(state);
+    let executed = 0;
+    source.respond = async (input) => {
+      const call = surfaceCallSchema.parse(input);
+      if (call.method !== "execute")
+        return conversationReply(ref(1, source.state.latest["worker-1"]), "Retained answer");
+      const envelope = commandEnvelopeSchema.parse(call.input);
+      assert.equal(envelope.command.kind, "follow_up");
+      assert("text" in envelope.command);
+      assert.equal(envelope.command.text, "More detail, please.");
+      executed++;
+      source.state.latest["worker-1"] = 2;
+      source.state.assignments[assignmentKey(ref(1, 2))] = {
+        ...source.state.assignments[assignmentKey(ref())],
+        ref: ref(1, 2),
+        sequence: 2,
+        execution: { phase: "queued" },
+      };
+      source.state.revision++;
+      await source.emit(source.snapshot());
+      return {
+        status: "ok",
+        response: {
+          method: "execute",
+          result: {
+            status: "accepted",
+            requestId: envelope.requestId,
+            revision: source.state.revision,
+            assignments: [ref(1, 2)],
+            resolved: [],
+          },
+        },
+      };
+    };
+    const router = new ScreenRouter(source);
+    t.after(() => router.dispose());
+    await router.start();
+    router.navigate("conversation", ref());
+    await tick();
+    const tui = new TuiAltScreen(new MemoryTerminal());
+    tui.requestRender = () => {};
+    const errors: unknown[] = [];
+    const screen = new PinataScreen({
+      tui,
+      router,
+      main() {},
+      error: (error) => errors.push(error),
+    });
+    t.after(() => screen.dispose());
+    screen.handleInput(text);
+    screen.handleInput("\r");
+    await tick();
+    assert.deepEqual(errors, []);
+    assert.equal(executed, 1);
+    assert.deepEqual(router.selected, ref(1, 2));
+    assert.equal(router.draft, "");
+    assert.equal(router.noticeTone, "success");
+  });
+
 test("short conversations and send feedback stay beside the composer without shifting controls", async () => {
   const source = new UiSource(uiState(1));
   let answer = "A short reply";
