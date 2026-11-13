@@ -1489,9 +1489,6 @@ local terminology/vocabulary live under `.vale/styles/`. Use inline code for ide
 Scripted and HTTP loopback benchmarks measure coordination, storage, sessions and cleanup.
 Coding quality is evaluated separately.
 
-The [performance follow-up report](docs/performance-followups.md) records the
-implementation, source comparisons, matched measurements and remaining limits.
-
 ```sh
 npm run bench
 npm run bench:loopback

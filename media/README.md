@@ -24,5 +24,4 @@ The source drivers, raw captures, earlier capture attempts, keyboard events, wor
 results and cleanup evidence remain locally in
 `bench/results/live-media-refresh-20261112/` and
 `bench/results/live-media-animation-20261112/`. Those generated files are ignored by
-Git. The separate [performance report](../docs/performance-followups.md) contains
-matched scripted measurements; the live media run is not a performance comparison.
+Git. The live media runs are not performance comparisons.
