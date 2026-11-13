@@ -25,10 +25,15 @@ pi install npm:pi-pinata
 [Workflows](#workflows) · [Agents](#custom-agents) · [Configuration](#configuration) ·
 [Tools](#tools) · [CLI](#cli-reference) · [API](#package-api) ·
 [Implementation](#architecture-and-implementation-index) · [Development](#development)
+pinata-navigation.gif
+
+![A live Piñata fleet gif.](media/pinata-navigation.gif)
 
 ![A live Piñata fleet with nine agents, two levels of delegation, a scout and a queued reviewer.](media/pinata-fleet.png)
 
-[Watch the fleet run (6× speed)](media/pinata-fleet.mp4) · [Recording details](media/README.md)
+
+https://github.com/user-attachments/assets/e2c60738-1052-4cf4-beaf-8cfe9f7a5e3a
+
 
 ## Why Piñata
 
