@@ -102,7 +102,10 @@ export class ConversationQueries {
   private readonly artifacts: Pick<ArtifactPort, "read">;
   private readonly secret = randomBytes(32);
   private readonly snapshots = new Map<string, CachedConversation>();
-  private readonly loading = new Map<string, Promise<CachedConversation>>();
+  private readonly loading = new Map<
+    string,
+    { refresh: boolean; promise: Promise<CachedConversation> }
+  >();
   private cachedBytes = 0;
   private generation = 0;
 
@@ -162,6 +165,7 @@ export class ConversationQueries {
   private async readSnapshot(
     cursor: ConversationCursor,
     refresh: boolean,
+    generation = this.generation,
   ): Promise<CachedConversation> {
     const key = JSON.stringify([
       assignmentKey(cursor.ref),
@@ -176,11 +180,16 @@ export class ConversationQueries {
       return cached;
     }
     const pending = this.loading.get(key);
-    if (pending) return pending;
+    if (pending) {
+      const snapshot = await pending.promise;
+      if (!refresh || pending.refresh) return snapshot;
+      // Cursor loads may skip complete-chain verification after eviction. A
+      // fresh caller must start or join a fully verified read after that load.
+      return this.readSnapshot(cursor, true, generation);
+    }
     // A fresh first page rechecks retained evidence. Cursor pages can reuse the
     // already validated snapshot, even when a newer checkpoint is available.
     this.evict(key);
-    const generation = this.generation;
     const loading = (async () => {
       const bytes = await this.artifacts.read(cursor.artifact);
       const manifest = parseConversationManifest(bytes);
@@ -227,11 +236,11 @@ export class ConversationQueries {
       }
       return snapshot;
     })();
-    this.loading.set(key, loading);
+    this.loading.set(key, { refresh, promise: loading });
     try {
       return await loading;
     } finally {
-      if (this.loading.get(key) === loading) this.loading.delete(key);
+      if (this.loading.get(key)?.promise === loading) this.loading.delete(key);
     }
   }
 

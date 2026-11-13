@@ -219,6 +219,89 @@ test("conversation cache evicts old snapshots without invalidating signed cursor
   assert.equal(reads.length, 10, "An evicted snapshot is verified again from retained evidence");
 });
 
+for (const { corrupt, clear } of [
+  { corrupt: false, clear: false },
+  { corrupt: true, clear: false },
+  { corrupt: false, clear: true },
+])
+  test(`fresh conversation requests verify fully after joining an evicted cursor load (corrupt=${corrupt}, clear=${clear})`, async () => {
+    const { artifacts, values, reads } = conversationArtifacts();
+    const ref = { run: "concurrent-pages", worker: "worker", assignment: 1 };
+    const entries = Array.from({ length: 600 }, (_, index) => ({
+      type: "message",
+      id: `entry-${index}`,
+      parentId: index ? `entry-${index - 1}` : null,
+      message: { content: "x".repeat(1000) },
+    }));
+    const bytes = Buffer.from(
+      [{ type: "session", id: "concurrent-session" }, ...entries]
+        .map((value) => JSON.stringify(value))
+        .join("\n") + "\n",
+    );
+    const artifact = await storeConversation(
+      bytes,
+      { kind: "pi", session: "concurrent-session" },
+      artifacts,
+    );
+    const manifest = parseConversationManifest(await artifacts.read(artifact));
+    assert(manifest);
+    const last = manifest.chunks.at(-1);
+    assert(last && last.firstEntry > 200, "Damage stays outside both requested pages");
+    const retained = values.get(last.artifact.digest);
+    assert(retained);
+    const started = deferred();
+    const release = deferred();
+    let paused = false;
+    const queries = new ConversationQueries({
+      async read(reference) {
+        if (paused && reference.digest === artifact.digest) {
+          started.resolve();
+          await release.promise;
+        }
+        return artifacts.read(reference);
+      },
+    });
+    const request = { kind: "conversation" as const, ref };
+    const snapshot = { source: "checkpoint" as const, artifact };
+    const first = await queries.query(request, snapshot);
+    assert(first.cursor);
+    queries.clear();
+    reads.length = 0;
+    if (corrupt) values.set(last.artifact.digest, Buffer.from("Corrupted later chunk"));
+    paused = true;
+    const continued = queries.query({ ...request, cursor: first.cursor });
+    await started.promise;
+    const fresh = queries.query(request, snapshot);
+    const concurrent = queries.query(request, snapshot);
+    const verified = corrupt
+      ? Promise.all([
+          assert.rejects(fresh, /cannot be read/),
+          assert.rejects(concurrent, /cannot be read/),
+        ])
+      : Promise.all([fresh, concurrent]).then((pages) => {
+          for (const page of pages) assert.deepEqual(page.entries, entries.slice(0, 100));
+        });
+    if (clear) queries.clear();
+    release.resolve();
+    assert.deepEqual((await continued).entries, entries.slice(100, 200));
+    await verified;
+    assert.equal(
+      reads.filter((digest) => digest === artifact.digest).length,
+      2,
+      "Fresh callers share one fully verified load after the cursor load",
+    );
+    if (clear) {
+      await queries.query({ ...request, cursor: first.cursor });
+      assert.equal(
+        reads.filter((digest) => digest === artifact.digest).length,
+        3,
+        "A fresh read upgraded after clear cannot repopulate the cache",
+      );
+    }
+    values.set(last.artifact.digest, retained);
+    assert.deepEqual((await queries.query(request, snapshot)).entries, entries.slice(0, 100));
+  });
+
 test("conversation cache bounds retained source bytes and still pages oversized artifacts", async () => {
   const { artifacts, reads } = conversationArtifacts();
   const queries = new ConversationQueries(artifacts);
