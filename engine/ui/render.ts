@@ -160,20 +160,9 @@ function treeLines(state: CoreState, nodes: TreeNode[], options: TreeOptions): T
     const suffix =
       options.paint(statusToken(status), ` · ${status}`) +
       options.paint("muted", options.width >= 60 ? duration : "");
-    const task =
-      displayText(assignment.task)
-        .split("\n")
-        .find((line) => line.trim())
-        ?.trim() ?? "";
     const identityWidth = Math.max(1, options.width - visibleWidth(suffix));
-    const compactPrefix = fit(prefix, identityWidth);
-    const taskWidth = Math.max(0, options.width - visibleWidth(compactPrefix + suffix) - 1);
-    const taskText =
-      taskWidth && visibleWidth(task) > taskWidth
-        ? (taskWidth > 1 ? fit(task, taskWidth - 1) : "") + "…"
-        : fit(task, Math.max(1, taskWidth));
     output.push({
-      text: compactPrefix + (taskWidth ? ` ${taskText}` : "") + suffix,
+      text: fit(prefix, identityWidth) + suffix,
       ref: assignment.ref,
       worker: true,
     });
