@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.0.3
+
+- Hide finished fleet work after confirmed cleanup, with `h` to restore history
+  and `w` to toggle waiting work. Preserve active-child ancestry, uncertain cleanup,
+  message drafts and navigation.
+- Reduce viewer, transport and history overhead with incremental UI state,
+  paginated conversations, shared history chunks, assignment indexes, direct JSON
+  IPC, compile/schema caching and grouped durable journal writes.
+- Separate live process activity from retained lifecycle, usage, results and
+  cleanup evidence. Recover missed notifications through reconciliation.
+- Add durable worker messages to coordinators, parents and pending peers without
+  ending assignments or starting extra coordinator turns. Target new notices
+  without repeatedly retrying the whole uncertain outbox.
+- Apply current files from the latest stopped worktree. Remove automatic
+  assignment snapshots and completion commits while preserving conflict checks,
+  writer exclusion, journaled apply/rollback and retained legacy recovery.
+- Retain application evidence beside the checkout journal so later runs can
+  recover earlier operations. Import missing legacy blobs through the originating
+  run after verification.
+- Fix completed-conversation follow-ups, concurrent fresh-history verification,
+  final-report termination and request ordinal gaps after oversized messages.
+- Exercise valid lifecycle events in the offline terminal validator and report
+  each recovery fault case with its own timeout, cancellation and diagnostics.
+- Remove obsolete internal review and performance follow-up documents.
+
+Migration: new requests no longer accept snapshot `inputs` or `observeWorkspace`,
+and `pinata_changes` is no longer registered. Inspect `result.worktree` with Git
+before requesting integration. Replace old schedules that contain snapshot inputs.
+Keep originating run artifacts until legacy application evidence has been imported.
+
 ## 0.0.2
 
 - Keep checkout gate identity stable when device numbers change, with explicit
