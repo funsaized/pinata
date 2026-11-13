@@ -2,11 +2,145 @@ import assert from "node:assert/strict";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
 import { fauxAssistantMessage, fauxText, fauxToolCall } from "@earendil-works/pi-ai";
 import { piFixture } from "./rewrite-pi-fixture.ts";
 import { supervisedSessionProcesses } from "../../engine/agent/processes.ts";
 import { materializeConversation } from "../../engine/storage/conversation.ts";
 import { verifyArtifact } from "../../engine/storage/index.ts";
+import { assignmentKey } from "../../engine/contracts/index.ts";
+
+test(
+  "a final report blocks later tools in its batch and ends without another provider request",
+  { timeout: 20_000 },
+  async (t) => {
+    const world = await piFixture(
+      t,
+      (_context, _options, state) =>
+        state.callCount === 1
+          ? fauxAssistantMessage([
+              fauxToolCall("write", { path: "file.txt", content: "before report" }),
+              fauxToolCall("submit_result", { summary: "Final report" }),
+              fauxToolCall("write", { path: "file.txt", content: "after report" }),
+            ])
+          : fauxAssistantMessage("Unexpected post-report response"),
+      { tools: ["read", "write"], access: "write" },
+    );
+    await world.runtime.execute(
+      {
+        requestId: "final-report",
+        command: {
+          kind: "create",
+          workers: [{ id: "worker", agent: "fixture", task: "Report and finish" }],
+        },
+      },
+      world.caller,
+    );
+    const ended = await world.runtime.wait({}, world.caller, t.signal);
+    assert.equal(world.turns.length, 1);
+    assert.equal(await readFile(join(world.workspace, "file.txt"), "utf8"), "before report");
+    const result = ended.results[0];
+    assert.deepEqual(result.execution, {
+      phase: "ended",
+      reason: "completed",
+      cleanup: "confirmed",
+    });
+    assert.equal(result.summary, "Final report");
+    assert(result.report);
+    assert.equal(result.reportingError, undefined);
+    assert(result.session);
+    const saved = await materializeConversation(result.session, {
+      read: (ref) => verifyArtifact(world.storeDirectory, ref),
+    });
+    assert.match(Buffer.from(saved).toString("utf8"), /already submitted its final report/);
+  },
+);
+
+test(
+  "queued steering cannot continue a reported assignment, but an explicit follow-up can",
+  { timeout: 20_000 },
+  async (t) => {
+    let entered = (): void => {};
+    let release = (): void => {};
+    const started = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const world = await piFixture(t, async (_context, _options, state) => {
+      if (state.callCount === 1) {
+        entered();
+        await held;
+        return fauxAssistantMessage([fauxToolCall("submit_result", { summary: "Final report" })]);
+      }
+      return fauxAssistantMessage("Explicit follow-up result");
+    });
+    try {
+      await world.runtime.execute(
+        {
+          requestId: "start",
+          command: {
+            kind: "create",
+            workers: [{ id: "worker", agent: "fixture", task: "Report and finish" }],
+          },
+        },
+        world.caller,
+      );
+      await started;
+      await world.runtime.execute(
+        {
+          requestId: "steer",
+          command: {
+            kind: "steer",
+            worker: "worker",
+            messageId: "late",
+            text: "Queued before report",
+          },
+        },
+        world.caller,
+      );
+      while (true) {
+        const status = await world.runtime.query({ kind: "status" }, world.caller);
+        assert(status.kind === "status");
+        if (status.state.inbox.late.state === "transport_queued") break;
+        await delay(1, undefined, { signal: t.signal });
+      }
+    } finally {
+      release();
+    }
+    const ended = await world.runtime.wait({}, world.caller, t.signal);
+    assert.equal(world.turns.length, 1);
+    assert.deepEqual(ended.results[0].execution, {
+      phase: "ended",
+      reason: "completed",
+      cleanup: "confirmed",
+    });
+    const status = await world.runtime.query({ kind: "status" }, world.caller);
+    assert(status.kind === "status");
+    assert.notEqual(status.state.inbox.late.state, "consumed");
+    assert.equal(
+      status.state.results[assignmentKey(ended.results[0].ref)].result.summary,
+      "Final report",
+    );
+    await world.runtime.execute(
+      {
+        requestId: "follow-up",
+        command: {
+          kind: "follow_up",
+          worker: "worker",
+          messageId: "explicit",
+          text: "Start a new assignment",
+        },
+      },
+      world.caller,
+    );
+    const followed = await world.runtime.wait({}, world.caller, t.signal);
+    assert.equal(world.turns.length, 2);
+    assert.equal(followed.results[0].ref.assignment, 2);
+    assert.equal(followed.results[0].summary, "Explicit follow-up result");
+  },
+);
 
 test(
   "typed optional reports validate their data without executing it or changing completion policy",

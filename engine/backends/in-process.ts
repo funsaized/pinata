@@ -387,6 +387,19 @@ export class InProcessBackend implements BackendPort {
       });
       session = created.session;
       const activeSession = session;
+      const finishTurn = activeSession.agent.finishTurn;
+      activeSession.agent.finishTurn = async (turn, signal) => {
+        const decision = await finishTurn?.(turn, signal);
+        // Preserve Pi's boundary persistence, then finish before steering or
+        // follow-up queues can schedule another request after a retained report.
+        // The session also drains queues after Agent.finishTurn ends its loop.
+        // Their durable inbox records remain unconsumed in the runtime.
+        if (reported) {
+          activeSession.clearQueue();
+          return { action: "end" };
+        }
+        return decision ?? undefined;
+      };
       const recordContext = async (): Promise<void> => {
         const current = activeSession.getContextUsage();
         await observe({
@@ -836,7 +849,7 @@ export class InProcessBackend implements BackendPort {
         stop,
         checkpoint,
         async input(message) {
-          if (isFinished || isStopping || !activeSession.isStreaming)
+          if (reported || isFinished || isStopping || !activeSession.isStreaming)
             return { status: "undelivered" };
           if (pendingInputs.has(message.id) || consumed.has(message.id))
             return { status: "transport_handled" };

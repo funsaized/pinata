@@ -36,6 +36,7 @@ export function workerExtension(options: {
       ? reportedResultSchema.extend({ data: outputSchema })
       : workerToolSchemas.submit_result.input;
   return (pi) => {
+    let reported = false;
     pi.registerTool({
       name: reportTool,
       label: "Submit final result",
@@ -71,6 +72,7 @@ export function workerExtension(options: {
         }
         const report = reportedResultSchema.parse(parsed.data);
         await options.onReport(report);
+        reported = true;
         return {
           content: [{ type: "text", text: "Your report was recorded." }],
           details: { report },
@@ -79,6 +81,8 @@ export function workerExtension(options: {
       },
     });
     pi.on("tool_call", async (event, context) => {
+      if (reported)
+        return { block: true, reason: "This assignment already submitted its final report." };
       const reason = await guardToolCall({
         worker: options.worker,
         root: options.root,
