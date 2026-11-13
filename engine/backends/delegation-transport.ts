@@ -49,9 +49,10 @@ export function fileChildClient(
     signal?: AbortSignal,
   ) {
     signal?.throwIfAborted();
-    const record = requestSchema.parse({ id: randomUUID(), ordinal: ++ordinal, method, input });
+    const record = requestSchema.parse({ id: randomUUID(), ordinal: ordinal + 1, method, input });
     if (Buffer.byteLength(canonicalJson(record)) > maxBytes / 2)
       throw new DomainError("invalid_input", "Child request exceeds the message limit");
+    ordinal = record.ordinal;
     const pending = publication.then(() =>
       writeRecord(numberedPath(directory, "child-requests", record.ordinal), record),
     );
