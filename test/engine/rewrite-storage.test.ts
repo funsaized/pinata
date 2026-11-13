@@ -17,6 +17,7 @@ import test, { type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { digestValue } from "../../engine/contracts/digest.ts";
+import { initialState } from "../../engine/core/state.ts";
 import { parseConversationManifest, storeConversation } from "../../engine/storage/conversation.ts";
 import { digestBytes } from "../../engine/storage/io.ts";
 import { DurableStore, inspectStore, reconcileStore } from "../../engine/storage/index.ts";
@@ -572,6 +573,28 @@ test("rewrite store: checkpoint publication failures preserve authoritative repl
     assert.deepEqual(recovered.frames, expectedFrames);
     await recovered.close();
   }
+});
+
+test("rewrite store: checkpoint captures validated state before queued publication", async (t) => {
+  const directory = await temporaryStore(t);
+  const store = await DurableStore.open({ directory, manifest: manifest(directory) });
+  const state = initialState(store.manifest.run);
+  const expected = structuredClone(state);
+  const pending = store.checkpoint(state);
+  state.maxConcurrent = 99;
+  await pending;
+  const checkpoint = JSON.parse(
+    await readFile(join(directory, "checkpoints", "latest.json"), "utf8"),
+  );
+  assert.deepEqual(checkpoint.snapshot, expected);
+  await assert.rejects(store.checkpoint({ ...state, run: "another-run" }), /run revision/);
+  await assert.rejects(store.checkpoint({ ...state, revision: 1 }), /run revision/);
+  assert.throws(() => store.checkpoint({ ...state, maxConcurrent: -1 }));
+  await store.close();
+  const recovered = await DurableStore.open({ directory });
+  assert.equal(recovered.replayWarnings.length, 0);
+  assert.deepEqual(recovered.replayState, expected);
+  await recovered.close();
 });
 
 test("rewrite store: invalid checkpoint projections cannot overwrite journal authority", async (t) => {

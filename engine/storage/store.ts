@@ -5,6 +5,7 @@ import {
   checkpointSchema,
   coreStateSchema,
   type CoreState,
+  type Checkpoint,
   journalFrameSchema,
   journalRecordSchema,
   manifestSchema,
@@ -138,7 +139,8 @@ export class DurableStore {
         if (checkpoint.digest !== expectedDigest)
           throw new Error("Checkpoint does not match the journal chain");
         if (checkpoint.projection === "core") {
-          const saved = coreStateSchema.parse(checkpoint.snapshot);
+          const saved = checkpoint.snapshot;
+          if (!saved) throw new Error("Checkpoint projection is missing its snapshot");
           let expected = initialState(manifest.run);
           // A checksum binds bytes to a revision, not their meaning. Preserve
           // semantic corruption detection before using a rebuildable projection.
@@ -423,17 +425,17 @@ export class DurableStore {
       const legacy = snapshot
         ? undefined
         : await this.writeArtifact(Buffer.from(canonicalJson(this.committed)));
-      const checkpoint = checkpointSchema.parse({
+      const checkpoint: Checkpoint = {
         schemaVersion: 1,
         revision: this.committed.length,
         digest: this.committed.at(-1)?.digest ?? "",
         ...(snapshot ? { projection: "core", snapshot } : { state: legacy }),
-      });
+      };
       // Checkpoints are rebuildable. A failed projection does not invalidate an
       // already-synced lifecycle transition or authorize new work on its own.
       await replaceProjection(
         join(this.directory, "checkpoints", "latest.json"),
-        Buffer.from(canonicalJson(checkpoint)),
+        Buffer.from(JSON.stringify(checkpoint)),
         "checkpoint",
         this.fault,
       );
