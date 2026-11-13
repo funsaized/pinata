@@ -156,7 +156,7 @@ test("shared workspace release waits for another live checkout mutation without 
 });
 
 test(
-  "replacement shared non-Git preparation preserves edits and releases writers only after capture",
+  "replacement shared non-Git preparation and explicit capture preserve edits and writer registration",
   { skip: process.platform === "win32", timeout: 30_000 },
   async (t) => {
     const world = await fixture(t, { git: false });

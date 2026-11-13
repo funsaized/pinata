@@ -427,13 +427,17 @@ Piñata does not automatically commit it.
 | `shared`   | Work in the authorized checkout, including non-Git projects. Edits are immediately visible. |
 | `worktree` | Start from a frozen Git base and apply a selected isolated snapshot explicitly.             |
 
-Tool access and workspace mode are independent. Shared observations can include
-user and other worker edits; they do not establish exclusive authorship.
-Shared writers and isolated workers retain snapshots when capture succeeds.
-Shared readers retain conversations and results without an automatic checkout scan.
-Set `observeWorkspace: true` at creation to request that observation too.
+Tool access and workspace mode are independent. Shared workers retain conversations,
+results and cleanup evidence without a per-worker checkout scan or snapshot validation.
+Their edits are already in the checkout. Completion does not require the rest of the
+checkout to stop changing. The coordinator owns testing and review.
+
+Isolated workers retain snapshots for explicit application. Set `observeWorkspace: true`
+at creation to opt a shared worker into capture and validation. Shared observations
+can include user and other worker edits; they do not establish exclusive authorship.
 `changes` returning `source: "unavailable"` does not mean the checkout was unchanged.
-Snapshots record their observation interval and scope.
+Snapshots record their observation interval and scope. Recovery still reconciles
+capture operations already recorded by an earlier host.
 
 New worktrees include dirty starting content by default; `includeUncommitted: false`
 selects committed content. Follow-ups keep the worktree; changing modes needs a new
@@ -445,7 +449,8 @@ a completion checkpoint.
 ### Dependency inputs and setup
 
 `inputs` composes exact immutable predecessor snapshots into an isolated destination.
-Pair it with appropriate `after` ordering. Missing requested snapshots fail preparation
+Pair it with appropriate `after` ordering. For a shared predecessor, set
+`observeWorkspace: true` when creating it. Missing requested snapshots fail preparation
 with retained evidence. For reports, use the dependency tool or quoted `context`.
 
 The source checkout's `.worktreeinclude` selects ignored local regular files, such as

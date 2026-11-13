@@ -151,12 +151,20 @@ async function relay(t: TestContext, wrong = false) {
   );
   assert.equal(completed.results.length, job.workers.length);
   for (const result of completed.results) {
+    assert.equal(result.snapshot, undefined);
     assert.equal(result.execution.phase, "ended", JSON.stringify(result));
     if (result.execution.phase === "ended") {
       assert.equal(result.execution.reason, "completed", JSON.stringify(result));
       assert.equal(result.execution.cleanup, "confirmed");
     }
   }
+  const status = await host.runtime.query({ kind: "status" }, host.caller);
+  assert.equal(status.kind, "status");
+  if (status.kind === "status")
+    assert.equal(
+      Object.values(status.state.effects).some((entry) => entry.effect.kind === "capture"),
+      false,
+    );
   return { directory, workspace, host };
 }
 

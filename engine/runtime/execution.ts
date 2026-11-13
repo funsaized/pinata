@@ -825,13 +825,11 @@ export class ExecutionCoordinator {
     let { cleanup, checkpoint, capture } = completion;
     const finalizationErrors: string[] = [];
     let captureRequested =
-      active.worker.workspace === "worktree" ||
-      active.worker.access === "write" ||
-      active.worker.observeWorkspace === true;
+      active.worker.workspace === "worktree" || active.worker.observeWorkspace === true;
     await this.host.transaction(async (transaction) => {
       const state = transaction.state();
       const entry = state.attempts[active.attemptId];
-      // Shared readers do not request automatic checkout observation. A retained
+      // Shared workers do not request automatic checkout observation. A retained
       // capture intent still owns recovery work, including one from an older host.
       captureRequested ||= Object.hasOwn(state.effects, `${active.attemptId}/capture`);
       if (!entry.outcome) {
