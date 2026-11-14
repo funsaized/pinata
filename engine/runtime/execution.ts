@@ -1185,6 +1185,18 @@ export class ExecutionCoordinator {
           });
           return;
         }
+        case "model":
+          if (observation.attemptId !== active.attemptId)
+            throw new DomainError(
+              "capability_denied",
+              "Model observation belongs to another attempt",
+            );
+          await commit({
+            kind: "model_observed",
+            attemptId: active.attemptId,
+            model: observation.model,
+          });
+          return;
         case "usage":
           if (observation.attemptId !== active.attemptId)
             throw new DomainError("capability_denied", "Usage belongs to another attempt");

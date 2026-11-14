@@ -24,6 +24,7 @@ export type RuntimeService = Pick<
   | "subscribe"
   | "deliverNotifications"
   | "recordNotificationConsumption"
+  | "acknowledgeNotification"
 >;
 export type RuntimeSource = {
   readonly run: string;
@@ -104,6 +105,14 @@ export async function callRuntime(
         return {
           status: "ok",
           response: { method: call.method, result: await service.deliverNotifications(caller) },
+        };
+      case "acknowledge_notification":
+        return {
+          status: "ok",
+          response: {
+            method: call.method,
+            result: await service.acknowledgeNotification(call.input, caller),
+          },
         };
       case "consume_notification":
         await service.recordNotificationConsumption(call.id, call.checkpoint, caller);

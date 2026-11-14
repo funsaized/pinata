@@ -133,7 +133,7 @@ export async function runPiSmoke(options: { packageRoot?: string; installed?: bo
     );
     await pi.wait((event) => event.type === "agent_settled", from);
     const direct = pi.records.length;
-    const schemaId = pi.send({ type: "prompt", message: "/pinata-schema pinata.command.v1" });
+    const schemaId = pi.send({ type: "prompt", message: "/pinata-schema pinata.command.v2" });
     const schemaReply = await pi.wait(
       (event) => event.type === "response" && event.id === schemaId,
       direct,

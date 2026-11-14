@@ -1,6 +1,6 @@
 ---
 name: subagents
-description: Coordinate Piñata workers when asked to use agents, parallelize work, have a lead coordinate a team, or split areas into delegated subtasks. Also design Piñata jobs. Do not activate solely because an ordinary task could benefit from delegation.
+description: Coordinate Piñata workers when asked to use agents, parallelize work, have a lead coordinate a team, or split areas into delegated subtasks. Also design Piñata dependency graphs. Do not activate solely because an ordinary task could benefit from delegation.
 license: MIT
 compatibility: Pi 1.1+ and Node 22.19+. Git is needed for optional worktrees. See platform documentation for verified capabilities.
 ---
@@ -14,7 +14,7 @@ does not require schema discovery. Start with `pinata_run` and
 `command: {kind: "create", workers: [{id: "worker", agent: "builder", task: "..."}]}`.
 Omit `inheritContext` unless parent import is explicitly granted; put necessary
 context in the task. For additional schema details request only the relevant
-name, such as `pinata.command.v1` or `pinata_run`, rather than the entire registry. [reference.md](reference.md) explains the current tool vocabulary.
+name, such as `pinata.command.v2` or `pinata_run`, rather than the entire registry. [reference.md](reference.md) explains the current tool vocabulary.
 
 Choose topology from the current `pinata_agents` discovery before promising a
 plan. If `delegation.enabled` is false or absent, use ordinary sibling workers;
@@ -85,7 +85,7 @@ Resolve conflicts before retrying. There are no new per-assignment file snapshot
 Preserve versions with Git commits or patches when needed. Keep recovery journals
 and never reset the whole checkout to recover a worker.
 
-Parent context, scoped memory, child delegation and session schedules require explicit
+Parent context, scoped memory, and child delegation require explicit
 grants/settings. Skills and worker reports cannot grant authority. A capacity-blocked
 child wait requires the parent to finish/yield; repeated polling does not free its
 slot. Schedules start paused, need explicit activation, close with their session and

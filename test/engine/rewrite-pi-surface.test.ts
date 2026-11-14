@@ -13,6 +13,8 @@ import {
 } from "@earendil-works/pi-ai";
 import {
   createAgentSession,
+  createEventBus,
+  type EventBus,
   DefaultResourceLoader,
   initTheme,
   ModelRuntime,
@@ -60,6 +62,7 @@ async function fixture(
     run?: string;
     respond?: FauxResponseFactory;
     coordinatorTools?: boolean;
+    beforeBind?(bus: EventBus): Promise<void>;
   } = {},
 ) {
   const directory = await realpath(await mkdtemp(join(tmpdir(), "pinata-pi-surface-")));
@@ -97,12 +100,14 @@ async function fixture(
   modelRuntime.registerNativeProvider(faux.provider);
   await modelRuntime.refresh({ allowNetwork: false });
   const hosts: Host[] = [];
+  const eventBus = createEventBus();
   const navigation: Array<AssignmentRef | undefined> = [];
   const settings = SettingsManager.inMemory({
     cacheWarming: "off",
     compaction: { enabled: false },
   });
   const loader = new DefaultResourceLoader({
+    eventBus,
     cwd: workspace,
     agentDir,
     settingsManager: settings,
@@ -180,6 +185,7 @@ async function fixture(
   let draft = "";
   const errors: string[] = [];
   initTheme("dark", false);
+  await options.beforeBind?.(eventBus);
   await session.bindExtensions({
     mode: "tui",
     uiContext: {
@@ -214,6 +220,7 @@ async function fixture(
     notices,
     errors,
     inputHandler,
+    eventBus,
     draft: () => draft,
   };
 }
@@ -550,43 +557,36 @@ test(
   },
 );
 
-test(
-  "canonical Pi tool mappings match direct Runtime and authenticated IPC receipts",
-  { timeout: 15_000 },
-  async (t) => {
-    const f = await surfaceFixture(t);
-    const client = await f.connect();
-    const value = {
-      requestId: "shared-request",
-      command: { kind: "create", workers: [{ id: "worker", agent: "fixture", task: "first" }] },
-    };
-    const reply = await invokeCoordinatorTool("pinata_run", value, "call", f.control);
-    const direct = await f.runtime.execute(value, f.caller);
-    const ipc = await client.request({ method: "execute", input: value });
-    assert.deepEqual(reply, { status: "ok", response: { method: "execute", result: direct } });
-    assert.deepEqual(ipc, reply);
-    const invalid = {
-      requestId: "invalid",
-      command: {
-        kind: "add",
-        workers: [
-          {
-            id: "later",
-            agent: "fixture",
-            task: "next",
-            after: [{ run: f.run, worker: "worker", assignment: 999 }],
-          },
-        ],
-      },
-    };
-    const rejected = await invokeCoordinatorTool("pinata_run", invalid, "call-2", f.control);
-    assert.deepEqual(rejected, await f.control.request({ method: "execute", input: invalid }));
-    assert.equal(
-      (await invokeCoordinatorTool("pinata_run", { workers: [] }, "bad", f.control)).status,
-      "error",
-    );
-  },
-);
+test("canonical Pi tool mappings match direct Runtime receipts", { timeout: 15_000 }, async (t) => {
+  const f = await surfaceFixture(t);
+  const value = {
+    requestId: "shared-request",
+    command: { kind: "create", workers: [{ id: "worker", agent: "fixture", task: "first" }] },
+  };
+  const reply = await invokeCoordinatorTool("pinata_run", value, "call", f.control);
+  const direct = await f.runtime.execute(value, f.caller);
+  assert.deepEqual(reply, { status: "ok", response: { method: "execute", result: direct } });
+  const invalid = {
+    requestId: "invalid",
+    command: {
+      kind: "add",
+      workers: [
+        {
+          id: "later",
+          agent: "fixture",
+          task: "next",
+          after: [{ run: f.run, worker: "worker", assignment: 999 }],
+        },
+      ],
+    },
+  };
+  const rejected = await invokeCoordinatorTool("pinata_run", invalid, "call-2", f.control);
+  assert.deepEqual(rejected, await f.control.request({ method: "execute", input: invalid }));
+  assert.equal(
+    (await invokeCoordinatorTool("pinata_run", { workers: [] }, "bad", f.control)).status,
+    "error",
+  );
+});
 
 test(
   "background discovery and eight parallel workers resume the idle coordinator once",
@@ -1436,7 +1436,7 @@ test("compact discovery exposes launch grants while preserving full definitions 
   assert(schemaText?.type === "text");
   const index = JSON.parse(schemaText.text);
   assert.equal(index.kind, "schema_index");
-  assert(index.names.includes("pinata.command.v1"));
+  assert(index.names.includes("pinata.command.v2"));
   assert.equal(surfaceReplySchema.parse(schemas.details).status, "ok");
 });
 
@@ -1464,3 +1464,58 @@ test("Pi uses personal grants globally and explicit grants take precedence", asy
     assert.deepEqual(f.hosts.at(-1)?.caller.grants, grants ?? personalGrants);
   }
 });
+
+test(
+  "real extension lifecycle advertises RPC only after session binding and detaches on shutdown",
+  { timeout: 15_000 },
+  async (t) => {
+    const { extensionChannels, extensionReadySchema, extensionReplySchema } =
+      await import("../../engine/contracts/extension.ts");
+    const ready: unknown[] = [];
+    const replies: import("../../engine/contracts/extension.ts").ExtensionReply[] = [];
+    const world = await fixture(t, {
+      beforeBind: async (bus) => {
+        bus.on(extensionChannels.ready, (value) => ready.push(extensionReadySchema.parse(value)));
+        bus.on(extensionChannels.reply, (value) => replies.push(extensionReplySchema.parse(value)));
+        bus.emit(extensionChannels.request, {
+          protocolVersion: 1,
+          id: "unbound",
+          operation: "ping",
+        });
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        assert.deepEqual(replies, []);
+        assert.deepEqual(ready, []);
+      },
+    });
+    assert.deepEqual(world.errors, []);
+    assert.equal(ready.length, 1);
+    const bound = extensionReadySchema.parse(ready[0]);
+    assert.equal(bound.sessionId, world.manager.getSessionId());
+    assert.equal(bound.run, world.hosts[0].source.run);
+    world.eventBus.emit(extensionChannels.request, {
+      protocolVersion: 1,
+      id: "bound",
+      operation: "ping",
+      sessionId: bound.sessionId,
+      run: bound.run,
+    });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.equal(replies.filter((reply) => reply.id === "bound").length, 1);
+    await world.session.extensionRunner.emit({ type: "session_start", reason: "resume" });
+    assert.equal(ready.length, 1, "repeated session start must reuse the binding");
+    await world.session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
+    world.eventBus.emit(extensionChannels.request, {
+      protocolVersion: 1,
+      id: "closed",
+      operation: "ping",
+      sessionId: bound.sessionId,
+      run: bound.run,
+    });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.equal(
+      replies.some((reply) => reply.id === "closed"),
+      false,
+    );
+    assert.deepEqual(world.errors, []);
+  },
+);

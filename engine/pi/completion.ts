@@ -115,7 +115,9 @@ export class CoordinatorCompletion {
     const state = this.snapshot();
     const consumed = new Set(
       Object.values(state.outbox)
-        .filter((notice) => "result" in notice && notice.state === "consumed")
+        .filter(
+          (notice) => "result" in notice && (notice.state === "consumed" || notice.acknowledgment),
+        )
         .map((notice) => assignmentKey(notice.ref)),
     );
     const watches = [...ledger.watches.values()].filter(
@@ -130,7 +132,9 @@ export class CoordinatorCompletion {
       ...new Map(
         watches.flatMap((watch) => watch.targets.map((ref) => [assignmentKey(ref), ref])),
       ).values(),
-    ];
+    ].filter(
+      (ref) => !ledger.collected.has(assignmentKey(ref)) && !consumed.has(assignmentKey(ref)),
+    );
     if (targets.some((ref) => !state.results[assignmentKey(ref)])) return;
     const summaries = targets.map((ref) => {
       const result = state.results[assignmentKey(ref)].result;

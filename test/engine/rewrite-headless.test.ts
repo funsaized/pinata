@@ -1,39 +1,29 @@
 import assert from "node:assert/strict";
-import { execFile, spawn, type ChildProcess } from "node:child_process";
+import { execFile } from "node:child_process";
 import { createServer } from "node:http";
-import {
-  cp,
-  mkdir,
-  mkdtemp,
-  readFile,
-  readdir,
-  realpath,
-  rm,
-  symlink,
-  writeFile,
-} from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test, { type TestContext } from "node:test";
 import { promisify } from "node:util";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { surfaceReplySchema } from "../../engine/contracts/index.ts";
 import { parseArguments } from "../../engine/headless/arguments.ts";
+import { openHost as openProductionHost } from "../../engine/host/index.ts";
+import { openHost } from "./fixtures/rewrite-cli-factory.ts";
 
 const cli = fileURLToPath(new URL("../../bin/pinata.mjs", import.meta.url));
-const factory = fileURLToPath(new URL("./fixtures/rewrite-cli-factory.ts", import.meta.url));
 const execute = promisify(execFile);
 
-async function invoke(args: string[], options: { entry?: string; cwd?: string } = {}) {
+async function invoke(args: string[]) {
   let code = 0;
   let stdout: string;
   let stderr: string;
   try {
-    ({ stdout, stderr } = await execute(
-      process.execPath,
-      [options.entry ?? cli, ...args, "--json"],
-      { cwd: options.cwd, timeout: 30_000, maxBuffer: 16 * 1024 * 1024 },
-    ));
+    ({ stdout, stderr } = await execute(process.execPath, [cli, ...args, "--json"], {
+      timeout: 30_000,
+      maxBuffer: 16 * 1024 * 1024,
+    }));
   } catch (error) {
     if (
       !(error instanceof Error) ||
@@ -64,33 +54,106 @@ async function fixture(t: TestContext) {
   await Promise.all([mkdir(workspace), mkdir(definitions), mkdir(agentDir)]);
   await writeFile(
     join(definitions, "fixture.md"),
-    "---\nschemaVersion: 1\nname: fixture\nhandoffDescription: Scripted CLI fixture\ntools: [read]\n---\nRead the scripted assignment.\n",
+    "---\nschemaVersion: 1\nname: fixture\nhandoffDescription: Scripted host fixture\ntools: [read]\n---\nRead the scripted assignment.\n",
   );
   t.after(() => rm(directory, { recursive: true, force: true }));
-  const hostArgs = [
-    "--factory",
-    factory,
-    "--workspace",
-    workspace,
-    "--agent-dir",
-    agentDir,
-    "--definitions",
-    definitions,
-  ];
-  const job = async (task = "Complete the fixture", backend = "in-process") => {
-    const path = join(directory, `job-${Date.now()}-${Math.random()}.json`);
-    await writeFile(
-      path,
-      JSON.stringify({
-        schemaVersion: 1,
-        workers: [{ id: "worker", agent: "fixture", task, backend }],
-      }),
-    );
-    return path;
-  };
-  return { directory, workspace, definitions, agentDir, hostArgs, job };
+  return { directory, workspace, definitions, agentDir };
 }
 
+test("CLI discovers schemas, tools and definitions without opening a host", async (t) => {
+  const world = await fixture(t);
+  assert.throws(() => parseArguments(["schema", "--json", "--json"]), /only once/);
+  assert.throws(() => parseArguments(["schema", "--unknown"]), /Unknown option/);
+  const schemas = await invoke(["schema", "pinata.command.v2"]);
+  assert.equal(schemas.code, 0, schemas.stderr);
+  assert.match(schemas.stdout, /requestId/);
+  const tools = await invoke(["tools"]);
+  assert.equal(tools.code, 0, tools.stderr);
+  assert.match(tools.stdout, /pinata_steer/);
+  assert.doesNotMatch(tools.stdout, /pinata_schedule/);
+  const agents = await invoke(["agents", "show", "fixture", "--definitions", world.definitions]);
+  assert.equal(agents.code, 0, agents.stderr);
+  assert.match(agents.stdout, /Read the scripted assignment/);
+  assert.equal((await readdir(world.workspace)).length, 0);
+});
+
+test("removed job and remote control commands give migration guidance without touching the supplied directory", async (t) => {
+  const world = await fixture(t);
+  for (const command of [
+    "run",
+    "serve",
+    "attach",
+    "execute",
+    "request",
+    "wait",
+    "steer",
+    "cancel",
+    "recover",
+    "apply",
+    "rollback",
+    "reconcile",
+    "background",
+    "continue",
+    "follow-up",
+  ]) {
+    const reply = await invoke([command, world.workspace]);
+    assert.equal(reply.code, 2);
+    assert.match(reply.stdout + reply.stderr, /removed.*Pi tools.*embedded host/);
+  }
+  for (const flag of ["saved", "watch", "control", "factory"])
+    assert.throws(() => parseArguments(["status", world.workspace, `--${flag}`]), /Unknown option/);
+  assert.equal((await readdir(world.workspace)).length, 0);
+  assert.equal((await invoke(["schema", "pinata.job.v1"])).code, 2);
+});
+
+test(
+  "saved CLI inspection preserves exact embedded results before and after host shutdown",
+  { timeout: 40_000 },
+  async (t) => {
+    const world = await fixture(t);
+    for (const task of ["Complete the fixture", "fail-fixture"]) {
+      const directory = join(world.directory, task.startsWith("fail") ? "failed" : "completed");
+      const host = await openHost({
+        workspace: world.workspace,
+        agentDir: world.agentDir,
+        directory,
+        definitionDirectories: [world.definitions],
+      });
+      try {
+        const receipt = await host.runtime.execute(
+          {
+            requestId: "create",
+            command: { kind: "create", workers: [{ id: "worker", agent: "fixture", task }] },
+          },
+          host.caller,
+        );
+        assert.equal(receipt.status, "accepted", JSON.stringify(receipt));
+        const waited = await host.runtime.wait({}, host.caller, AbortSignal.timeout(20_000));
+        assert.equal(waited.status, "settled");
+        assert.equal(waited.results.length, 1);
+        assert(waited.results[0].transcript);
+        const live = await invoke(["result", directory, "worker", "1"]);
+        assert.equal(live.code, 0, live.stderr);
+        const query = surfaceReplySchema.parse(live.values[0]);
+        assert(
+          query.status === "ok" &&
+            query.response.method === "query" &&
+            query.response.result.kind === "result",
+        );
+        assert.deepEqual(query.response.result.result, waited.results[0]);
+        assert.equal((await host.close()).status, "closed");
+        assert.deepEqual((await invoke(["result", directory, "worker", "1"])).values, live.values);
+        assert.equal((await invoke(["status", directory])).code, 0);
+        assert.equal((await invoke(["logs", directory])).code, 0);
+        const waitFile = join(world.directory, "wait-query.json");
+        await writeFile(waitFile, JSON.stringify({ kind: "wait", wait: {} }));
+        assert.equal((await invoke(["query", directory, waitFile])).code, 2);
+      } finally {
+        await host.close();
+      }
+    }
+  },
+);
 test("agents validate checks selected skill resources without opening a runtime", async (t) => {
   const f = await fixture(t);
   const path = join(f.definitions, "fixture.md");
@@ -122,310 +185,8 @@ test("agents validate checks selected skill resources without opening a runtime"
   assert.equal((await readdir(f.workspace)).length, 0);
   assert.equal((await readdir(f.agentDir)).length, 0);
 });
-
-function launch(args: string[]) {
-  const child = spawn(process.execPath, [cli, ...args, "--json"], {
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  let stdout = "";
-  let stderr = "";
-  child.stdout.on("data", (bytes: Buffer) => {
-    stdout += bytes;
-  });
-  child.stderr.on("data", (bytes: Buffer) => {
-    stderr += bytes;
-  });
-  const exited = new Promise<number | null>((done, reject) => {
-    child.once("error", reject);
-    child.once("exit", (code) => done(code));
-  });
-  return { child, exited, output: () => stdout, errors: () => stderr };
-}
-async function until(condition: () => boolean, timeout = 10_000) {
-  const deadline = Date.now() + timeout;
-  while (!condition()) {
-    if (Date.now() > deadline) throw new Error("CLI fixture condition timed out");
-    await new Promise((done) => setTimeout(done, 10));
-  }
-}
-async function stop(child: ChildProcess, exited: Promise<number | null>) {
-  if (child.exitCode === null && child.signalCode === null) child.kill("SIGTERM");
-  await exited;
-}
-
-test("replacement CLI discovers canonical schemas, tools and definitions without opening a host", async (t) => {
-  const world = await fixture(t);
-  assert.throws(() => parseArguments(["run", "--json", "--json"]), /only once/);
-  assert.throws(() => parseArguments(["run", "--unknown"]), /Unknown option/);
-  const schemas = await invoke(["schema", "pinata.command.v1", "--factory", "absent-module"]);
-  assert.equal(schemas.code, 0, schemas.stderr);
-  assert.match(schemas.stdout, /requestId/);
-  const tools = await invoke(["tools"]);
-  assert.equal(tools.code, 0, tools.stderr);
-  assert.match(tools.stdout, /pinata_steer/);
-  assert.match(tools.stdout, /pinata.surface-reply.v1/);
-  const agents = await invoke(["agents", "show", "fixture", "--definitions", world.definitions]);
-  assert.equal(agents.code, 0, agents.stderr);
-  assert.match(agents.stdout, /Read the scripted assignment/);
-});
-
-test("headless optional authority is explicit and validated before accepting a worker", async (t) => {
-  const world = await fixture(t);
-  const job = await world.job();
-  const input = JSON.parse(await readFile(job, "utf8"));
-  input.workers[0].memory = { scope: "worker", access: "write" };
-  await writeFile(job, JSON.stringify(input));
-  const denied = await invoke(["run", job, ...world.hostArgs]);
-  assert.equal(denied.code, 2, denied.stdout + denied.stderr);
-  assert.match(denied.stdout, /capability_denied/);
-  const grants = join(world.directory, "grants.json");
-  await writeFile(
-    grants,
-    JSON.stringify({
-      access: "read",
-      tools: ["read"],
-      workspaces: ["shared"],
-      inheritContext: false,
-      memory: { scope: "worker", access: "write" },
-      delegation: { maxDepth: 0, agents: [], tools: [], workspaces: [] },
-    }),
-  );
-  const allowed = await invoke(["run", job, ...world.hostArgs, "--grants", grants]);
-  assert.equal(allowed.code, 0, allowed.stdout + allowed.stderr);
-  assert.match(allowed.stdout, /Scripted CLI completion/);
-  await writeFile(grants, '{"access":"write"}');
-  const malformed = await invoke(["run", job, ...world.hostArgs, "--grants", grants]);
-  assert.equal(malformed.code, 2);
-  assert.doesNotMatch(malformed.stdout, /"status":"accepted"/);
-});
-
 test(
-  "replacement finite CLI preserves canonical receipts, full results and factual exit codes",
-  { timeout: 40_000 },
-  async (t) => {
-    const world = await fixture(t);
-    for (const [task, expected] of [
-      ["Complete the fixture", 0],
-      ["fail-fixture", 1],
-    ] as const) {
-      const directory = join(world.directory, `run-${expected}`);
-      const result = await invoke([
-        "run",
-        await world.job(task),
-        ...world.hostArgs,
-        "--directory",
-        directory,
-      ]);
-      assert.equal(result.code, expected, result.stdout + result.stderr);
-      const accepted = surfaceReplySchema.parse(result.values[0]);
-      assert.equal(accepted.status, "ok");
-      const waited = surfaceReplySchema.parse(result.values[1]);
-      assert.equal(waited.status, "ok");
-      assert(waited.status === "ok" && waited.response.method === "wait");
-      assert.equal(waited.response.result.results.length, 1);
-      assert(waited.response.result.results[0].transcript);
-      const saved = await invoke(["result", directory, "worker", "1", "--saved"]);
-      assert.equal(saved.code, 0, saved.stderr);
-      const query = surfaceReplySchema.parse(saved.values[0]);
-      assert(
-        query.status === "ok" &&
-          query.response.method === "query" &&
-          query.response.result.kind === "result",
-      );
-      assert.deepEqual(query.response.result.result, waited.response.result.results[0]);
-      assert.doesNotMatch(result.stdout, /checked|review complete|verified/i);
-    }
-    const invalid = join(world.directory, "invalid.json");
-    await writeFile(invalid, '{"schemaVersion":1,"workers":[]}');
-    assert.equal((await invoke(["run", invalid, ...world.hostArgs])).code, 2);
-  },
-);
-
-test(
-  "CLI apply and rollback expose persisted operation outcomes and preserve isolated changes",
-  { timeout: 45_000 },
-  async (t) => {
-    const world = await fixture(t);
-    await writeFile(join(world.workspace, "README.md"), "Original checkout\n");
-    for (const args of [
-      ["init", "-q"],
-      ["add", "README.md"],
-      [
-        "-c",
-        "user.name=Fixture",
-        "-c",
-        "user.email=fixture@example.invalid",
-        "-c",
-        "commit.gpgsign=false",
-        "commit",
-        "-qm",
-        "baseline",
-      ],
-    ])
-      await execute("git", ["-C", world.workspace, ...args]);
-    await writeFile(
-      join(world.definitions, "fixture.md"),
-      "---\nschemaVersion: 1\nname: fixture\nhandoffDescription: Isolated writer\ntools: [read, write]\npinata:\n  access: write\n  workspace: worktree\n---\nMake the scripted change.\n",
-    );
-    const grants = join(world.directory, "writer-grants.json");
-    await writeFile(
-      grants,
-      JSON.stringify({
-        access: "write",
-        tools: ["read", "write"],
-        workspaces: ["shared", "worktree"],
-        inheritContext: false,
-        memory: { scope: "none", access: "read" },
-        delegation: { maxDepth: 0, agents: [], tools: [], workspaces: [] },
-      }),
-    );
-    const directory = join(world.directory, "served-application");
-    const service = launch([
-      "serve",
-      await world.job("write-fixture"),
-      ...world.hostArgs,
-      "--directory",
-      directory,
-      "--grants",
-      grants,
-    ]);
-    t.after(() => stop(service.child, service.exited));
-    await until(
-      () => service.output().includes('"status":"accepted"') || service.child.exitCode !== null,
-    );
-    assert.equal(service.child.exitCode, null, service.output() + service.errors());
-    const waited = await invoke(["wait", directory, "worker"]);
-    assert.equal(waited.code, 0, waited.stdout + waited.stderr);
-    assert.equal(await readFile(join(world.workspace, "README.md"), "utf8"), "Original checkout\n");
-    const changes = await invoke(["changes", directory, "worker", "1"]);
-    assert.equal(changes.code, 0, changes.stdout + changes.stderr);
-    assert.match(changes.stdout, /"source":"unavailable"/);
-    const result = await invoke(["result", directory, "worker", "1"]);
-    const query = surfaceReplySchema.parse(result.values[0]);
-    assert(
-      query.status === "ok" &&
-        query.response.method === "query" &&
-        query.response.result.kind === "result",
-    );
-    const isolated = query.response.result.result?.worktree;
-    assert(isolated);
-    assert.equal(query.response.result.result?.snapshot, undefined);
-    assert.equal(
-      await readFile(join(isolated.path, "README.md"), "utf8"),
-      "Scripted isolated change\n",
-    );
-    await writeFile(join(isolated.path, "README.md"), "Edit after worker completion\n");
-    const applied = await invoke([
-      "apply",
-      directory,
-      "worker",
-      "1",
-      "--destination",
-      world.workspace,
-    ]);
-    assert.equal(applied.code, 0, applied.stdout + applied.stderr);
-    const receipt = surfaceReplySchema.parse(applied.values[0]);
-    assert(
-      receipt.status === "ok" &&
-        receipt.response.method === "execute" &&
-        receipt.response.result.status === "accepted",
-    );
-    assert(receipt.response.result.operationId);
-    assert.equal(
-      await readFile(join(world.workspace, "README.md"), "utf8"),
-      "Edit after worker completion\n",
-    );
-    const undone = await invoke([
-      "rollback",
-      directory,
-      receipt.response.result.operationId,
-      "--destination",
-      world.workspace,
-    ]);
-    assert.equal(undone.code, 0, undone.stdout + undone.stderr);
-    assert.match(undone.stdout, /rolled_back/);
-    assert.equal(await readFile(join(world.workspace, "README.md"), "utf8"), "Original checkout\n");
-    await stop(service.child, service.exited);
-    const retained = await invoke(["changes", directory, "worker", "1", "--saved"]);
-    assert.equal(retained.code, 0, retained.stdout + retained.stderr);
-    assert.deepEqual(retained.values, changes.values);
-    assert.deepEqual(
-      (await invoke(["result", directory, "worker", "1", "--saved"])).values,
-      result.values,
-    );
-  },
-);
-
-test(
-  "replacement CLI serve and authenticated controls retain work when an attached wait aborts",
-  { timeout: 45_000 },
-  async (t) => {
-    const world = await fixture(t);
-    const directory = join(world.directory, "served");
-    const service = launch([
-      "serve",
-      await world.job("hold-fixture"),
-      ...world.hostArgs,
-      "--directory",
-      directory,
-    ]);
-    t.after(() => stop(service.child, service.exited));
-    await until(
-      () => service.output().includes('"kind":"ready"') || service.child.exitCode !== null,
-    );
-    assert.equal(service.child.exitCode, null, service.output() + service.errors());
-    await until(() => service.output().includes('"status":"accepted"'));
-    const wait = launch(["wait", directory, "worker"]);
-    t.after(() => stop(wait.child, wait.exited));
-    await new Promise((done) => setTimeout(done, 300));
-    wait.child.kill("SIGINT");
-    assert.equal(await wait.exited, 3, wait.output() + wait.errors());
-    const status = await invoke(["status", directory]);
-    assert.equal(status.code, 0, status.stderr);
-    const snapshot = surfaceReplySchema.parse(status.values[0]);
-    assert(
-      snapshot.status === "ok" &&
-        snapshot.response.method === "query" &&
-        snapshot.response.result.kind === "status",
-    );
-    assert(
-      Object.values(snapshot.response.result.state.assignments).some(
-        (assignment) => assignment.execution.phase !== "ended",
-      ),
-    );
-    const steered = await invoke([
-      "steer",
-      directory,
-      "worker",
-      "Retain this accepted message",
-      "--request-id",
-      "cli-steer",
-    ]);
-    assert.equal(steered.code, 0, steered.stdout + steered.stderr);
-    const cancelled = await invoke([
-      "cancel",
-      directory,
-      "--scope",
-      "worker",
-      "--worker",
-      "worker",
-    ]);
-    assert.equal(cancelled.code, 0, cancelled.stdout + cancelled.stderr);
-    const terminal = await invoke(["wait", directory, "worker"]);
-    assert.equal(terminal.code, 3, terminal.stdout + terminal.stderr);
-    await stop(service.child, service.exited);
-    assert.equal(service.child.exitCode, 0, service.output() + service.errors());
-    const offline = await invoke(["status", directory]);
-    assert.equal(offline.code, 0, offline.stderr);
-    assert.equal(
-      (await invoke(["steer", directory, "worker", "Cannot mutate saved data"])).code,
-      2,
-    );
-  },
-);
-
-test(
-  "replacement default and packaged-development CLI run against an HTTP loopback provider",
+  "embedded default and packaged-development hosts run against an HTTP loopback provider",
   { timeout: 45_000 },
   async (t) => {
     const world = await fixture(t);
@@ -513,25 +274,36 @@ test(
       [cli, "in-process"],
       [join(packageRoot, "bin", "pinata.mjs"), "process"],
     ]) {
-      const result = await invoke(
-        [
-          "run",
-          await world.job("HTTP fixture", backend),
-          "--workspace",
-          world.workspace,
-          "--agent-dir",
-          world.agentDir,
-          "--definitions",
-          world.definitions,
-          "--directory",
-          join(world.directory, `http-${backend}`),
-          "--model",
-          "cli-loopback/fixture",
-        ],
-        { entry },
-      );
-      assert.equal(result.code, 0, result.stdout + result.stderr);
-      assert.match(result.stdout, /Local HTTP fixture completed/);
+      const open =
+        entry === cli
+          ? openProductionHost
+          : ((await import(pathToFileURL(join(packageRoot, "engine/host/public.mjs")).href))
+              .openHost as typeof openProductionHost);
+      const host = await open({
+        workspace: world.workspace,
+        agentDir: world.agentDir,
+        definitionDirectories: [world.definitions],
+        directory: join(world.directory, `http-${backend}`),
+        parentModel: { provider: "cli-loopback", id: "fixture", thinking: "off" },
+      });
+      try {
+        const receipt = await host.runtime.execute(
+          {
+            requestId: "loopback",
+            command: {
+              kind: "create",
+              workers: [{ id: "worker", agent: "fixture", task: "HTTP fixture", backend }],
+            },
+          },
+          host.caller,
+        );
+        assert.equal(receipt.status, "accepted", JSON.stringify(receipt));
+        const waited = await host.runtime.wait({}, host.caller, AbortSignal.timeout(30_000));
+        assert.equal(waited.status, "settled");
+        assert.match(waited.results[0].summary, /Local HTTP fixture completed/);
+      } finally {
+        await host.close();
+      }
     }
     t.diagnostic(JSON.stringify(requestPaths));
     assert.equal(providerRequests, 2, JSON.stringify(requestPaths));

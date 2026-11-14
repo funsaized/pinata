@@ -348,3 +348,44 @@ test(
     assert.match(result.summary, /plain-text result/);
   },
 );
+
+test("real Pi sessions retain observed model settings separately from the frozen selection", async (t) => {
+  const world = await piFixture(t, () => fauxAssistantMessage("Complete"), { thinking: "high" });
+  const events: import("../../engine/contracts/index.ts").RuntimeEvent[] = [];
+  const unsubscribe = world.runtime.subscribe({}, world.caller, (event) => {
+    events.push(event);
+  });
+  t.after(unsubscribe);
+  accepted(
+    await world.runtime.execute(
+      {
+        requestId: "model",
+        command: {
+          kind: "create",
+          workers: [{ id: "worker", agent: "fixture", task: "Complete" }],
+        },
+      },
+      world.caller,
+    ),
+  );
+  await world.runtime.wait({}, world.caller);
+  const reply = await world.runtime.query({ kind: "status" }, world.caller);
+  assert(reply.kind === "status");
+  assert.equal(reply.state.workers.worker.model?.thinking, "high");
+  const attempt = Object.values(reply.state.attempts)[0];
+  assert.deepEqual(attempt.model, { provider: "pinata-fixture", id: "script", thinking: "off" });
+  assert(
+    events.some(
+      (event) =>
+        event.kind === "committed" &&
+        event.transition.kind === "model_observed" &&
+        event.transition.model.thinking === "off",
+    ),
+  );
+  const { openSavedSource } = await import("../../engine/sources/saved.ts");
+  assert.deepEqual(
+    (await openSavedSource(world.storeDirectory)).snapshot().snapshot.attempts[attempt.attempt.id]
+      .model,
+    attempt.model,
+  );
+});

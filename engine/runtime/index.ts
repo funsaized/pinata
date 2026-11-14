@@ -1,5 +1,4 @@
 import type { LaunchInfo } from "../contracts/runtime.ts";
-import { Schedules, type SchedulingOptions } from "../schedules/index.ts";
 import { randomUUID } from "node:crypto";
 import type { BackendObservation, SessionCheckpoint } from "../contracts/backend.ts";
 import {
@@ -21,6 +20,8 @@ import { configSchema, type Config, type ConfigLayer } from "../contracts/config
 import {
   transitionSchema,
   transitionArtifacts,
+  notificationAcknowledgmentRequestSchema,
+  type NotificationAcknowledgmentReceipt,
   type CommandReceipt,
   type Effect,
   type Transition,
@@ -113,7 +114,6 @@ export type RuntimeOptions = {
   effectPort?: InertEffectPort;
   execution?: ExecutionOptions;
   application?: RuntimeApplicationPort;
-  scheduling?: SchedulingOptions;
   notifications?: NotificationPort;
   onDiagnostic?: (diagnostic: RuntimeDiagnostic) => void;
 };
@@ -129,7 +129,6 @@ export class Runtime {
   private readonly failures: RuntimeDiagnostic[] = [];
   private readonly execution?: ExecutionCoordinator;
   private readonly applications?: RuntimeApplications;
-  private readonly schedules?: Schedules;
   private readonly delivery?: CompletionDelivery;
   private readonly children: ChildBindings;
   private readonly conversations: ConversationQueries;
@@ -184,34 +183,6 @@ export class Runtime {
       read: (artifact: ArtifactRef) => store.readArtifact(artifact),
     };
     this.conversations = new ConversationQueries(artifacts);
-    if (options.scheduling)
-      this.schedules = new Schedules(
-        {
-          transaction: (work) =>
-            transaction(async (entry) =>
-              work(entry.state(), async (transition) => {
-                await entry.commit(
-                  transition,
-                  "requestId" in transition
-                    ? { requestId: transition.requestId, payloadDigest: transition.payloadDigest }
-                    : undefined,
-                );
-              }),
-            ),
-          freeze: async (request, caller) => {
-            const prepared = await this.prepare(
-              { requestId: randomUUID(), command: { kind: "add", workers: [request] } },
-              caller,
-            );
-            if (prepared.kind !== "accepted" || prepared.workers.length !== 1)
-              throw new DomainError("conflict", "Schedule template did not resolve one worker");
-            return prepared.workers[0];
-          },
-          validate: async (command, state) => this.execution?.validateCommand(command, state),
-          diagnostic: (message) => this.diagnostic({ kind: "execution_failed", message }),
-        },
-        options.scheduling,
-      );
     if (options.application)
       this.applications = new RuntimeApplications(
         {
@@ -247,7 +218,6 @@ export class Runtime {
     const store = await DurableStore.open(options);
     try {
       const runtime = new Runtime(store, options);
-      await runtime.schedules?.open();
       runtime.execution?.wake();
       return runtime;
     } catch (error) {
@@ -355,11 +325,6 @@ export class Runtime {
     parentCheckpoint?: SessionCheckpoint,
   ) {
     const command = request.command;
-    if (command.kind === "schedule") {
-      if (!this.schedules)
-        throw new DomainError("unsupported", "No session-owned schedule service is configured");
-      return this.schedules.prepare(this.state, request, caller);
-    }
     if (command.kind === "cancel" || command.kind === "background" || command.kind === "capacity")
       return prepareControl(this.state, request, caller);
     if (command.kind !== "create" && command.kind !== "add")
@@ -407,10 +372,6 @@ export class Runtime {
         ? await this.store.putArtifact(Buffer.from(canonicalJson(resolvedConfig)))
         : undefined;
     return prepareCommand(this.state, request, caller, { workers, config, resolvedConfig });
-  }
-
-  async scheduleTick(): Promise<void> {
-    await this.schedules?.tick();
   }
 
   bindChild(parentAssignment: AssignmentRef): ChildPort {
@@ -595,7 +556,6 @@ export class Runtime {
       const subscribers = [...this.subscribers];
       for (const subscriber of subscribers) this.deliver(subscriber, event);
       this.execution?.committed(entry.input.transition, this.state);
-      this.schedules?.changed(this.state);
     }
     await this.checkpoint();
   }
@@ -932,6 +892,56 @@ export class Runtime {
     return this.delivery.deliver(options.notificationId);
   }
 
+  async acknowledgeNotification(
+    input: unknown,
+    caller: CallerAuthority,
+  ): Promise<NotificationAcknowledgmentReceipt> {
+    const request = notificationAcknowledgmentRequestSchema.parse(input);
+    return this.serialize(async () => {
+      this.authorize(caller, true);
+      if (this.closing) throw new DomainError("conflict", "Runtime is closing");
+      await this.store.assertOwner();
+      const notice = Object.hasOwn(this.state.outbox, request.id)
+        ? this.state.outbox[request.id]
+        : undefined;
+      if (!notice || assignmentKey(notice.ref) !== assignmentKey(request.ref))
+        throw new DomainError(
+          "invalid_input",
+          "Notification does not match the exact assignment",
+          "ref",
+        );
+      if (notice.acknowledgment) {
+        if (notice.acknowledgment.recipient !== request.recipient)
+          throw new DomainError(
+            "conflict",
+            "Another recipient already acknowledged this notification",
+          );
+        return immutable({
+          id: request.id,
+          ref: notice.ref,
+          acknowledgment: notice.acknowledgment,
+        });
+      }
+      const transition: Transition = {
+        kind: "notification_acknowledged",
+        notificationId: request.id,
+        ref: request.ref,
+        recipient: request.recipient,
+      };
+      const acknowledgment = {
+        recipient: request.recipient,
+        revision: this.state.revision + 1,
+        deliveryState: notice.state,
+      };
+      await this.commit({
+        requestId: `notification-ack:${digestValue(request)}`,
+        payloadDigest: digestValue(transition),
+        transition,
+      });
+      return immutable({ id: request.id, ref: notice.ref, acknowledgment });
+    });
+  }
+
   async recordNotificationConsumption(
     id: string,
     checkpoint: ArtifactRef,
@@ -1000,7 +1010,6 @@ export class Runtime {
     if (this.shutdown) return this.shutdown;
     this.closing = true;
     this.shutdown = (async (): Promise<ShutdownReceipt> => {
-      await this.schedules?.close();
       const confirmed = (await this.execution?.close(request.reason)) ?? true;
       const applicationConfirmed = (await this.applications?.close()) ?? true;
       await this.delivery?.close();

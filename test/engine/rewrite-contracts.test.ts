@@ -142,15 +142,15 @@ function settle(
 
 test("rewrite contracts freeze independent format versions and strict authority-free command inputs", () => {
   assert.deepEqual(versions, {
-    job: 1,
+    command: 2,
     config: 1,
     definition: 1,
     manifest: 1,
     journal: 1,
     event: 1,
-    ipc: 1,
+    extension: 1,
   });
-  for (const name of Object.keys(exportSchemas())) assert.match(name, /\.v1$/);
+  for (const name of Object.keys(exportSchemas())) assert.match(name, /\.v[12]$/);
   const config = configSchema.parse({});
   assert.equal(config.workspace, "shared");
   assert.equal(config.execution.maxConcurrent, null);
@@ -183,7 +183,7 @@ test("rewrite contracts freeze independent format versions and strict authority-
 test("rewrite JSON schema bridge works through Pi validation then canonical validation", () => {
   const schemas = exportSchemas();
   assert(Object.keys(schemas).length >= 18);
-  const parameters = schemas["pinata.command.v1"] as TSchema;
+  const parameters = schemas["pinata.command.v2"] as TSchema;
   const tool = { name: "pinata_test", description: "Scripted contract only", parameters };
   const parse = (value: JsonObject) =>
     commandEnvelopeSchema.parse(
@@ -629,7 +629,7 @@ test("production import graph has one runtime and keeps core independent of side
 });
 
 test("named schema export preserves the full catalog and isolates cached output from caller edits", () => {
-  const name = "pinata.command.v1";
+  const name = "pinata.command.v2";
   const first = exportSchemas(name);
   assert.deepEqual(Object.keys(first), [name]);
   const original = structuredClone(first[name]);

@@ -17,8 +17,7 @@ export * from "./context.ts";
 export * from "./memory.ts";
 export * from "./delegation.ts";
 
-export * from "./schedule.ts";
-export * from "./ipc.ts";
 export * from "./pages.ts";
 export * from "./dependencies.ts";
 export * from "./messages.ts";
+export * from "./extension.ts";

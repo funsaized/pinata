@@ -121,11 +121,6 @@ export const coordinatorTools: readonly ToolOperation[] = [
     "rollback",
     "Roll back one journaled application if the destination still matches. Later edits are preserved or reported as conflicts.",
   ),
-  commandTool(
-    "pinata_schedule",
-    "schedule",
-    "Manage a session-owned one-shot, interval or cron trigger. Occurrences are ordinary assignments; closed sessions cannot fire.",
-  ),
   {
     name: "pinata_wait",
     description:
@@ -136,7 +131,7 @@ export const coordinatorTools: readonly ToolOperation[] = [
   {
     name: "pinata_status",
     description:
-      "Inspect state, worker messages, exact results, immutable conversation pages, schema discovery, receipts or an application outcome. Use kind: messages with optional since and worker to read retained messages. Tool input schemas are already supplied: no schema query is needed before launching. For discovery use name: pinata.command.v1, or a tool name such as pinata_run; avoid fetching the entire registry. Results are execution observations, not acceptance decisions.",
+      "Inspect state, worker messages, exact results, immutable conversation pages, schema discovery, receipts or an application outcome. Use kind: messages with optional since and worker to read retained messages. Tool input schemas are already supplied: no schema query is needed before launching. For discovery use name: pinata.command.v2, or a tool name such as pinata_run; avoid fetching the entire registry. Results are execution observations, not acceptance decisions.",
     schema: z.strictObject({ query: runtimeQuerySchema.default({ kind: "status" }) }),
     request: ({ query }) => ({ method: "query", input: query }),
   },

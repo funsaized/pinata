@@ -4,7 +4,6 @@ import "./typescript.mjs";
 // Node does not natively strip TypeScript inside node_modules. Install the
 // package-scoped loader before loading this entry's TypeScript module graph.
 const api = await import("./index.ts");
-export const AttachedSource = api.AttachedSource;
 export const Runtime = api.Runtime;
 export const ToolPages = api.ToolPages;
 export const bindRuntime = api.bindRuntime;
@@ -14,5 +13,4 @@ export const openHost = api.openHost;
 export const openSavedSource = api.openSavedSource;
 export const parseSchema = api.parseSchema;
 export const schemaRegistry = api.schemaRegistry;
-export const startIpcServer = api.startIpcServer;
 export const toolContentBytes = api.toolContentBytes;

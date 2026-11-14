@@ -8,12 +8,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
-import {
-  commandEnvelopeSchema,
-  configSchema,
-  grantsSchema,
-  jobSchema,
-} from "../../engine/contracts/index.ts";
+import { commandEnvelopeSchema, configSchema, grantsSchema } from "../../engine/contracts/index.ts";
 import { discoverDefinitions } from "../../engine/definitions/index.ts";
 import { openHost } from "../../engine/host/index.ts";
 import { checkReference } from "../../scripts/reference.ts";
@@ -24,7 +19,7 @@ const root = fileURLToPath(new URL("../..", import.meta.url));
 const finished = fileURLToPath(new URL("./fixtures/relay", import.meta.url));
 const execute = promisify(execFile);
 
-test("all published jobs, grants, definitions and generated API boundaries validate", async () => {
+test("all published fleet commands, grants, definitions and generated API boundaries validate", async () => {
   const examples = join(root, "examples");
   const files = await readdir(examples, { recursive: true });
   const definitions = await discoverDefinitions([join(root, "agents"), join(examples, "agents")]);
@@ -32,11 +27,11 @@ test("all published jobs, grants, definitions and generated API boundaries valid
   for (const file of files.filter((file) => file.endsWith(".json") && !file.includes("starter"))) {
     const input = JSON.parse(await readFile(join(examples, file), "utf8"));
     if (file.endsWith("grants.json")) grantsSchema.parse(input);
-    else if (input.command) commandEnvelopeSchema.parse(input);
-    else if (input.workers) {
-      const job = jobSchema.parse(input);
-      const ids = new Set(job.workers.map((worker) => worker.id));
-      for (const worker of job.workers) {
+    else if (input.command) {
+      const { command } = commandEnvelopeSchema.parse(input);
+      if (command.kind !== "create" && command.kind !== "add") continue;
+      const ids = new Set(command.workers.map((worker) => worker.id));
+      for (const worker of command.workers) {
         assert(names.has(worker.agent), `${file} names unknown definition ${worker.agent}`);
         for (const predecessor of worker.after)
           if (typeof predecessor === "string")
@@ -130,13 +125,16 @@ async function relay(t: TestContext, wrong = false) {
     await host.close("Relay fixture finished");
     await rm(directory, { recursive: true, force: true });
   });
-  const job = jobSchema.parse(JSON.parse(await readFile(join(workspace, "job.json"), "utf8")));
+  const { command } = commandEnvelopeSchema.parse(
+    JSON.parse(await readFile(join(workspace, "fleet.json"), "utf8")),
+  );
+  assert(command.kind === "create");
   const result = await host.runtime.execute(
     {
       requestId: "relay/create",
       command: {
         kind: "create",
-        workers: job.workers,
+        workers: command.workers,
         config: { setup: false, codemode: false, mode: "observe" },
       },
     },
@@ -149,7 +147,7 @@ async function relay(t: TestContext, wrong = false) {
     "settled",
     JSON.stringify(await host.runtime.query({ kind: "status" }, host.caller)),
   );
-  assert.equal(completed.results.length, job.workers.length);
+  assert.equal(completed.results.length, command.workers.length);
   for (const result of completed.results) {
     assert.equal(result.snapshot, undefined);
     assert.equal(result.execution.phase, "ended", JSON.stringify(result));

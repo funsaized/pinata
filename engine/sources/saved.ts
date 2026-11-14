@@ -93,7 +93,7 @@ export async function openSavedSource(directory: string): Promise<RuntimeSource>
                   ? {
                       code: "capability_denied",
                       message:
-                        "Saved run sources are read-only; attach to the owning runtime for control",
+                        "Saved run sources are read-only; use Pi tools or an embedded owning runtime for control",
                     }
                   : {
                       code: "invalid_input",
@@ -107,7 +107,7 @@ export async function openSavedSource(directory: string): Promise<RuntimeSource>
         if (call.method !== "query")
           throw new DomainError(
             "unsupported",
-            "Saved run sources cannot wait, recover or acknowledge notifications; attach to the owning runtime",
+            "Saved run sources cannot wait, recover or acknowledge notifications; use Pi tools or an embedded owning runtime",
           );
         const query = runtimeQuerySchema.parse(call.input);
         switch (query.kind) {

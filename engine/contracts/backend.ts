@@ -5,6 +5,7 @@ import {
   assignmentRefSchema,
   backendSchema,
   identitySchema,
+  modelSchema,
   revisionSchema,
   textSchema,
   type ArtifactRef,
@@ -104,6 +105,7 @@ export const contextUsageSchema = z.strictObject({
 });
 export type ContextUsage = z.infer<typeof contextUsageSchema>;
 export const backendObservationSchema = z.discriminatedUnion("kind", [
+  z.strictObject({ kind: z.literal("model"), attemptId: identitySchema, model: modelSchema }),
   z.strictObject({
     kind: z.literal("enrolled"),
     identity: backendIdentitySchema,

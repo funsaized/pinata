@@ -59,7 +59,6 @@ export type HostOptions = {
   workspace?: string;
   directory?: string;
   run?: string;
-  sessionId?: string;
   agentDir?: string;
   definitionDirectories?: readonly string[];
   config?: WorkerResolverOptions["config"];
@@ -72,6 +71,7 @@ export type HostOptions = {
   backends?: Partial<Record<BackendPort["kind"], BackendPort>>;
   tools?: WorkerResolverOptions["tools"];
   notifications?: NotificationPort;
+  workspacePort?: WorkspacePort;
   onDiagnostic?(diagnostic: RuntimeDiagnostic): void;
 };
 export type Host = {
@@ -223,7 +223,6 @@ export async function openHost(options: HostOptions): Promise<Host> {
   if (bootstrap?.agents.size) await availableDefinitions(definitions, bootstrap);
   runtime = await Runtime.open({
     directory,
-    scheduling: { sessionId: options.sessionId ?? `headless:${run}`, caller },
     resolveConfig: (runConfig) =>
       resolveConfig([configLayers.personal, configLayers.project, configLayers.run, runConfig]),
     application: createApplicationPort(),
@@ -316,7 +315,7 @@ export async function openHost(options: HostOptions): Promise<Host> {
         };
       },
     }),
-    execution: { backends, workspace: scopedWorkspace },
+    execution: { backends, workspace: options.workspacePort ?? scopedWorkspace },
     notifications: options.notifications,
     onDiagnostic: options.onDiagnostic,
   });

@@ -230,10 +230,7 @@ export function agentActions(router: ScreenRouter): AgentAction[] {
       "cancel",
       "run",
       "Stop entire fleet (this run)",
-      "Stop all active and queued work in this run, including hidden or filtered agents." +
-        (Object.values(router.state.schedules).some((schedule) => schedule.status === "active")
-          ? " Active schedules can still start new work."
-          : ""),
+      "Stop all active and queued work in this run, including hidden or filtered agents.",
     ],
     [
       "background",

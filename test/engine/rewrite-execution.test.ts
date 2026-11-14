@@ -1,4 +1,3 @@
-import type { SchedulingOptions } from "../../engine/schedules/index.ts";
 import assert from "node:assert/strict";
 import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -334,7 +333,6 @@ async function world(
     execution?: boolean;
     notifications?: NotificationPort;
     grants?: Grants;
-    scheduling?: SchedulingOptions;
     fault?: FaultHook;
   } = {},
 ) {
@@ -375,7 +373,6 @@ async function world(
     resolveWorkers,
     execution: { backends: { "in-process": backend }, workspace },
     notifications: configuration.notifications,
-    scheduling: configuration.scheduling,
     fault: configuration.fault,
   };
   let runtime = await Runtime.open({
@@ -2101,71 +2098,41 @@ test(
 );
 
 test(
-  "scheduled occurrences use ordinary execution cleanup and saved worker continuation",
+  "coordinator follow-ups use ordinary cleanup and saved worker continuation",
   { timeout: 10_000 },
   async (t) => {
-    let elapsed = 0;
-    const timers = new Set<() => void>();
-    const fixture = await world(t, {
-      scheduling: {
-        sessionId: "execution-session",
+    const fixture = await world(t);
+    accepted(
+      await fixture.runtime.execute(
+        { requestId: "initial", command: { kind: "create", workers: [worker("continued")] } },
         caller,
-        clock: {
-          wall: () => Date.parse("2026-11-08T00:00:00.000Z") + elapsed,
-          monotonic: () => elapsed,
-          timer: (wake) => {
-            timers.add(wake);
-            return { cancel: () => timers.delete(wake) };
-          },
-        },
-      },
-    });
-    const created = await fixture.runtime.execute(
-      {
-        requestId: "schedule-create",
-        command: {
-          kind: "schedule",
-          schedule: {
-            action: "create",
-            id: "inspection",
-            target: { template: worker("scheduled") },
-            trigger: { kind: "interval", milliseconds: 1000 },
-          },
-        },
-      },
-      caller,
+      ),
     );
-    accepted(created);
-    assert.equal(fixture.backend.launches.length, 0);
+    const first = await fixture.backend.waitStarted(ref("continued"));
+    await fixture.backend.complete(ref("continued"));
+    await fixture.runtime.wait({}, caller);
     accepted(
       await fixture.runtime.execute(
         {
-          requestId: "activate",
-          command: { kind: "schedule", schedule: { action: "resume", id: "inspection" } },
+          requestId: "again",
+          command: {
+            kind: "follow_up",
+            worker: "continued",
+            messageId: "again",
+            text: "Inspect again",
+          },
         },
         caller,
       ),
     );
-    elapsed = 1000;
-    await fixture.runtime.scheduleTick();
-    const first = await fixture.backend.waitStarted(ref("scheduled"));
-    await fixture.backend.complete(ref("scheduled"));
-    await fixture.runtime.wait({}, caller);
-    elapsed = 2000;
-    await fixture.runtime.scheduleTick();
-    const second = await fixture.backend.waitStarted(ref("scheduled", 2));
+    const second = await fixture.backend.waitStarted(ref("continued", 2));
     assert(second.launch.continuation);
     assert(second.messages.includes(first.launch.initialMessages[0].id));
     assert.equal(fixture.workspace.released.length, 1);
-    await fixture.backend.complete(ref("scheduled", 2));
+    await fixture.backend.complete(ref("continued", 2));
     await fixture.runtime.wait({}, caller);
-    assert.equal(
-      Object.values((await fixture.status()).schedules.inspection.occurrences).length,
-      2,
-    );
     await fixture.runtime.close();
     assert.equal(fixture.workspace.released.length, 2);
-    assert.equal(timers.size, 0);
   },
 );
 
