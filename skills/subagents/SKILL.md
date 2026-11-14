@@ -49,7 +49,15 @@ subagents spawn others. Explain any disabled delegation scope before substitutin
 coordinator-managed stages.
 
 Use `pinata_run` with a `create` or `add` command to start useful work. Continue your
-own work while workers run, then wait/yield for relevant completion notices. `after`
+own work while workers run, or use `pinata_wait` to collect their results. In Pi,
+coordinator launches default to `notify: "all"`: after all outstanding watched
+assignments settle, the coordinator resumes while idle or continues at its next
+settlement boundary. Results collected by a foreground wait do not cause an extra
+turn. Use `notify: "none"` alongside `command` to launch work without an automatic
+return. `background` releases a foreground wait without removing completion watches.
+Aborting the coordinator pauses automatic returns until the next user turn. Direct
+`@agent` and fleet controls do not create completion watches. Read failed and canceled
+outcomes as well as successful reports when the batch returns. `after`
 binds to exact accepted assignments and controls ordering, not acceptance. Later
 follow-ups never retarget earlier edges. Transfer code through shared files or Git.
 

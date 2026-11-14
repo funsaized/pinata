@@ -150,6 +150,25 @@ and exact assignments. `pinata status RUN_DIRECTORY --saved --json` reads retain
 
 ## Fleet and conversations
 
+In Pi, coordinator calls to `pinata_run` watch the exact assignments they launch.
+The coordinator can keep working or use `pinata_wait` to collect results. When all
+outstanding watched assignments settle, Pi resumes an idle coordinator or continues
+an active coordinator at its next settlement boundary. One batch update includes
+completed, failed and canceled outcomes; the coordinator decides what to do next.
+Results already collected by a foreground wait or included in a provider request
+do not trigger another completion turn.
+
+Use `notify: "none"` alongside `command` in a `pinata_run` call to launch work
+without an automatic return. The default is `notify: "all"`. This setting applies
+to that call's new assignments; `background` releases a foreground wait and keeps
+existing completion watches. Direct `@agent` input and fleet controls remain
+available without starting a coordinator turn.
+
+Completion watches persist in the Pi session. Aborting the coordinator pauses its
+automatic returns until the next user turn. Closing the session stops wake-ups;
+reopening it restores retained watches. These continuations use the shared engine's
+settled results and do not change headless CLI or IPC notification behavior.
+
 ![Navigate a live nine-agent fleet with animated activity and two delegation levels: collapse branches, open conversations, switch workers, and search.](media/pinata-navigation.gif)
 
 The coordinator shows a compact Agents tree while work is active or queued.

@@ -3,12 +3,14 @@ import { Box, Text } from "@earendil-works/pi-tui";
 import { assignmentRefSchema, commandReceiptSchema } from "../contracts/index.ts";
 import { displayText } from "../ui/text.ts";
 import { completionMessageType, workerMessageType } from "./notifications.ts";
+import { batchMessageType } from "./completion.ts";
 
 // Keep persisted custom types stable; these labels belong only to presentation.
 export function registerPinataMessageRenderers(pi: ExtensionAPI): void {
   const labels = {
     [completionMessageType]: "Subagent result",
     [workerMessageType]: "Subagent message",
+    [batchMessageType]: "Subagent batch complete",
     "pinata.control.v1": "Subagent update",
     "pinata.addressed.v1": "Subagent assignment",
     "pinata.memory.v1": "Pinata memory",

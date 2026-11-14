@@ -36442,6 +36442,14 @@
                 "additionalProperties": false
               }
             ]
+          },
+          "notify": {
+            "description": "In Pi, report back once all assignments launched by the coordinator have settled. Defaults to all; none leaves results available without an automatic coordinator turn.",
+            "allOf": [
+              {
+                "$ref": "#/definitions/__schema9"
+              }
+            ]
           }
         },
         "required": ["command"],
@@ -36618,6 +36626,10 @@
             "items": {
               "type": "string"
             }
+          },
+          "__schema9": {
+            "type": "string",
+            "enum": ["all", "none"]
           }
         }
       },

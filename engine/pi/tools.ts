@@ -86,7 +86,16 @@ export const coordinatorTools: readonly ToolOperation[] = [
     name: "pinata_run",
     description:
       'Create or extend a run, queue a follow-up, explicitly continue stopped work, change optional capacity, or release a foreground wait. Start with command: {kind: "create", workers: [{id: "worker", agent: "builder", task: "Your assignment"}]}. Put workspace, backend, lifetime and context in each worker entry; optional run configuration belongs in command.config. Omit inheritContext unless parent conversation import is explicitly granted; include needed context in task. Workers use frozen definitions and grants; the coordinator decides testing and acceptance.',
-    schema: z.strictObject({ requestId: identitySchema.optional(), command: z.union(runCommands) }),
+    schema: z.strictObject({
+      requestId: identitySchema.optional(),
+      command: z.union(runCommands),
+      notify: z
+        .enum(["all", "none"])
+        .optional()
+        .describe(
+          "In Pi, report back once all assignments launched by the coordinator have settled. Defaults to all; none leaves results available without an automatic coordinator turn.",
+        ),
+    }),
     request: ({ requestId, command }, callId) => ({
       method: "execute",
       input: { requestId: requestId ?? callId, command },
@@ -189,6 +198,7 @@ export function registerCoordinatorTools(
   pi: ExtensionAPI,
   source: SourceProvider,
   pageProvider: (context: ExtensionContext) => Promise<ToolPages>,
+  onReply?: (name: string, value: unknown, reply: SurfaceReply, context: ExtensionContext) => void,
 ): void {
   for (const tool of coordinatorTools)
     pi.registerTool({
@@ -270,6 +280,7 @@ export function registerCoordinatorTools(
           await source(context),
           signal,
         );
+        onReply?.(tool.name, value, reply, context);
         const delegation =
           tool.name === "pinata_agents" &&
           reply.status === "ok" &&
