@@ -223,7 +223,6 @@ estimate of total execution time.
 | Ctrl+B                                            | Release a foreground wait; agents keep working.             |
 | Ctrl+R                                            | Recover the selected original assignment.                   |
 | Ctrl+L                                            | Refresh, or reconnect a disconnected attachment.            |
-| Ctrl+Left/Right                                   | Cycle main, fleet and conversation screens.                 |
 | `?`                                               | Show help for the current screen and focus.                 |
 
 Conversations follow the latest saved output. Scrolling away from the bottom holds
@@ -242,9 +241,10 @@ They leave the message draft and assignment details unchanged. Standalone viewer
 use Ctrl+O and Ctrl+T; `ui.keys.expandTools` and `ui.keys.toggleThinking` override them.
 A control draft clears only after durable acceptance. The composer labels whether
 text will steer, follow up or continue. Question marks inside a draft remain text.
-Ctrl+Left/Right, Ctrl+B and Ctrl+R retain editor behavior while composing; use Tab
-for transcript controls or the commands below. Help and back controls stay visible
-on narrow terminals; less common shortcuts remain in `?` help. Help and definition
+Ctrl+arrow keys have no default Piñata actions. Ctrl+B and Ctrl+R retain editor
+behavior while composing; use Tab for transcript controls or the commands below.
+Help and back controls stay visible on narrow terminals; less common shortcuts
+remain in `?` help. Help and definition
 previews support arrow and page scrolling. Shortcut overrides must use a modifier
 or function key and preserve the reserved navigation and editing keys.
 
@@ -736,8 +736,8 @@ Fallback candidates resolve before launch and retain provenance; execution failu
 does not silently rerun on another model. Model objects contain `provider`, `id` and
 `thinking`. Definition discovery alone does not promise model availability.
 
-Key actions are `openFleet`, `parentScreen`, `previousScreen`, `nextScreen`,
-`previousWorker`, `nextWorker`, `previousAssignment`, `nextAssignment`, `stop`,
+Key actions are `openFleet`, `parentScreen`, `previousWorker`, `nextWorker`,
+`previousAssignment`, `nextAssignment`, `stop`,
 `background`, `recover`, `refresh`, `scrollUp` and `scrollDown`. Invalid/reserved or
 duplicate bindings fail explicitly; screen help reflects configured bindings.
 

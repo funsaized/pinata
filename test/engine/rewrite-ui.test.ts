@@ -238,7 +238,7 @@ test("every palette has readable text, semantic accents and explicit terminal fa
     "warning:care",
   );
   assert(createPaint("one-light")("background", "light surface").includes("\u001b[48;"));
-  assert.throws(() => resolveKeys({ nextScreen: "ctrl+left" }), /distinct/);
+  assert.throws(() => resolveKeys({ nextWorker: "shift+left" }), /distinct/);
   assert.throws(() => resolveKeys({ unknown: "ctrl+a" }), /Unknown/);
 });
 
@@ -856,6 +856,12 @@ test("Pi screens use a full-viewport overlay and preserve parent and worker draf
   const router = await ui.bind(context);
   await events.get("session_start")?.({}, context);
   assert.equal(stripTerminalSequences(statuses.get("pinata.shortcut") ?? ""), "🤖 Shift + ↓");
+  for (const arrow of ["A", "B", "C", "D"])
+    assert.equal(terminalInput?.(`\u001b[1;5${arrow}`), undefined, "Ctrl+arrows stay with Pi");
+  await tick();
+  assert.equal(customOptions.length, 0);
+  assert.equal(router.screen, "main");
+  assert.equal(draft, "parent draft 👩🏽‍💻");
   assert.equal(terminalInput?.("\u001b[1;2A"), undefined, "Shift+Up in Pi must not open the fleet");
   assert.deepEqual(terminalInput?.("\u001b[1;2B"), { consume: true });
   await tick();

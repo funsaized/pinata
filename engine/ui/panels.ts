@@ -70,10 +70,6 @@ export function helpPanel(
       [keys.nextWorker, "Next agent"],
       [keys.previousAssignment, "Previous assignment"],
       [keys.nextAssignment, "Next assignment"],
-      [
-        keys.previousScreen + " / " + keys.nextScreen,
-        "Previous / next screen; Ctrl+Left/Right edit words while composing",
-      ],
       [keys.openFleet, "Open fleet"],
       [keys.parentScreen + " / Esc", "Back; agents keep working"],
       [keys.refresh, "Refresh or reconnect"],
