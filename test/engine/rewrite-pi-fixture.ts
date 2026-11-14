@@ -81,9 +81,6 @@ export async function piFixture(
       return {
         cwd: workspace,
         identity: `fixture/${request.ref.worker}`,
-        ...(request.worker.access === "write"
-          ? { lease: { id: `fixture/${request.ref.worker}`, workspace } }
-          : {}),
         artifacts: [],
       };
     },

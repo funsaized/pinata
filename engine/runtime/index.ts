@@ -1013,7 +1013,8 @@ export class Runtime {
           return {
             status: "owner_unconfirmed",
             revision: this.state.revision,
-            reason: "Owned activity is unconfirmed; the run claim and writer leases are retained",
+            reason:
+              "Owned activity is unconfirmed; the run claim and workspace recovery evidence are retained",
           };
         }
         await this.checkpoint(true);

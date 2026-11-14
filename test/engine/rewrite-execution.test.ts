@@ -277,7 +277,7 @@ class ScriptedBackend implements BackendPort {
 
 class ScriptedWorkspace implements WorkspacePort {
   readonly directory: string;
-  readonly leases = new Set<string>();
+  readonly resources = new Set<string>();
   readonly prepared: string[] = [];
   readonly captured: string[] = [];
   readonly released: string[] = [];
@@ -296,11 +296,10 @@ class ScriptedWorkspace implements WorkspacePort {
     const key = assignmentKey(request.ref);
     await this.prepareHook?.(request, signal);
     this.prepared.push(key);
-    this.leases.add(key);
+    this.resources.add(key);
     return {
       cwd: this.directory,
       identity: key,
-      lease: { id: key, workspace: this.directory },
       artifacts: [],
     };
   }
@@ -324,7 +323,7 @@ class ScriptedWorkspace implements WorkspacePort {
     assert.equal(request.cleanup.status, "stopped");
     await this.releaseHook?.(request.prepared);
     this.released.push(request.prepared.identity);
-    this.leases.delete(request.prepared.identity);
+    this.resources.delete(request.prepared.identity);
   }
 }
 
@@ -788,7 +787,7 @@ test(
     fixture.workspace.releaseHook = async (prepared) => {
       if (prepared.identity !== assignmentKey(ref("base"))) return;
       await preparing.promise;
-      throw new Error("Writer release failed after settlement");
+      throw new Error("Workspace release failed after settlement");
     };
     accepted(
       await fixture.runtime.execute(
@@ -823,7 +822,7 @@ test(
     assert.equal(fixture.runtime.diagnostics().length, 1);
     assert.match(
       fixture.runtime.diagnostics()[0].message,
-      /Writer release failed after settlement/,
+      /Workspace release failed after settlement/,
     );
   },
 );
@@ -870,7 +869,7 @@ test(
 );
 
 test(
-  "unconfirmed cleanup retains the writer lease and capacity and blocks explicit continuation",
+  "unconfirmed cleanup retains workspace resources and capacity and blocks explicit continuation",
   { timeout: 10_000 },
   async (t) => {
     const fixture = await world(t);
@@ -907,7 +906,7 @@ test(
     const state = await fixture.status();
     assert.equal(state.assignments[assignmentKey(ref("other"))].execution.phase, "queued");
     assert.equal(fixture.backend.launches.length, 1);
-    assert.equal(fixture.workspace.leases.size, 1);
+    assert.equal(fixture.workspace.resources.size, 1);
     assert.equal(fixture.workspace.released.length, 0);
     const continued = await fixture.runtime.execute(
       {
@@ -1135,12 +1134,11 @@ test(
         Buffer.from("Retained helper cleanup and partial workspace"),
       );
       const identity = assignmentKey(request.ref);
-      fixture.workspace.leases.add(identity);
+      fixture.workspace.resources.add(identity);
       return {
         prepared: {
           cwd: fixture.directory,
           identity,
-          lease: { id: identity, workspace: fixture.directory },
           artifacts: [evidence],
         },
         cleanup: {
@@ -1167,7 +1165,7 @@ test(
     }
     assert(result.artifacts.length > 0);
     await fixture.runtime.close();
-    assert.equal(fixture.workspace.leases.size, 0);
+    assert.equal(fixture.workspace.resources.size, 0);
     const state = await fixture.status();
     assert.equal(state.attempts[attemptId].cleanup?.ownerEpoch, originalEpoch);
   },
@@ -1456,7 +1454,7 @@ for (const [access, workspace] of [
       });
       await fixture.runtime.close();
       assert.deepEqual(fixture.workspace.released, [assignmentKey(ref("base"))]);
-      assert.equal(fixture.workspace.leases.size, 0);
+      assert.equal(fixture.workspace.resources.size, 0);
     });
   }
 }
@@ -1494,8 +1492,8 @@ test(
     assert.equal(audit.launch.brief.dependencies[0].result.summary, result.summary);
     assert.equal(other.stopCount, 0);
     assert.equal(other.outcome, undefined);
-    assert.equal(fixture.workspace.leases.has(assignmentKey(ref("base"))), false);
-    assert.equal(fixture.workspace.leases.has(assignmentKey(ref("other"))), true);
+    assert.equal(fixture.workspace.resources.has(assignmentKey(ref("base"))), false);
+    assert.equal(fixture.workspace.resources.has(assignmentKey(ref("other"))), true);
     assert.equal(fixture.workspace.captured.length, 0);
     await fixture.backend.complete(ref("other"));
     await fixture.backend.complete(ref("audit"));
@@ -1506,7 +1504,7 @@ test(
       ),
     );
     await fixture.runtime.close();
-    assert.equal(fixture.workspace.leases.size, 0);
+    assert.equal(fixture.workspace.resources.size, 0);
   },
 );
 
@@ -1547,7 +1545,7 @@ for (const access of ["read", "write"] as const) {
         false,
       );
       await fixture.runtime.close();
-      assert.equal(fixture.workspace.leases.size, 0);
+      assert.equal(fixture.workspace.resources.size, 0);
     });
   }
 
@@ -1574,9 +1572,8 @@ for (const access of ["read", "write"] as const) {
         identity: assignmentKey(ref("base")),
         cwd: fixture.directory,
         artifacts: [evidence],
-        lease: { id: assignmentKey(ref("base")), workspace: fixture.directory },
       };
-      fixture.workspace.leases.add(prepared.identity);
+      fixture.workspace.resources.add(prepared.identity);
       const outcome: BackendOutcome = {
         reason: "completed",
         summary: "Worker completed before capture interruption",
@@ -1643,7 +1640,7 @@ for (const access of ["read", "write"] as const) {
       if (captureState === "diagnostic")
         assert.deepEqual(result.finalizationErrors, fixture.workspace.captureErrors);
       await fixture.runtime.close();
-      assert.equal(fixture.workspace.leases.size, 0);
+      assert.equal(fixture.workspace.resources.size, 0);
     });
   }
 }
@@ -1724,7 +1721,7 @@ for (const failure of ["checkpoint", "capture"] as const) {
             1,
           );
         await fixture.runtime.close();
-        assert.equal(fixture.workspace.leases.size, 0);
+        assert.equal(fixture.workspace.resources.size, 0);
       }
       await fixture.reopen();
       assert.equal(
@@ -1772,9 +1769,8 @@ test(
       identity: assignmentKey(ref("base")),
       cwd: fixture.directory,
       artifacts: [],
-      lease: { id: assignmentKey(ref("base")), workspace: fixture.directory },
     };
-    fixture.workspace.leases.add(prepared.identity);
+    fixture.workspace.resources.add(prepared.identity);
     const evidence = await store.putArtifact(Buffer.from("durable enrollment"));
     const observation: BackendObservation = { kind: "enrolled", identity, evidence: [evidence] };
     const source = { sourceId: "worker-outbox", ordinal: 0 };

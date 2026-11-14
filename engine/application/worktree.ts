@@ -8,7 +8,6 @@ import {
   type RepositoryObservation,
 } from "../contracts/workspace.ts";
 import { captureManifest, writeTree } from "../workspace/capture.ts";
-import { openCheckoutGate } from "../workspace/gate.ts";
 import { gitLine, type GitCommands } from "../workspace/git.ts";
 import { readIncluded } from "../workspace/include.ts";
 import { repository } from "../workspace/location.ts";
@@ -68,12 +67,6 @@ export async function selectWorktree(request: {
   );
   if (baseTree !== plan.baseTree)
     throw new DomainError("conflict", "Worktree base differs from its accepted Git tree");
-  const activity = await (await openCheckoutGate(worktree.path)).inspect();
-  if (activity.writers.length || activity.exclusive)
-    throw new DomainError(
-      "owner_unconfirmed",
-      "Worktree has registered activity; wait or recover it before applying",
-    );
   const included = plan.includedFiles
     ? await readIncluded(plan.includedFiles, plan.source, artifacts)
     : undefined;
@@ -87,11 +80,5 @@ export async function selectWorktree(request: {
       "Worktree changed while selecting changes to apply; retry when edits settle",
     );
   const tree = await writeTree(worktree.path, current, git, artifacts, signal);
-  const selectedActivity = await (await openCheckoutGate(worktree.path)).inspect();
-  if (selectedActivity.writers.length || selectedActivity.exclusive)
-    throw new DomainError(
-      "owner_unconfirmed",
-      "Worktree activity started while selecting changes; wait or recover it before applying",
-    );
   return { current, tree, baseTree, repository: target };
 }

@@ -21,7 +21,7 @@ import {
 import { type FaultHook } from "../../engine/storage/io.ts";
 import { WorkspaceLayer } from "../../engine/workspace/index.ts";
 import { readManifest } from "../../engine/workspace/capture.ts";
-import { openCheckoutGate } from "../../engine/workspace/gate.ts";
+import { ApplicationLock } from "../../engine/application/lock.ts";
 import { ApplicationStore } from "../../engine/application/index.ts";
 import { workspaceRefPrefix } from "../../engine/workspace/checkpoints.ts";
 import { FixtureArtifacts } from "./rewrite-application-fixture.ts";
@@ -121,66 +121,39 @@ async function legacyCheckpoint(
   await writeFile(path, canonicalJson({ ...record, checkpoint }));
 }
 
-test("shared workspace release waits for another live checkout mutation without reconciling it", async (t) => {
+test("shared workspaces prepare and release independently without checkout metadata", async (t) => {
   const world = await fixture(t, { git: false });
-  const request = await world.request("finishing", "shared");
-  const prepared = await world.layer.prepare(request, new AbortController().signal);
-  let acquired!: () => void;
-  let resume!: () => void;
-  const held = new Promise<void>((resolve) => {
-    acquired = resolve;
-  });
-  const paused = new Promise<void>((resolve) => {
-    resume = resolve;
-  });
-  const gate = await openCheckoutGate(world.root, {
-    fault: async (point) => {
-      if (point !== "writer.publish.after") return;
-      acquired();
-      await paused;
-    },
-  });
-  const registration = gate.registerWriter({
-    ref: { run: "fixture-run", worker: "starting", assignment: 1 },
-    ownerEpoch: "fixture-epoch",
-  });
-  await held;
-  const releasing = world.layer
-    .release({ prepared, cleanup: world.cleanup, artifacts: world.artifacts })
-    .then(
-      () => ({ state: "released" as const }),
-      (error: unknown) => ({ state: "failed" as const, error }),
-    );
-  try {
-    const observed = await Promise.race([
-      releasing,
-      new Promise<{ state: "waiting" }>((resolve) =>
-        setTimeout(() => resolve({ state: "waiting" }), 100),
-      ),
-    ]);
-    assert.equal(observed.state, "waiting", JSON.stringify(observed));
-  } finally {
-    resume();
-  }
-  const next = await registration;
-  assert.deepEqual(await releasing, { state: "released" });
-  assert.deepEqual(
-    (await gate.inspect()).writers.map((lease) => lease.id),
-    [next.id],
+  const requests = await Promise.all([
+    world.request("first", "shared"),
+    world.request("second", "shared"),
+  ]);
+  const prepared = await Promise.all(
+    requests.map((request) => world.layer.prepare(request, new AbortController().signal)),
   );
-  await gate.releaseWriter(next.id, world.cleanup);
+  for (const [index, workspace] of prepared.entries()) {
+    assert.equal(workspace.cwd, world.root);
+    assert.equal(workspace.lease, undefined);
+    await world.layer.release({
+      ref: requests[index].ref,
+      prepared: workspace,
+      cleanup: world.cleanup,
+      artifacts: world.artifacts,
+    });
+  }
+  await assert.rejects(readFile(join(world.root, ".pinata", "checkout-gate", "manifest.json")), {
+    code: "ENOENT",
+  });
+  assert.equal(await readFile(join(world.root, "file.txt"), "utf8"), "base\n");
 });
 
 test(
-  "replacement shared non-Git preparation and explicit capture preserve edits and writer registration",
+  "replacement shared non-Git preparation and explicit capture preserve edits without writer registration",
   { skip: process.platform === "win32", timeout: 30_000 },
   async (t) => {
     const world = await fixture(t, { git: false });
     const request = await world.request("shared", "shared");
     const prepared = await world.layer.prepare(request, new AbortController().signal);
     assert.equal(prepared.cwd, world.root);
-    const gate = await openCheckoutGate(world.root);
-    assert.equal((await gate.inspect()).writers.length, 1);
     await writeFile(join(world.root, "file.txt"), "worker edit\n");
     await writeFile(join(world.root, "user.txt"), "unrelated user edit\n");
     const capture = await world.layer.capture(
@@ -200,8 +173,12 @@ test(
     assert.equal(snapshot.mode, "shared");
     assert.equal(snapshot.tree, undefined);
     assert.equal((await readManifest(snapshot.manifest, world.artifacts)).entries.length, 2);
-    await world.layer.release({ prepared, cleanup: world.cleanup, artifacts: world.artifacts });
-    assert.equal((await gate.inspect()).writers.length, 0);
+    await world.layer.release({
+      ref: request.ref,
+      prepared,
+      cleanup: world.cleanup,
+      artifacts: world.artifacts,
+    });
     assert.equal(await readFile(join(world.root, "file.txt"), "utf8"), "worker edit\n");
     assert.equal(await readFile(join(world.root, "user.txt"), "utf8"), "unrelated user edit\n");
     await assert.rejects(readFile(join(world.root, ".git")), { code: "ENOENT" });
@@ -252,7 +229,12 @@ test(
         `${workspaceRefPrefix(request.ref)}/assignments/1`,
       ),
     );
-    await world.layer.release({ prepared, cleanup: world.cleanup, artifacts: world.artifacts });
+    await world.layer.release({
+      ref: request.ref,
+      prepared,
+      cleanup: world.cleanup,
+      artifacts: world.artifacts,
+    });
     const next = { ...request, ref: { ...request.ref, assignment: 2 } };
     const continued = await world.layer.prepare(next, new AbortController().signal);
     assert.equal(continued.cwd, prepared.cwd);
@@ -265,6 +247,7 @@ test(
     assert.deepEqual(await readFile(join(world.root, ".git", "index")), sourceIndex);
     assert.deepEqual(continued.worktree, prepared.worktree);
     await world.layer.release({
+      ref: request.ref,
       prepared: continued,
       cleanup: world.cleanup,
       artifacts: world.artifacts,
@@ -292,7 +275,12 @@ test(
       new AbortController().signal,
     );
     assert(capture.snapshot);
-    await world.layer.release({ prepared, cleanup: world.cleanup, artifacts: world.artifacts });
+    await world.layer.release({
+      ref: first.ref,
+      prepared,
+      cleanup: world.cleanup,
+      artifacts: world.artifacts,
+    });
     const result = resultSchema.parse({
       ref: first.ref,
       summary: "Reported failure, useful changes retained",
@@ -322,6 +310,7 @@ test(
       new AbortController().signal,
     );
     await world.layer.release({
+      ref: second.ref,
       prepared: composed,
       cleanup: world.cleanup,
       artifacts: world.artifacts,
@@ -364,6 +353,7 @@ test(
     assert.equal(capture.snapshot, undefined);
     assert(capture.artifacts.length > 0);
     await world.layer.release({
+      ref: request.ref,
       prepared: failure.prepared,
       cleanup: failure.cleanup,
       artifacts: world.artifacts,
@@ -405,8 +395,12 @@ test(
     assert(second.snapshot);
     assert.notEqual(first.snapshot.digest, second.snapshot.digest);
     assert(await world.artifacts.read(first.snapshot));
-    await replacement.release({ prepared, cleanup: world.cleanup, artifacts: world.artifacts });
-    assert.equal((await (await openCheckoutGate(prepared.cwd)).inspect()).writers.length, 0);
+    await replacement.release({
+      ref: request.ref,
+      prepared,
+      cleanup: world.cleanup,
+      artifacts: world.artifacts,
+    });
     assert.equal(await readFile(join(prepared.cwd, "file.txt"), "utf8"), "later retained edit\n");
   },
 );
@@ -417,7 +411,7 @@ for (const boundary of [
   "workspace.provision.index.after",
 ]) {
   test(
-    `replacement workspace recovery reconciles helper and lease ownership after ${boundary}`,
+    `replacement workspace recovery recovers helper activity after ${boundary}`,
     { skip: process.platform === "win32", timeout: 40_000 },
     async (t) => {
       const world = await fixture(t);
@@ -452,14 +446,12 @@ for (const boundary of [
           world.layer.recover(request, new AbortController().signal),
           /no retained authorization/,
         );
-        assert.equal((await (await openCheckoutGate(world.root)).inspect()).writers.length, 1);
         await rename(`${operationDirectory}-retained`, operationDirectory);
       }
       const recovery = await world.layer.recover(request, new AbortController().signal);
       assert.equal(recovery.cleanup.status, "stopped");
       assert(recovery.prepared);
       assert(recovery.cleanup.evidence.length > 0);
-      assert.equal((await (await openCheckoutGate(world.root)).inspect()).writers.length, 0);
       if (boundary !== "workspace.provision.metadata.after")
         assert.equal(await readFile(join(recovery.prepared.cwd, "file.txt"), "utf8"), "base\n");
       const capture = await world.layer.capture(
@@ -473,14 +465,11 @@ for (const boundary of [
       );
       assert.equal(capture.snapshot, undefined);
       await world.layer.release({
+        ref: request.ref,
         prepared: recovery.prepared,
         cleanup: recovery.cleanup,
         artifacts: world.artifacts,
       });
-      assert.equal(
-        (await (await openCheckoutGate(recovery.prepared.cwd)).inspect()).writers.length,
-        0,
-      );
       assert.equal(await readFile(join(world.root, "file.txt"), "utf8"), "base\n");
       await assert.rejects(
         world.layer.prepare(
@@ -545,7 +534,12 @@ test(
     );
     assert.equal(await world.git(prepared.cwd, "rev-parse", "HEAD"), manualHead);
     assert.deepEqual(await readFile(join(gitDirectory, "index")), worktreeIndex);
-    await world.layer.release({ prepared, cleanup: world.cleanup, artifacts: world.artifacts });
+    await world.layer.release({
+      ref: request.ref,
+      prepared,
+      cleanup: world.cleanup,
+      artifacts: world.artifacts,
+    });
     const secondRequest = { ...request, ref: { ...request.ref, assignment: 2 } };
     const secondPrepared = await world.layer.prepare(secondRequest, new AbortController().signal);
     await world.git(secondPrepared.cwd, "add", "file.txt");
@@ -585,6 +579,7 @@ test(
     assert.equal(second.head?.commit, secondHead);
     assert.notEqual(secondHead, manualHead);
     await world.layer.release({
+      ref: secondRequest.ref,
       prepared: secondPrepared,
       cleanup: world.cleanup,
       artifacts: world.artifacts,
@@ -613,6 +608,7 @@ test(
     );
     assert.equal(await world.git(thirdPrepared.cwd, "rev-parse", "HEAD"), secondHead);
     await world.layer.release({
+      ref: thirdRequest.ref,
       prepared: thirdPrepared,
       cleanup: world.cleanup,
       artifacts: world.artifacts,
@@ -642,7 +638,12 @@ test(
       new AbortController().signal,
     );
     assert(captured.snapshot);
-    await world.layer.release({ prepared, cleanup: world.cleanup, artifacts: world.artifacts });
+    await world.layer.release({
+      ref: producer.ref,
+      prepared,
+      cleanup: world.cleanup,
+      artifacts: world.artifacts,
+    });
     const result = resultSchema.parse({
       ref: producer.ref,
       summary: "Partial upstream work",
@@ -689,7 +690,7 @@ test(
       /later edits/,
     );
     assert.equal(await readFile(join(plan.destination, "file.txt"), "utf8"), "later user edit\n");
-    assert((await (await openCheckoutGate(plan.destination)).inspect()).exclusive);
+    assert(await (await ApplicationLock.open(plan.destination)).inspect());
     // An explicit resolution restores the journal's intended bytes before retry.
     await writeFile(join(plan.destination, "file.txt"), "retained upstream input\n");
     const recovery = await world.layer.recover(consumer, new AbortController().signal);
@@ -707,13 +708,12 @@ test(
     );
     assert(observation.snapshot);
     await world.layer.release({
+      ref: consumer.ref,
       prepared: recovery.prepared,
       cleanup: recovery.cleanup,
       artifacts: world.artifacts,
     });
-    const gate = await (await openCheckoutGate(plan.destination)).inspect();
-    assert.equal(gate.exclusive, undefined);
-    assert.equal(gate.writers.length, 0);
+    assert.equal(await (await ApplicationLock.open(plan.destination)).inspect(), undefined);
     assert.equal(
       await readFile(join(plan.destination, "file.txt"), "utf8"),
       "retained upstream input\n",
@@ -762,7 +762,12 @@ test(
           `${workspaceRefPrefix(request.ref)}/assignments/1`,
         ),
       );
-      await world.layer.release({ prepared, cleanup: world.cleanup, artifacts: world.artifacts });
+      await world.layer.release({
+        ref: request.ref,
+        prepared,
+        cleanup: world.cleanup,
+        artifacts: world.artifacts,
+      });
     }
   },
 );
@@ -873,6 +878,91 @@ test(
       world.git(prepared.cwd, "rev-parse", "--verify", "refs/heads/redirected-by-data"),
     );
     await writeFile(checkpointPath, checkpointBytes);
-    await replacement.release({ prepared, cleanup: world.cleanup, artifacts: world.artifacts });
+    await replacement.release({
+      ref: request.ref,
+      prepared,
+      cleanup: world.cleanup,
+      artifacts: world.artifacts,
+    });
+  },
+);
+
+test(
+  "shared workspace activity does not gate worktree handoff; conflicting edits still fail",
+  { timeout: 30000 },
+  async (t) => {
+    const world = await fixture(t);
+    const shared = await world.request("shared-writer", "shared");
+    const isolated = await world.request("isolated-writer", "worktree");
+    const sharedWorkspace = await world.layer.prepare(shared, new AbortController().signal);
+    const isolatedWorkspace = await world.layer.prepare(isolated, new AbortController().signal);
+    assert(isolatedWorkspace.worktree);
+    await writeFile(join(sharedWorkspace.cwd, "user.txt"), "shared worker edit\n");
+    await writeFile(join(isolatedWorkspace.cwd, "file.txt"), "isolated edit\n");
+    await world.layer.release({
+      ref: isolated.ref,
+      prepared: isolatedWorkspace,
+      cleanup: world.cleanup,
+      artifacts: world.artifacts,
+    });
+    const application = await ApplicationStore.open({
+      destination: world.root,
+      artifacts: world.artifacts,
+    });
+    t.after(() => application.close());
+    const first = await application.applyWorktree({
+      ref: isolated.ref,
+      worktree: isolatedWorkspace.worktree,
+    });
+    assert.equal(first.status, "applied");
+    assert.equal(await readFile(join(world.root, "user.txt"), "utf8"), "shared worker edit\n");
+    await writeFile(join(sharedWorkspace.cwd, "file.txt"), "conflicting shared edit\n");
+    await writeFile(join(isolatedWorkspace.cwd, "file.txt"), "next isolated edit\n");
+    await assert.rejects(
+      application.applyWorktree({ ref: isolated.ref, worktree: isolatedWorkspace.worktree }),
+      /conflicting changes/,
+    );
+    assert.equal(await readFile(join(world.root, "file.txt"), "utf8"), "conflicting shared edit\n");
+    await world.layer.release({
+      ref: shared.ref,
+      prepared: sharedWorkspace,
+      cleanup: world.cleanup,
+      artifacts: world.artifacts,
+    });
+  },
+);
+
+test(
+  "workspace release checks retained helper evidence without a writer lease",
+  { timeout: 30000 },
+  async (t) => {
+    const world = await fixture(t);
+    const request = await world.request("helpers", "worktree");
+    const prepared = await world.layer.prepare(request, new AbortController().signal);
+    assert.equal(prepared.lease, undefined);
+    const directory = join(
+      world.storeDirectory,
+      "workspaces",
+      digestValue({ run: request.ref.run, worker: request.ref.worker }),
+      "1-operations",
+    );
+    await rename(directory, `${directory}-retained`);
+    await assert.rejects(
+      world.layer.release({
+        ref: request.ref,
+        prepared,
+        cleanup: world.cleanup,
+        artifacts: world.artifacts,
+      }),
+      /retained authorization/,
+    );
+    await rename(`${directory}-retained`, directory);
+    await world.layer.release({
+      ref: request.ref,
+      prepared,
+      cleanup: world.cleanup,
+      artifacts: world.artifacts,
+    });
+    assert.equal(await readFile(join(prepared.cwd, "file.txt"), "utf8"), "base\n");
   },
 );

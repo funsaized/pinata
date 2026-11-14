@@ -13870,6 +13870,10 @@
               "type": "number",
               "const": 1
             },
+            "kind": {
+              "type": "string",
+              "const": "exclusive"
+            },
             "id": {
               "$ref": "#/definitions/__schema0"
             },
@@ -13923,10 +13927,6 @@
             "ownerEpoch": {
               "$ref": "#/definitions/__schema0"
             },
-            "kind": {
-              "type": "string",
-              "const": "exclusive"
-            },
             "operationId": {
               "$ref": "#/definitions/__schema0"
             },
@@ -13937,11 +13937,11 @@
           },
           "required": [
             "schemaVersion",
+            "kind",
             "id",
             "checkout",
             "owner",
             "ownerEpoch",
-            "kind",
             "operationId",
             "purpose"
           ],
@@ -35819,291 +35819,6 @@
           ]
         }
       }
-    },
-    "pinata.checkout-identity.v1": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "type": "object",
-      "properties": {
-        "root": {
-          "$ref": "#/definitions/__schema0"
-        },
-        "device": {
-          "$ref": "#/definitions/__schema0"
-        },
-        "inode": {
-          "$ref": "#/definitions/__schema0"
-        }
-      },
-      "required": ["root", "device", "inode"],
-      "additionalProperties": false,
-      "definitions": {
-        "__schema0": {
-          "type": "string",
-          "minLength": 1
-        }
-      }
-    },
-    "pinata.checkout-gate-manifest.v1": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "type": "object",
-      "properties": {
-        "schemaVersion": {
-          "type": "number",
-          "const": 1
-        },
-        "checkout": {
-          "type": "object",
-          "properties": {
-            "root": {
-              "$ref": "#/definitions/__schema0"
-            },
-            "device": {
-              "$ref": "#/definitions/__schema0"
-            },
-            "inode": {
-              "$ref": "#/definitions/__schema0"
-            }
-          },
-          "required": ["root", "device", "inode"],
-          "additionalProperties": false
-        }
-      },
-      "required": ["schemaVersion", "checkout"],
-      "additionalProperties": false,
-      "definitions": {
-        "__schema0": {
-          "type": "string",
-          "minLength": 1
-        }
-      }
-    },
-    "pinata.checkout-directory-binding.v1": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "type": "object",
-      "properties": {
-        "schemaVersion": {
-          "type": "number",
-          "const": 1
-        },
-        "checkout": {
-          "type": "object",
-          "properties": {
-            "root": {
-              "$ref": "#/definitions/__schema0"
-            },
-            "device": {
-              "$ref": "#/definitions/__schema0"
-            },
-            "inode": {
-              "$ref": "#/definitions/__schema0"
-            }
-          },
-          "required": ["root", "device", "inode"],
-          "additionalProperties": false
-        },
-        "birthtimeNs": {
-          "type": "string",
-          "pattern": "^[1-9][0-9]*$"
-        }
-      },
-      "required": ["schemaVersion", "checkout", "birthtimeNs"],
-      "additionalProperties": false,
-      "definitions": {
-        "__schema0": {
-          "type": "string",
-          "minLength": 1
-        }
-      }
-    },
-    "pinata.writer-lease.v1": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "type": "object",
-      "properties": {
-        "schemaVersion": {
-          "type": "number",
-          "const": 1
-        },
-        "id": {
-          "$ref": "#/definitions/__schema0"
-        },
-        "checkout": {
-          "type": "object",
-          "properties": {
-            "root": {
-              "$ref": "#/definitions/__schema0"
-            },
-            "device": {
-              "$ref": "#/definitions/__schema0"
-            },
-            "inode": {
-              "$ref": "#/definitions/__schema0"
-            }
-          },
-          "required": ["root", "device", "inode"],
-          "additionalProperties": false
-        },
-        "owner": {
-          "type": "object",
-          "properties": {
-            "schemaVersion": {
-              "type": "number",
-              "const": 1
-            },
-            "host": {
-              "$ref": "#/definitions/__schema0"
-            },
-            "pid": {
-              "exclusiveMinimum": 0,
-              "allOf": [
-                {
-                  "$ref": "#/definitions/__schema1"
-                }
-              ]
-            },
-            "startIdentity": {
-              "$ref": "#/definitions/__schema0"
-            },
-            "token": {
-              "$ref": "#/definitions/__schema0"
-            },
-            "epoch": {
-              "$ref": "#/definitions/__schema0"
-            }
-          },
-          "required": ["schemaVersion", "host", "pid", "startIdentity", "token", "epoch"],
-          "additionalProperties": false
-        },
-        "ownerEpoch": {
-          "$ref": "#/definitions/__schema0"
-        },
-        "kind": {
-          "type": "string",
-          "const": "writer"
-        },
-        "ref": {
-          "type": "object",
-          "properties": {
-            "run": {
-              "$ref": "#/definitions/__schema0"
-            },
-            "worker": {
-              "type": "string",
-              "pattern": "^[a-z][a-z0-9-]{0,31}$"
-            },
-            "assignment": {
-              "exclusiveMinimum": 0,
-              "allOf": [
-                {
-                  "$ref": "#/definitions/__schema1"
-                }
-              ]
-            }
-          },
-          "required": ["run", "worker", "assignment"],
-          "additionalProperties": false
-        }
-      },
-      "required": ["schemaVersion", "id", "checkout", "owner", "ownerEpoch", "kind", "ref"],
-      "additionalProperties": false,
-      "definitions": {
-        "__schema0": {
-          "type": "string",
-          "minLength": 1
-        },
-        "__schema1": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 9007199254740991
-        }
-      }
-    },
-    "pinata.exclusive-lease.v1": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "type": "object",
-      "properties": {
-        "schemaVersion": {
-          "type": "number",
-          "const": 1
-        },
-        "id": {
-          "$ref": "#/definitions/__schema0"
-        },
-        "checkout": {
-          "type": "object",
-          "properties": {
-            "root": {
-              "$ref": "#/definitions/__schema0"
-            },
-            "device": {
-              "$ref": "#/definitions/__schema0"
-            },
-            "inode": {
-              "$ref": "#/definitions/__schema0"
-            }
-          },
-          "required": ["root", "device", "inode"],
-          "additionalProperties": false
-        },
-        "owner": {
-          "type": "object",
-          "properties": {
-            "schemaVersion": {
-              "type": "number",
-              "const": 1
-            },
-            "host": {
-              "$ref": "#/definitions/__schema0"
-            },
-            "pid": {
-              "type": "integer",
-              "exclusiveMinimum": 0,
-              "maximum": 9007199254740991
-            },
-            "startIdentity": {
-              "$ref": "#/definitions/__schema0"
-            },
-            "token": {
-              "$ref": "#/definitions/__schema0"
-            },
-            "epoch": {
-              "$ref": "#/definitions/__schema0"
-            }
-          },
-          "required": ["schemaVersion", "host", "pid", "startIdentity", "token", "epoch"],
-          "additionalProperties": false
-        },
-        "ownerEpoch": {
-          "$ref": "#/definitions/__schema0"
-        },
-        "kind": {
-          "type": "string",
-          "const": "exclusive"
-        },
-        "operationId": {
-          "$ref": "#/definitions/__schema0"
-        },
-        "purpose": {
-          "type": "string",
-          "enum": ["apply", "rollback", "recovery"]
-        }
-      },
-      "required": [
-        "schemaVersion",
-        "id",
-        "checkout",
-        "owner",
-        "ownerEpoch",
-        "kind",
-        "operationId",
-        "purpose"
-      ],
-      "additionalProperties": false,
-      "definitions": {
-        "__schema0": {
-          "type": "string",
-          "minLength": 1
-        }
-      }
     }
   },
   "tools": {
@@ -36704,7 +36419,7 @@
       "output": "pinata.surface-reply.v1"
     },
     "pinata_integrate": {
-      "description": "Apply the current files of a retained worktree to its frozen destination, using the worker's latest stopped assignment ref. Includes destination exclusion and conflict checks. This does not certify correctness. Inspect the application outcome using its operation ID.",
+      "description": "Apply the current files of a retained worktree to its frozen destination, using the worker's latest stopped assignment ref. Arrange a handoff first: keep the source and affected destination files still. Checks conflicts and serializes application operations, but does not block other writers. This does not certify correctness. Inspect the application outcome using its operation ID.",
       "input": {
         "$schema": "http://json-schema.org/draft-07/schema#",
         "type": "object",
@@ -38297,5 +38012,5 @@
     "context_unavailable",
     "commit_unknown"
   ],
-  "cliHelp": "Usage:\n  pinata run <job.json|-> [--json] [--watch]       run a finite schema-1 job\n  pinata serve [job.json] [--directory <run>]     own a runtime and serve authenticated control\n  pinata attach <run-directory> [--watch]         browse in a terminal; otherwise print status\n  pinata view <run-directory> [--control] [--palette name]  open the live/saved viewer\n  pinata request <run-directory> <request.json|-> [--control]\n  pinata execute <run-directory> <envelope.json|->\n  pinata query <run-directory> <query.json|->\n  pinata status|logs <run-directory> [--watch] [--json]\n  pinata result|conversation|changes <run-directory> <worker> [assignment]\n  pinata wait <run-directory> [worker ...] [--next]\n  pinata steer|follow-up|continue <run-directory> <worker> <message>\n  pinata cancel <run-directory> [--scope assignment|worker|run] [--worker id] [--assignment n]\n  pinata background|recover <run-directory>\n  pinata apply <run-directory> <worker> <assignment> --destination <checkout>\n  pinata rollback <run-directory> <operation> --destination <checkout>\n  pinata reconcile <run-directory> <operation> --owner <epoch>\n  pinata bind-checkout <checkout> <manifest.json> --reason <reason>\n  pinata schema [name] --json                    generated canonical JSON Schema\n  pinata agents [list|show <name>|validate]        discover Markdown definitions\n  pinata tools --json                            discover coordinator tool schemas\n\nHost options: --workspace, --directory, --run, --agent-dir, --definitions (repeatable),\n--config <json>, --grants <json>, --model <provider/id>, --thinking <level>, --bootstrap <module>.\n--factory <module> selects a trusted development host factory exporting openHost.\nControl commands attach to a live owning server. Saved runs remain read-only; start\nserve explicitly to claim one. Aborting an attached wait leaves work running.\nExit codes: 0 completed/observed, 1 execution or application failed/uncertain,\n2 invalid or rejected request, 3 cancelled. Completion does not certify correctness."
+  "cliHelp": "Usage:\n  pinata run <job.json|-> [--json] [--watch]       run a finite schema-1 job\n  pinata serve [job.json] [--directory <run>]     own a runtime and serve authenticated control\n  pinata attach <run-directory> [--watch]         browse in a terminal; otherwise print status\n  pinata view <run-directory> [--control] [--palette name]  open the live/saved viewer\n  pinata request <run-directory> <request.json|-> [--control]\n  pinata execute <run-directory> <envelope.json|->\n  pinata query <run-directory> <query.json|->\n  pinata status|logs <run-directory> [--watch] [--json]\n  pinata result|conversation|changes <run-directory> <worker> [assignment]\n  pinata wait <run-directory> [worker ...] [--next]\n  pinata steer|follow-up|continue <run-directory> <worker> <message>\n  pinata cancel <run-directory> [--scope assignment|worker|run] [--worker id] [--assignment n]\n  pinata background|recover <run-directory>\n  pinata apply <run-directory> <worker> <assignment> --destination <checkout>\n  pinata rollback <run-directory> <operation> --destination <checkout>\n  pinata reconcile <run-directory> <operation> --owner <epoch>\n  pinata schema [name] --json                    generated canonical JSON Schema\n  pinata agents [list|show <name>|validate]        discover Markdown definitions\n  pinata tools --json                            discover coordinator tool schemas\n\nHost options: --workspace, --directory, --run, --agent-dir, --definitions (repeatable),\n--config <json>, --grants <json>, --model <provider/id>, --thinking <level>, --bootstrap <module>.\n--factory <module> selects a trusted development host factory exporting openHost.\nControl commands attach to a live owning server. Saved runs remain read-only; start\nserve explicitly to claim one. Aborting an attached wait leaves work running.\nExit codes: 0 completed/observed, 1 execution or application failed/uncertain,\n2 invalid or rejected request, 3 cancelled. Completion does not certify correctness."
 }

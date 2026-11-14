@@ -9,7 +9,6 @@ export * from "./digest.ts";
 export * from "./schemas.ts";
 export * from "./backend.ts";
 export * from "./usage.ts";
-export * from "./gate.ts";
 export * from "./workspace.ts";
 export * from "./application.ts";
 export * from "./surface.ts";

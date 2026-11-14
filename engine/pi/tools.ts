@@ -114,7 +114,7 @@ export const coordinatorTools: readonly ToolOperation[] = [
   commandTool(
     "pinata_integrate",
     "apply",
-    "Apply the current files of a retained worktree to its frozen destination, using the worker's latest stopped assignment ref. Includes destination exclusion and conflict checks. This does not certify correctness. Inspect the application outcome using its operation ID.",
+    "Apply the current files of a retained worktree to its frozen destination, using the worker's latest stopped assignment ref. Arrange a handoff first: keep the source and affected destination files still. Checks conflicts and serializes application operations, but does not block other writers. This does not certify correctness. Inspect the application outcome using its operation ID.",
   ),
   commandTool(
     "pinata_rollback",

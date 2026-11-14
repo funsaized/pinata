@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { lstat, readFile, readdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { z } from "zod";
@@ -34,7 +33,8 @@ const operationSchema = z.strictObject({
       cleanup: cleanupReceiptSchema.optional(),
     }),
   ),
-  leases: z.array(z.strictObject({ id: identitySchema, workspace: textSchema })),
+  // Legacy evidence only; new preparations do not register checkout writers.
+  leases: z.array(z.strictObject({ id: identitySchema, workspace: textSchema })).optional(),
   inputs: z.array(identitySchema),
   setup: artifactRefSchema.optional(),
   included: z
@@ -214,7 +214,6 @@ export class WorkspaceOperations {
       ownerEpoch: this.options.ownerEpoch,
       plan,
       scopes: [],
-      leases: [],
       inputs: [],
     };
     const bytes = Buffer.from(canonicalJson(record));
@@ -258,13 +257,6 @@ export class WorkspaceOperations {
       "helper-cleanup",
     );
     return cleanup;
-  }
-
-  async intendLease(workspace: string): Promise<string> {
-    const record = await this.required();
-    const id = randomUUID();
-    await this.save({ ...record, leases: [...record.leases, { id, workspace }] }, "lease-intent");
-    return id;
   }
 
   async intendSetup(reference: ArtifactRef): Promise<void> {

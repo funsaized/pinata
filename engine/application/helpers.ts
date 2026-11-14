@@ -8,7 +8,7 @@ import {
 } from "../contracts/backend.ts";
 import { identitySchema, textSchema, DomainError } from "../contracts/common.ts";
 import { canonicalJson, digestValue } from "../contracts/digest.ts";
-import type { ExclusiveLease } from "../contracts/gate.ts";
+import type { ApplicationLease } from "../contracts/application.ts";
 import { isMissing, replaceProjection, type FaultHook } from "../storage/io.ts";
 import { GitCommands, recoverGitCleanup } from "../workspace/git.ts";
 import { verifiedArtifact } from "./files.ts";
@@ -37,22 +37,22 @@ export type ApplicationHelperOptions = {
 };
 
 // Helper intent is durable before the first command. A crashed validator cannot
-// release checkout exclusion merely because its application intent was unpublished.
+// release the application lock merely because its application intent was unpublished.
 export class ApplicationHelpers {
   private readonly options: ApplicationHelperOptions;
-  private lease?: ExclusiveLease;
+  private lease?: ApplicationLease;
   private scope?: GitCommands;
   constructor(options: ApplicationHelperOptions) {
     this.options = options;
   }
 
-  attach(lease: ExclusiveLease): void {
+  attach(lease: ApplicationLease): void {
     this.lease = lease;
   }
-  private path(lease: ExclusiveLease): string {
+  private path(lease: ApplicationLease): string {
     return join(this.options.directory, "helpers", `${digestValue(lease.id)}.json`);
   }
-  private async read(lease: ExclusiveLease): Promise<HelperRecord> {
+  private async read(lease: ApplicationLease): Promise<HelperRecord> {
     let value: unknown;
     try {
       value = JSON.parse(await readFile(this.path(lease), "utf8"));
@@ -82,7 +82,7 @@ export class ApplicationHelpers {
     return record;
   }
   private async publish(
-    lease: ExclusiveLease,
+    lease: ApplicationLease,
     record: HelperRecord,
     phase: "intent" | "cleanup",
   ): Promise<void> {
@@ -97,7 +97,7 @@ export class ApplicationHelpers {
   async git(): Promise<GitCommands> {
     if (this.scope) return this.scope;
     const lease = this.lease;
-    if (!lease) throw new Error("Application Git requires checkout exclusion");
+    if (!lease) throw new Error("Application Git requires the application lock");
     const record = await this.read(lease);
     if (record.scopes.some((scope) => scope.cleanup?.status !== "stopped"))
       throw new DomainError("owner_unconfirmed", "Prior application helper cleanup is unconfirmed");
@@ -148,7 +148,7 @@ export class ApplicationHelpers {
     return cleanup;
   }
 
-  async recover(lease: ExclusiveLease): Promise<void> {
+  async recover(lease: ApplicationLease): Promise<void> {
     this.lease = lease;
     const record = await this.read(lease);
     for (const entry of record.scopes) {
@@ -161,13 +161,13 @@ export class ApplicationHelpers {
       if (entry.cleanup.status !== "stopped")
         throw new DomainError(
           "owner_unconfirmed",
-          `Recovered application helper activity is unconfirmed; checkout exclusion is retained: ${entry.cleanup.reasons.join("; ")}`,
+          `Recovered application helper activity is unconfirmed; the application lock is retained: ${entry.cleanup.reasons.join("; ")}`,
         );
     }
     this.scope = undefined;
   }
 
-  async assertStopped(lease: ExclusiveLease): Promise<void> {
+  async assertStopped(lease: ApplicationLease): Promise<void> {
     const cleanup = await this.close();
     const record = await this.read(lease);
     if (
@@ -176,7 +176,7 @@ export class ApplicationHelpers {
     )
       throw new DomainError(
         "owner_unconfirmed",
-        "Application Git helper cleanup is unconfirmed; checkout exclusion is retained",
+        "Application Git helper cleanup is unconfirmed; the application lock is retained",
       );
   }
 }

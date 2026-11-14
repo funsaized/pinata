@@ -469,7 +469,7 @@ export function createPinataExtension(options: PiExtensionOptions = {}): Extensi
         if (closed.status !== "closed")
           context.ui.notify(
             closed.reason ??
-              "Owned activity remains unconfirmed; retained exclusion requires reconciliation.",
+              "Owned activity remains unconfirmed; inspect retained cleanup evidence before continuing.",
             "warning",
           );
         bindings.delete(key);

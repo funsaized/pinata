@@ -98,7 +98,7 @@ type ActiveAssignment = {
 };
 
 // Owns live resources; every authority change still goes through Runtime's short
-// transaction queue. No provider, gate or cleanup wait holds that queue.
+// transaction queue. No provider or cleanup wait holds that queue.
 export class ExecutionCoordinator {
   private readonly host: ExecutionHost;
   private readonly options: ExecutionOptions;
@@ -923,6 +923,7 @@ export class ExecutionCoordinator {
     if (cleanup.status === "stopped" && active.prepared) {
       await this.host.assertOwner();
       await this.options.workspace.release({
+        ref,
         prepared: active.prepared,
         cleanup,
         artifacts: this.host.artifacts,

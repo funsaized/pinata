@@ -6,7 +6,6 @@ import { jsonSchema } from "../contracts/json-schema.ts";
 import type { Terminal } from "@earendil-works/pi-tui";
 import {
   canonicalJson,
-  checkoutGateManifestSchema,
   DomainError,
   exportSchemas,
   grantsSchema,
@@ -26,7 +25,6 @@ import { bindRuntime, type RuntimeSource, surfaceError } from "../sources/runtim
 import { openSavedSource } from "../sources/saved.ts";
 import { parseArguments, requireArgument, usage, type CliArguments } from "./arguments.ts";
 import { paletteSchema } from "../contracts/config.ts";
-import { bindCheckoutGate } from "../workspace/gate.ts";
 
 export type CliIO = {
   out(text: string): void;
@@ -483,21 +481,6 @@ export async function runCli(argv: readonly string[], io: CliIO): Promise<number
         return await runJob(args, io, false);
       case "serve":
         return await runJob(args, io, true);
-      case "bind-checkout": {
-        const manifest = checkoutGateManifestSchema.parse(
-          await jsonFile(requireArgument(args, 1, "retained manifest file or -"), io),
-        );
-        output(
-          args,
-          io,
-          await bindCheckoutGate({
-            root: resolve(requireArgument(args, 0, "checkout")),
-            expected: manifest.checkout,
-            reason: args.options.get("reason") ?? "",
-          }),
-        );
-        return 0;
-      }
       default:
         return await surfaceCommand(args, io);
     }
