@@ -97,9 +97,14 @@ function renderEntries(entries: unknown[], options: ConversationOptions): string
       0,
       options.presentation?.markdown ?? theme(paint),
     ).render(width);
+  const inputTexts = new Set<string>();
   for (const value of entries) {
     const entry = object(value);
-    const message = entry && object(entry.message);
+    const isInput =
+      !options.details && entry?.type === "custom_message" && entry.customType === "pinata.input";
+    const message = isInput
+      ? { role: "user", content: entry.content }
+      : entry && object(entry.message);
     if (!message) {
       if (options.details) {
         output.push(...markdown(JSON.stringify(value, null, 2)), "");
@@ -107,6 +112,8 @@ function renderEntries(entries: unknown[], options: ConversationOptions): string
       continue;
     }
     const role = String(message.role ?? "message");
+    if (isInput) inputTexts.add(text(message.content));
+    else if (role === "assistant") inputTexts.clear();
     const start = output.length;
     if (role === "toolResult") {
       const report = object(object(message.details)?.report);
@@ -185,12 +192,17 @@ function renderEntries(entries: unknown[], options: ConversationOptions): string
     ) {
       try {
         const evidence = object(JSON.parse(body.slice(body.indexOf("\n") + 1)));
-        if (typeof evidence?.task === "string")
-          body =
-            evidence.task +
-            (Array.isArray(evidence.quotedContext) && evidence.quotedContext.length
-              ? "\n\nContext\n\n" + evidence.quotedContext.map(String).join("\n\n")
-              : "");
+        if (typeof evidence?.task === "string") {
+          // Initial inputs also appear in the brief. Keep each input visible and
+          // let the brief add context without repeating the task.
+          body = [
+            ...(inputTexts.has(evidence.task) ? [] : [evidence.task]),
+            ...(Array.isArray(evidence.quotedContext) && evidence.quotedContext.length
+              ? ["Context", evidence.quotedContext.map(String).join("\n\n")]
+              : []),
+          ].join("\n\n");
+          inputTexts.clear();
+        }
       } catch {
         // Unrecognized retained messages remain visible verbatim.
       }
