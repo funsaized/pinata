@@ -97,11 +97,25 @@ test("paging publication failure preserves a bounded recovery message without im
   const value = {
     status: "accepted",
     requestId: "retain-this-request",
-    results: "x".repeat(100_000),
+    revision: 1,
+    assignments: Array.from({ length: 1000 }, (_, index) => ({
+      run: "run-one",
+      worker: `worker-${index}`,
+      assignment: 1,
+    })),
+    resolved: [],
   };
   const content = await pages.format(value);
   assert(Buffer.byteLength(content) <= toolContentBytes);
   assert.match(content, /original reply remains in tool details/);
   assert.match(content, /do not repeat a mutation under a new request ID/);
+  assert.match(content, /retain-this-request/);
+  assert.match(content, /display failure, not an execution outcome/);
+  const response = JSON.parse(content);
+  assert(
+    response.error.message.includes(
+      canonicalJson({ query: { kind: "receipt", requestId: value.requestId } }),
+    ),
+  );
   assert.equal(value.status, "accepted");
 });
