@@ -32,8 +32,9 @@ run changes. Discovery is a planning snapshot; accepted grants remain authoritat
 
 Write concrete assignments with useful context, file responsibilities and observable
 goals. Honor user authorization and project instructions. Shared checkout is the
-default; coordinate overlap and preserve unrelated edits. Select a worktree for an
-explicit isolated experiment. A changed workspace mode requires a new worker.
+default. Give workers separate areas when possible, use `after` for dependent edits,
+and resolve overlaps through messages and follow-ups. Preserve unrelated edits.
+Select a worktree for isolated changes. A changed workspace mode requires a new worker.
 
 For staged analysis and synthesis, declare the known stages together with `after`
 edges: parallel analysts, summarizers depending on their analysts, then a final
@@ -75,11 +76,14 @@ ready assignments, including children, without cancelling active work.
 
 Shared changes require no apply step. Shared diffs include user and other worker
 edits. Isolated results expose `worktree.path` and `worktree.base`; inspect the
-current files with Git. Use `pinata_integrate` with the latest stopped assignment
-reference to apply that worktree at its frozen destination, then inspect the
-application operation. There are no new per-assignment file snapshots. Preserve
-versions with Git commits or patches when needed. Respect conflict checks, active
-writer exclusion and recovery journals. Never reset the whole checkout to recover a worker.
+current files with Git. Before handoff, let affected workers finish or cancel them
+and confirm cleanup. Keep the source worktree and affected destination files still,
+including edits from other sessions. Use `pinata_integrate` with the latest stopped
+assignment reference, then inspect the application outcome. Piñata checks conflicts
+and serializes application operations; it does not lock out workers or editors.
+Resolve conflicts before retrying. There are no new per-assignment file snapshots.
+Preserve versions with Git commits or patches when needed. Keep recovery journals
+and never reset the whole checkout to recover a worker.
 
 Parent context, scoped memory, child delegation and session schedules require explicit
 grants/settings. Skills and worker reports cannot grant authority. A capacity-blocked

@@ -6,7 +6,7 @@
 [![CI](https://github.com/funsaized/pinata/actions/workflows/ci.yml/badge.svg)](https://github.com/funsaized/pinata/actions/workflows/ci.yml)
 [![MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-Piñata turns one [Pi](https://pi.dev) conversation into a working team. Send a scout
+Piñata turns a conversation in [Pi](https://pi.dev) into orchestrated, autonomous sub-agents. Send a scout
 to trace an unfamiliar API, put builders on independent changes, and bring a
 reviewer into the conversation when the diff is ready. Open any worker's transcript,
 ask a follow-up, or redirect it while it works. You keep the context and decide
@@ -60,7 +60,7 @@ agent definitions. Compose your own roles around the work you actually do.
 | Fleet tree, transcripts, drafts, search and controls      | [Fleet and conversations](#fleet-and-conversations)                                                                  |
 | Direct addressed input and explicit retry                 | [Agent mentions](#agent-mentions)                                                                                    |
 | Shared files, worktrees and explicit integration          | [Workspaces](#workspaces)                                                                                            |
-| Incremental application, rollback and writer exclusion    | [Apply isolated work](#apply-isolated-work)                                                                          |
+| Worktree handoff, conflict checks and rollback            | [Apply isolated work](#apply-isolated-work)                                                                          |
 | Markdown agents, typed reports and frozen skills          | [Custom agents](#custom-agents)                                                                                      |
 | Models, reasoning, fallback candidates and tool providers | [Configuration](#configuration)                                                                                      |
 | Filtered parent context and memory revision checks        | [Context and memory](#context-and-memory)                                                                            |
@@ -453,6 +453,12 @@ commits. Shared edits are already in the checkout. The coordinator owns testing,
 review and integration; it can apply work within the user's authorization without
 asking for a separate approval each time.
 
+In a shared checkout, give workers separate areas when possible and have them report
+overlaps to the coordinator. Use `after` when one assignment needs another's edits.
+Workers should reread files before editing and preserve changes they did not make.
+The coordinator resolves overlapping changes and chooses when to run checks or commit.
+Piñata does not register writers or lock project files.
+
 New worktrees include dirty starting content by default; `includeUncommitted: false`
 selects committed content. Follow-ups keep the worktree; changing modes needs a new
 worker. Results expose `worktree.path` and `worktree.base` for inspection with Git.
@@ -516,10 +522,16 @@ deliver the delta from the last applied Git tree, even within the same assignmen
 Retry the same request ID to retrieve the original operation; use a new ID to
 select newer edits. Apply preserves HEAD and the index.
 
-Apply checks paths, objects, destination identity and expected content. It refuses
-registered source activity. A checkout-level gate allows multiple shared writers
-and excludes application while writable destination work is active. Unconfirmed
-cleanup keeps that exclusion.
+Before applying, arrange a handoff: let affected workers finish or cancel them and
+confirm cleanup, then keep the source worktree and affected destination files still
+until apply returns. Coordinate other sessions and editors too. Piñata checks the
+selected worker's stopped assignment, but does not track other checkout writers.
+
+Apply checks paths, objects, destination identity and expected content. Conflicting
+edits are reported for the coordinator to resolve; apply does not merge them. These
+checks can detect changes, but cannot prevent concurrent edits. A small lock in
+`.pinata/applications/lock/` serializes apply, rollback and recovery against the same
+application journal. It does not block workers or editors.
 
 Each application journals before and after blobs and cursor meaning. `rollback` reverses
 only matching destination content; later edits conflict. `reconcile` selects the
@@ -888,10 +900,10 @@ Recovery inspects the retained attempt rather than creating an empty conversatio
 Payload exit does not establish descendant cleanup or complete output. The POSIX
 supervisor controls its owned group through a live nonce-bound authenticated channel.
 Windows uses a creation-time Job Object. Stopped receipts require matching ownership
-and termination evidence. Missing, escaped or ambiguous activity stays unconfirmed and
-retains writer exclusion. Process output drains and synchronizes separately from payload
-exit. Each tiny streaming chunk incurs durable transport work, which can affect
-completion latency.
+and termination evidence. Missing, escaped or ambiguous activity stays unconfirmed;
+inspect and recover it before continuing that worker or handing off its files.
+Process output drains and synchronizes separately from payload exit. Each tiny
+streaming chunk incurs durable transport work, which can affect completion latency.
 
 ## Headless operation
 
@@ -975,16 +987,16 @@ receipts name the revision, exact assignments, messages and any application oper
 Stale expected revisions reject. Stable IDs make acceptance retries idempotent;
 they do not promise exactly-once arbitrary external tool effects.
 
-| Command                  | Behavior                                                               |
-| ------------------------ | ---------------------------------------------------------------------- |
-| `create`, `add`          | Atomically accept worker batches; `create` can include config.         |
-| `follow_up`              | Queue with `worker`, `messageId`, `text`, optional `after`.            |
-| `steer`, `continue`      | Address a worker with message ID/text.                                 |
-| `cancel`                 | Assignment/worker/run scope; descendants default on.                   |
-| `background`, `capacity` | Release a wait or select positive/null `maxConcurrent`.                |
-| `schedule`               | Manage session triggers.                                               |
-| `apply`                  | Apply current worktree files to the frozen destination with exclusion. |
-| `rollback`, `reconcile`  | Recover a selected journaled application.                              |
+| Command                  | Behavior                                                                 |
+| ------------------------ | ------------------------------------------------------------------------ |
+| `create`, `add`          | Atomically accept worker batches; `create` can include config.           |
+| `follow_up`              | Queue with `worker`, `messageId`, `text`, optional `after`.              |
+| `steer`, `continue`      | Address a worker with message ID/text.                                   |
+| `cancel`                 | Assignment/worker/run scope; descendants default on.                     |
+| `background`, `capacity` | Release a wait or select positive/null `maxConcurrent`.                  |
+| `schedule`               | Manage session triggers.                                                 |
+| `apply`                  | Apply current worktree files after coordinator handoff; check conflicts. |
+| `rollback`, `reconcile`  | Recover a selected journaled application.                                |
 
 Worker requests require `id`, `agent`, `task`. Optional fields: `origin`, `messageId`,
 `after`, `workspace`, `model`, `backend`, `lifetime`, `context`, `inheritContext`,
@@ -1054,7 +1066,6 @@ Use `-` for stdin where a file argument is accepted.
 | `apply`                                                | `<directory> <worker> <assignment> --destination <checkout>`.                            |
 | `rollback`                                             | `<directory> <operation> --destination <checkout>`.                                      |
 | `reconcile`                                            | `<directory> <operation> --owner <epoch>`.                                               |
-| `bind-checkout`                                        | `<checkout> <retained-manifest.json> --reason <reason>`; bind verified legacy metadata.  |
 | `schema [name]`, `tools`                               | Discover canonical schemas and tool contracts.                                           |
 | `agents list`, `agents show <name>`, `agents validate` | Discover/validate definitions.                                                           |
 
@@ -1179,11 +1190,23 @@ acceptance. `BackendPort` advertises restoration, steering, context, skill, memo
 delegation, fallback, lifetime and cleanup capabilities. Start and reattach handles own
 input receipts, observations, completion, checkpoints and stop receipts.
 
-`WorkspacePort` owns prepare/recover/release, retaining writer registration
-until confirmed cleanup. Its optional `capture` method only reconciles older recorded
-capture intents; new assignments do not call it. `Runtime.bindMessages(ref)` supplies
-a worker-bound `MessagePort` independently of child delegation. Built-in hosts attach it to each
-backend; custom hosts can provide it through the backend's `messages` option.
+`WorkspacePort` supplies workspace lifecycle methods: `prepare`, `recover` and
+`release`. The runtime calls `release` after confirmed worker cleanup, passing the
+assignment reference and cleanup receipt. Adapters return a working directory, an
+identity and retained artifacts for recovery. The built-in
+adapter provides shared directories and Git worktrees; shared release leaves files
+in place. Its optional `capture` method only reconciles older recorded capture
+intents; new assignments do not call it.
+
+Custom hosts can inject a `WorkspacePort` for environment setup and teardown. Pair
+it with a suitable `BackendPort` when execution also needs a container, VM or remote
+host. Runtime subscriptions provide observations; use the lifecycle methods for
+work that must finish before launch or release. There is no required checkout lock
+protocol for adapters.
+
+`Runtime.bindMessages(ref)` supplies a worker-bound `MessagePort` independently of
+child delegation. Built-in hosts attach it to each backend; custom hosts can provide
+it through the backend's `messages` option.
 `RuntimeApplicationPort` performs journaled application
 outside command serialization. `NotificationPort` distinguishes stable notice
 transport from model consumption; Pi needs the complete notice in the outgoing
@@ -1266,26 +1289,19 @@ stay blocked for their matching host. Preserve before and after blobs, journals,
 and cleanup receipts. Deleting ownership files or resetting the checkout discards
 recovery evidence.
 
-Checkout gates retain a directory creation-time binding when the filesystem provides
-one. This allows a device number to change after reboot while preserving the original
-manifest and leases. Each running gate still checks the current device, `inode` and
-creation time. Filesystems without creation times retain strict device checks.
+### Upgrading from checkout gates
 
-Older gates acquire a binding when reopened with their original directory identity.
-If the device number already changed, inspect the retained manifest and activity and
-verify that the path still names the original checkout. Then run:
+Stop older Piñata runs before using this version in the same checkout. Finish any
+pending application or uncertain helper cleanup with the version that created it.
+A retained `.pinata/checkout-gate/exclusive.json` blocks new application until that
+recovery finishes. Completed application journals and legacy workspace records
+remain readable. Old writer records are ignored and left intact; new workers do
+not create them. The `bind-checkout` command has been removed.
 
-```sh
-pinata bind-checkout /path/to/project /path/to/project/.pinata/checkout-gate/manifest.json \
-  --reason "Verified original checkout after device renumbering"
-```
-
-This command requires the exact retained manifest, matching path and `inode`, an
-available creation time, and inactive local owners. It records evidence and preserves
-every lease. Retained writers still require normal cleanup reconciliation before
-application. An interrupted binding retains a reconciliation fence for inspection.
-On Linux, an owner from a different recorded boot is inactive even if its PID has
-been reused; a live PID from the same boot remains blocked.
+The application lock retains an interrupted operation until explicit reconciliation.
+Unconfirmed application helper cleanup blocks further handoffs, while ordinary
+workers remain available. On Linux, an owner from a different recorded boot is
+inactive even if its PID has been reused; a live PID from the same boot stays blocked.
 
 ## Trust boundaries
 
@@ -1294,9 +1310,9 @@ definitions, skills, memory and output are data validated within those bindings.
 They cannot replace their caller, select a root token or broaden authority.
 
 Worktrees isolate patches. Shell tools and custom extensions execute with the host account's
-operating-system permissions. Use an external sandbox for untrusted code. Checkout
-gates and claims coordinate cooperating processes, without containing hostile same-user
-mutation.
+operating-system permissions. Use an external sandbox for untrusted code. Run claims
+and application locks coordinate cooperating processes; they do not stop other tools
+from editing files. Shared edits and worktree handoff are the coordinator's responsibility.
 
 Durable recording, transport delivery, consumption, execution, worker assessments,
 reported checks, coordinator acceptance, application and oracle correctness remain
@@ -1379,7 +1395,7 @@ pinata/
 |   |-- agent/           # Pi sessions, tools, reporting and guards
 |   |-- backends/        # In-process, process and Herdr execution
 |   |   `-- supervision/ # Process ownership, output and Windows Job Objects
-|   |-- workspace/       # Worktrees, setup, legacy capture and writer exclusion
+|   |-- workspace/       # Worktrees, setup and legacy capture
 |   |-- application/     # Journaled apply, rollback and reconciliation
 |   |-- context/         # Instructions, filtering and restoration
 |   |-- memory/          # Scoped memory and revision history
