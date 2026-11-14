@@ -8,10 +8,13 @@ import {
   fauxAssistantMessage,
   fauxProvider,
   fauxToolCall,
+  getCurrentTools,
   type FauxResponseFactory,
 } from "@earendil-works/pi-ai";
 import {
   createAgentSession,
+  createEventBus,
+  type EventBus,
   DefaultResourceLoader,
   initTheme,
   ModelRuntime,
@@ -38,6 +41,7 @@ import {
 } from "../../engine/contracts/index.ts";
 import { toolContentBytes } from "../../engine/sources/pages.ts";
 import { MemoryStore } from "../../engine/memory/index.ts";
+import { batchMessageType, CoordinatorCompletion } from "../../engine/pi/completion.ts";
 import { surfaceFixture } from "./rewrite-surface-fixture.ts";
 
 function deferred() {
@@ -57,6 +61,8 @@ async function fixture(
     personalGrants?: Grants;
     run?: string;
     respond?: FauxResponseFactory;
+    coordinatorTools?: boolean;
+    beforeBind?(bus: EventBus): Promise<void>;
   } = {},
 ) {
   const directory = await realpath(await mkdtemp(join(tmpdir(), "pinata-pi-surface-")));
@@ -94,12 +100,14 @@ async function fixture(
   modelRuntime.registerNativeProvider(faux.provider);
   await modelRuntime.refresh({ allowNetwork: false });
   const hosts: Host[] = [];
+  const eventBus = createEventBus();
   const navigation: Array<AssignmentRef | undefined> = [];
   const settings = SettingsManager.inMemory({
     cacheWarming: "off",
     compaction: { enabled: false },
   });
   const loader = new DefaultResourceLoader({
+    eventBus,
     cwd: workspace,
     agentDir,
     settingsManager: settings,
@@ -171,12 +179,13 @@ async function fixture(
     sessionManager: manager,
     resourceLoader: loader,
     settingsManager: settings,
-    tools: [],
+    tools: options.coordinatorTools ? ["pinata_run", "pinata_wait"] : [],
   });
   const notices: string[] = [];
   let draft = "";
   const errors: string[] = [];
   initTheme("dark", false);
+  await options.beforeBind?.(eventBus);
   await session.bindExtensions({
     mode: "tui",
     uiContext: {
@@ -211,6 +220,7 @@ async function fixture(
     notices,
     errors,
     inputHandler,
+    eventBus,
     draft: () => draft,
   };
 }
@@ -547,41 +557,444 @@ test(
   },
 );
 
+test("canonical Pi tool mappings match direct Runtime receipts", { timeout: 15_000 }, async (t) => {
+  const f = await surfaceFixture(t);
+  const value = {
+    requestId: "shared-request",
+    command: { kind: "create", workers: [{ id: "worker", agent: "fixture", task: "first" }] },
+  };
+  const reply = await invokeCoordinatorTool("pinata_run", value, "call", f.control);
+  const direct = await f.runtime.execute(value, f.caller);
+  assert.deepEqual(reply, { status: "ok", response: { method: "execute", result: direct } });
+  const invalid = {
+    requestId: "invalid",
+    command: {
+      kind: "add",
+      workers: [
+        {
+          id: "later",
+          agent: "fixture",
+          task: "next",
+          after: [{ run: f.run, worker: "worker", assignment: 999 }],
+        },
+      ],
+    },
+  };
+  const rejected = await invokeCoordinatorTool("pinata_run", invalid, "call-2", f.control);
+  assert.deepEqual(rejected, await f.control.request({ method: "execute", input: invalid }));
+  assert.equal(
+    (await invokeCoordinatorTool("pinata_run", { workers: [] }, "bad", f.control)).status,
+    "error",
+  );
+});
+
 test(
-  "canonical Pi tool mappings match direct Runtime and authenticated IPC receipts",
-  { timeout: 15_000 },
+  "background discovery and eight parallel workers resume the idle coordinator once",
+  { timeout: 20_000 },
   async (t) => {
-    const f = await surfaceFixture(t);
-    const client = await f.connect();
-    const value = {
-      requestId: "shared-request",
-      command: { kind: "create", workers: [{ id: "worker", agent: "fixture", task: "first" }] },
+    const discovery = deferred();
+    const workers = Array.from({ length: 8 }, () => ({ finish: deferred(), started: deferred() }));
+    const reported = deferred();
+    let coordinatorRequests = 0;
+    const f = await fixture(t, {
+      coordinatorTools: true,
+      respond: async (context) => {
+        if (getCurrentTools(context.messages).some((tool) => tool.name === "pinata_run")) {
+          coordinatorRequests++;
+          if (coordinatorRequests === 1)
+            return fauxAssistantMessage([
+              fauxToolCall("pinata_run", {
+                command: {
+                  kind: "create",
+                  workers: [
+                    { id: "discovery", agent: "scout", task: "DISCOVERY" },
+                    ...workers.map((_worker, index) => ({
+                      id: `worker-${index}`,
+                      agent: "scout",
+                      task: `WORKER_${index}`,
+                      after: ["discovery"],
+                    })),
+                  ],
+                },
+              }),
+            ]);
+          if (coordinatorRequests === 2)
+            return fauxAssistantMessage([
+              fauxToolCall("pinata_run", { command: { kind: "background" } }),
+            ]);
+          if (coordinatorRequests === 3) return fauxAssistantMessage("The fleet is working.");
+          assert.match(
+            JSON.stringify(context.messages),
+            /All 9 watched subagent assignments have settled/,
+          );
+          reported.resolve();
+          return fauxAssistantMessage("All nine results collected.");
+        }
+        const task = JSON.stringify(context.messages);
+        const match = /WORKER_(\d+)/.exec(task);
+        if (match) {
+          const worker = workers[Number(match[1])];
+          worker.started.resolve();
+          await worker.finish.promise;
+        } else await discovery.promise;
+        return fauxAssistantMessage("Worker finished.");
+      },
+    });
+    t.after(() => {
+      discovery.resolve();
+      for (const worker of workers) worker.finish.resolve();
+    });
+    await f.session.prompt("Launch research, then eight strategies.");
+    assert.equal(coordinatorRequests, 3);
+    discovery.resolve();
+    await Promise.all(workers.map((worker) => worker.started.promise));
+    assert.equal(coordinatorRequests, 3, "Discovery alone does not wake the coordinator");
+    for (const worker of workers.slice(0, -1)) worker.finish.resolve();
+    const host = f.hosts[0];
+    await host.runtime.wait(
+      { workers: workers.slice(0, -1).map((_worker, index) => `worker-${index}`) },
+      host.caller,
+      t.signal,
+    );
+    assert.equal(coordinatorRequests, 3, "A partial fleet does not wake the coordinator");
+    workers.at(-1)?.finish.resolve();
+    await reported.promise;
+    await f.session.waitForIdle();
+    await host.runtime.deliverNotifications(host.caller);
+    assert.equal(coordinatorRequests, 4);
+    assert.equal(
+      f.manager
+        .getEntries()
+        .filter((entry) => entry.type === "custom_message" && entry.customType === batchMessageType)
+        .length,
+      1,
+    );
+    assert.deepEqual(f.errors, []);
+  },
+);
+
+test(
+  "a foreground wait collects watched results without an extra coordinator request",
+  { timeout: 20_000 },
+  async (t) => {
+    let coordinatorRequests = 0;
+    const f = await fixture(t, {
+      coordinatorTools: true,
+      respond: (context) => {
+        if (!getCurrentTools(context.messages).some((tool) => tool.name === "pinata_run"))
+          return fauxAssistantMessage("Worker result.");
+        coordinatorRequests++;
+        if (coordinatorRequests === 1)
+          return fauxAssistantMessage([
+            fauxToolCall("pinata_run", {
+              command: {
+                kind: "create",
+                workers: [{ id: "worker", agent: "scout", task: "Work" }],
+              },
+            }),
+          ]);
+        if (coordinatorRequests === 2)
+          return fauxAssistantMessage([fauxToolCall("pinata_wait", { workers: ["worker"] })]);
+        return fauxAssistantMessage("Collected the foreground result.");
+      },
+    });
+    await f.session.prompt("Launch and wait for the worker.");
+    assert.equal(coordinatorRequests, 3);
+    assert.equal(
+      f.manager
+        .getEntries()
+        .filter((entry) => entry.type === "custom_message" && entry.customType === batchMessageType)
+        .length,
+      0,
+    );
+    assert.deepEqual(f.errors, []);
+  },
+);
+
+test(
+  "a completed batch continues at a safe boundary after coordinator work",
+  { timeout: 20_000 },
+  async (t) => {
+    const working = deferred();
+    const finishWork = deferred();
+    let coordinatorRequests = 0;
+    const f = await fixture(t, {
+      coordinatorTools: true,
+      respond: async (context) => {
+        if (!getCurrentTools(context.messages).some((tool) => tool.name === "pinata_run"))
+          return fauxAssistantMessage("Worker result.");
+        coordinatorRequests++;
+        if (coordinatorRequests === 1)
+          return fauxAssistantMessage([
+            fauxToolCall("pinata_run", {
+              command: {
+                kind: "create",
+                workers: [{ id: "worker", agent: "scout", task: "Work" }],
+              },
+            }),
+          ]);
+        if (coordinatorRequests === 2) {
+          working.resolve();
+          await finishWork.promise;
+          return fauxAssistantMessage("Independent coordinator work completed.");
+        }
+        return fauxAssistantMessage("Batch result incorporated.");
+      },
+    });
+    const prompt = f.session.prompt("Delegate, then do independent work.");
+    t.after(() => finishWork.resolve());
+    await working.promise;
+    const host = f.hosts[0];
+    await host.runtime.wait({}, host.caller, t.signal);
+    assert.equal(coordinatorRequests, 2);
+    finishWork.resolve();
+    await prompt;
+    assert.equal(coordinatorRequests, 3);
+    assert.equal(
+      f.manager
+        .getEntries()
+        .filter((entry) => entry.type === "custom_message" && entry.customType === batchMessageType)
+        .length,
+      1,
+    );
+    assert.deepEqual(f.errors, []);
+  },
+);
+
+test(
+  "silent coordinator launches retain results without a completion turn",
+  { timeout: 20_000 },
+  async (t) => {
+    let coordinatorRequests = 0;
+    const f = await fixture(t, {
+      coordinatorTools: true,
+      respond: (context) => {
+        if (!getCurrentTools(context.messages).some((tool) => tool.name === "pinata_run"))
+          return fauxAssistantMessage("Worker result.");
+        coordinatorRequests++;
+        if (coordinatorRequests === 1)
+          return fauxAssistantMessage([
+            fauxToolCall("pinata_run", {
+              notify: "none",
+              command: {
+                kind: "create",
+                workers: [{ id: "worker", agent: "scout", task: "Work" }],
+              },
+            }),
+          ]);
+        return fauxAssistantMessage("Started silent work.");
+      },
+    });
+    await f.session.prompt("Start a silent worker.");
+    const host = f.hosts[0];
+    await host.runtime.wait({}, host.caller, t.signal);
+    await host.runtime.deliverNotifications(host.caller);
+    assert.equal(coordinatorRequests, 2);
+    assert.equal(
+      f.manager
+        .getEntries()
+        .filter((entry) => entry.type === "custom_message" && entry.customType === batchMessageType)
+        .length,
+      0,
+    );
+    assert.deepEqual(f.errors, []);
+  },
+);
+
+test(
+  "completion watches survive reconstruction, retain exact refs, and respect pause and shutdown",
+  { timeout: 20_000 },
+  async (t) => {
+    const f = await fixture(t);
+    await f.session.prompt("@scout");
+    const host = f.hosts[0];
+    const context = f.session.extensionRunner.createContext();
+    const options = {
+      pi: {
+        appendEntry: (type: string, data: unknown) => {
+          f.manager.appendCustomEntry(type, data);
+        },
+        sendMessage: () => {
+          throw new Error("This test inspects readiness without requesting a turn");
+        },
+      },
+      context: () => context,
+      snapshot: () => host.source.snapshot().snapshot,
     };
-    const reply = await invokeCoordinatorTool("pinata_run", value, "call", f.control);
-    const direct = await f.runtime.execute(value, f.caller);
-    const ipc = await client.request({ method: "execute", input: value });
-    assert.deepEqual(reply, { status: "ok", response: { method: "execute", result: direct } });
-    assert.deepEqual(ipc, reply);
-    const invalid = {
-      requestId: "invalid",
-      command: {
-        kind: "add",
-        workers: [
-          {
-            id: "later",
-            agent: "fixture",
-            task: "next",
-            after: [{ run: f.run, worker: "worker", assignment: 999 }],
-          },
-        ],
+    const command = {
+      method: "execute",
+      input: {
+        requestId: "watched-launch",
+        command: { kind: "create", workers: [{ id: "worker", agent: "scout", task: "Work" }] },
       },
     };
-    const rejected = await invokeCoordinatorTool("pinata_run", invalid, "call-2", f.control);
-    assert.deepEqual(rejected, await f.control.request({ method: "execute", input: invalid }));
+    const reply = await host.source.request(command);
+    const initial = new CoordinatorCompletion(options);
+    initial.record("pinata_run", {}, reply);
+    initial.record("pinata_run", {}, reply);
+    await host.runtime.wait({}, host.caller, t.signal);
+    const recovered = new CoordinatorCompletion(options);
+    const message = recovered.ready();
+    assert(message);
+    assert.match(String(message.content), /worker\/1: completed/);
+    assert.deepEqual(message.details, { run: host.caller.run, requests: ["watched-launch"] });
+    recovered.pause(true);
     assert.equal(
-      (await invokeCoordinatorTool("pinata_run", { workers: [] }, "bad", f.control)).status,
-      "error",
+      new CoordinatorCompletion(options).ready(),
+      undefined,
+      "An aborted coordinator stays paused after reconstruction",
     );
+    recovered.pause(false);
+    const later = await host.source.request({
+      method: "execute",
+      input: {
+        requestId: "later-work",
+        command: { kind: "follow_up", worker: "worker", messageId: "later", text: "Follow-up" },
+      },
+    });
+    assert.equal(later.status, "ok");
+    assert.deepEqual(
+      recovered.ready()?.details,
+      message.details,
+      "Unwatched later work does not retarget the original assignment",
+    );
+    const closed = new CoordinatorCompletion(options);
+    closed.close();
+    assert.equal(closed.ready(), undefined, "Shutdown suppresses an otherwise ready completion");
+    f.manager.appendCustomMessageEntry(
+      message.customType,
+      message.content,
+      message.display,
+      message.details,
+    );
+    assert.equal(
+      new CoordinatorCompletion(options).ready(),
+      undefined,
+      "A saved completion does not replay on reconstruction",
+    );
+    assert.deepEqual(f.errors, []);
+  },
+);
+
+test(
+  "aborting coordinator work suspends automatic batch turns until user input",
+  { timeout: 20_000 },
+  async (t) => {
+    const working = deferred();
+    const finishWorker = deferred();
+    const reported = deferred();
+    let coordinatorRequests = 0;
+    const f = await fixture(t, {
+      coordinatorTools: true,
+      respond: async (context, options) => {
+        if (!getCurrentTools(context.messages).some((tool) => tool.name === "pinata_run")) {
+          await finishWorker.promise;
+          return fauxAssistantMessage("Worker result.");
+        }
+        coordinatorRequests++;
+        if (coordinatorRequests === 1)
+          return fauxAssistantMessage([
+            fauxToolCall("pinata_run", {
+              command: {
+                kind: "create",
+                workers: [{ id: "worker", agent: "scout", task: "Work" }],
+              },
+            }),
+          ]);
+        if (coordinatorRequests === 2) {
+          working.resolve();
+          await new Promise<void>((resolve) => {
+            if (options?.signal?.aborted) resolve();
+            else options?.signal?.addEventListener("abort", () => resolve(), { once: true });
+          });
+          return fauxAssistantMessage("Aborted.", { stopReason: "aborted" });
+        }
+        reported.resolve();
+        return fauxAssistantMessage("Resumed by user.");
+      },
+    });
+    t.after(() => finishWorker.resolve());
+    const prompt = f.session.prompt("Delegate and do work.");
+    await working.promise;
+    await f.session.abort();
+    await prompt;
+    finishWorker.resolve();
+    const host = f.hosts[0];
+    await host.runtime.wait({}, host.caller, t.signal);
+    await host.runtime.deliverNotifications(host.caller);
+    assert.equal(coordinatorRequests, 2);
+    while (
+      Object.values(host.source.snapshot().snapshot.outbox).some(
+        (notice) => notice.state !== "delivered",
+      )
+    )
+      await delay(1, undefined, { signal: t.signal });
+    await f.session.prompt("Continue using the completed result.");
+    await reported.promise;
+    assert.equal(coordinatorRequests, 3);
+    assert.deepEqual(f.errors, []);
+  },
+);
+
+test(
+  "a cancelled watched assignment reports its outcome while unrelated work remains active",
+  { timeout: 20_000 },
+  async (t) => {
+    const finish = deferred();
+    const f = await fixture(t, {
+      respond: async () => {
+        await finish.promise;
+        return fauxAssistantMessage("Unrelated work.");
+      },
+    });
+    t.after(() => finish.resolve());
+    await f.session.prompt("@scout");
+    const host = f.hosts[0];
+    await host.source.request({
+      method: "execute",
+      input: {
+        requestId: "unrelated",
+        command: { kind: "create", workers: [{ id: "unrelated", agent: "scout", task: "Hold" }] },
+      },
+    });
+    const reply = await host.source.request({
+      method: "execute",
+      input: {
+        requestId: "watched",
+        command: {
+          kind: "add",
+          workers: [{ id: "watched", agent: "scout", task: "Queued", after: ["unrelated"] }],
+        },
+      },
+    });
+    const completion = new CoordinatorCompletion({
+      pi: {
+        appendEntry: (type, data) => {
+          f.manager.appendCustomEntry(type, data);
+        },
+        sendMessage: () => {
+          throw new Error("No automatic send in readiness test");
+        },
+      },
+      context: () => f.session.extensionRunner.createContext(),
+      snapshot: () => host.source.snapshot().snapshot,
+    });
+    completion.record("pinata_run", {}, reply);
+    await host.runtime.execute(
+      {
+        requestId: "cancel-watched",
+        command: { kind: "cancel", scope: "worker", worker: "watched" },
+      },
+      host.caller,
+    );
+    await host.runtime.wait({ workers: ["watched"] }, host.caller, t.signal);
+    const message = completion.ready();
+    assert(message);
+    assert.match(String(message.content), /watched\/1: cancelled/);
+    assert.doesNotMatch(String(message.content), /unrelated\/1/);
+    finish.resolve();
+    await host.runtime.wait({}, host.caller, t.signal);
+    assert.deepEqual(f.errors, []);
   },
 );
 
@@ -1023,7 +1436,7 @@ test("compact discovery exposes launch grants while preserving full definitions 
   assert(schemaText?.type === "text");
   const index = JSON.parse(schemaText.text);
   assert.equal(index.kind, "schema_index");
-  assert(index.names.includes("pinata.command.v1"));
+  assert(index.names.includes("pinata.command.v2"));
   assert.equal(surfaceReplySchema.parse(schemas.details).status, "ok");
 });
 
@@ -1051,3 +1464,58 @@ test("Pi uses personal grants globally and explicit grants take precedence", asy
     assert.deepEqual(f.hosts.at(-1)?.caller.grants, grants ?? personalGrants);
   }
 });
+
+test(
+  "real extension lifecycle advertises RPC only after session binding and detaches on shutdown",
+  { timeout: 15_000 },
+  async (t) => {
+    const { extensionChannels, extensionReadySchema, extensionReplySchema } =
+      await import("../../engine/contracts/extension.ts");
+    const ready: unknown[] = [];
+    const replies: import("../../engine/contracts/extension.ts").ExtensionReply[] = [];
+    const world = await fixture(t, {
+      beforeBind: async (bus) => {
+        bus.on(extensionChannels.ready, (value) => ready.push(extensionReadySchema.parse(value)));
+        bus.on(extensionChannels.reply, (value) => replies.push(extensionReplySchema.parse(value)));
+        bus.emit(extensionChannels.request, {
+          protocolVersion: 1,
+          id: "unbound",
+          operation: "ping",
+        });
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        assert.deepEqual(replies, []);
+        assert.deepEqual(ready, []);
+      },
+    });
+    assert.deepEqual(world.errors, []);
+    assert.equal(ready.length, 1);
+    const bound = extensionReadySchema.parse(ready[0]);
+    assert.equal(bound.sessionId, world.manager.getSessionId());
+    assert.equal(bound.run, world.hosts[0].source.run);
+    world.eventBus.emit(extensionChannels.request, {
+      protocolVersion: 1,
+      id: "bound",
+      operation: "ping",
+      sessionId: bound.sessionId,
+      run: bound.run,
+    });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.equal(replies.filter((reply) => reply.id === "bound").length, 1);
+    await world.session.extensionRunner.emit({ type: "session_start", reason: "resume" });
+    assert.equal(ready.length, 1, "repeated session start must reuse the binding");
+    await world.session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
+    world.eventBus.emit(extensionChannels.request, {
+      protocolVersion: 1,
+      id: "closed",
+      operation: "ping",
+      sessionId: bound.sessionId,
+      run: bound.run,
+    });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.equal(
+      replies.some((reply) => reply.id === "closed"),
+      false,
+    );
+    assert.deepEqual(world.errors, []);
+  },
+);

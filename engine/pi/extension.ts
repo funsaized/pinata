@@ -1,3 +1,4 @@
+import { bindPiEvents, type PiEventBinding } from "./events.ts";
 import { registerPinataMessageRenderers } from "./message-renderers.ts";
 import { readPersonalGrants } from "./grants.ts";
 import { join } from "node:path";
@@ -28,6 +29,7 @@ import {
 import { installCoordinatorUi } from "../ui/pi.ts";
 import { ToolPages } from "../sources/pages.ts";
 import { registerMemoryCommand } from "./memory.ts";
+import { completionWatchType, CoordinatorCompletion } from "./completion.ts";
 
 const bindingType = "pinata.runtime.v1";
 const bindingSchema = z.strictObject({
@@ -45,7 +47,15 @@ export type PiExtensionOptions = {
     ref?: import("../contracts/index.ts").AssignmentRef,
   ): Promise<void>;
 };
-type Binding = { host: Host; context: ExtensionContext; unsubscribe: () => void; pages: ToolPages };
+type Binding = {
+  session: string;
+  host: Host;
+  context: ExtensionContext;
+  unsubscribe: () => void;
+  pages: ToolPages;
+  completion: CoordinatorCompletion;
+  events?: Promise<PiEventBinding>;
+};
 
 async function modelRuntime(context: ExtensionContext, agentDir: string): Promise<ModelRuntime> {
   const runtime = await ModelRuntime.create({
@@ -72,6 +82,18 @@ export function createPinataExtension(options: PiExtensionOptions = {}): Extensi
     registerPinataMessageRenderers(pi);
     const bindings = new Map<string, Binding>();
     const pending = new Map<string, Promise<Binding>>();
+    const startedSessions = new Set<string>();
+    const bindEvents = (binding: Binding): Promise<PiEventBinding> | undefined => {
+      if (!startedSessions.has(binding.session)) return;
+      binding.events ??= bindPiEvents({
+        bus: pi.events,
+        sessionId: binding.session,
+        source: binding.host.source,
+        onReply: (request, reply) => binding.completion.record("pinata_run", request, reply),
+        diagnostic: (message) => binding.context.ui.notify(message, "warning"),
+      });
+      return binding.events;
+    };
     const addressedInputs = new WeakMap<InputEvent, Promise<InputEventResult>>();
     let configuredGrants = options.host?.grants;
     let nextRun = false;
@@ -83,6 +105,7 @@ export function createPinataExtension(options: PiExtensionOptions = {}): Extensi
       const existing = bindings.get(session);
       if (existing && !nextRun) {
         existing.context = context;
+        await bindEvents(existing);
         return existing;
       }
       const creating = pending.get(session);
@@ -105,7 +128,6 @@ export function createPinataExtension(options: PiExtensionOptions = {}): Extensi
         let host: Host | undefined;
         const created = await (options.open ?? openHost)({
           ...options.host,
-          sessionId: session,
           workspace: saved?.workspace ?? options.host?.workspace ?? context.cwd,
           ...(saved ? { directory: saved.directory, run: saved.run } : {}),
           agentDir,
@@ -120,7 +142,10 @@ export function createPinataExtension(options: PiExtensionOptions = {}): Extensi
                   thinking: context.thinkingLevel ?? "off",
                 }
               : undefined),
-          notifications: piNotifications(pi, () => active?.context ?? context),
+          notifications: piNotifications(pi, () => {
+            const parent = active?.context ?? context;
+            return parent.sessionManager.getSessionId() === session ? parent : undefined;
+          }),
           parentContext: async () => {
             if (!host) throw new Error("Parent context requested before the host was ready");
             const artifacts = processArtifacts(host.directory);
@@ -140,6 +165,7 @@ export function createPinataExtension(options: PiExtensionOptions = {}): Extensi
         });
         host = created;
         active = {
+          session,
           host: created,
           context,
           unsubscribe: () => {},
@@ -147,7 +173,13 @@ export function createPinataExtension(options: PiExtensionOptions = {}): Extensi
             artifacts: processArtifacts(created.directory),
             scope: created.caller.run,
           }),
+          completion: new CoordinatorCompletion({
+            pi,
+            context: () => active?.context ?? context,
+            snapshot: () => created.source.snapshot().snapshot,
+          }),
         };
+        await bindEvents(active);
         active.unsubscribe = created.runtime.subscribe({}, created.caller, (event) => {
           if (
             event.kind !== "committed" ||
@@ -164,7 +196,9 @@ export function createPinataExtension(options: PiExtensionOptions = {}): Extensi
               : event.transition.message.id;
           return created.runtime
             .deliverNotifications(created.caller, { notificationId })
-            .then(() => {})
+            .then(() => {
+              if (event.transition.kind === "settled") active?.completion.wake();
+            })
             .catch((error: unknown) => report(active?.context ?? context, error));
         });
         if (existing) bindings.set(`${session}/${existing.host.caller.run}`, existing);
@@ -204,17 +238,16 @@ export function createPinataExtension(options: PiExtensionOptions = {}): Extensi
         return source;
       },
       async (context) => (await getBinding(context)).pages,
+      (name, value, reply, context) => {
+        bindings.get(context.sessionManager.getSessionId())?.completion.record(name, value, reply);
+      },
     );
     registerMemoryCommand(pi, async (context) => (await getBinding(context)).host);
 
     const visibleBindings = (context: ExtensionContext): Binding[] => [
       ...new Map(
         [...bindings.values()]
-          .filter(
-            (binding) =>
-              binding.context.sessionManager.getSessionId() ===
-              context.sessionManager.getSessionId(),
-          )
+          .filter((binding) => binding.session === context.sessionManager.getSessionId())
           .map((binding) => [binding.host.source.run, binding]),
       ).values(),
     ];
@@ -402,17 +435,60 @@ export function createPinataExtension(options: PiExtensionOptions = {}): Extensi
       active.context = context;
       await active.host.runtime.deliverNotifications(active.host.caller);
     });
+    pi.on("before_agent_start", (event, context) => {
+      // Pi 1.1 emits this event only for user prompts, without messageType.
+      if ("messageType" in event && event.messageType !== "user") return;
+      for (const binding of visibleBindings(context)) {
+        binding.context = context;
+        binding.completion.pause(false);
+      }
+    });
+    pi.on("agent_before_settle", (event, context) => {
+      const entries = [];
+      for (const binding of visibleBindings(context)) {
+        binding.context = context;
+        if (event.outcome !== "completed") {
+          binding.completion.pause(true);
+          continue;
+        }
+        const message = binding.completion.ready();
+        if (message) entries.push(message);
+      }
+      if (entries.length) return { entries, continue: true };
+    });
+    pi.on("agent_settled", (event, context) => {
+      for (const binding of visibleBindings(context)) {
+        binding.context = context;
+        if (event.aborted) binding.completion.pause(true);
+        else binding.completion.wake();
+      }
+    });
+    pi.on("session_start", async (_event, context) => {
+      startedSessions.add(context.sessionManager.getSessionId());
+      const binding = await getBinding(context);
+      if (
+        context.sessionManager
+          .getBranch()
+          .some((entry) => entry.type === "custom" && entry.customType === completionWatchType)
+      )
+        binding.completion.wake();
+    });
     pi.on("session_shutdown", async (_event, context) => {
       await Promise.allSettled(pending.values());
       const session = context.sessionManager.getSessionId();
+      startedSessions.delete(session);
       for (const [key, binding] of bindings) {
-        if (binding.context.sessionManager.getSessionId() !== session) continue;
+        if (binding.session !== session) continue;
+        const events = await binding.events;
+        events?.stop();
+        binding.completion.close();
         binding.unsubscribe();
         const closed = await binding.host.close("Pi session closed");
+        await events?.close();
         if (closed.status !== "closed")
           context.ui.notify(
             closed.reason ??
-              "Owned activity remains unconfirmed; retained exclusion requires reconciliation.",
+              "Owned activity remains unconfirmed; inspect retained cleanup evidence before continuing.",
             "warning",
           );
         bindings.delete(key);

@@ -5,6 +5,7 @@ import {
   assignmentRefSchema,
   backendSchema,
   identitySchema,
+  modelSchema,
   revisionSchema,
   textSchema,
   type ArtifactRef,
@@ -104,6 +105,7 @@ export const contextUsageSchema = z.strictObject({
 });
 export type ContextUsage = z.infer<typeof contextUsageSchema>;
 export const backendObservationSchema = z.discriminatedUnion("kind", [
+  z.strictObject({ kind: z.literal("model"), attemptId: identitySchema, model: modelSchema }),
   z.strictObject({
     kind: z.literal("enrolled"),
     identity: backendIdentitySchema,
@@ -153,6 +155,7 @@ export const preparedWorkspaceSchema = z.strictObject({
   cwd: textSchema,
   identity: identitySchema,
   worktree: worktreeSchema.optional(),
+  // Legacy run evidence; workspace adapters use identity and artifacts for recovery.
   lease: z.strictObject({ id: identitySchema, workspace: textSchema }).optional(),
   artifacts: z.array(artifactRefSchema),
 });
@@ -240,6 +243,7 @@ export type WorkspacePort = {
     signal: AbortSignal,
   ): Promise<WorkspaceCapture>;
   release(request: {
+    ref: AssignmentRef;
     prepared: PreparedWorkspace;
     cleanup: CleanupReceipt;
     artifacts: ArtifactPort;

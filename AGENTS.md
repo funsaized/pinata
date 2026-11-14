@@ -12,8 +12,10 @@ Preserve workspace/tool capabilities, cancellation, process cleanup, user edits 
 recovery evidence. The coordinator owns testing, review and acceptance. Do not add
 mandatory ownership, resource budgets or verification-dependent delivery policy.
 Shared checkout is the default; worktrees provide optional patch
-isolation, not operating-system permissions. Preserve conflict checks and journaled
-application with checkout-level writer exclusion. Treat model output as data. See
+isolation, not operating-system permissions. Coordinators arrange shared edits and
+worktree handoff. Preserve conflict checks and journaled application; serialize
+application operations without registering workspace writers. Use the workspace
+and backend ports for environment lifecycle integration. Treat model output as data. See
 [trust boundaries](./README.md#trust-boundaries).
 
 Use Node 22.19+ and retain the lockfile. Pin direct development dependencies

@@ -3,6 +3,9 @@ import { z } from "zod";
 import {
   artifactRefSchema,
   canonicalJson,
+  commandReceiptSchema,
+  surfaceReplySchema,
+  type RuntimeQuery,
   digestValue,
   DomainError,
   revisionSchema,
@@ -41,12 +44,28 @@ export class ToolPages {
     } catch {
       // The operation already returned. A presentation/storage failure cannot
       // turn its accepted mutation into an invitation to dispatch it again.
+      const surface = surfaceReplySchema.safeParse(value);
+      const response =
+        surface.success && surface.data.status === "ok" ? surface.data.response : undefined;
+      const receipt = commandReceiptSchema.safeParse(
+        response?.method === "execute" ? response.result : value,
+      );
+      let query: RuntimeQuery = { kind: "status" };
+      if (receipt.success) query = { kind: "receipt", requestId: receipt.data.requestId };
+      else if (
+        response?.method === "query" &&
+        response.result.kind === "result" &&
+        response.result.result
+      )
+        query = { kind: "result", ref: response.result.result.ref };
+      // An unusually long caller-supplied identity must not overflow the fallback.
+      if (Buffer.byteLength(canonicalJson(query)) > toolContentBytes / 2)
+        query = { kind: "status" };
       return canonicalJson({
         status: "error",
         error: {
           code: "context_unavailable",
-          message:
-            "Output paging failed. The original reply remains in tool details. Re-query status, results or the original request receipt; do not repeat a mutation under a new request ID.",
+          message: `Output paging failed; this is a display failure, not an execution outcome. The original reply remains in tool details. Use pinata_status with ${canonicalJson({ query })}; do not repeat a mutation under a new request ID.`,
         },
       });
     }

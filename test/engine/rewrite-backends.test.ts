@@ -369,7 +369,7 @@ test(
 );
 
 test(
-  "replacement Pi shell processes are enrolled and stopped before a writer lease releases",
+  "replacement Pi shell processes are enrolled and stopped before workspace release",
   { timeout: 30_000, skip: process.platform === "win32" },
   async (t) => {
     const world = await piFixture(

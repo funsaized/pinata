@@ -33,7 +33,7 @@ async function main() {
   try {
     const candidate = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
     assert(candidate.dependencies?.zod, "zod must be a runtime dependency");
-    assert(candidate.dependencies?.["cron-parser"], "cron-parser must be a runtime dependency");
+    assert.equal(candidate.dependencies?.["cron-parser"], undefined);
     const packed = pack(root, directory);
     const installedLock = JSON.parse(await readFile(join(root, "package-lock.json"), "utf8"));
     validateRelease(`v${candidate.version}`, candidate, installedLock, packed);
@@ -44,15 +44,15 @@ async function main() {
       "engine/pi/extension.ts",
       "engine/index.ts",
       "engine/core/state.ts",
-      "engine/contracts/ipc.ts",
-      "engine/ipc/client.ts",
+      "engine/contracts/extension.ts",
+      "engine/pi/events.ts",
       "engine/ui/tree.ts",
       "engine/typescript.mjs",
       "bin/pinata.mjs",
       "agents/scout.md",
       "agents/builder.md",
       "agents/reviewer.md",
-      "examples/relay/job.json",
+      "examples/relay/fleet.json",
       "docs/reference/catalog.json",
       "skills/subagents/SKILL.md",
       "examples/agents/delegator.md",
@@ -114,7 +114,7 @@ async function main() {
     );
     // Pi is an optional peer supplied by the host. Link the exact installed SDK
     // only after npm has independently installed the package's runtime dependencies.
-    for (const name of ["zod", "cron-parser"])
+    for (const name of ["zod"])
       assert((await realpath(join(prefix, "node_modules", name))).startsWith(prefix));
     const pureImports = spawnSync(
       process.execPath,
@@ -125,7 +125,7 @@ async function main() {
       import assert from "node:assert/strict";
       const contracts = await import("pi-pinata/contracts");
       const runtime = await import("pi-pinata/runtime");
-      assert.equal(typeof contracts.schemaRegistry["pinata.command.v1"].safeParse, "function");
+      assert.equal(typeof contracts.schemaRegistry["pinata.command.v2"].safeParse, "function");
       assert.equal(typeof runtime.Runtime.open, "function");
       console.log(JSON.stringify({ node: process.version, pureImports: true }));
     `,
@@ -188,7 +188,7 @@ async function main() {
     };
     const definitions = JSON.parse(command(["agents", "list", "--json"]));
     assert.match(JSON.stringify(definitions), /"name":"scout"/);
-    assert.match(command(["schema", "pinata.command.v1", "--json"]), /requestId/);
+    assert.match(command(["schema", "pinata.command.v2", "--json"]), /requestId/);
     assert.match(command(["tools", "--json"]), /pinata_integrate/);
     const smoke = await runPiSmoke({ packageRoot: installed, installed: true });
     console.log(
@@ -196,7 +196,7 @@ async function main() {
         ...smoke,
         packageFiles: files.length,
         installedCli: true,
-        runtimeDependencies: ["zod", "cron-parser"],
+        runtimeDependencies: ["zod"],
         piPeers: "installed pinned SDK",
         publicImports: true,
         node: process.version,

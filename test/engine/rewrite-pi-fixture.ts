@@ -15,6 +15,7 @@ import {
   definitionSchema,
   type CallerAuthority,
   type Grants,
+  type ModelRef,
   type WorkspacePort,
 } from "../../engine/contracts/index.ts";
 import { Runtime } from "../../engine/runtime/index.ts";
@@ -26,6 +27,7 @@ export async function piFixture(
     tools?: string[];
     access?: "read" | "write";
     codemode?: boolean;
+    thinking?: ModelRef["thinking"];
     extensions?: string[];
     instructions?: string;
     outputType?: string;
@@ -81,9 +83,6 @@ export async function piFixture(
       return {
         cwd: workspace,
         identity: `fixture/${request.ref.worker}`,
-        ...(request.worker.access === "write"
-          ? { lease: { id: `fixture/${request.ref.worker}`, workspace } }
-          : {}),
         artifacts: [],
       };
     },
@@ -125,7 +124,11 @@ export async function piFixture(
             id: request.id,
             agent: request.agent,
             definition: reference,
-            model: { provider: "pinata-fixture", id: "script", thinking: "off" as const },
+            model: {
+              provider: "pinata-fixture",
+              id: "script",
+              thinking: options.thinking ?? "off",
+            },
             fallbacks: [],
             tools,
             access: grants.access,

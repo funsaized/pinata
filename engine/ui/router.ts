@@ -264,12 +264,6 @@ export class ScreenRouter {
       void this.loadConversation().catch((error: unknown) => this.fail(error));
     return true;
   }
-  cycleScreen(direction: number): void {
-    const screens: ScreenName[] = ["main", "fleet", "conversation"];
-    this.navigate(
-      screens[(screens.indexOf(this.screen) + direction + screens.length) % screens.length],
-    );
-  }
   cycleWorker(direction: number): void {
     const visible = this.screen === "fleet" ? this.fleetAssignments() : undefined;
     const workers = visible

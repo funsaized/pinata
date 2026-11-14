@@ -387,6 +387,21 @@ export class InProcessBackend implements BackendPort {
       });
       session = created.session;
       const activeSession = session;
+      let observedModel = "";
+      const recordModel = async (): Promise<void> => {
+        const model = activeSession.model;
+        if (!model) return;
+        const effective = {
+          provider: model.provider,
+          id: model.id,
+          thinking: activeSession.thinkingLevel,
+        };
+        const identity = canonicalJson(effective);
+        if (observedModel === identity) return;
+        await observe({ kind: "model", attemptId: launch.attemptId, model: effective });
+        observedModel = identity;
+      };
+      await recordModel();
       const finishTurn = activeSession.agent.finishTurn;
       activeSession.agent.finishTurn = async (turn, signal) => {
         const decision = await finishTurn?.(turn, signal);
@@ -415,6 +430,27 @@ export class InProcessBackend implements BackendPort {
         });
       };
       const unsubscribe = activeSession.subscribe((event: AgentSessionEvent) => {
+        if (
+          event.type === "thinking_level_changed" ||
+          event.type === "message_start" ||
+          event.type === "compaction_start"
+        ) {
+          // Capture the session's current selection before later events can change it.
+          const selected = activeSession.model;
+          if (selected) {
+            const effective = {
+              provider: selected.provider,
+              id: selected.id,
+              thinking: activeSession.thinkingLevel,
+            };
+            enqueue(async () => {
+              const identity = canonicalJson(effective);
+              if (observedModel === identity) return;
+              await observe({ kind: "model", attemptId: launch.attemptId, model: effective });
+              observedModel = identity;
+            });
+          }
+        }
         if (
           event.type === "tool_execution_start" &&
           !event.parentToolCallId &&

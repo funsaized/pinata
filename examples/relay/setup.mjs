@@ -23,7 +23,7 @@ export async function setup(destination) {
       force: false,
       errorOnExist: true,
     });
-  for (const file of ["job.json", "expected-report.md", "verify.mjs"])
+  for (const file of ["fleet.json", "expected-report.md", "verify.mjs"])
     await cp(join(HERE, file), join(cwd, file), { force: false, errorOnExist: true });
   // Keep exact-output checks stable in worktrees on Windows too.
   await writeFile(join(cwd, ".gitattributes"), "* text=auto eol=lf\n");
@@ -60,7 +60,7 @@ if (import.meta.main) {
     const cwd = await setup(args[0]);
     console.log(`Created Relay starter: ${cwd}`);
     console.log(
-      "Open that directory and choose your models in job.json. Setup made no model calls; running the job spends tokens.",
+      "Open that directory and choose your models in fleet.json. Setup made no model calls; submitting the fleet command spends tokens.",
     );
     console.log(`Guide: ${resolve(HERE, "../../README.md")}#build-relay`);
     console.log(

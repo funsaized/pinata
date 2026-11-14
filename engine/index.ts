@@ -5,9 +5,7 @@ export { defineAgent, type AgentDefinitionInput, type DefinedAgent } from "./def
 export { Runtime, type RuntimeOptions } from "./runtime/index.ts";
 export { bindRuntime, type RuntimeSource } from "./sources/runtime.ts";
 export { ToolPages, toolContentBytes } from "./sources/pages.ts";
-export { AttachedSource } from "./sources/attached.ts";
 export { openSavedSource } from "./sources/saved.ts";
-export { startIpcServer } from "./ipc/server.ts";
 export { exportSchemas, parseSchema, schemaRegistry } from "./contracts/schemas.ts";
 export type {
   AssignmentRef,

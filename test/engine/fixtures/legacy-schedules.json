@@ -1,0 +1,589 @@
+{
+  "description": "Captured from the pre-removal scheduler: active interval with two accepted FIFO assignments.",
+  "definition": "Frozen legacy schedule definition",
+  "run": "legacy-schedules",
+  "grants": {
+    "access": "read",
+    "tools": ["read"],
+    "workspaces": ["shared"],
+    "inheritContext": false,
+    "memory": {
+      "scope": "none",
+      "access": "read"
+    },
+    "delegation": {
+      "maxDepth": 0,
+      "agents": [],
+      "tools": [],
+      "workspaces": []
+    }
+  },
+  "transitions": [
+    {
+      "kind": "schedule_changed",
+      "requestId": "preview",
+      "payloadDigest": "9e956df1f6a779944020c2575f8b28396c454ca5691788387864372c987a40f0",
+      "receipt": {
+        "status": "accepted",
+        "requestId": "preview",
+        "revision": 1,
+        "schedules": [
+          {
+            "id": "daily",
+            "sessionId": "legacy-session",
+            "revision": 1,
+            "trigger": {
+              "kind": "interval",
+              "milliseconds": 1000
+            },
+            "overlap": "queue",
+            "status": "paused",
+            "target": {
+              "worker": "daily-worker"
+            },
+            "task": "Inspect retained work",
+            "template": {
+              "request": {
+                "id": "daily-worker",
+                "agent": "fixture",
+                "task": "Inspect retained work",
+                "after": [],
+                "context": []
+              },
+              "worker": {
+                "id": "daily-worker",
+                "agent": "fixture",
+                "definition": {
+                  "digest": "72da8dd296988804ac7fb994b14013352d2a5f060c4e720e020b78c14f79a3b6",
+                  "size": 33
+                },
+                "fallbacks": [],
+                "tools": ["read"],
+                "access": "read",
+                "workspace": "shared",
+                "backend": "in-process",
+                "lifetime": "attached",
+                "grants": {
+                  "access": "read",
+                  "tools": ["read"],
+                  "workspaces": ["shared"],
+                  "inheritContext": false,
+                  "memory": {
+                    "scope": "none",
+                    "access": "read"
+                  },
+                  "delegation": {
+                    "maxDepth": 0,
+                    "agents": [],
+                    "tools": [],
+                    "workspaces": []
+                  }
+                },
+                "depth": 0
+              }
+            },
+            "nextAt": "2026-11-08T00:00:01.000Z",
+            "occurrences": {}
+          }
+        ],
+        "assignments": [],
+        "resolved": []
+      },
+      "action": "create",
+      "schedule": {
+        "id": "daily",
+        "sessionId": "legacy-session",
+        "revision": 1,
+        "trigger": {
+          "kind": "interval",
+          "milliseconds": 1000
+        },
+        "overlap": "queue",
+        "status": "paused",
+        "target": {
+          "worker": "daily-worker"
+        },
+        "task": "Inspect retained work",
+        "template": {
+          "request": {
+            "id": "daily-worker",
+            "agent": "fixture",
+            "task": "Inspect retained work",
+            "after": [],
+            "context": []
+          },
+          "worker": {
+            "id": "daily-worker",
+            "agent": "fixture",
+            "definition": {
+              "digest": "72da8dd296988804ac7fb994b14013352d2a5f060c4e720e020b78c14f79a3b6",
+              "size": 33
+            },
+            "fallbacks": [],
+            "tools": ["read"],
+            "access": "read",
+            "workspace": "shared",
+            "backend": "in-process",
+            "lifetime": "attached",
+            "grants": {
+              "access": "read",
+              "tools": ["read"],
+              "workspaces": ["shared"],
+              "inheritContext": false,
+              "memory": {
+                "scope": "none",
+                "access": "read"
+              },
+              "delegation": {
+                "maxDepth": 0,
+                "agents": [],
+                "tools": [],
+                "workspaces": []
+              }
+            },
+            "depth": 0
+          }
+        },
+        "nextAt": "2026-11-08T00:00:01.000Z",
+        "occurrences": {}
+      }
+    },
+    {
+      "kind": "schedule_changed",
+      "requestId": "resume",
+      "payloadDigest": "816c12aae8041f4f1232d9696ccfeffb945e2a8bc91e0cff3225c22ab91926bf",
+      "receipt": {
+        "status": "accepted",
+        "requestId": "resume",
+        "revision": 2,
+        "schedules": [
+          {
+            "id": "daily",
+            "sessionId": "legacy-session",
+            "revision": 2,
+            "trigger": {
+              "kind": "interval",
+              "milliseconds": 1000
+            },
+            "overlap": "queue",
+            "status": "active",
+            "target": {
+              "worker": "daily-worker"
+            },
+            "task": "Inspect retained work",
+            "template": {
+              "request": {
+                "id": "daily-worker",
+                "agent": "fixture",
+                "task": "Inspect retained work",
+                "after": [],
+                "context": []
+              },
+              "worker": {
+                "id": "daily-worker",
+                "agent": "fixture",
+                "definition": {
+                  "digest": "72da8dd296988804ac7fb994b14013352d2a5f060c4e720e020b78c14f79a3b6",
+                  "size": 33
+                },
+                "fallbacks": [],
+                "tools": ["read"],
+                "access": "read",
+                "workspace": "shared",
+                "backend": "in-process",
+                "lifetime": "attached",
+                "grants": {
+                  "access": "read",
+                  "tools": ["read"],
+                  "workspaces": ["shared"],
+                  "inheritContext": false,
+                  "memory": {
+                    "scope": "none",
+                    "access": "read"
+                  },
+                  "delegation": {
+                    "maxDepth": 0,
+                    "agents": [],
+                    "tools": [],
+                    "workspaces": []
+                  }
+                },
+                "depth": 0
+              }
+            },
+            "nextAt": "2026-11-08T00:00:01.000Z",
+            "activatedAt": "2026-11-08T00:00:00.000Z",
+            "occurrences": {}
+          }
+        ],
+        "assignments": [],
+        "resolved": []
+      },
+      "action": "resume",
+      "schedule": {
+        "id": "daily",
+        "sessionId": "legacy-session",
+        "revision": 2,
+        "trigger": {
+          "kind": "interval",
+          "milliseconds": 1000
+        },
+        "overlap": "queue",
+        "status": "active",
+        "target": {
+          "worker": "daily-worker"
+        },
+        "task": "Inspect retained work",
+        "template": {
+          "request": {
+            "id": "daily-worker",
+            "agent": "fixture",
+            "task": "Inspect retained work",
+            "after": [],
+            "context": []
+          },
+          "worker": {
+            "id": "daily-worker",
+            "agent": "fixture",
+            "definition": {
+              "digest": "72da8dd296988804ac7fb994b14013352d2a5f060c4e720e020b78c14f79a3b6",
+              "size": 33
+            },
+            "fallbacks": [],
+            "tools": ["read"],
+            "access": "read",
+            "workspace": "shared",
+            "backend": "in-process",
+            "lifetime": "attached",
+            "grants": {
+              "access": "read",
+              "tools": ["read"],
+              "workspaces": ["shared"],
+              "inheritContext": false,
+              "memory": {
+                "scope": "none",
+                "access": "read"
+              },
+              "delegation": {
+                "maxDepth": 0,
+                "agents": [],
+                "tools": [],
+                "workspaces": []
+              }
+            },
+            "depth": 0
+          }
+        },
+        "nextAt": "2026-11-08T00:00:01.000Z",
+        "activatedAt": "2026-11-08T00:00:00.000Z",
+        "occurrences": {}
+      }
+    },
+    {
+      "kind": "schedule_occurrence",
+      "requestId": "schedule:daily:2026-11-08T00:00:01.000Z",
+      "payloadDigest": "abc182bc13afb47a4082b68e1ac2711cd8704386876651b1b6232f61f5b0f242",
+      "receipt": {
+        "status": "accepted",
+        "requestId": "schedule:daily:2026-11-08T00:00:01.000Z",
+        "revision": 3,
+        "assignments": [
+          {
+            "run": "legacy-schedules",
+            "worker": "daily-worker",
+            "assignment": 1
+          }
+        ],
+        "resolved": [
+          {
+            "ref": {
+              "run": "legacy-schedules",
+              "worker": "daily-worker",
+              "assignment": 1
+            },
+            "workspace": "shared",
+            "backend": "in-process",
+            "lifetime": "attached",
+            "grants": {
+              "access": "read",
+              "tools": ["read"],
+              "workspaces": ["shared"],
+              "inheritContext": false,
+              "memory": {
+                "scope": "none",
+                "access": "read"
+              },
+              "delegation": {
+                "maxDepth": 0,
+                "agents": [],
+                "tools": [],
+                "workspaces": []
+              }
+            }
+          }
+        ]
+      },
+      "scheduleId": "daily",
+      "occurrence": {
+        "scheduledAt": "2026-11-08T00:00:01.000Z",
+        "status": "accepted",
+        "ref": {
+          "run": "legacy-schedules",
+          "worker": "daily-worker",
+          "assignment": 1
+        }
+      },
+      "nextAt": "2026-11-08T00:00:02.000Z",
+      "acceptance": {
+        "kind": "accepted",
+        "requestId": "schedule:daily:2026-11-08T00:00:01.000Z",
+        "payloadDigest": "abc182bc13afb47a4082b68e1ac2711cd8704386876651b1b6232f61f5b0f242",
+        "receipt": {
+          "status": "accepted",
+          "requestId": "schedule:daily:2026-11-08T00:00:01.000Z",
+          "revision": 3,
+          "assignments": [
+            {
+              "run": "legacy-schedules",
+              "worker": "daily-worker",
+              "assignment": 1
+            }
+          ],
+          "resolved": [
+            {
+              "ref": {
+                "run": "legacy-schedules",
+                "worker": "daily-worker",
+                "assignment": 1
+              },
+              "workspace": "shared",
+              "backend": "in-process",
+              "lifetime": "attached",
+              "grants": {
+                "access": "read",
+                "tools": ["read"],
+                "workspaces": ["shared"],
+                "inheritContext": false,
+                "memory": {
+                  "scope": "none",
+                  "access": "read"
+                },
+                "delegation": {
+                  "maxDepth": 0,
+                  "agents": [],
+                  "tools": [],
+                  "workspaces": []
+                }
+              }
+            }
+          ]
+        },
+        "workers": [
+          {
+            "id": "daily-worker",
+            "agent": "fixture",
+            "definition": {
+              "digest": "72da8dd296988804ac7fb994b14013352d2a5f060c4e720e020b78c14f79a3b6",
+              "size": 33
+            },
+            "fallbacks": [],
+            "tools": ["read"],
+            "access": "read",
+            "workspace": "shared",
+            "backend": "in-process",
+            "lifetime": "attached",
+            "grants": {
+              "access": "read",
+              "tools": ["read"],
+              "workspaces": ["shared"],
+              "inheritContext": false,
+              "memory": {
+                "scope": "none",
+                "access": "read"
+              },
+              "delegation": {
+                "maxDepth": 0,
+                "agents": [],
+                "tools": [],
+                "workspaces": []
+              }
+            },
+            "depth": 0
+          }
+        ],
+        "assignments": [
+          {
+            "ref": {
+              "run": "legacy-schedules",
+              "worker": "daily-worker",
+              "assignment": 1
+            },
+            "sequence": 1,
+            "task": "Inspect retained work",
+            "after": [],
+            "inputs": [],
+            "context": [],
+            "execution": {
+              "phase": "queued"
+            }
+          }
+        ],
+        "messages": [
+          {
+            "id": "schedule:daily:2026-11-08T00:00:01.000Z",
+            "target": {
+              "run": "legacy-schedules",
+              "worker": "daily-worker",
+              "assignment": 1
+            },
+            "sender": "coordinator",
+            "kind": "initial",
+            "text": "Inspect retained work",
+            "state": "recorded",
+            "attempts": []
+          }
+        ]
+      }
+    },
+    {
+      "kind": "schedule_occurrence",
+      "requestId": "schedule:daily:2026-11-08T00:00:02.000Z",
+      "payloadDigest": "a548958606374c52b766474806b582261f85c39a47deb781aae37c5626750ddc",
+      "receipt": {
+        "status": "accepted",
+        "requestId": "schedule:daily:2026-11-08T00:00:02.000Z",
+        "revision": 4,
+        "assignments": [
+          {
+            "run": "legacy-schedules",
+            "worker": "daily-worker",
+            "assignment": 2
+          }
+        ],
+        "resolved": [
+          {
+            "ref": {
+              "run": "legacy-schedules",
+              "worker": "daily-worker",
+              "assignment": 2
+            },
+            "workspace": "shared",
+            "backend": "in-process",
+            "lifetime": "attached",
+            "grants": {
+              "access": "read",
+              "tools": ["read"],
+              "workspaces": ["shared"],
+              "inheritContext": false,
+              "memory": {
+                "scope": "none",
+                "access": "read"
+              },
+              "delegation": {
+                "maxDepth": 0,
+                "agents": [],
+                "tools": [],
+                "workspaces": []
+              }
+            }
+          }
+        ]
+      },
+      "scheduleId": "daily",
+      "occurrence": {
+        "scheduledAt": "2026-11-08T00:00:02.000Z",
+        "status": "accepted",
+        "ref": {
+          "run": "legacy-schedules",
+          "worker": "daily-worker",
+          "assignment": 2
+        }
+      },
+      "nextAt": "2026-11-08T00:00:03.000Z",
+      "acceptance": {
+        "kind": "accepted",
+        "requestId": "schedule:daily:2026-11-08T00:00:02.000Z",
+        "payloadDigest": "a548958606374c52b766474806b582261f85c39a47deb781aae37c5626750ddc",
+        "receipt": {
+          "status": "accepted",
+          "requestId": "schedule:daily:2026-11-08T00:00:02.000Z",
+          "revision": 4,
+          "assignments": [
+            {
+              "run": "legacy-schedules",
+              "worker": "daily-worker",
+              "assignment": 2
+            }
+          ],
+          "resolved": [
+            {
+              "ref": {
+                "run": "legacy-schedules",
+                "worker": "daily-worker",
+                "assignment": 2
+              },
+              "workspace": "shared",
+              "backend": "in-process",
+              "lifetime": "attached",
+              "grants": {
+                "access": "read",
+                "tools": ["read"],
+                "workspaces": ["shared"],
+                "inheritContext": false,
+                "memory": {
+                  "scope": "none",
+                  "access": "read"
+                },
+                "delegation": {
+                  "maxDepth": 0,
+                  "agents": [],
+                  "tools": [],
+                  "workspaces": []
+                }
+              }
+            }
+          ]
+        },
+        "workers": [],
+        "assignments": [
+          {
+            "ref": {
+              "run": "legacy-schedules",
+              "worker": "daily-worker",
+              "assignment": 2
+            },
+            "sequence": 2,
+            "task": "Inspect retained work",
+            "after": [
+              {
+                "run": "legacy-schedules",
+                "worker": "daily-worker",
+                "assignment": 1
+              }
+            ],
+            "inputs": [],
+            "context": [],
+            "execution": {
+              "phase": "queued"
+            }
+          }
+        ],
+        "messages": [
+          {
+            "id": "schedule:daily:2026-11-08T00:00:02.000Z",
+            "target": {
+              "run": "legacy-schedules",
+              "worker": "daily-worker",
+              "assignment": 2
+            },
+            "sender": "coordinator",
+            "kind": "follow_up",
+            "text": "Inspect retained work",
+            "state": "recorded",
+            "attempts": []
+          }
+        ]
+      }
+    }
+  ]
+}

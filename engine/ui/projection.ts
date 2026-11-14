@@ -68,12 +68,6 @@ export function assignmentDetails(state: CoreState, assignment: Assignment): str
           `child of ${worker.parentAssignment.worker}/${worker.parentAssignment.assignment} · depth ${worker.depth}`,
         ]
       : []),
-    ...Object.values(state.schedules)
-      .filter((schedule) => schedule.target.worker === worker.id)
-      .map(
-        (schedule) =>
-          `schedule ${schedule.id}: ${schedule.status} · ${schedule.trigger.kind} · ${schedule.overlap} overlap · next ${schedule.nextAt ?? "none"} · session ${schedule.sessionId}`,
-      ),
     ...(result?.finalizationErrors ?? []),
   ];
 }

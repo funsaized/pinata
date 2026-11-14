@@ -209,26 +209,6 @@ export function renderFleet(router: ScreenRouter, options: FleetOptions): string
         width,
       ),
     );
-  const schedules = Object.values(state.schedules);
-  if (schedules.length)
-    output.push(
-      fit(
-        paint(
-          "muted",
-          "Schedules: " +
-            schedules
-              .map(
-                (schedule) =>
-                  `${displayText(schedule.id)} ${schedule.status}` +
-                  (router.details
-                    ? ` → ${schedule.target.worker} · next ${schedule.nextAt ?? "none"}`
-                    : ""),
-              )
-              .join(" · "),
-        ),
-        width,
-      ),
-    );
   const trackWidth = Math.min(
     Math.max(8, ...nodes.map((node) => node.prefix.length + 5)),
     Math.max(3, Math.floor(width / 5)),

@@ -6,7 +6,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
 import { applicationFixture, FixtureArtifacts, FixtureGit } from "./rewrite-application-fixture.ts";
-import { openCheckoutGate } from "../../engine/workspace/gate.ts";
+import { ApplicationLock } from "../../engine/application/lock.ts";
 import { ApplicationStore } from "../../engine/application/index.ts";
 
 const after = (content: string) => [
@@ -271,7 +271,7 @@ test(
     const recovered = await fixture.reopen();
     await assert.rejects(recovered.reconcile(), /later edits/);
     assert.equal(await readFile(join(fixture.root, "file.txt"), "utf8"), "user-during\n");
-    assert((await (await openCheckoutGate(fixture.root)).inspect()).exclusive);
+    assert(await (await ApplicationLock.open(fixture.root)).inspect());
     await writeFile(join(fixture.root, "file.txt"), "base\n");
     const completed = await recovered.reconcile();
     assert(completed);
@@ -285,7 +285,7 @@ test(
 );
 
 test(
-  "application atomically refuses shared writers and preserves unknown writer exclusion",
+  "application refuses another handoff until its operation lock is released",
   { timeout: 30_000 },
   async (t) => {
     const fixture = await applicationFixture();
@@ -294,19 +294,15 @@ test(
       await rm(fixture.directory, { recursive: true, force: true });
     });
     const snapshot = await fixture.snapshot(1, after("first\n"));
-    const gate = await openCheckoutGate(fixture.root);
-    const writer = await gate.registerWriter({
-      ref: { run: "another-run", worker: "active", assignment: 1 },
-      ownerEpoch: "writer-owner",
+    const gate = await ApplicationLock.open(fixture.root);
+    const lease = await gate.acquire({
+      operationId: "other-handoff",
+      ownerEpoch: "other-owner",
+      purpose: "apply",
     });
-    await assert.rejects(fixture.store.apply({ snapshot }), /writers|exclusive|occupied|activity/i);
+    await assert.rejects(fixture.store.apply({ snapshot }), /owner|handoff/i);
     assert.equal(await readFile(join(fixture.root, "file.txt"), "utf8"), "base\n");
-    await gate.releaseWriter(writer.id, {
-      status: "stopped",
-      ownerEpoch: writer.ownerEpoch,
-      identities: [],
-      evidence: [],
-    });
+    await gate.release(lease);
     assert.equal((await fixture.store.apply({ snapshot })).status, "applied");
   },
 );
@@ -429,8 +425,8 @@ test(
           );
         });
         assert.equal(exitCode, 85);
-        const gate = await openCheckoutGate(fixture.root);
-        const retained = (await gate.inspect()).exclusive;
+        const gate = await ApplicationLock.open(fixture.root);
+        const retained = await gate.inspect();
         assert(retained);
         assert.notEqual(retained.owner.pid, process.pid);
         const recovered = crash.production
@@ -445,7 +441,7 @@ test(
         }
         assert.equal(await readFile(join(fixture.root, "file.txt"), "utf8"), "first\n");
         assert.equal(Object.values((await recovered.inspect()).cursors)[0].ref.assignment, 1);
-        assert.equal((await gate.inspect()).exclusive, undefined);
+        assert.equal(await gate.inspect(), undefined);
         await recovered.close();
       } finally {
         await fixture.store.close();
@@ -456,7 +452,7 @@ test(
 );
 
 test(
-  "unconfirmed application helper cleanup retains cursor and exclusion until explicit proof",
+  "unconfirmed application helper cleanup retains cursor and application lock until explicit proof",
   { timeout: 30_000 },
   async (t) => {
     const fixture = await applicationFixture();
@@ -491,18 +487,18 @@ test(
     const snapshot = await fixture.snapshot(1, after("first\n"));
     await assert.rejects(application.apply({ snapshot }), /cleanup is unconfirmed/);
     assert.deepEqual((await application.inspect()).cursors, {});
-    assert((await (await openCheckoutGate(fixture.root)).inspect()).exclusive);
+    assert(await (await ApplicationLock.open(fixture.root)).inspect());
     await assert.rejects(application.reconcile(), /activity is unconfirmed/);
     stopped = true;
     const receipt = await application.reconcile();
     assert.equal(receipt?.status, "applied");
     assert.equal(Object.values((await application.inspect()).cursors)[0].ref.assignment, 1);
-    assert.equal((await (await openCheckoutGate(fixture.root)).inspect()).exclusive, undefined);
+    assert.equal(await (await ApplicationLock.open(fixture.root)).inspect(), undefined);
   },
 );
 
 test(
-  "production application scopes stop supervised Git helpers before releasing exclusion",
+  "production application scopes stop supervised Git helpers before releasing application lock",
   { timeout: 30_000 },
   async (t) => {
     const fixture = await applicationFixture();
@@ -518,7 +514,7 @@ test(
     const snapshot = await fixture.snapshot(1, after("first\n"));
     const applied = await application.apply({ snapshot });
     assert.equal(applied.status, "applied");
-    assert.equal((await (await openCheckoutGate(fixture.root)).inspect()).exclusive, undefined);
+    assert.equal(await (await ApplicationLock.open(fixture.root)).inspect(), undefined);
     await application.rollback(applied.operationId);
     assert.equal(await readFile(join(fixture.root, "file.txt"), "utf8"), "base\n");
     assert.equal((await application.apply({ snapshot })).status, "applied");

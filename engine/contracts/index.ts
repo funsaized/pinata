@@ -9,7 +9,6 @@ export * from "./digest.ts";
 export * from "./schemas.ts";
 export * from "./backend.ts";
 export * from "./usage.ts";
-export * from "./gate.ts";
 export * from "./workspace.ts";
 export * from "./application.ts";
 export * from "./surface.ts";
@@ -18,8 +17,7 @@ export * from "./context.ts";
 export * from "./memory.ts";
 export * from "./delegation.ts";
 
-export * from "./schedule.ts";
-export * from "./ipc.ts";
 export * from "./pages.ts";
 export * from "./dependencies.ts";
 export * from "./messages.ts";
+export * from "./extension.ts";

@@ -9,20 +9,15 @@ import {
   type Grants,
   type WorkspacePort,
 } from "../../engine/contracts/index.ts";
-import { Runtime } from "../../engine/runtime/index.ts";
+import { Runtime, type NotificationPort } from "../../engine/runtime/index.ts";
 import { bindRuntime } from "../../engine/sources/runtime.ts";
-import { IpcClient } from "../../engine/ipc/client.ts";
-import { startIpcServer } from "../../engine/ipc/server.ts";
-import { IpcNotificationChannel } from "../../engine/ipc/notifications.ts";
-import type { IpcLimits } from "../../engine/ipc/protocol.ts";
 
 export async function surfaceFixture(
   t: TestContext,
   options: {
     execution?: boolean;
     backend?: BackendPort;
-    notifications?: boolean;
-    limits?: Partial<IpcLimits>;
+    notifications?: NotificationPort;
     grants?: Grants;
   } = {},
 ) {
@@ -40,7 +35,6 @@ export async function surfaceFixture(
   };
   const caller: CallerAuthority = { id: "coordinator", kind: "coordinator", run, grants };
   const viewer: CallerAuthority = { ...caller, id: "viewer", kind: "viewer" };
-  const channel = new IpcNotificationChannel();
   const backend: BackendPort = {
     kind: "in-process",
     capabilities: {
@@ -122,7 +116,7 @@ export async function surfaceFixture(
           },
         }
       : {}),
-    ...(options.notifications ? { notifications: channel } : {}),
+    ...(options.notifications ? { notifications: options.notifications } : {}),
     resolveWorkers: async (requests, _caller, artifacts) => {
       const definition = await artifacts.putArtifact(
         Buffer.from("Scripted surface fixture; no model calls"),
@@ -145,29 +139,11 @@ export async function surfaceFixture(
   });
   const control = bindRuntime(runtime, caller);
   const readonly = bindRuntime(runtime, viewer);
-  const server = await startIpcServer({
-    directory,
-    viewer: readonly,
-    control,
-    limits: options.limits,
-    ...(options.notifications ? { notifications: channel } : {}),
-  });
-  const clients: IpcClient[] = [];
-  const connect = async (
-    role: "viewer" | "control" = "control",
-    extra: Omit<Parameters<typeof IpcClient.connect>[0], "directory" | "role"> = {},
-  ) => {
-    const client = await IpcClient.connect({ directory, role, ...extra });
-    clients.push(client);
-    return client;
-  };
   t.after(async () => {
-    for (const client of clients) client.close();
-    await server.close();
     await runtime.close();
     await rm(directory, { recursive: true, force: true });
   });
-  return { directory, workspace, run, runtime, caller, viewer, control, readonly, server, connect };
+  return { directory, workspace, run, runtime, caller, viewer, control, readonly };
 }
 
 export function createRequest(id = "worker", task = "fixture task") {

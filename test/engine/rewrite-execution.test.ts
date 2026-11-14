@@ -1,4 +1,3 @@
-import type { SchedulingOptions } from "../../engine/schedules/index.ts";
 import assert from "node:assert/strict";
 import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -277,7 +276,7 @@ class ScriptedBackend implements BackendPort {
 
 class ScriptedWorkspace implements WorkspacePort {
   readonly directory: string;
-  readonly leases = new Set<string>();
+  readonly resources = new Set<string>();
   readonly prepared: string[] = [];
   readonly captured: string[] = [];
   readonly released: string[] = [];
@@ -296,11 +295,10 @@ class ScriptedWorkspace implements WorkspacePort {
     const key = assignmentKey(request.ref);
     await this.prepareHook?.(request, signal);
     this.prepared.push(key);
-    this.leases.add(key);
+    this.resources.add(key);
     return {
       cwd: this.directory,
       identity: key,
-      lease: { id: key, workspace: this.directory },
       artifacts: [],
     };
   }
@@ -324,7 +322,7 @@ class ScriptedWorkspace implements WorkspacePort {
     assert.equal(request.cleanup.status, "stopped");
     await this.releaseHook?.(request.prepared);
     this.released.push(request.prepared.identity);
-    this.leases.delete(request.prepared.identity);
+    this.resources.delete(request.prepared.identity);
   }
 }
 
@@ -335,7 +333,6 @@ async function world(
     execution?: boolean;
     notifications?: NotificationPort;
     grants?: Grants;
-    scheduling?: SchedulingOptions;
     fault?: FaultHook;
   } = {},
 ) {
@@ -376,7 +373,6 @@ async function world(
     resolveWorkers,
     execution: { backends: { "in-process": backend }, workspace },
     notifications: configuration.notifications,
-    scheduling: configuration.scheduling,
     fault: configuration.fault,
   };
   let runtime = await Runtime.open({
@@ -788,7 +784,7 @@ test(
     fixture.workspace.releaseHook = async (prepared) => {
       if (prepared.identity !== assignmentKey(ref("base"))) return;
       await preparing.promise;
-      throw new Error("Writer release failed after settlement");
+      throw new Error("Workspace release failed after settlement");
     };
     accepted(
       await fixture.runtime.execute(
@@ -823,7 +819,7 @@ test(
     assert.equal(fixture.runtime.diagnostics().length, 1);
     assert.match(
       fixture.runtime.diagnostics()[0].message,
-      /Writer release failed after settlement/,
+      /Workspace release failed after settlement/,
     );
   },
 );
@@ -870,7 +866,7 @@ test(
 );
 
 test(
-  "unconfirmed cleanup retains the writer lease and capacity and blocks explicit continuation",
+  "unconfirmed cleanup retains workspace resources and capacity and blocks explicit continuation",
   { timeout: 10_000 },
   async (t) => {
     const fixture = await world(t);
@@ -907,7 +903,7 @@ test(
     const state = await fixture.status();
     assert.equal(state.assignments[assignmentKey(ref("other"))].execution.phase, "queued");
     assert.equal(fixture.backend.launches.length, 1);
-    assert.equal(fixture.workspace.leases.size, 1);
+    assert.equal(fixture.workspace.resources.size, 1);
     assert.equal(fixture.workspace.released.length, 0);
     const continued = await fixture.runtime.execute(
       {
@@ -1135,12 +1131,11 @@ test(
         Buffer.from("Retained helper cleanup and partial workspace"),
       );
       const identity = assignmentKey(request.ref);
-      fixture.workspace.leases.add(identity);
+      fixture.workspace.resources.add(identity);
       return {
         prepared: {
           cwd: fixture.directory,
           identity,
-          lease: { id: identity, workspace: fixture.directory },
           artifacts: [evidence],
         },
         cleanup: {
@@ -1167,7 +1162,7 @@ test(
     }
     assert(result.artifacts.length > 0);
     await fixture.runtime.close();
-    assert.equal(fixture.workspace.leases.size, 0);
+    assert.equal(fixture.workspace.resources.size, 0);
     const state = await fixture.status();
     assert.equal(state.attempts[attemptId].cleanup?.ownerEpoch, originalEpoch);
   },
@@ -1456,7 +1451,7 @@ for (const [access, workspace] of [
       });
       await fixture.runtime.close();
       assert.deepEqual(fixture.workspace.released, [assignmentKey(ref("base"))]);
-      assert.equal(fixture.workspace.leases.size, 0);
+      assert.equal(fixture.workspace.resources.size, 0);
     });
   }
 }
@@ -1494,8 +1489,8 @@ test(
     assert.equal(audit.launch.brief.dependencies[0].result.summary, result.summary);
     assert.equal(other.stopCount, 0);
     assert.equal(other.outcome, undefined);
-    assert.equal(fixture.workspace.leases.has(assignmentKey(ref("base"))), false);
-    assert.equal(fixture.workspace.leases.has(assignmentKey(ref("other"))), true);
+    assert.equal(fixture.workspace.resources.has(assignmentKey(ref("base"))), false);
+    assert.equal(fixture.workspace.resources.has(assignmentKey(ref("other"))), true);
     assert.equal(fixture.workspace.captured.length, 0);
     await fixture.backend.complete(ref("other"));
     await fixture.backend.complete(ref("audit"));
@@ -1506,7 +1501,7 @@ test(
       ),
     );
     await fixture.runtime.close();
-    assert.equal(fixture.workspace.leases.size, 0);
+    assert.equal(fixture.workspace.resources.size, 0);
   },
 );
 
@@ -1547,7 +1542,7 @@ for (const access of ["read", "write"] as const) {
         false,
       );
       await fixture.runtime.close();
-      assert.equal(fixture.workspace.leases.size, 0);
+      assert.equal(fixture.workspace.resources.size, 0);
     });
   }
 
@@ -1574,9 +1569,8 @@ for (const access of ["read", "write"] as const) {
         identity: assignmentKey(ref("base")),
         cwd: fixture.directory,
         artifacts: [evidence],
-        lease: { id: assignmentKey(ref("base")), workspace: fixture.directory },
       };
-      fixture.workspace.leases.add(prepared.identity);
+      fixture.workspace.resources.add(prepared.identity);
       const outcome: BackendOutcome = {
         reason: "completed",
         summary: "Worker completed before capture interruption",
@@ -1643,7 +1637,7 @@ for (const access of ["read", "write"] as const) {
       if (captureState === "diagnostic")
         assert.deepEqual(result.finalizationErrors, fixture.workspace.captureErrors);
       await fixture.runtime.close();
-      assert.equal(fixture.workspace.leases.size, 0);
+      assert.equal(fixture.workspace.resources.size, 0);
     });
   }
 }
@@ -1724,7 +1718,7 @@ for (const failure of ["checkpoint", "capture"] as const) {
             1,
           );
         await fixture.runtime.close();
-        assert.equal(fixture.workspace.leases.size, 0);
+        assert.equal(fixture.workspace.resources.size, 0);
       }
       await fixture.reopen();
       assert.equal(
@@ -1772,9 +1766,8 @@ test(
       identity: assignmentKey(ref("base")),
       cwd: fixture.directory,
       artifacts: [],
-      lease: { id: assignmentKey(ref("base")), workspace: fixture.directory },
     };
-    fixture.workspace.leases.add(prepared.identity);
+    fixture.workspace.resources.add(prepared.identity);
     const evidence = await store.putArtifact(Buffer.from("durable enrollment"));
     const observation: BackendObservation = { kind: "enrolled", identity, evidence: [evidence] };
     const source = { sourceId: "worker-outbox", ordinal: 0 };
@@ -2105,71 +2098,41 @@ test(
 );
 
 test(
-  "scheduled occurrences use ordinary execution cleanup and saved worker continuation",
+  "coordinator follow-ups use ordinary cleanup and saved worker continuation",
   { timeout: 10_000 },
   async (t) => {
-    let elapsed = 0;
-    const timers = new Set<() => void>();
-    const fixture = await world(t, {
-      scheduling: {
-        sessionId: "execution-session",
+    const fixture = await world(t);
+    accepted(
+      await fixture.runtime.execute(
+        { requestId: "initial", command: { kind: "create", workers: [worker("continued")] } },
         caller,
-        clock: {
-          wall: () => Date.parse("2026-11-08T00:00:00.000Z") + elapsed,
-          monotonic: () => elapsed,
-          timer: (wake) => {
-            timers.add(wake);
-            return { cancel: () => timers.delete(wake) };
-          },
-        },
-      },
-    });
-    const created = await fixture.runtime.execute(
-      {
-        requestId: "schedule-create",
-        command: {
-          kind: "schedule",
-          schedule: {
-            action: "create",
-            id: "inspection",
-            target: { template: worker("scheduled") },
-            trigger: { kind: "interval", milliseconds: 1000 },
-          },
-        },
-      },
-      caller,
+      ),
     );
-    accepted(created);
-    assert.equal(fixture.backend.launches.length, 0);
+    const first = await fixture.backend.waitStarted(ref("continued"));
+    await fixture.backend.complete(ref("continued"));
+    await fixture.runtime.wait({}, caller);
     accepted(
       await fixture.runtime.execute(
         {
-          requestId: "activate",
-          command: { kind: "schedule", schedule: { action: "resume", id: "inspection" } },
+          requestId: "again",
+          command: {
+            kind: "follow_up",
+            worker: "continued",
+            messageId: "again",
+            text: "Inspect again",
+          },
         },
         caller,
       ),
     );
-    elapsed = 1000;
-    await fixture.runtime.scheduleTick();
-    const first = await fixture.backend.waitStarted(ref("scheduled"));
-    await fixture.backend.complete(ref("scheduled"));
-    await fixture.runtime.wait({}, caller);
-    elapsed = 2000;
-    await fixture.runtime.scheduleTick();
-    const second = await fixture.backend.waitStarted(ref("scheduled", 2));
+    const second = await fixture.backend.waitStarted(ref("continued", 2));
     assert(second.launch.continuation);
     assert(second.messages.includes(first.launch.initialMessages[0].id));
     assert.equal(fixture.workspace.released.length, 1);
-    await fixture.backend.complete(ref("scheduled", 2));
+    await fixture.backend.complete(ref("continued", 2));
     await fixture.runtime.wait({}, caller);
-    assert.equal(
-      Object.values((await fixture.status()).schedules.inspection.occurrences).length,
-      2,
-    );
     await fixture.runtime.close();
     assert.equal(fixture.workspace.released.length, 2);
-    assert.equal(timers.size, 0);
   },
 );
 

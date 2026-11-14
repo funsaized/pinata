@@ -72,7 +72,7 @@
     "bench:loopback": "node --expose-gc bench/run.ts --provider loopback",
     "bench:process": "node --expose-gc bench/process.ts",
     "check": "npm run format:check && npm run lint && npm run typecheck",
-    "lint": "oxlint test scripts engine bench arena bin examples/relay/setup.mjs examples/relay/verify.mjs --ignore-pattern=arena/local/**",
+    "lint": "oxlint test scripts engine bench arena bin examples/relay/setup.mjs examples/relay/verify.mjs examples/integrations --ignore-pattern=arena/local/**",
     "typecheck": "tsc -p tsconfig.json",
     "format:check": "oxfmt --check package.json tsconfig.json test scripts .github examples README.md AGENTS.md STYLE.md docs skills prompts engine bench arena bin agents",
     "format": "oxfmt package.json tsconfig.json test scripts .github examples README.md AGENTS.md STYLE.md docs skills prompts engine bench arena bin agents",
@@ -86,7 +86,6 @@
     "docs:lint:agents": "node scripts/vale.mjs --agents"
   },
   "dependencies": {
-    "cron-parser": "5.10.4",
     "zod": "4.6.7"
   },
   "devDependencies": {

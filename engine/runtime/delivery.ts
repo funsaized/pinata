@@ -64,7 +64,12 @@ export class CompletionDelivery {
         notices.push([notificationId, state.outbox[notificationId]]);
       }
       for (const [id, record] of notices) {
-        if (record.state === "delivered" || record.state === "consumed" || this.inFlight.has(id))
+        if (
+          record.acknowledgment ||
+          record.state === "delivered" ||
+          record.state === "consumed" ||
+          this.inFlight.has(id)
+        )
           continue;
         let notice: NotificationNotice;
         if ("messageId" in record) {

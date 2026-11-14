@@ -187,7 +187,12 @@ test(
     await assert.rejects(world.git(prepared.cwd, "show", `${snapshot.tree}:.env.local`));
     assert.equal(await contains(world.artifacts.directory, world.secret), false);
     assert.equal(await readFile(join(world.root, ".env.local"), "utf8"), world.secret);
-    await world.layer.release({ prepared, cleanup: world.cleanup, artifacts: world.artifacts });
+    await world.layer.release({
+      ref: request.ref,
+      prepared,
+      cleanup: world.cleanup,
+      artifacts: world.artifacts,
+    });
     assert(prepared.worktree);
     const application = await ApplicationStore.open({
       destination: world.root,
@@ -224,7 +229,12 @@ test(
     const prepared = await world.layer.prepare(request, noSignal());
     assert.deepEqual(request.worker.grants.tools, ["read"]);
     await assert.rejects(readFile(join(prepared.cwd, "linked")), /ENOENT/);
-    await world.layer.release({ prepared, cleanup: world.cleanup, artifacts: world.artifacts });
+    await world.layer.release({
+      ref: request.ref,
+      prepared,
+      cleanup: world.cleanup,
+      artifacts: world.artifacts,
+    });
     const forged = await world.artifacts.put(
       Buffer.from(
         canonicalJson({ ...selection, files: [{ ...selection.files[0], path: "../outside" }] }),
@@ -260,7 +270,12 @@ test(
       await readFile(join(prepared.cwd, ".env.local"), "utf8"),
       "user won the creation race\n",
     );
-    await layer.release({ prepared, cleanup: world.cleanup, artifacts: world.artifacts });
+    await layer.release({
+      ref: request.ref,
+      prepared,
+      cleanup: world.cleanup,
+      artifacts: world.artifacts,
+    });
     await writeFile(join(world.root, ".env.local"), "new source credential\n");
     await writeFile(join(world.root, ".worktreeinclude"), "node_modules/**\n");
     await rm(join(prepared.cwd, "local/settings.json"));
@@ -276,6 +291,7 @@ test(
     await assert.rejects(readFile(join(continued.cwd, "local/settings.json")), /ENOENT/);
     await assert.rejects(readFile(join(continued.cwd, "node_modules/unused.js")), /ENOENT/);
     await world.layer.release({
+      ref: { ...request.ref, assignment: 2 },
       prepared: continued,
       cleanup: world.cleanup,
       artifacts: world.artifacts,
@@ -302,6 +318,7 @@ test(
     assert.equal(await readFile(join(failure.prepared.cwd, "file.txt"), "utf8"), "base\n");
     await assert.rejects(readFile(join(failure.prepared.cwd, ".env.local")), /ENOENT/);
     await world.layer.release({
+      ref: request.ref,
       prepared: failure.prepared,
       cleanup: failure.cleanup,
       artifacts: world.artifacts,
@@ -360,6 +377,7 @@ for (const boundary of [
       await assert.rejects(readFile(join(plan.destination, "local/settings.json")), /ENOENT/);
       assert.equal(await contains(world.artifacts.directory, world.secret), false);
       await world.layer.release({
+        ref: request.ref,
         prepared: recovered.prepared,
         cleanup: recovered.cleanup,
         artifacts: world.artifacts,

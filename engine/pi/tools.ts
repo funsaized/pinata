@@ -86,7 +86,16 @@ export const coordinatorTools: readonly ToolOperation[] = [
     name: "pinata_run",
     description:
       'Create or extend a run, queue a follow-up, explicitly continue stopped work, change optional capacity, or release a foreground wait. Start with command: {kind: "create", workers: [{id: "worker", agent: "builder", task: "Your assignment"}]}. Put workspace, backend, lifetime and context in each worker entry; optional run configuration belongs in command.config. Omit inheritContext unless parent conversation import is explicitly granted; include needed context in task. Workers use frozen definitions and grants; the coordinator decides testing and acceptance.',
-    schema: z.strictObject({ requestId: identitySchema.optional(), command: z.union(runCommands) }),
+    schema: z.strictObject({
+      requestId: identitySchema.optional(),
+      command: z.union(runCommands),
+      notify: z
+        .enum(["all", "none"])
+        .optional()
+        .describe(
+          "In Pi, report back once all assignments launched by the coordinator have settled. Defaults to all; none leaves results available without an automatic coordinator turn.",
+        ),
+    }),
     request: ({ requestId, command }, callId) => ({
       method: "execute",
       input: { requestId: requestId ?? callId, command },
@@ -105,17 +114,12 @@ export const coordinatorTools: readonly ToolOperation[] = [
   commandTool(
     "pinata_integrate",
     "apply",
-    "Apply the current files of a retained worktree to its frozen destination, using the worker's latest stopped assignment ref. Includes destination exclusion and conflict checks. This does not certify correctness. Inspect the application outcome using its operation ID.",
+    "Apply the current files of a retained worktree to its frozen destination, using the worker's latest stopped assignment ref. Arrange a handoff first: keep the source and affected destination files still. Checks conflicts and serializes application operations, but does not block other writers. This does not certify correctness. Inspect the application outcome using its operation ID.",
   ),
   commandTool(
     "pinata_rollback",
     "rollback",
     "Roll back one journaled application if the destination still matches. Later edits are preserved or reported as conflicts.",
-  ),
-  commandTool(
-    "pinata_schedule",
-    "schedule",
-    "Manage a session-owned one-shot, interval or cron trigger. Occurrences are ordinary assignments; closed sessions cannot fire.",
   ),
   {
     name: "pinata_wait",
@@ -127,7 +131,7 @@ export const coordinatorTools: readonly ToolOperation[] = [
   {
     name: "pinata_status",
     description:
-      "Inspect state, worker messages, exact results, immutable conversation pages, schema discovery, receipts or an application outcome. Use kind: messages with optional since and worker to read retained messages. Tool input schemas are already supplied: no schema query is needed before launching. For discovery use name: pinata.command.v1, or a tool name such as pinata_run; avoid fetching the entire registry. Results are execution observations, not acceptance decisions.",
+      "Inspect state, worker messages, exact results, immutable conversation pages, schema discovery, receipts or an application outcome. Use kind: messages with optional since and worker to read retained messages. Tool input schemas are already supplied: no schema query is needed before launching. For discovery use name: pinata.command.v2, or a tool name such as pinata_run; avoid fetching the entire registry. Results are execution observations, not acceptance decisions.",
     schema: z.strictObject({ query: runtimeQuerySchema.default({ kind: "status" }) }),
     request: ({ query }) => ({ method: "query", input: query }),
   },
@@ -189,6 +193,7 @@ export function registerCoordinatorTools(
   pi: ExtensionAPI,
   source: SourceProvider,
   pageProvider: (context: ExtensionContext) => Promise<ToolPages>,
+  onReply?: (name: string, value: unknown, reply: SurfaceReply, context: ExtensionContext) => void,
 ): void {
   for (const tool of coordinatorTools)
     pi.registerTool({
@@ -270,6 +275,7 @@ export function registerCoordinatorTools(
           await source(context),
           signal,
         );
+        onReply?.(tool.name, value, reply, context);
         const delegation =
           tool.name === "pinata_agents" &&
           reply.status === "ok" &&
