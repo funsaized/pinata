@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.0.4
+
+- Resume Pi coordinators when all watched assignments settle. Persist exact
+  assignment watches, aggregate batch outcomes, suppress results already collected
+  or consumed, and pause automatic returns after coordinator aborts. Use
+  `notify: "none"` to opt out of an automatic return.
+- Add session-scoped `pi.events` RPC for fleet control, queries, cancellable waits,
+  recovery and durable notification acknowledgment. Publish assignment lineage,
+  observed model selection, usage and cleanup events without exposing full prompts.
+- Remove job documents, CLI execution and remote controls, socket attachment and
+  active scheduling. Keep saved-run inspection and inert replay of historical
+  schedule records, accepted assignments and recovery evidence.
+- Replace checkout writer gates with application locks. Coordinators arrange
+  workspace handoffs; apply and rollback retain conflict checks, journals and
+  recovery evidence while ordinary workers remain free to edit.
+- Allow embedded hosts to supply a workspace lifecycle port for environment setup
+  and cleanup. Add host, RPC-client and event-observer integration examples.
+- Preserve accepted receipts and collected results when completion tracking fails.
+  Restore missed RPC completion watches on retry and resume settled work exactly
+  once. Include exact recovery queries when tool output paging fails.
+- Remove Ctrl+Left/Right screen bindings so they remain available for editing
+  words. Update recovery guidance for saved inspection and abandoned owner claims.
+
+Migration: move job `{workers, config}` into a canonical `create` command with a
+durable request ID, submitted through Pi tools, extension RPC or an embedded host.
+Use command schema `pinata.command.v2`. Replace `attach` with `view` and omit
+`--saved` from inspection commands. `AttachedSource`, `startIpcServer`, job/IPC
+schemas and scheduling tools are removed; integrations own external timers and
+transports. Stop older runs and finish pending applications or uncertain helper
+cleanup with their original version before sharing the checkout with 0.0.4.
+Retain historical journals and artifacts. See the README's simplification migration
+and recovery sections for details.
+
 ## 0.0.3
 
 - Hide finished fleet work after confirmed cleanup, with `h` to restore history
