@@ -30,9 +30,8 @@ export type ApplicationHost = {
   assertOwner(): Promise<void>;
 };
 
-// Acceptance is journaled while the run transaction is held. Checkout exclusion,
-// application IO and cancellation run outside it, so unrelated stop/status work
-// remains responsive while an application waits for writers to stop.
+// Acceptance is journaled while the run transaction is held. Application IO
+// and cancellation run outside it so unrelated stop/status work stays responsive.
 export class RuntimeApplications {
   private readonly host: ApplicationHost;
   private readonly port: RuntimeApplicationPort;

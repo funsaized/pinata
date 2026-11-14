@@ -6,7 +6,14 @@ import {
   revisionSchema,
   textSchema,
 } from "./common.ts";
-import { frozenWorkerSchema, triggerSchema, workerRequestSchema } from "./commands.ts";
+import { frozenWorkerSchema, workerRequestSchema } from "./commands.ts";
+
+// Retained-data schemas only. No runtime command can create or activate schedules.
+export const triggerSchema = z.discriminatedUnion("kind", [
+  z.strictObject({ kind: z.literal("at"), at: z.iso.datetime({ offset: true }) }),
+  z.strictObject({ kind: z.literal("interval"), milliseconds: revisionSchema.positive() }),
+  z.strictObject({ kind: z.literal("cron"), expression: textSchema, timezone: textSchema }),
+]);
 
 export const scheduleOccurrenceSchema = z.strictObject({
   scheduledAt: z.iso.datetime(),

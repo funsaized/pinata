@@ -22,10 +22,8 @@ import { activityIndicator } from "../../engine/ui/tree.ts";
 import { fleetWidget, renderScreen } from "../../engine/ui/render.ts";
 import { openViewer } from "../../engine/viewer/main.ts";
 import { installCoordinatorUi } from "../../engine/ui/pi.ts";
-import { AttachedSource } from "../../engine/sources/attached.ts";
 import { openSavedSource } from "../../engine/sources/saved.ts";
 import { runCli } from "../../engine/headless/main.ts";
-import { startIpcServer } from "../../engine/ipc/server.ts";
 import { surfaceFixture } from "./rewrite-surface-fixture.ts";
 import {
   MemoryTerminal,
@@ -238,7 +236,7 @@ test("every palette has readable text, semantic accents and explicit terminal fa
     "warning:care",
   );
   assert(createPaint("one-light")("background", "light surface").includes("\u001b[48;"));
-  assert.throws(() => resolveKeys({ nextScreen: "ctrl+left" }), /distinct/);
+  assert.throws(() => resolveKeys({ nextWorker: "shift+left" }), /distinct/);
   assert.throws(() => resolveKeys({ unknown: "ctrl+a" }), /Unknown/);
 });
 
@@ -856,6 +854,12 @@ test("Pi screens use a full-viewport overlay and preserve parent and worker draf
   const router = await ui.bind(context);
   await events.get("session_start")?.({}, context);
   assert.equal(stripTerminalSequences(statuses.get("pinata.shortcut") ?? ""), "🤖 Shift + ↓");
+  for (const arrow of ["A", "B", "C", "D"])
+    assert.equal(terminalInput?.(`\u001b[1;5${arrow}`), undefined, "Ctrl+arrows stay with Pi");
+  await tick();
+  assert.equal(customOptions.length, 0);
+  assert.equal(router.screen, "main");
+  assert.equal(draft, "parent draft 👩🏽‍💻");
   assert.equal(terminalInput?.("\u001b[1;2A"), undefined, "Shift+Up in Pi must not open the fleet");
   assert.deepEqual(terminalInput?.("\u001b[1;2B"), { consume: true });
   await tick();
@@ -909,54 +913,7 @@ test("Pi screens use a full-viewport overlay and preserve parent and worker draf
   assert.equal(terminalInput, undefined);
 });
 
-test(
-  "a disconnected IPC viewer disables control and reconnects without losing drafts or selection",
-  { timeout: 15_000 },
-  async (t) => {
-    const f = await surfaceFixture(t);
-    await f.runtime.execute(
-      {
-        requestId: "create",
-        command: { kind: "create", workers: [{ id: "worker", agent: "fixture", task: "pending" }] },
-      },
-      f.caller,
-    );
-    const source = await AttachedSource.connect({ directory: f.directory, role: "control" });
-    t.after(() => source.close());
-    const router = new ScreenRouter(source);
-    t.after(() => router.dispose());
-    await router.start();
-    const selected = { run: f.run, worker: "worker", assignment: 1 };
-    router.navigate("conversation", selected);
-    router.setDraft("unsent draft");
-    await f.server.close();
-    await new Promise<void>((done) => {
-      if (!source.capabilities.live) return done();
-      const unsubscribe = source.onConnectionChange((connected) => {
-        if (!connected) {
-          unsubscribe();
-          done();
-        }
-      });
-    });
-    assert.equal(source.capabilities.control, false);
-    assert.match(router.notice, /Connection unavailable/);
-    assert.equal((await router.submit()).status, "error");
-    const server = await startIpcServer({
-      directory: f.directory,
-      viewer: f.readonly,
-      control: f.control,
-    });
-    t.after(() => server.close());
-    await router.reconnect();
-    assert.equal(source.capabilities.live, true);
-    assert.equal(source.capabilities.control, true);
-    assert.deepEqual(router.selected, selected);
-    assert.equal(router.draft, "unsent draft");
-  },
-);
-
-test("accepted visual intent is identical across runtime, IPC and saved views; lean only hides transient observations", async (t) => {
+test("accepted visual intent is identical across runtime and saved views; lean only hides transient observations", async (t) => {
   const f = await surfaceFixture(t);
   await f.runtime.execute(
     {
@@ -969,11 +926,9 @@ test("accepted visual intent is identical across runtime, IPC and saved views; l
     },
     f.caller,
   );
-  const client = await f.connect();
   const saved = await openSavedSource(f.directory);
   const call = { method: "query", input: { kind: "config" } };
   const direct = await f.control.request(call);
-  assert.deepEqual(await client.request(call), direct);
   assert.deepEqual(await saved.request(call), direct);
   const router = new ScreenRouter(saved);
   await router.start();
@@ -1014,14 +969,14 @@ test("accepted visual intent is identical across runtime, IPC and saved views; l
 });
 
 test(
-  "terminal CLI attach opens the shared viewer and exits through the parent-screen key",
+  "terminal CLI view opens the saved viewer and exits through the parent-screen key",
   { timeout: 10_000 },
   async (t) => {
     const f = await surfaceFixture(t);
     const terminal = new MemoryTerminal();
     const controller = new AbortController();
     const errors: string[] = [];
-    const viewing = runCli(["attach", f.directory, "--control"], {
+    const viewing = runCli(["view", f.directory], {
       terminal,
       signal: controller.signal,
       out() {},

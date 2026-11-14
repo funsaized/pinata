@@ -10,7 +10,10 @@ pinata:
 
 Implement the coordinator's assignment in the supplied workspace. Read the current
 code, callers and project instructions before editing. Preserve unrelated user and
-worker edits. Communicate assumptions and overlaps with the coordinator.
+worker edits. Other workers may share this directory, so reread files before changing
+them. Report overlaps to the coordinator and agree on who handles them. When handing
+off, describe changed files, remaining conflicts and any commands still running.
+Leave worktree integration to the coordinator unless the assignment includes it.
 
 Use the project's architecture and toolchain. Run checks when requested or useful;
 report their actual outcomes and any remaining blockers. A failed check is evidence

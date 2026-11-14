@@ -3,7 +3,6 @@ import { readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 import { applicationFixture } from "./rewrite-application-fixture.ts";
-import { openCheckoutGate } from "../../engine/workspace/gate.ts";
 import type { FaultHook } from "../../engine/storage/io.ts";
 
 const ref = { run: "application-fixture", worker: "worker", assignment: 1 };
@@ -70,21 +69,15 @@ test("worktree application and rollback refuse conflicting user edits", async (t
   assert.equal(await readFile(join(f.root, "file.txt"), "utf8"), "later user edit\n");
 });
 
-test("worktree application refuses active source writers and retains their registration", async (t) => {
+test("worktree handoff uses current edits without creating checkout gates", async (t) => {
   const f = await fixture(t);
-  const gate = await openCheckoutGate(f.worktree.path);
-  const writer = await gate.registerWriter({ id: "running", ref, ownerEpoch: "worker-host" });
-  await assert.rejects(f.store.applyWorktree({ ref, worktree: f.worktree }), /registered activity/);
-  assert.equal((await gate.inspect()).writers[0].id, writer.id);
-  assert.equal((await (await openCheckoutGate(f.root)).inspect()).exclusive, undefined);
-  await gate.releaseWriter(writer.id, {
-    status: "stopped",
-    ownerEpoch: writer.ownerEpoch,
-    identities: [],
-    evidence: [],
-  });
-  await writeFile(join(f.worktree.path, "file.txt"), "stopped output\n");
+  await writeFile(join(f.worktree.path, "file.txt"), "handoff output\n");
   assert.equal((await f.store.applyWorktree({ ref, worktree: f.worktree })).status, "applied");
+  assert.equal(await readFile(join(f.root, "file.txt"), "utf8"), "handoff output\n");
+  for (const root of [f.root, f.worktree.path])
+    await assert.rejects(readFile(join(root, ".pinata", "checkout-gate", "manifest.json")), {
+      code: "ENOENT",
+    });
 });
 
 test("worktree identity and frozen destination cannot be substituted", async (t) => {

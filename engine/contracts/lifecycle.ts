@@ -1,4 +1,4 @@
-import { scheduleStateSchema, scheduleOccurrenceSchema } from "./schedule.ts";
+import { scheduleStateSchema, scheduleOccurrenceSchema } from "./legacy-schedule.ts";
 import { workerMessageSchema } from "./messages.ts";
 import { z } from "zod";
 import { worktreeSchema } from "./workspace.ts";
@@ -12,6 +12,7 @@ import {
   grantsSchema,
   identitySchema,
   lifetimeSchema,
+  modelSchema,
   revisionSchema,
   textSchema,
   workspaceSchema,
@@ -175,8 +176,38 @@ export const outboxObservationStateSchema = z.enum([
   "consumed",
   "uncertain",
 ]);
+export const notificationAcknowledgmentSchema = z.strictObject({
+  recipient: identitySchema,
+  revision: revisionSchema.positive(),
+  deliveryState: z.enum(["recorded", "dispatch_intent", "delivered", "consumed", "uncertain"]),
+});
+export const notificationAcknowledgmentRequestSchema = z.strictObject({
+  id: identitySchema,
+  ref: assignmentRefSchema,
+  recipient: identitySchema,
+});
+export const notificationAcknowledgmentReceiptSchema = z.strictObject({
+  id: identitySchema,
+  ref: assignmentRefSchema,
+  acknowledgment: notificationAcknowledgmentSchema,
+});
+export type NotificationAcknowledgmentReceipt = z.infer<
+  typeof notificationAcknowledgmentReceiptSchema
+>;
+
 export const transitionSchema = z.discriminatedUnion("kind", [
+  z.strictObject({
+    kind: z.literal("model_observed"),
+    attemptId: identitySchema,
+    model: modelSchema,
+  }),
   acceptedTransitionSchema,
+  z.strictObject({
+    kind: z.literal("notification_acknowledged"),
+    notificationId: identitySchema,
+    ref: assignmentRefSchema,
+    recipient: identitySchema,
+  }),
   z.strictObject({ kind: z.literal("message_sent"), message: workerMessageSchema }),
   z.strictObject({
     kind: z.literal("schedule_changed"),
@@ -326,6 +357,7 @@ export const effectStateSchema = z.strictObject({
 export type EffectState = z.infer<typeof effectStateSchema>;
 export const attemptStateSchema = z.strictObject({
   attempt: attemptSchema,
+  model: modelSchema.optional(),
   prepared: preparedWorkspaceSchema.optional(),
   capture: workspaceCaptureSchema.optional(),
   identity: backendIdentitySchema.optional(),
@@ -338,6 +370,7 @@ export const attemptStateSchema = z.strictObject({
 });
 export type AttemptState = z.infer<typeof attemptStateSchema>;
 const notificationDeliveryFields = {
+  acknowledgment: notificationAcknowledgmentSchema.optional(),
   state: z.enum(["recorded", "dispatch_intent", "delivered", "consumed", "uncertain"]),
   attempts: z.array(
     z.strictObject({
@@ -487,8 +520,10 @@ export function transitionArtifacts(transition: Transition): z.infer<typeof arti
     case "session_checkpoint":
       artifacts.push(transition.checkpoint.artifact, transition.checkpoint.transcript);
       break;
+    case "notification_acknowledged":
     case "attempt_started":
     case "control_accepted":
+    case "model_observed":
     case "usage_observed":
     case "response_observed":
     case "context_observed":

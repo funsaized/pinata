@@ -27,6 +27,45 @@ async function setup(t: TestContext, source = new UiSource()) {
   return { source, router, terminal, screen };
 }
 
+test("Ctrl+arrows leave fleet and transcript navigation to Shift+arrows", async (t) => {
+  const { router, screen } = await setup(t, new UiSource(uiState(2)));
+  for (const view of ["fleet", "conversation"] as const) {
+    router.navigate(view, ref());
+    router.transcriptFocus = true;
+    for (const arrow of ["A", "B", "C", "D"]) {
+      screen.handleInput(`\u001b[1;5${arrow}`);
+      assert.equal(router.screen, view);
+      assert.deepEqual(router.selected, ref());
+    }
+    screen.handleInput("\u001b[1;2C");
+    assert.equal(router.selected?.worker, "worker-2");
+    screen.handleInput("\u001b[1;2D");
+    assert.equal(router.selected?.worker, "worker-1");
+  }
+  screen.handleInput("\u001b[1;2B");
+  assert.equal(router.screen, "fleet");
+  screen.handleInput("\r");
+  assert.equal(router.screen, "conversation");
+  screen.handleInput("\u001b[1;2A");
+  assert.equal(router.screen, "fleet");
+  screen.handleInput("\u001b[1;2A");
+  assert.equal(router.screen, "main");
+});
+
+test("Ctrl+Left and Ctrl+Right move by word in the conversation composer", async (t) => {
+  const { router, screen } = await setup(t);
+  router.navigate("conversation", ref());
+  screen.handleInput("hello world");
+  screen.handleInput("\u001b[1;5D");
+  screen.handleInput("brave ");
+  assert.equal(router.draft, "hello brave world");
+  screen.handleInput("\u001b[1;5C");
+  screen.handleInput("!");
+  assert.equal(router.draft, "hello brave world!");
+  assert.equal(router.screen, "conversation");
+  assert.equal(router.transcriptFocus, false);
+});
+
 test("responsive footers retain help and back across fleet, message, transcript and saved views", async (t) => {
   const { router, source } = await setup(t);
   for (const control of [true, false]) {

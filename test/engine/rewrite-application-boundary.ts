@@ -3,7 +3,7 @@ import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { TestContext } from "node:test";
 import { applicationFixture } from "./rewrite-application-fixture.ts";
-import { openCheckoutGate } from "../../engine/workspace/gate.ts";
+import { ApplicationLock } from "../../engine/application/lock.ts";
 
 export async function applicationBoundaryRecovery(
   context: TestContext,
@@ -118,7 +118,7 @@ export async function applicationBoundaryRecovery(
         }
         assert.deepEqual(await readFile(join(fixture.repo.gitDirectory, "index")), index, boundary);
         assert.equal(
-          (await (await openCheckoutGate(fixture.root)).inspect()).exclusive,
+          await (await ApplicationLock.open(fixture.root)).inspect(),
           undefined,
           boundary,
         );

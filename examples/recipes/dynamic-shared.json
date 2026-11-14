@@ -1,15 +1,18 @@
 {
-  "schemaVersion": 1,
-  "workers": [
-    {
-      "id": "parser",
-      "agent": "builder",
-      "task": "Implement the parser requested by the coordinator in src/parser.ts. Coordinate interface assumptions, preserve unrelated edits, and report the checks you actually ran."
-    },
-    {
-      "id": "ui",
-      "agent": "builder",
-      "task": "Implement the requested interface using src/parser.ts's agreed contract. Work in the shared checkout, coordinate overlap, and report remaining integration work."
-    }
-  ]
+  "requestId": "example/dynamic-shared",
+  "command": {
+    "kind": "create",
+    "workers": [
+      {
+        "id": "parser",
+        "agent": "builder",
+        "task": "Implement the parser requested by the coordinator in src/parser.ts. Coordinate interface assumptions, preserve unrelated edits, and report the checks you actually ran."
+      },
+      {
+        "id": "ui",
+        "agent": "builder",
+        "task": "Implement the requested interface using src/parser.ts's agreed contract. Work in the shared checkout, coordinate overlap, and report remaining integration work."
+      }
+    ]
+  }
 }

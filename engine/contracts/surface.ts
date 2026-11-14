@@ -6,7 +6,11 @@ import {
   revisionSchema,
   textSchema,
 } from "./common.ts";
-import { commandReceiptSchema } from "./lifecycle.ts";
+import {
+  commandReceiptSchema,
+  notificationAcknowledgmentRequestSchema,
+  notificationAcknowledgmentReceiptSchema,
+} from "./lifecycle.ts";
 import { queryResultSchema, recoveryReceiptSchema, waitResultSchema } from "./runtime.ts";
 
 export const surfaceCapabilitiesSchema = z.strictObject({
@@ -33,6 +37,10 @@ export const surfaceCallSchema = z.discriminatedUnion("method", [
   z.strictObject({ method: z.literal("recover"), input: z.unknown() }),
   z.strictObject({ method: z.literal("deliver_notifications") }),
   z.strictObject({
+    method: z.literal("acknowledge_notification"),
+    input: notificationAcknowledgmentRequestSchema,
+  }),
+  z.strictObject({
     method: z.literal("consume_notification"),
     id: identitySchema,
     checkpoint: artifactRefSchema,
@@ -53,6 +61,10 @@ export const surfaceResultSchema = z.discriminatedUnion("method", [
     result: z.array(notificationDeliverySchema),
   }),
   z.strictObject({ method: z.literal("consume_notification"), result: z.null() }),
+  z.strictObject({
+    method: z.literal("acknowledge_notification"),
+    result: notificationAcknowledgmentReceiptSchema,
+  }),
 ]);
 export type SurfaceResult = z.infer<typeof surfaceResultSchema>;
 export const surfaceErrorSchema = z.union([

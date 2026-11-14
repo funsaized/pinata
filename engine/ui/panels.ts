@@ -70,10 +70,6 @@ export function helpPanel(
       [keys.nextWorker, "Next agent"],
       [keys.previousAssignment, "Previous assignment"],
       [keys.nextAssignment, "Next assignment"],
-      [
-        keys.previousScreen + " / " + keys.nextScreen,
-        "Previous / next screen; Ctrl+Left/Right edit words while composing",
-      ],
       [keys.openFleet, "Open fleet"],
       [keys.parentScreen + " / Esc", "Back; agents keep working"],
       [keys.refresh, "Refresh or reconnect"],
@@ -234,10 +230,7 @@ export function agentActions(router: ScreenRouter): AgentAction[] {
       "cancel",
       "run",
       "Stop entire fleet (this run)",
-      "Stop all active and queued work in this run, including hidden or filtered agents." +
-        (Object.values(router.state.schedules).some((schedule) => schedule.status === "active")
-          ? " Active schedules can still start new work."
-          : ""),
+      "Stop all active and queued work in this run, including hidden or filtered agents.",
     ],
     [
       "background",

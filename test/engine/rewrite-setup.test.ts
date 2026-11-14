@@ -18,7 +18,6 @@ import {
   type WorkspaceRequest,
 } from "../../engine/contracts/index.ts";
 import { WorkspaceLayer } from "../../engine/workspace/index.ts";
-import { openCheckoutGate } from "../../engine/workspace/gate.ts";
 import { resolveSetup } from "../../engine/workspace/setup.ts";
 import { setupEnvironment, setupShell } from "../../engine/workspace/setup-environment.ts";
 import { FixtureArtifacts } from "./rewrite-application-fixture.ts";
@@ -152,7 +151,7 @@ test("setup selection preserves explicit policy and locked-manager detection", a
 });
 
 test(
-  "isolated setup keeps edits, holds writer authority, filters secrets and reuses only the same input key",
+  "isolated setup keeps edits, filters secrets and reuses only the same input key",
   { skip: process.platform === "win32", timeout: 40000 },
   async (t) => {
     const token = "setup-only-secret-" + randomUUID();
@@ -174,22 +173,12 @@ test(
       `writeFileSync('environment.json',JSON.stringify({passed: Boolean(process.env.SETUP_ALLOWED_TOKEN), ambient: Boolean(process.env.SETUP_AMBIENT_TOKEN), root: process.env.PINATA_ROOT, guard: process.env.PINATA_AGENT}));`;
     const world = await fixture(t, script);
     const request = await world.request("worker");
-    let writerHeld = false;
-    const layer = new WorkspaceLayer({
-      root: world.root,
-      storeDirectory: world.storeDirectory,
-      fault: async (point) => {
-        if (point !== "workspace.setup.intent.after") return;
-        const plan = JSON.parse(
-          Buffer.from(await world.artifacts.read(request.worker.workspacePlan!)).toString(),
-        );
-        writerHeld = (await (await openCheckoutGate(plan.destination)).inspect()).writers.some(
-          (lease) => lease.ref.worker === "worker",
-        );
-      },
-    });
+    const layer = new WorkspaceLayer({ root: world.root, storeDirectory: world.storeDirectory });
     const prepared = await layer.prepare(request, noSignal());
-    assert.equal(writerHeld, true);
+    await assert.rejects(
+      readFile(join(prepared.cwd, ".pinata", "checkout-gate", "manifest.json")),
+      { code: "ENOENT" },
+    );
     assert.equal(await readFile(join(prepared.cwd, "file.txt"), "utf8"), "setup changed source\n");
     assert.equal(await readFile(join(world.root, "file.txt"), "utf8"), "original\n");
     assert.deepEqual(JSON.parse(await readFile(join(prepared.cwd, "environment.json"), "utf8")), {
@@ -201,13 +190,19 @@ test(
     assert.equal(await contains(world.storeDirectory, token), false);
     assert.equal(await contains(world.directory, ambient), false);
     assert.equal(await contains(join(world.directory, "artifacts"), token), false);
-    await layer.release({ prepared, cleanup: world.cleanup, artifacts: world.artifacts });
+    await layer.release({
+      ref: request.ref,
+      prepared,
+      cleanup: world.cleanup,
+      artifacts: world.artifacts,
+    });
     const second = await world.layer.prepare(
       { ...request, ref: { ...request.ref, assignment: 2 } },
       noSignal(),
     );
     assert.equal(await readFile(join(second.cwd, "setup-count.txt"), "utf8"), "run\n");
     await world.layer.release({
+      ref: { ...request.ref, assignment: 2 },
       prepared: second,
       cleanup: world.cleanup,
       artifacts: world.artifacts,
@@ -222,6 +217,7 @@ test(
     );
     assert.equal(await readFile(join(third.cwd, "setup-count.txt"), "utf8"), "run\nrun\n");
     await world.layer.release({
+      ref: { ...request.ref, assignment: 3 },
       prepared: third,
       cleanup: world.cleanup,
       artifacts: world.artifacts,
@@ -241,12 +237,19 @@ test(
       const request = await world.request(name, mode, access);
       const prepared = await world.layer.prepare(request, noSignal());
       await assert.rejects(readFile(join(prepared.cwd, "setup-count.txt")), /ENOENT/);
-      await world.layer.release({ prepared, cleanup: world.cleanup, artifacts: world.artifacts });
+      await world.layer.release({
+        ref: request.ref,
+        prepared,
+        cleanup: world.cleanup,
+        artifacts: world.artifacts,
+      });
     }
     const disabled = await fixture(t, counterScript, false);
-    const prepared = await disabled.layer.prepare(await disabled.request("disabled"), noSignal());
+    const disabledRequest = await disabled.request("disabled");
+    const prepared = await disabled.layer.prepare(disabledRequest, noSignal());
     await assert.rejects(readFile(join(prepared.cwd, "setup-count.txt")), /ENOENT/);
     await disabled.layer.release({
+      ref: disabledRequest.ref,
       prepared,
       cleanup: disabled.cleanup,
       artifacts: disabled.artifacts,
@@ -284,6 +287,7 @@ test(
     );
     assert.ok(captured.snapshot);
     await world.layer.release({
+      ref: request.ref,
       prepared: failure.prepared,
       cleanup: failure.cleanup,
       artifacts: world.artifacts,
@@ -381,6 +385,7 @@ for (const boundary of [
             : "completed",
       );
       await replacement.release({
+        ref: request.ref,
         prepared: recovered.prepared,
         cleanup: recovered.cleanup,
         artifacts: world.artifacts,
@@ -392,7 +397,12 @@ for (const boundary of [
       } else {
         const prepared = await replacement.prepare(followup, noSignal());
         assert.equal(await readFile(join(prepared.cwd, "setup-count.txt"), "utf8"), "run\n");
-        await replacement.release({ prepared, cleanup: world.cleanup, artifacts: world.artifacts });
+        await replacement.release({
+          ref: followup.ref,
+          prepared,
+          cleanup: world.cleanup,
+          artifacts: world.artifacts,
+        });
       }
     },
   );
@@ -416,6 +426,7 @@ test(
     assert.match(denied.message, /Explicit setup requires.*bash/);
     await assert.rejects(readFile(join(denied.prepared.cwd, "setup-count.txt")), /ENOENT/);
     await world.layer.release({
+      ref: explicit.ref,
       prepared: denied.prepared,
       cleanup: denied.cleanup,
       artifacts: world.artifacts,
@@ -435,6 +446,11 @@ test(
     );
     assert.ok(evidence.some((value) => value.includes("Detected setup skipped")));
     await assert.rejects(readFile(join(prepared.cwd, "node_modules")), /ENOENT/);
-    await world.layer.release({ prepared, cleanup: world.cleanup, artifacts: world.artifacts });
+    await world.layer.release({
+      ref: detected.ref,
+      prepared,
+      cleanup: world.cleanup,
+      artifacts: world.artifacts,
+    });
   },
 );

@@ -1,4 +1,4 @@
-import { reduceSchedule } from "./schedule.ts";
+import { reduceSchedule } from "./legacy-schedule.ts";
 import { recordMessage } from "./messages.ts";
 import {
   assignmentKey,

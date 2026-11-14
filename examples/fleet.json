@@ -1,0 +1,13 @@
+{
+  "requestId": "example/create",
+  "command": {
+    "kind": "create",
+    "workers": [
+      {
+        "id": "map",
+        "agent": "scout",
+        "task": "Map the entry points, data flow and existing tests for this project. Return concrete file references and unresolved questions. Do not edit files."
+      }
+    ]
+  }
+}

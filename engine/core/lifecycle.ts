@@ -266,6 +266,16 @@ export function reduceLifecycle(
       next.inbox = { ...state.inbox, [transition.messageId]: { ...message, state: "recorded" } };
       return next;
     }
+    case "model_observed": {
+      const entry = attemptState(state, transition.attemptId);
+      if (entry.outcome || !entry.identity)
+        throw new DomainError("conflict", "Model observation is outside an enrolled live attempt");
+      next.attempts = {
+        ...state.attempts,
+        [transition.attemptId]: { ...entry, model: transition.model },
+      };
+      return next;
+    }
     case "usage_observed": {
       const entry = attemptState(state, transition.attemptId);
       if (entry.outcome || !entry.identity)
@@ -313,12 +323,39 @@ export function reduceLifecycle(
       };
       return next;
     }
+    case "notification_acknowledged": {
+      const notice = Object.hasOwn(state.outbox, transition.notificationId)
+        ? state.outbox[transition.notificationId]
+        : undefined;
+      if (
+        !notice ||
+        notice.acknowledgment ||
+        assignmentKey(notice.ref) !== assignmentKey(transition.ref)
+      )
+        throw new DomainError(
+          "conflict",
+          "Notification acknowledgment requires its exact unacknowledged delivery",
+        );
+      next.outbox = {
+        ...state.outbox,
+        [transition.notificationId]: {
+          ...notice,
+          acknowledgment: {
+            recipient: transition.recipient,
+            revision,
+            deliveryState: notice.state,
+          },
+        },
+      };
+      return next;
+    }
     case "outbox_state": {
       if (!Object.hasOwn(state.outbox, transition.notificationId))
         throw new DomainError("conflict", "Outbox observation names an unknown notification");
       const notice = state.outbox[transition.notificationId];
       if (
         notice.state === "consumed" ||
+        (notice.acknowledgment && transition.state === "dispatch_intent") ||
         (notice.state === "recorded" && transition.state !== "dispatch_intent") ||
         (transition.state === "consumed" && !transition.checkpoint)
       )

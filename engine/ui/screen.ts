@@ -151,10 +151,6 @@ export class PinataScreen implements Component, Focusable {
       this.requestRender();
     });
   }
-  private move(screenDirection: number): void {
-    this.router.cycleScreen(screenDirection);
-    if (this.router.screen === "main") this.options.main();
-  }
   handleInput(data: string): void {
     if (!this.alive) return;
     if (this.router.actions) {
@@ -268,8 +264,6 @@ export class PinataScreen implements Component, Focusable {
       this.router.navigate("fleet");
       return;
     }
-    if (matchesKey(data, this.keys.previousScreen)) return this.move(-1);
-    if (matchesKey(data, this.keys.nextScreen)) return this.move(1);
     if (matchesKey(data, this.keys.previousWorker)) return this.router.cycleWorker(-1);
     if (matchesKey(data, this.keys.nextWorker)) return this.router.cycleWorker(1);
     if (matchesKey(data, this.keys.previousAssignment)) return this.router.cycleAssignment(-1);

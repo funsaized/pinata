@@ -8,7 +8,21 @@ import {
   textSchema,
 } from "./common.ts";
 import { gitObjectSchema, repositoryObservationSchema, worktreeSchema } from "./workspace.ts";
-import { exclusiveLeaseSchema } from "./gate.ts";
+import { ownerSchema } from "./owner.ts";
+
+// Retain the persisted shape so completed application journals remain readable.
+// This lease serializes application operations only; workers do not participate.
+export const applicationLeaseSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  kind: z.literal("exclusive"),
+  id: identitySchema,
+  checkout: z.strictObject({ root: textSchema, device: textSchema, inode: textSchema }),
+  owner: ownerSchema,
+  ownerEpoch: identitySchema,
+  operationId: identitySchema,
+  purpose: z.enum(["apply", "rollback", "recovery"]),
+});
+export type ApplicationLease = z.infer<typeof applicationLeaseSchema>;
 
 export const applicationFileSchema = z.strictObject({
   mode: z.enum(["100644", "100755"]),
@@ -54,7 +68,7 @@ export const applicationOperationSchema = z
     changes: z.array(applicationChangeSchema),
     beforeCursors: applicationCursorsSchema,
     afterCursors: applicationCursorsSchema,
-    lease: exclusiveLeaseSchema,
+    lease: applicationLeaseSchema,
   })
   .refine(
     (value) => (value.snapshot ? !value.worktree && !value.tree : !!value.worktree && !!value.tree),

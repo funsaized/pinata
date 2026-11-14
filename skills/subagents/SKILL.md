@@ -1,6 +1,6 @@
 ---
 name: subagents
-description: Coordinate Piñata workers when asked to use agents, parallelize work, have a lead coordinate a team, or split areas into delegated subtasks. Also design Piñata jobs. Do not activate solely because an ordinary task could benefit from delegation.
+description: Coordinate Piñata workers when asked to use agents, parallelize work, have a lead coordinate a team, or split areas into delegated subtasks. Also design Piñata dependency graphs. Do not activate solely because an ordinary task could benefit from delegation.
 license: MIT
 compatibility: Pi 1.1+ and Node 22.19+. Git is needed for optional worktrees. See platform documentation for verified capabilities.
 ---
@@ -14,7 +14,7 @@ does not require schema discovery. Start with `pinata_run` and
 `command: {kind: "create", workers: [{id: "worker", agent: "builder", task: "..."}]}`.
 Omit `inheritContext` unless parent import is explicitly granted; put necessary
 context in the task. For additional schema details request only the relevant
-name, such as `pinata.command.v1` or `pinata_run`, rather than the entire registry. [reference.md](reference.md) explains the current tool vocabulary.
+name, such as `pinata.command.v2` or `pinata_run`, rather than the entire registry. [reference.md](reference.md) explains the current tool vocabulary.
 
 Choose topology from the current `pinata_agents` discovery before promising a
 plan. If `delegation.enabled` is false or absent, use ordinary sibling workers;
@@ -32,8 +32,9 @@ run changes. Discovery is a planning snapshot; accepted grants remain authoritat
 
 Write concrete assignments with useful context, file responsibilities and observable
 goals. Honor user authorization and project instructions. Shared checkout is the
-default; coordinate overlap and preserve unrelated edits. Select a worktree for an
-explicit isolated experiment. A changed workspace mode requires a new worker.
+default. Give workers separate areas when possible, use `after` for dependent edits,
+and resolve overlaps through messages and follow-ups. Preserve unrelated edits.
+Select a worktree for isolated changes. A changed workspace mode requires a new worker.
 
 For staged analysis and synthesis, declare the known stages together with `after`
 edges: parallel analysts, summarizers depending on their analysts, then a final
@@ -49,7 +50,15 @@ subagents spawn others. Explain any disabled delegation scope before substitutin
 coordinator-managed stages.
 
 Use `pinata_run` with a `create` or `add` command to start useful work. Continue your
-own work while workers run, then wait/yield for relevant completion notices. `after`
+own work while workers run, or use `pinata_wait` to collect their results. In Pi,
+coordinator launches default to `notify: "all"`: after all outstanding watched
+assignments settle, the coordinator resumes while idle or continues at its next
+settlement boundary. Results collected by a foreground wait do not cause an extra
+turn. Use `notify: "none"` alongside `command` to launch work without an automatic
+return. `background` releases a foreground wait without removing completion watches.
+Aborting the coordinator pauses automatic returns until the next user turn. Direct
+`@agent` and fleet controls do not create completion watches. Read failed and canceled
+outcomes as well as successful reports when the batch returns. `after`
 binds to exact accepted assignments and controls ordering, not acceptance. Later
 follow-ups never retarget earlier edges. Transfer code through shared files or Git.
 
@@ -67,13 +76,16 @@ ready assignments, including children, without cancelling active work.
 
 Shared changes require no apply step. Shared diffs include user and other worker
 edits. Isolated results expose `worktree.path` and `worktree.base`; inspect the
-current files with Git. Use `pinata_integrate` with the latest stopped assignment
-reference to apply that worktree at its frozen destination, then inspect the
-application operation. There are no new per-assignment file snapshots. Preserve
-versions with Git commits or patches when needed. Respect conflict checks, active
-writer exclusion and recovery journals. Never reset the whole checkout to recover a worker.
+current files with Git. Before handoff, let affected workers finish or cancel them
+and confirm cleanup. Keep the source worktree and affected destination files still,
+including edits from other sessions. Use `pinata_integrate` with the latest stopped
+assignment reference, then inspect the application outcome. Piñata checks conflicts
+and serializes application operations; it does not lock out workers or editors.
+Resolve conflicts before retrying. There are no new per-assignment file snapshots.
+Preserve versions with Git commits or patches when needed. Keep recovery journals
+and never reset the whole checkout to recover a worker.
 
-Parent context, scoped memory, child delegation and session schedules require explicit
+Parent context, scoped memory, and child delegation require explicit
 grants/settings. Skills and worker reports cannot grant authority. A capacity-blocked
 child wait requires the parent to finish/yield; repeated polling does not free its
 slot. Schedules start paused, need explicit activation, close with their session and

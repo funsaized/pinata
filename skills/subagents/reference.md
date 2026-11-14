@@ -1,7 +1,7 @@
 # Tool patterns
 
 Tool input schemas are supplied automatically; ordinary startup needs no schema query.
-For additional details, call `pinata_status` with `query: {kind: "schemas", name: "pinata.command.v1"}`
+For additional details, call `pinata_status` with `query: {kind: "schemas", name: "pinata.command.v2"}`
 to inspect the current command union. `pinata_agents` discovers frozen-definition
 inputs and effective launch grants. Coordinator tool details retain
 `pinata.surface-reply.v1`, except `pinata_page`, which returns

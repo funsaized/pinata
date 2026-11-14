@@ -1,3 +1,4 @@
+// Replay historical schedule receipts and accepted work without a scheduling service.
 import {
   assignmentKey,
   digestValue,

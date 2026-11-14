@@ -20,12 +20,8 @@ import {
   writeSynced,
   type FaultHook,
 } from "../storage/io.ts";
-import {
-  openCheckoutGate,
-  exclusiveLeaseSchema,
-  type CheckoutGate,
-  type ExclusiveLease,
-} from "../workspace/gate.ts";
+import { ApplicationLock } from "./lock.ts";
+import { applicationLeaseSchema, type ApplicationLease } from "../contracts/application.ts";
 import { ApplicationHelpers, type ApplicationHelperOptions } from "./helpers.ts";
 import { applicationArtifacts } from "./artifacts.ts";
 import { repository } from "../workspace/location.ts";
@@ -88,15 +84,15 @@ export class ApplicationStore {
   readonly directory: string;
   private readonly artifacts: ArtifactPort;
   private readonly fault?: FaultHook;
-  private readonly gate: CheckoutGate;
+  private readonly lock: ApplicationLock;
   private readonly helpers: ApplicationHelpers;
-  private lease?: ExclusiveLease;
+  private lease?: ApplicationLease;
   private readonly ownerEpoch = randomUUID();
 
-  private constructor(options: ApplicationOptions, gate: CheckoutGate, directory: string) {
-    this.destination = gate.checkout.root;
+  private constructor(options: ApplicationOptions, lock: ApplicationLock, directory: string) {
+    this.destination = lock.checkout.root;
     this.directory = directory;
-    this.gate = gate;
+    this.lock = lock;
     this.artifacts = applicationArtifacts(directory, options.artifacts, options.fault);
     this.fault = options.fault;
     this.helpers = new ApplicationHelpers({
@@ -110,21 +106,32 @@ export class ApplicationStore {
   }
 
   static async open(options: ApplicationOptions): Promise<ApplicationStore> {
-    const gate = await openCheckoutGate(options.destination);
-    const directory = join(gate.checkout.root, ".pinata", "applications");
+    // Older versions coordinate pending applications through the checkout gate.
+    // Leave those records untouched; finish recovery with that version first.
+    try {
+      await lstat(join(options.destination, ".pinata", "checkout-gate", "exclusive.json"));
+      throw new DomainError(
+        "owner_unconfirmed",
+        "Recover the legacy checkout application with the previous Piñata version before upgrading",
+      );
+    } catch (error) {
+      if (!isMissing(error)) throw error;
+    }
+    const lock = await ApplicationLock.open(options.destination);
+    const directory = join(lock.checkout.root, ".pinata", "applications");
     await ensureDirectory(directory);
     await ensureDirectory(join(directory, "artifacts"));
     await syncDirectory(directory);
-    return new ApplicationStore(options, gate, await realpath(directory));
+    return new ApplicationStore(options, lock, await realpath(directory));
   }
 
   async close(): Promise<CleanupReceipt> {
     return serialize(this.destination, () => this.helpers.close());
   }
 
-  private async release(lease: ExclusiveLease): Promise<void> {
+  private async release(lease: ApplicationLease): Promise<void> {
     await this.helpers.assertStopped(lease);
-    await this.gate.releaseExclusive(lease.id);
+    await this.lock.release(lease);
   }
 
   async inspect(): Promise<ApplicationJournal> {
@@ -163,7 +170,7 @@ export class ApplicationStore {
     let cursors: ApplicationJournal["cursors"] = {};
     const ids = new Set<string>();
     for (const [index, operation] of journal.operations.entries()) {
-      const lease = exclusiveLeaseSchema.parse(operation.lease);
+      const lease = applicationLeaseSchema.parse(operation.lease);
       if (
         ids.has(operation.id) ||
         operation.destination !== this.destination ||
@@ -393,12 +400,9 @@ export class ApplicationStore {
     expected: RepositoryObservation,
     signal?: AbortSignal,
   ): Promise<void> {
-    const held = (await this.gate.inspect()).exclusive;
-    if (!held || !this.lease || digestValue(held) !== digestValue(this.lease))
-      throw new DomainError(
-        "owner_unconfirmed",
-        "Application no longer holds its exact checkout lease",
-      );
+    if (!this.lease)
+      throw new DomainError("owner_unconfirmed", "Application has no operation lock");
+    await this.lock.assert(this.lease);
     const current = await repository(this.destination, await this.helpers.git(), signal);
     if (!current || digestValue(current) !== digestValue(expected))
       throw new DomainError(
@@ -452,7 +456,7 @@ export class ApplicationStore {
   }): Promise<ApplicationReceipt> {
     return serialize(this.destination, async () => {
       const id = request.operationId ?? randomUUID();
-      const lease = await this.gate.acquireExclusive(
+      const lease = await this.lock.acquire(
         { operationId: id, ownerEpoch: this.ownerEpoch, purpose: "apply" },
         request.signal,
       );
@@ -567,7 +571,7 @@ export class ApplicationStore {
   ): Promise<ApplicationReceipt> {
     return serialize(this.destination, async () => {
       const id = request.operationId ?? randomUUID();
-      const lease = await this.gate.acquireExclusive(
+      const lease = await this.lock.acquire(
         { operationId: id, ownerEpoch: this.ownerEpoch, purpose: "apply" },
         request.signal,
       );
@@ -672,7 +676,7 @@ export class ApplicationStore {
   ): Promise<ApplicationReceipt> {
     return serialize(this.destination, async () => {
       const id = options.id ?? randomUUID();
-      const lease = await this.gate.acquireExclusive(
+      const lease = await this.lock.acquire(
         { operationId: id, ownerEpoch: this.ownerEpoch, purpose: "rollback" },
         signal,
       );
@@ -726,11 +730,21 @@ export class ApplicationStore {
     });
   }
 
-  async reconcile(signal?: AbortSignal): Promise<ApplicationReceipt | null> {
+  async reconcile(
+    signal?: AbortSignal,
+    options: { operationIds?: string[] } = {},
+  ): Promise<ApplicationReceipt | null> {
     return serialize(this.destination, async () => {
-      const retained = (await this.gate.inspect()).exclusive;
+      signal?.throwIfAborted();
+      const retained = await this.lock.inspect();
+      if (retained && options.operationIds && !options.operationIds.includes(retained.operationId))
+        throw new DomainError(
+          "owner_unconfirmed",
+          "Another application owns the preparation destination",
+        );
       if (!retained) {
-        const lease = await this.gate.acquireExclusive(
+        await this.lock.recoverOwner();
+        const lease = await this.lock.acquire(
           { operationId: randomUUID(), ownerEpoch: this.ownerEpoch, purpose: "recovery" },
           signal,
         );
@@ -742,7 +756,7 @@ export class ApplicationStore {
           if (operation?.phase === "pending")
             throw new DomainError(
               "owner_unconfirmed",
-              "Pending application lost its checkout exclusion; inspect its journal before reconstruction",
+              "Pending application lost its application lock; inspect its journal before reconstruction",
             );
           await this.projection(journal);
           return operation ? await this.receipt(journal, operation, "already_recorded") : null;
@@ -750,10 +764,10 @@ export class ApplicationStore {
           await this.release(lease);
         }
       }
-      const lease = await this.gate.recoverExclusive(retained);
+      const lease = await this.lock.recover(retained);
       this.lease = lease;
       await this.helpers.recover(lease);
-      // Reread only after recovery owns exclusion. A stale pre-lease read can
+      // Reread only after recovery owns the application lock. A stale read can
       // mistake another process's committed intent for an unpublished operation.
       let journal = await this.readJournal();
       let operation = journal.operations.at(-1);
@@ -767,11 +781,11 @@ export class ApplicationStore {
         await this.projection(journal);
         return null;
       }
-      const recordedLease = exclusiveLeaseSchema.parse(operation.lease);
+      const recordedLease = applicationLeaseSchema.parse(operation.lease);
       if (
         recordedLease.id !== lease.id ||
         recordedLease.ownerEpoch !== lease.ownerEpoch ||
-        digestValue(recordedLease.checkout) !== digestValue(lease.checkout)
+        recordedLease.checkout.root !== lease.checkout.root
       )
         throw new DomainError(
           "owner_unconfirmed",
@@ -813,7 +827,7 @@ export class ApplicationStore {
   private async finish(
     journal: ApplicationJournal,
     operation: ApplicationOperation,
-    lease: ExclusiveLease,
+    lease: ApplicationLease,
     signal?: AbortSignal,
   ): Promise<ApplicationReceipt> {
     await this.assertRepository(operation.repository, signal);

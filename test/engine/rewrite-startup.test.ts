@@ -33,7 +33,7 @@ test(
     ]) {
       const result = await execute(
         process.execPath,
-        [cli, "schema", "pinata.command.v1", "--json"],
+        [cli, "schema", "pinata.command.v2", "--json"],
         { env: environment },
       );
       outputs.push(result.stdout);

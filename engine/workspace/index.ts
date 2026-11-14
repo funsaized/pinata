@@ -30,12 +30,9 @@ import {
   isMissing,
   replaceProjection,
   syncDirectory,
-  StorageError,
   type FaultHook,
 } from "../storage/io.ts";
-import { assertOwnerDead } from "../storage/owner.ts";
 import { captureManifest, readManifest, writeTree } from "./capture.ts";
-import { openCheckoutGate, type CheckoutGate, type WriterLease } from "./gate.ts";
 import { GitCommands, gitLine } from "./git.ts";
 import { WorkspaceOperations } from "./operations.ts";
 import { resolveSetup, setupKey, SetupJournal } from "./setup.ts";
@@ -255,7 +252,6 @@ export class WorkspaceLayer implements WorkspacePort {
         );
     const operations = this.operations(request.ref, request.ownerEpoch, request.artifacts);
     const retained: ArtifactRef[] = [artifact, await operations.initialize(artifact)];
-    let lease: WriterLease | undefined;
     let git: GitCommands | undefined;
     let worktree: Worktree | undefined;
     let helperCleanup: CleanupReceipt = {
@@ -269,13 +265,7 @@ export class WorkspaceLayer implements WorkspacePort {
       identity: digestValue({ plan: artifact, ref: request.ref }),
       artifacts: [...retained],
       ...(worktree ? { worktree } : {}),
-      ...(lease ? { lease: { id: lease.id, workspace: lease.checkout.root } } : {}),
     });
-    const registerWriter = async (root: string): Promise<WriterLease> => {
-      const id = await operations.intendLease(root);
-      const gate = await openCheckoutGate(root);
-      return gate.registerWriter({ id, ref: request.ref, ownerEpoch: request.ownerEpoch }, signal);
-    };
     try {
       if (plan.mode === "worktree") {
         let record: WorkspaceRecord | undefined;
@@ -350,8 +340,6 @@ export class WorkspaceLayer implements WorkspacePort {
             if (!isMissing(error)) throw error;
           }
           const base = await readManifest(plan.base, request.artifacts);
-          const sourceGate = await openCheckoutGate(plan.source);
-          lease = await registerWriter(plan.source);
           git = this.scope(request.artifacts, request.ownerEpoch, request.ref);
           await operations.retainHelper("provision", git);
           const baseTree = await writeTree(plan.source, base, git, request.artifacts, signal);
@@ -411,13 +399,7 @@ export class WorkspaceLayer implements WorkspacePort {
               "owner_unconfirmed",
               "Worktree provisioning helper cleanup is unconfirmed",
             );
-          await sourceGate.releaseWriter(lease.id, helperCleanup);
-          lease = undefined;
           git = undefined;
-          // Git refuses a preexisting .pinata directory at its new worktree path.
-          // Source metadata preparation held its source lease; all project file
-          // writes now happen after destination writer registration.
-          lease = await registerWriter(plan.destination);
           record = { ...record, phase: "materializing" };
           retained.push(await this.saveRecord(request, record));
           await this.materialize(plan.destination, base, request.artifacts, signal);
@@ -509,12 +491,6 @@ export class WorkspaceLayer implements WorkspacePort {
       // Explicit saved inputs use the same journaled application protocol. They
       // never infer acceptance from a predecessor's reported result.
       if (request.inputs.length) {
-        if (lease) {
-          await (
-            await openCheckoutGate(lease.checkout.root)
-          ).releaseWriter(lease.id, helperCleanup);
-          lease = undefined;
-        }
         const application = await ApplicationStore.open({
           destination: plan.destination,
           artifacts: request.artifacts,
@@ -550,8 +526,6 @@ export class WorkspaceLayer implements WorkspacePort {
           }
         }
       }
-      if (!lease && (request.worker.access === "write" || plan.mode === "worktree"))
-        lease = await registerWriter(plan.destination);
       if (plan.mode === "worktree" && request.worker.access === "write") {
         const config = request.worker.config
           ? configSchema.parse(
@@ -712,22 +686,8 @@ export class WorkspaceLayer implements WorkspacePort {
           "owner_unconfirmed",
           "Retained workspace preparation lost its operation evidence",
         );
-      for (const root of new Set([plan.source, plan.destination])) {
-        try {
-          await lstat(join(root, ".pinata", "checkout-gate", "manifest.json"));
-        } catch (error) {
-          if (isMissing(error)) continue;
-          throw error;
-        }
-        const state = await (await openCheckoutGate(root)).inspect();
-        if (state.writers.some((lease) => digestValue(lease.ref) === digestValue(request.ref)))
-          throw new DomainError(
-            "owner_unconfirmed",
-            "Workspace operation evidence is missing while its writer remains",
-          );
-      }
       // The runtime persists prepare intent before invoking this layer. This
-      // record is published before any helper, application or writer is authorized.
+      // record is published before any helper or application is authorized.
       const evidence = await request.artifacts.put(
         Buffer.from(
           canonicalJson({
@@ -789,36 +749,6 @@ export class WorkspaceLayer implements WorkspacePort {
         })),
       );
     }
-    const leases: WriterLease[] = [];
-    for (const intent of record.leases) {
-      if (intent.workspace !== plan.source && intent.workspace !== plan.destination)
-        throw new DomainError(
-          "owner_unconfirmed",
-          "Workspace lease intent addresses another checkout",
-        );
-      try {
-        await lstat(join(intent.workspace, ".pinata", "checkout-gate", "manifest.json"));
-      } catch (error) {
-        if (isMissing(error)) continue;
-        throw error;
-      }
-      const gate = await openCheckoutGate(intent.workspace);
-      const state = await gate.inspect();
-      await this.reconcileDeadMutex(gate, "Recover interrupted workspace preparation");
-      const lease = state.writers.find((entry) => entry.id === intent.id);
-      if (!lease) continue;
-      if (
-        digestValue(lease.ref) !== digestValue(request.ref) ||
-        lease.ownerEpoch !== request.ownerEpoch
-      )
-        throw new DomainError(
-          "owner_unconfirmed",
-          "Workspace writer no longer matches its retained intent",
-        );
-      leases.push(lease);
-    }
-    // Input composition has its own file-operation journal and exclusive lease.
-    // Resume only a retained operation explicitly authorized by this preparation.
     let destinationExists = false;
     try {
       destinationExists = (await lstat(plan.destination)).isDirectory();
@@ -826,56 +756,24 @@ export class WorkspaceLayer implements WorkspacePort {
       if (!isMissing(error)) throw error;
     }
     if (destinationExists && record.inputs.length) {
-      const gate = await openCheckoutGate(plan.destination);
-      const state = await gate.inspect();
-      if (state.exclusive) {
-        if (!record.inputs.includes(state.exclusive.operationId))
+      const application = await ApplicationStore.open({
+        destination: plan.destination,
+        artifacts: request.artifacts,
+      });
+      try {
+        await application.reconcile(signal, { operationIds: record.inputs });
+        retained.push(
+          await request.artifacts.put(Buffer.from(canonicalJson(await application.inspect()))),
+        );
+      } finally {
+        const stopped = await application.close();
+        retained.push(...stopped.evidence);
+        if (stopped.status !== "stopped")
           throw new DomainError(
             "owner_unconfirmed",
-            "Another application owns the preparation destination",
+            "Recovered input application helpers remain unconfirmed",
           );
-        await this.reconcileDeadMutex(gate, "Recover interrupted explicit workspace input");
-        const application = await ApplicationStore.open({
-          destination: plan.destination,
-          artifacts: request.artifacts,
-        });
-        try {
-          await application.reconcile(signal);
-          retained.push(
-            await request.artifacts.put(Buffer.from(canonicalJson(await application.inspect()))),
-          );
-        } finally {
-          const stopped = await application.close();
-          retained.push(...stopped.evidence);
-          if (stopped.status !== "stopped")
-            throw new DomainError(
-              "owner_unconfirmed",
-              "Recovered input application helpers remain unconfirmed",
-            );
-        }
       }
-    }
-    let lease = leases.find((entry) => entry.checkout.root === plan.destination);
-    if (
-      !lease &&
-      destinationExists &&
-      (request.worker.access === "write" || plan.mode === "worktree")
-    ) {
-      const id = await operations.intendLease(plan.destination);
-      lease = await (
-        await openCheckoutGate(plan.destination)
-      ).registerWriter(
-        {
-          id,
-          ref: request.ref,
-          ownerEpoch: request.ownerEpoch,
-        },
-        signal,
-      );
-    }
-    for (const previous of leases) {
-      if (previous.id === lease?.id) continue;
-      await this.releaseLease(previous, cleanup);
     }
     let worktree: Worktree | undefined;
     if (destinationExists && plan.mode === "worktree") {
@@ -912,7 +810,6 @@ export class WorkspaceLayer implements WorkspacePort {
               identity: digestValue({ plan: artifact, ref: request.ref }),
               artifacts: retained,
               ...(worktree ? { worktree } : {}),
-              ...(lease ? { lease: { id: lease.id, workspace: lease.checkout.root } } : {}),
             },
           }
         : {}),
@@ -1098,56 +995,20 @@ export class WorkspaceLayer implements WorkspacePort {
       if (stopped.status !== "stopped")
         throw new DomainError(
           "owner_unconfirmed",
-          "Capture helper activity is unconfirmed; writer exclusion remains held",
+          "Capture helper activity is unconfirmed; recover the workspace before continuing",
         );
     }
   }
 
   async release({
-    prepared,
+    ref,
     cleanup,
     artifacts,
   }: Parameters<WorkspacePort["release"]>[0]): Promise<void> {
     if (cleanup.status !== "stopped")
       throw new DomainError("owner_unconfirmed", "Worker cleanup is unconfirmed");
-    if (!prepared.lease) return;
-    const gate = await openCheckoutGate(prepared.lease.workspace);
-    const lease = (await gate.inspect()).writers.find((entry) => entry.id === prepared.lease?.id);
-    if (!lease) return;
-    const capture = await this.operations(lease.ref, lease.ownerEpoch, artifacts).recoverHelpers();
-    if (capture.status === "unconfirmed")
+    const helpers = await this.operations(ref, cleanup.ownerEpoch, artifacts).recoverHelpers();
+    if (helpers.status !== "stopped")
       throw new DomainError("owner_unconfirmed", "Workspace helper cleanup remains unconfirmed");
-    const stopped: CleanupReceipt = {
-      ...cleanup,
-      identities: [...cleanup.identities, ...capture.identities],
-      evidence: [...cleanup.evidence, ...capture.evidence],
-    };
-    await this.releaseLease(lease, stopped);
-  }
-
-  private async releaseLease(lease: WriterLease, stopped: CleanupReceipt): Promise<void> {
-    const gate = await openCheckoutGate(lease.checkout.root);
-    await this.reconcileDeadMutex(gate, "Release a recovered workspace writer");
-    try {
-      await gate.releaseWriter(lease.id, stopped);
-    } catch (error) {
-      if (!(error instanceof Error && "code" in error && error.code === "owner_unconfirmed"))
-        throw error;
-      await gate.reconcileWriter(lease, stopped);
-    }
-  }
-
-  private async reconcileDeadMutex(gate: CheckoutGate, reason: string): Promise<void> {
-    const { mutex } = await gate.inspect();
-    if (!mutex) return;
-    try {
-      assertOwnerDead(mutex);
-    } catch (error) {
-      // Normal gate mutations wait for live owners and reject unconfirmed ones.
-      // Observing their short-lived mutex does not authorize reconciliation.
-      if (error instanceof StorageError && error.code === "owner_unconfirmed") return;
-      throw error;
-    }
-    await gate.reconcileMutex(mutex, reason);
   }
 }

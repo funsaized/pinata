@@ -3,8 +3,6 @@ import type { KeyId, KeybindingsManager } from "@earendil-works/pi-tui";
 const defaults = {
   openFleet: "shift+down",
   parentScreen: "shift+up",
-  previousScreen: "ctrl+left",
-  nextScreen: "ctrl+right",
   previousWorker: "shift+left",
   nextWorker: "shift+right",
   previousAssignment: "alt+left",

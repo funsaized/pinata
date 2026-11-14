@@ -82,10 +82,17 @@ test(
   { timeout: 20_000 },
   async (t) => {
     const scripted = heldBackend();
+    const delivered: import("../../engine/runtime/index.ts").NotificationNotice[] = [];
     const world = await surfaceFixture(t, {
       execution: true,
       backend: scripted.backend,
-      notifications: true,
+      notifications: {
+        deduplicates: true,
+        deliver: async (notice) => {
+          delivered.push(notice);
+          return { status: "delivered" };
+        },
+      },
     });
     const ref = (worker: string) => ({ run: world.run, worker, assignment: 1 });
     const receipt = await world.runtime.execute(
@@ -149,26 +156,19 @@ test(
       port.send({ messageId: "aborted", text: "No delivery" }, controller.signal),
     );
 
-    const delivered: string[] = [];
-    const client = await world.connect("control", {
-      notifications: {
-        deduplicates: true,
-        async receive(notice) {
-          assert("kind" in notice && notice.kind === "message");
-          assert.equal(notice.text, request.text);
-          assert.deepEqual(notice.ref, ref("sender"));
-          delivered.push(notice.id);
-          return { status: "delivered" };
-        },
-      },
-    });
-    assert.equal((await client.request({ method: "deliver_notifications" })).status, "ok");
-    assert.deepEqual(delivered, [first.id]);
+    assert.equal((await world.control.request({ method: "deliver_notifications" })).status, "ok");
+    assert.equal(delivered.length, 1);
+    const notice = delivered[0];
+    assert("kind" in notice && notice.kind === "message");
+    assert.equal(notice.id, first.id);
+    assert.equal(notice.text, request.text);
+    assert.deepEqual(notice.ref, ref("sender"));
     const checkpoint = await processArtifacts(world.directory).put(
       Buffer.from("Coordinator read the message"),
     );
     assert.equal(
-      (await client.request({ method: "consume_notification", id: first.id, checkpoint })).status,
+      (await world.control.request({ method: "consume_notification", id: first.id, checkpoint }))
+        .status,
       "ok",
     );
     assert.equal(world.control.snapshot().snapshot.outbox[first.id].state, "consumed");

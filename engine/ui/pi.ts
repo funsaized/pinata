@@ -317,13 +317,8 @@ export function installCoordinatorUi(
     terminalInput = context.ui.onTerminalInput((data) => {
       if (opening) return undefined;
       const keys = resolveKeys(selected?.router.keys ?? {});
-      const fleet = matchesKey(data, keys.openFleet);
-      const next = matchesKey(data, keys.nextScreen);
-      const previous = matchesKey(data, keys.previousScreen);
-      if (!fleet && !next && !previous) return undefined;
-      void api
-        .open(context, fleet || next ? "fleet" : "conversation")
-        .catch((error: unknown) => errors(context, error));
+      if (!matchesKey(data, keys.openFleet)) return undefined;
+      void api.open(context, "fleet").catch((error: unknown) => errors(context, error));
       return { consume: true };
     });
   });
