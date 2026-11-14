@@ -89,7 +89,10 @@ export function createPinataExtension(options: PiExtensionOptions = {}): Extensi
         bus: pi.events,
         sessionId: binding.session,
         source: binding.host.source,
-        onReply: (request, reply) => binding.completion.record("pinata_run", request, reply),
+        onReply: (request, reply) => {
+          binding.completion.record("pinata_run", request, reply);
+          binding.completion.wake();
+        },
         diagnostic: (message) => binding.context.ui.notify(message, "warning"),
       });
       return binding.events;

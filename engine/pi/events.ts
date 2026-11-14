@@ -339,7 +339,7 @@ export async function bindPiEvents(options: {
             options.onReply?.(request, { status: "ok", response: result.response });
           } catch {
             options.diagnostic?.(
-              "Completion watch could not be recorded; retrieve the accepted assignments using their receipt",
+              "Completion tracking could not be updated; retrieve the accepted assignments using their receipt",
             );
           }
         }

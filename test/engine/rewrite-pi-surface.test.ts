@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { setTimeout as delay } from "node:timers/promises";
+import { setImmediate as nextTurn, setTimeout as delay } from "node:timers/promises";
 import test, { type TestContext } from "node:test";
 import {
   fauxAssistantMessage,
@@ -34,6 +34,7 @@ import { readMentionIntent } from "../../engine/pi/mention-input.ts";
 import { openHost, type Host } from "../../engine/host/index.ts";
 import {
   surfaceReplySchema,
+  commandEnvelopeSchema,
   toolPageSchema,
   assignmentKey,
   type AssignmentRef,
@@ -41,7 +42,12 @@ import {
 } from "../../engine/contracts/index.ts";
 import { toolContentBytes } from "../../engine/sources/pages.ts";
 import { MemoryStore } from "../../engine/memory/index.ts";
-import { batchMessageType, CoordinatorCompletion } from "../../engine/pi/completion.ts";
+import {
+  batchMessageType,
+  completionWatchType,
+  CoordinatorCompletion,
+} from "../../engine/pi/completion.ts";
+import { request as extensionRequest } from "../../examples/integrations/rpc-client.ts";
 import { surfaceFixture } from "./rewrite-surface-fixture.ts";
 
 function deferred() {
@@ -796,6 +802,145 @@ test(
         .filter((entry) => entry.type === "custom_message" && entry.customType === batchMessageType)
         .length,
       0,
+    );
+    assert.deepEqual(f.errors, []);
+  },
+);
+
+test("Pi tools preserve accepted receipts and collected results when completion tracking fails", async (t) => {
+  const f = await fixture(t, { coordinatorTools: true });
+  const append = f.manager.appendCustomEntry.bind(f.manager);
+  t.mock.method(f.manager, "appendCustomEntry", (kind: string, data?: unknown) => {
+    if (kind === completionWatchType) throw new Error("Fixture session write failed");
+    return append(kind, data);
+  });
+  const run = f.session.extensionRunner.getToolDefinition("pinata_run");
+  const wait = f.session.extensionRunner.getToolDefinition("pinata_wait");
+  assert(run && wait);
+  const host = f.hosts[0];
+  const launched = await run.execute(
+    "retained-launch",
+    { command: { kind: "create", workers: [{ id: "worker", agent: "scout", task: "Work" }] } },
+    t.signal,
+    undefined,
+    f.session.extensionRunner.createToolContext("retained-launch", undefined),
+  );
+  const accepted = surfaceReplySchema.parse(launched.details);
+  assert(accepted.status === "ok" && accepted.response.method === "execute");
+  assert.equal(accepted.response.result.status, "accepted");
+  const receipt = await host.runtime.query(
+    { kind: "receipt", requestId: "retained-launch" },
+    host.caller,
+  );
+  assert(receipt.kind === "receipt");
+  assert.deepEqual(accepted.response.result, receipt.receipt);
+  const collected = await wait.execute(
+    "retained-wait",
+    { targets: accepted.response.result.assignments },
+    t.signal,
+    undefined,
+    f.session.extensionRunner.createToolContext("retained-wait", undefined),
+  );
+  const waited = surfaceReplySchema.parse(collected.details);
+  assert(waited.status === "ok" && waited.response.method === "wait");
+  assert.equal(waited.response.result.status, "settled");
+  assert.deepEqual(
+    waited.response.result.results.map((result) => result.ref),
+    accepted.response.result.assignments,
+  );
+  for (const output of [launched, collected]) {
+    assert.equal(output.isError, undefined);
+    const content = output.content.flatMap((part) => (part.type === "text" ? [part.text] : []));
+    assert.deepEqual(JSON.parse(content[0]), output.details);
+  }
+  assert.equal(
+    f.notices.filter((notice) => /Completion tracking could not be updated/.test(notice)).length,
+    2,
+  );
+  assert.equal(Object.keys(host.source.snapshot().snapshot.assignments).length, 1);
+  assert.deepEqual(f.errors, []);
+});
+
+test(
+  "RPC retries restore a missed completion watch and resume settled work exactly once",
+  { timeout: 15_000 },
+  async (t) => {
+    let coordinatorRequests = 0;
+    const f = await fixture(t, {
+      coordinatorTools: true,
+      respond: (context) => {
+        if (getCurrentTools(context.messages).some((tool) => tool.name === "pinata_run")) {
+          coordinatorRequests++;
+          assert.match(JSON.stringify(context.messages), /All 1 watched subagent assignments/);
+        }
+        return fauxAssistantMessage("Work completed.");
+      },
+    });
+    const append = f.manager.appendCustomEntry.bind(f.manager);
+    const failedWatch = t.mock.method(
+      f.manager,
+      "appendCustomEntry",
+      (kind: string, data?: unknown) => {
+        if (kind === completionWatchType) throw new Error("Fixture session write failed");
+        return append(kind, data);
+      },
+    );
+    const host = f.hosts[0];
+    const delivered = deferred();
+    const deliver = host.runtime.deliverNotifications.bind(host.runtime);
+    t.mock.method(
+      host.runtime,
+      "deliverNotifications",
+      async (...args: Parameters<typeof deliver>) => {
+        const result = await deliver(...args);
+        if (args[1]?.notificationId) delivered.resolve();
+        return result;
+      },
+    );
+    const spawn = (id: string) =>
+      extensionRequest(
+        f.eventBus,
+        {
+          protocolVersion: 1,
+          id,
+          sessionId: f.manager.getSessionId(),
+          run: host.source.run,
+          operation: "spawn",
+          notify: "all",
+          input: commandEnvelopeSchema.parse({
+            requestId: "recover-watch",
+            command: { kind: "create", workers: [{ id: "worker", agent: "scout", task: "Work" }] },
+          }),
+        },
+        t.signal,
+      );
+    const accepted = await spawn("first-call");
+    assert(accepted.reply.status === "ok" && accepted.reply.response.method === "execute");
+    assert.equal(accepted.reply.response.result.status, "accepted");
+    await host.runtime.wait(
+      { targets: accepted.reply.response.result.assignments },
+      host.caller,
+      t.signal,
+    );
+    await delivered.promise;
+    // Drain the original delivery's wake callback before installing the missing watch.
+    await nextTurn();
+    assert.equal(coordinatorRequests, 0);
+    assert(f.notices.some((notice) => /Completion tracking could not be updated/.test(notice)));
+    failedWatch.mock.restore();
+    assert.deepEqual((await spawn("retry-call")).reply, accepted.reply);
+    await f.session.waitForIdle();
+    assert.equal(coordinatorRequests, 1);
+    assert.deepEqual((await spawn("duplicate-call")).reply, accepted.reply);
+    await f.session.waitForIdle();
+    assert.equal(coordinatorRequests, 1);
+    assert.equal(Object.keys(host.source.snapshot().snapshot.assignments).length, 1);
+    assert.equal(
+      f.manager
+        .getEntries()
+        .filter((entry) => entry.type === "custom_message" && entry.customType === batchMessageType)
+        .length,
+      1,
     );
     assert.deepEqual(f.errors, []);
   },

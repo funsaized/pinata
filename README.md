@@ -1237,10 +1237,12 @@ records with status/events queries; do not delete their journals.
 
 ## Recovery
 
-Start with status, results and conversations for the exact assignment; use `--saved`
-without an owner. Inspect current worktree files with Git; use `changes` for legacy
-snapshots. Shared files, worktrees and previously captured snapshots remain
-inspectable after failure or cancellation.
+Start with `pinata status RUN_DIRECTORY --json`, then inspect exact assignments with
+`pinata result RUN_DIRECTORY WORKER ASSIGNMENT` and
+`pinata conversation RUN_DIRECTORY WORKER ASSIGNMENT`. These commands read saved
+data without an owning runtime. Inspect current worktree files with Git; use
+`pinata changes` for legacy snapshots. Shared files, worktrees and previously
+captured snapshots remain inspectable after failure or cancellation.
 
 Large conversations use immutable chunks and flat manifests that share unchanged
 prefixes. Restoration preserves exact Pi JSONL bytes and branch identities. Native
@@ -1249,17 +1251,19 @@ conversation; continuation pages verify the chunks they read, including after ca
 eviction. Engine state checkpoints remain optional projections: recovery verifies
 journal evidence and recomputes their prefix state before using them.
 
-| Situation                 | Action                                                                     |
-| ------------------------- | -------------------------------------------------------------------------- |
-| Lost live connection      | Reconnect to the existing owner.                                           |
-| Uncertain mutation reply  | Query original `requestId`, then retry the same payload/ID if appropriate. |
-| Uncertain mentioned input | Use displayed `/pinata-retry` in original session/run.                     |
-| Host died                 | Explicitly `serve --directory RUN_DIRECTORY`, then inspect `recover`.      |
-| Stopped work has context  | `continue`; otherwise create a replacement with origin/context.            |
-| Interrupted application   | Query the operation and reconcile journal/owner first.                     |
-| Rollback conflicts        | Preserve later edits and resolve explicitly.                               |
+| Situation                   | Action                                                                                                                         |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| Lost integration connection | Rediscover the Pi session/run through RPC `ping`, then query retained state.                                                   |
+| Uncertain mutation reply    | Query original `requestId`, then retry the same payload/ID if appropriate.                                                     |
+| Uncertain mentioned input   | Use displayed `/pinata-retry` in original session/run.                                                                         |
+| Host died                   | Reconcile any retained run owner as described below, then resume the Pi session or use `openHost({directory: RUN_DIRECTORY})`. |
+| Stopped work has context    | Submit canonical `continue` through `pinata_run`, RPC or the host; otherwise create a replacement with origin/context.         |
+| Interrupted application     | Query the operation and reconcile journal/owner first.                                                                         |
+| Rollback conflicts          | Preserve later edits and resolve explicitly.                                                                                   |
 
-`recover` returns `reattached`, `finalizing`, `active`, `unavailable` or `uncertain`.
+On the owning runtime, use `pinata_recover`, RPC `recover`, or
+`host.runtime.recover({targets}, host.caller)` with exact assignment references.
+Recovery returns `reattached`, `finalizing`, `active`, `unavailable` or `uncertain`.
 It never automatically launches a replacement. Missing sessions remain explicit errors.
 
 Checksum-verified mention envelopes sync to `RUN_DIRECTORY/mention-inputs/` before
@@ -1272,6 +1276,16 @@ needs current proof the selected owner is inactive. Live, remote or uncertain ow
 stay blocked for their matching host. Preserve before and after blobs, journals, worktrees
 and cleanup receipts. Deleting ownership files or resetting the checkout discards
 recovery evidence.
+
+For an abandoned run claim, use the [storage recovery API](engine/storage/index.ts)
+from a matching source checkout; it is not a package export or CLI command. Read
+the claim with `readOwner(directory)` and inspect its host, PID and token. Call
+`reconcileStore({directory, expectedOwnerToken: owner.token, reason})` with that
+inspected identity and a reason describing the recovery. It checks owner liveness
+and retains evidence before releasing the claim. A torn journal tail requires
+explicit `isolateTornTail: true` after inspection. An interrupted reconciliation
+keeps its fence for manual inspection. Once reconciliation succeeds, reopen the
+run and inspect recovery results through the owning runtime.
 
 ### Upgrading from checkout gates
 

@@ -275,7 +275,15 @@ export function registerCoordinatorTools(
           await source(context),
           signal,
         );
-        onReply?.(tool.name, value, reply, context);
+        try {
+          onReply?.(tool.name, value, reply, context);
+        } catch {
+          // Completion tracking cannot revoke an accepted command or collected result.
+          context.ui.notify(
+            "Completion tracking could not be updated; retrieve the accepted assignments using their receipt",
+            "warning",
+          );
+        }
         const delegation =
           tool.name === "pinata_agents" &&
           reply.status === "ok" &&

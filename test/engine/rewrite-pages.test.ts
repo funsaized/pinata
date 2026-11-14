@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   canonicalJson,
+  resultSchema,
+  surfaceReplySchema,
   toolPageSchema,
   type ArtifactPort,
   type ArtifactRef,
@@ -83,7 +85,7 @@ test("tool page cursors cannot select arbitrary evidence, cross hosts or hide ch
   assert.equal(second.text, "x".repeat(Buffer.byteLength(second.text)));
 });
 
-test("paging publication failure preserves a bounded recovery message without implying mutation rejection", async () => {
+test("paging failures provide bounded recovery queries for receipts, results and unknown output", async (t) => {
   const stored = artifacts();
   const pages = new ToolPages({
     artifacts: {
@@ -94,7 +96,7 @@ test("paging publication failure preserves a bounded recovery message without im
     },
     scope: "run-one",
   });
-  const value = {
+  const receipt = {
     status: "accepted",
     requestId: "retain-this-request",
     revision: 1,
@@ -105,17 +107,50 @@ test("paging publication failure preserves a bounded recovery message without im
     })),
     resolved: [],
   };
-  const content = await pages.format(value);
-  assert(Buffer.byteLength(content) <= toolContentBytes);
-  assert.match(content, /original reply remains in tool details/);
-  assert.match(content, /do not repeat a mutation under a new request ID/);
-  assert.match(content, /retain-this-request/);
-  assert.match(content, /display failure, not an execution outcome/);
-  const response = JSON.parse(content);
-  assert(
-    response.error.message.includes(
-      canonicalJson({ query: { kind: "receipt", requestId: value.requestId } }),
-    ),
-  );
-  assert.equal(value.status, "accepted");
+  const result = resultSchema.parse({
+    ref: { run: "run-one", worker: "worker", assignment: 1 },
+    execution: { phase: "ended", reason: "completed", cleanup: "confirmed" },
+    summary: "Retained worker result. ".repeat(4000),
+    artifacts: [],
+    usage: { expectedAttempts: [], observations: [], complete: true },
+  });
+  for (const { name, value, query } of [
+    {
+      name: "receipt",
+      value: receipt,
+      query: { kind: "receipt", requestId: receipt.requestId },
+    },
+    {
+      name: "tool receipt",
+      value: { status: "ok", response: { method: "execute", result: receipt } },
+      query: { kind: "receipt", requestId: receipt.requestId },
+    },
+    {
+      name: "exact result",
+      value: { status: "ok", response: { method: "query", result: { kind: "result", result } } },
+      query: { kind: "result", ref: result.ref },
+    },
+    {
+      name: "oversized request identity",
+      value: { ...receipt, requestId: "r".repeat(toolContentBytes) },
+      query: { kind: "status" },
+    },
+    {
+      name: "unknown output",
+      value: { text: "x".repeat(toolContentBytes) },
+      query: { kind: "status" },
+    },
+  ]) {
+    await t.test(name, async () => {
+      const content = await pages.format(value);
+      assert(Buffer.byteLength(content) <= toolContentBytes);
+      const response = surfaceReplySchema.parse(JSON.parse(content));
+      assert(response.status === "error");
+      assert.equal(response.error.code, "context_unavailable");
+      assert.match(response.error.message, /original reply remains in tool details/);
+      assert.match(response.error.message, /do not repeat a mutation under a new request ID/);
+      assert.match(response.error.message, /display failure, not an execution outcome/);
+      assert(response.error.message.includes(canonicalJson({ query })));
+    });
+  }
 });
