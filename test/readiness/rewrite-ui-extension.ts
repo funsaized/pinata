@@ -50,6 +50,23 @@ export default function rewriteUiCapture(pi: ExtensionAPI): void {
     const call = surfaceCallSchema.parse(input);
     if (call.method !== "query") throw new Error("The UI capture only supports queries");
     const query = runtimeQuerySchema.parse(call.input);
+    if (query.kind === "conversation_preview")
+      return {
+        status: "ok",
+        response: {
+          method: "query",
+          result: {
+            kind: "conversation_preview",
+            ref: query.ref,
+            source: "assignment",
+            complete: true,
+            message: {
+              text: "Retained assistant preview from the offline capture.",
+              truncated: false,
+            },
+          },
+        },
+      };
     if (query.kind !== "conversation") throw new Error("Unexpected capture query");
     const reply = conversationReply(
       query.ref,

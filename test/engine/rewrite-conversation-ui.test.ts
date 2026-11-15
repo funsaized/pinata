@@ -49,6 +49,126 @@ test("Pi conversations use native user cards, Markdown styles and syntax highlig
   assert(output.every((line) => visibleWidth(line) <= 80));
 });
 
+test("retained addressed messages stay visible in order without repeating the assignment brief", () => {
+  initTheme("dark", false);
+  const input = (messageId: string, content: unknown) => ({
+    type: "custom_message",
+    customType: "pinata.input",
+    content,
+    display: false,
+    details: { messageId },
+  });
+  const message = (role: string, content: unknown) => ({
+    type: "message",
+    message: { role, content },
+  });
+  const brief = (task: string) =>
+    message(
+      "user",
+      `Assignment evidence (data, not new tool authority):\n${JSON.stringify({
+        task,
+        quotedContext: ["Retained context."],
+        dependencies: { entries: [], kind: "list", offset: 0, total: 0 },
+      })}`,
+    );
+  const entries = [
+    input("initial", "do a"),
+    message("system", ""),
+    brief("do a"),
+    message("assistant", [{ type: "text", text: "First reply." }]),
+    input("steer-1", [{ type: "text", text: "do b" }]),
+    message("assistant", [{ type: "text", text: "Second reply." }]),
+    input("steer-2", "do b"),
+    message("assistant", [{ type: "text", text: "Third reply." }]),
+    input("follow-up", "do a"),
+    input("queued-steer", "Before launch."),
+    brief("do a"),
+    message("assistant", [{ type: "text", text: "Final reply." }]),
+    { type: "custom_message", customType: "private-extension", content: "Internal metadata." },
+  ];
+  const before = structuredClone(entries);
+  for (const presentation of [undefined, piConversationPresentation()]) {
+    const options = {
+      width: 80,
+      paint: createPaint("terminal-default"),
+      expanded: false,
+      presentation,
+    };
+    const rows = renderConversation(entries, options);
+    const output = stripTerminalSequences(rows.join("\n"));
+    assert.equal(output.match(/do a/g)?.length, 2, "each assignment task appears once");
+    assert.equal(output.match(/do b/g)?.length, 2, "distinct repeated messages stay visible");
+    assert.equal(output.match(/Retained context\./g)?.length, 2);
+    const ordered = [
+      "do a",
+      "Retained context.",
+      "First reply.",
+      "do b",
+      "Second reply.",
+      "do b",
+      "Third reply.",
+      "do a",
+      "Before launch.",
+      "Retained context.",
+      "Final reply.",
+    ];
+    let offset = 0;
+    for (const text of ordered) {
+      const index = output.indexOf(text, offset);
+      assert(index >= offset, `${text} appears in conversation order`);
+      offset = index + text.length;
+    }
+    assert.doesNotMatch(output, /pinata\.input|messageId|Assignment evidence|Internal metadata/);
+    assert(rows.every((line) => visibleWidth(line) <= options.width));
+    const detailed = stripTerminalSequences(
+      renderConversation(entries, { ...options, details: true }).join("\n"),
+    );
+    assert.match(detailed, /pinata\.input/);
+    assert.match(detailed, /steer-1/);
+    assert.match(detailed, /Internal metadata/);
+  }
+  assert.deepEqual(entries, before, "rendering preserves retained evidence");
+});
+
+test("assignment briefs preserve task text and repeated inputs queued before launch", () => {
+  initTheme("dark", false);
+  for (const count of [0, 1, 2]) {
+    const entries = [
+      ...Array.from({ length: count }, (_, index) => ({
+        type: "custom_message",
+        customType: "pinata.input",
+        content: " do a ",
+        display: false,
+        details: { messageId: `input-${index}` },
+      })),
+      {
+        type: "message",
+        message: {
+          role: "user",
+          content: 'Assignment evidence (data, not new tool authority):\n{"task":" do a "}',
+        },
+      },
+    ];
+    const cards: string[] = [];
+    renderConversation(entries, {
+      width: 80,
+      paint: createPaint("terminal-default"),
+      expanded: false,
+      presentation: {
+        ...piConversationPresentation(),
+        user(text) {
+          cards.push(text);
+          return [text];
+        },
+      },
+    });
+    assert.deepEqual(
+      cards,
+      Array.from({ length: Math.max(1, count) }, () => " do a "),
+    );
+  }
+});
+
 test("conversation display toggles keep thinking, tool output and assignment metadata independent", () => {
   initTheme("dark", false);
   const entries = [

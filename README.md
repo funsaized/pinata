@@ -25,11 +25,10 @@ pi install npm:pi-pinata
 [Workflows](#workflows) · [Agents](#custom-agents) · [Configuration](#configuration) ·
 [Tools](#tools) · [CLI](#cli-reference) · [API](#package-api) ·
 [Implementation](#architecture-and-implementation-index) · [Development](#development)
-pinata-navigation.gif
 
-![A live Piñata fleet with nine agents, two levels of delegation, a scout and a queued reviewer.](media/pinata-fleet.png)
+![Piñata fleet with project filters, full-row selection and a prompt and last-message inspector. Scripted demonstration.](media/pinata-fleet.png)
 
-https://github.com/user-attachments/assets/e2c60738-1052-4cf4-beaf-8cfe9f7a5e3a
+[Watch the fleet demo (MP4)](media/pinata-demo.mp4) · [Recording details](media/README.md)
 
 ## Why Piñata
 
@@ -99,8 +98,8 @@ standalone CLI to your shell's `PATH`. From this checkout, use
 
 Piñata targets Linux, macOS and Windows. See [platform prerequisites](#platforms)
 for worker launchers and the Windows compiler requirement. Running workers uses
-provider tokens. Schema discovery, input validation, ordinary tests and offline
-arena controls make no model calls.
+provider tokens. Schema discovery, input validation and ordinary tests make no model
+calls.
 
 Let active work settle or cancel it before removal, then use
 `pi remove npm:pi-pinata` (or the exact registered local path). For the global CLI,
@@ -165,35 +164,49 @@ automatic returns until the next user turn. Closing the session stops wake-ups;
 reopening it restores retained watches. These continuations use the shared engine's
 settled results. Embedded hosts own their notification policy.
 
-![Navigate a live nine-agent fleet with animated activity and two delegation levels: collapse branches, open conversations, switch workers, and search.](media/pinata-navigation.gif)
+![Navigate a scripted project fleet: inspect prompts and messages, filter queued and finished work, and open a worker conversation.](media/pinata-navigation.gif)
 
-The coordinator shows a compact Agents tree while work is active or queued.
-Workers have activity markers, model labels and execution state; real children
-branch beneath their parent. Dependencies appear as `after:` references. Finished
-work disappears from the compact widget and is hidden in the fleet by default.
-Use `h` in the fleet to show finished work and older assignments. Work awaiting
-cleanup stays visible, and active children retain their parent branch for context.
-Results and recovery evidence remain available. `/pinata` opens an idle fleet.
+The coordinator shows a compact Agents tree while work is active or queued. Real
+children branch beneath their parent; dependencies appear as `after:` references.
+Finished work disappears from the widget. `/pinata` opens the full fleet.
+
+The fleet highlights the selected row and shows its last assistant message and
+prompt in an inspector. Wide terminals place the inspector on the right; smaller
+terminals stack it directly below the list. Tab moves focus between panes, page
+keys scroll the focused pane, and the wheel scrolls the pane under the pointer.
+`d` expands the exact prompt, message and execution details. Cleanup problems stay
+visible when details are collapsed. Enter opens the full conversation.
+
+The filter strip counts Unfinished, Working, Queued, Attention and Finished work.
+Working includes preparing, running and stopping; rows keep those exact states.
+Attention includes unresolved cleanup and failed or interrupted assignments that
+are latest for their worker or still have queued dependents. Finished means execution ended
+with confirmed cleanup, not necessarily success or acceptance. Counts apply after
+search and before branch collapse; parents shown only for context do not add to
+counts. `f` cycles filters. `h` selects Finished, including earlier assignments;
+`w` selects Queued. Press the same shortcut again to restore the previous filter
+and selection. Dependencies do not create parent/child branches.
+
+Search with `/`, apply with Enter, cancel with Escape, or clear with Ctrl+U.
+Cancelling restores the previous query and selection. The Observed column measures
+time since this viewer witnessed execution start. A dash means the start is unknown;
+it is not an estimate of total execution time. Model settings live in the inspector.
+
+Last-message previews use retained assistant text for the selected assignment,
+excluding thinking and tool payloads. Reads are bounded and cached by artifact;
+only the visible selection refreshes. Incomplete evidence and disconnected previews
+are labeled. A whole-worker checkpoint is never attributed to a later assignment.
+
+Press `r` for runs in this project. Related Git worktrees share a run list, with
+workspace paths to distinguish them; non-Git folders use their canonical workspace
+root. Matching runs already bound to custom stores also appear. Opening saved
+evidence is read-only and does not acquire ownership or start workers. Each run
+keeps its selection, filters and drafts. Fleet controls target only the selected run,
+including its hidden assignments.
 
 Fleet and conversation screens fill the terminal. Pi renders user cards, Markdown,
 syntax highlighting and tool output using its theme. Completion cards show
 "Subagent result" with the worker, outcome, summary and conversation command.
-Backend and context metadata remain available through the details control.
-
-The fleet keeps the animated tree, with one aligned row per assignment and status
-near the agent name. The animation travels along active branches; reduced and off
-motion settings keep the branches still.
-Queued stages are visible by default and show what they are waiting for. `w` hides
-other queued stages while keeping the selected agent visible. Search with `/`,
-apply with Enter, cancel with Escape, or clear with Ctrl+U. Cancelling restores the
-previous query and selected agent. Dependency edges do not create parent/child
-branches. Shared model settings appear once;
-mixed models get their own column when there is room. The selected agent's task
-and waiting reason appear in a separate panel, with `d` for execution details.
-Task previews and the selected panel expand to the terminal width. Elapsed time
-appears as a value with a unit, such as `1.7s`, and measures time since this viewer
-witnessed an assignment start. A dash means the start is unknown. It is not an
-estimate of total execution time.
 
 | Input                                             | Action                                                      |
 | ------------------------------------------------- | ----------------------------------------------------------- |
@@ -204,13 +217,15 @@ estimate of total execution time.
 | Alt+Left/Right                                    | Browse earlier/later assignments for that worker.           |
 | Left/Right in the fleet                           | Collapse/expand a child branch.                             |
 | Mouse click/double click                          | Select/open a fleet row.                                    |
-| Mouse wheel, PageUp/PageDown, Alt+PageUp/PageDown | Scroll the selected view.                                   |
+| Mouse wheel, PageUp/PageDown, Alt+PageUp/PageDown | Scroll the focused pane; wheel follows pointer.             |
 | `/` in the fleet                                  | Search workers/tasks; Enter keeps the filter.               |
-| `f` in the fleet                                  | Cycle all/unfinished/failed.                                |
-| `h` in the fleet                                  | Show/hide finished work and assignment history.             |
-| `w` in the fleet                                  | Show/hide waiting and queued work.                          |
+| `f` in the fleet                                  | Cycle the five status filters.                              |
+| `h` in the fleet                                  | Select Finished; press again to restore the previous view.  |
+| `w` in the fleet                                  | Select Queued; press again to restore the previous view.    |
 | `a` in the fleet                                  | Show stop actions for an assignment, agent or entire fleet. |
 | `d` in the fleet                                  | Expand details for the selected assignment.                 |
+| Tab in the fleet                                  | Switch list/inspector focus.                                |
+| `r` in the fleet                                  | Browse runs in the current project.                         |
 | Tab in a conversation                             | Switch composer/transcript focus.                           |
 | Ctrl+O in a conversation                          | Expand/collapse tool output.                                |
 | Ctrl+T in a conversation                          | Show/hide thinking output.                                  |
@@ -534,11 +549,16 @@ outcome is understood. See [recovery](#recovery).
 
 ## Custom agents
 
-| Shipped agent | Tools                           | Purpose                                                 |
-| ------------- | ------------------------------- | ------------------------------------------------------- |
-| `scout`       | `read`, `grep`, `find`, `ls`    | Trace code, data flow and risks.                        |
-| `builder`     | `read`, `write`, `edit`, `bash` | Implement a concrete task and report actual checks.     |
-| `reviewer`    | `read`, `grep`, `find`, `ls`    | Find defects and missing evidence in a supplied change. |
+| Shipped agent | Tools                                | Purpose                                                 |
+| ------------- | ------------------------------------ | ------------------------------------------------------- |
+| `scout`       | `read`, `grep`, `find`, `ls`         | Trace code, data flow and risks.                        |
+| `builder`     | `read`, `write`, `edit`, `bash`      | Implement a concrete task and report actual checks.     |
+| `reviewer`    | `read`, `grep`, `find`, `ls`, `bash` | Find defects and missing evidence in a supplied change. |
+
+The reviewer requests write access because shell execution requires it. Its
+instructions leave source files and commits untouched; this is a behavioral
+instruction, and shell access can mutate files. The coordinator chooses checks and
+decides acceptance.
 
 Save a specialist as `.pi/pinata/agents/api-scout.md`:
 
@@ -949,12 +969,19 @@ Worker requests require `id`, `agent`, `task`. Optional fields: `origin`, `messa
 assignment in the same run. It copies no context or files and adds no dependency;
 supply these explicitly when replacing work.
 
-Queries: `status`, `messages`, `config`, `receipt`, `result`, `events`, `schemas`, `definitions`,
-`conversation`, `changes`, `application`, `wait`. Result/conversation/changes select
-`ref`; receipt selects `requestId`; application selects `operationId`. Conversation
+Queries: `status`, `messages`, `config`, `receipt`, `result`, `events`, `schemas`,
+`definitions`, `conversation`, `conversation_preview`, `changes`, `application`,
+`wait`. Result, conversation, preview and changes select `ref`; receipt selects
+`requestId`; application selects `operationId`. Conversation
 paging uses returned `cursor`; events and messages use `since`. Messages can filter
 by `worker`. Unnamed model-facing schema
 discovery returns an index. Request a named schema or tool for its fields.
+
+`conversation_preview` returns up to 4,096 code points of assistant text, with its
+source and completeness. It searches at most 512 recent entries within 2 MiB of
+retained evidence. A checkpoint fallback reports its source without attributing
+whole-worker history to the selected assignment. Full conversation queries retain
+their complete evidence checks.
 
 ### Errors and versions
 
@@ -972,16 +999,16 @@ discovery returns an index. Request a named schema or tool for its fields.
 Surface errors also include `internal_error`, `protocol_version`, `unauthenticated`,
 `transport_closed`, `transport_limit`, with an optional field where useful.
 
-| Contract                          | Version/schema                                          |
-| --------------------------------- | ------------------------------------------------------- |
-| Config                            | `1`: `pinata.config.v1`, `pinata.config-layer.v1`.      |
-| Definition                        | `1`: `pinata.definition.v1`.                            |
-| Manifest                          | `1`: `pinata.manifest.v1`.                              |
-| Journal                           | `1`: `pinata.journal.v1`.                               |
-| Event                             | `1`: `pinata.event.v1`.                                 |
-| Extension RPC                     | `1`: `pinata.extension-*.v1`.                           |
-| Application journal               | `1`: `pinata.application-journal.v1`.                   |
-| Commands/workers/results/surfaces | Command/envelope `v2`; other named schemas remain `v1`. |
+| Contract                          | Version/schema                                     |
+| --------------------------------- | -------------------------------------------------- |
+| Config                            | `1`: `pinata.config.v1`, `pinata.config-layer.v1`. |
+| Definition                        | `1`: `pinata.definition.v1`.                       |
+| Manifest                          | `1`: `pinata.manifest.v1`.                         |
+| Journal                           | `1`: `pinata.journal.v1`.                          |
+| Event                             | `1`: `pinata.event.v1`.                            |
+| Extension RPC                     | `1`: `pinata.extension-*.v1`.                      |
+| Application journal               | `1`: `pinata.application-journal.v1`.              |
+| Commands/workers/results/surfaces | All named schemas use `v1`.                        |
 
 Package and data versions are independent; unknown versions fail explicitly.
 JSON Schema describes shape. Canonical validation also checks grants, graph
@@ -1221,8 +1248,8 @@ remote CLI controls and active schedules have been removed. The root exports
 `AttachedSource` and `startIpcServer`, job/IPC schema families and scheduling tools
 are gone. Move `{workers, config}` from a job into a canonical `create` command
 with a durable request ID. Submit it through Pi tools, extension RPC or an embedded
-host. The command and envelope catalogs are now `v2`; extension protocol starts at
-`v1`. Stored manifest, journal and runtime event versions remain `v1`.
+host. All schema families, including commands, envelopes and extension RPC, use
+`v1`. Stored manifest, journal and runtime event versions also use `v1`.
 
 Replace `attach` with `view`; saved inspection no longer needs `--saved`. Replace
 CLI mutation commands with canonical commands on the owning runtime. Integrations
@@ -1410,7 +1437,6 @@ pinata/
 |-- docs/reference/      # Generated schema and tool catalog
 |-- test/engine/         # Contract, runtime and integration regressions
 |-- bench/               # Scripted and loopback overhead measurements
-|-- arena/               # Repeatable coding trials and retained evidence
 |-- scripts/             # Catalog generation, checks and package releases
 `-- .github/workflows/   # CI, npm publishing and package mirror
 ```
@@ -1446,7 +1472,6 @@ node --test test/engine/rewrite-contracts.test.ts
 node --test test/engine/rewrite-child-backends.test.ts
 node test/engine/pi-smoke.ts
 node test/engine/package-smoke.ts
-npm run arena -- --offline
 node scripts/reference.ts --check
 node scripts/public-api.ts --check
 ```
@@ -1576,72 +1601,10 @@ command status identifies the original directory. Match source, lockfile, script
 tools, runtime, hardware, storage and launcher. Compare measurements only when their
 boundaries and coverage match. No Windows latency baseline is accepted.
 
-Before attributing an arena improvement to runtime optimization, matched profiles
-must show overhead accounts for at least 10% of the affected path. Smaller changes
+Before attributing a runtime performance improvement, matched profiles must show
+coordination overhead accounts for at least 10% of the affected path. Smaller changes
 remain local improvements. Retain source closures, raw attempts and the exact
 measurement profile with each result.
-
-</details>
-
-### Coding arena
-
-The arena runs repeatable assignments with independent oracles and complete
-trial evidence. Offline controls copy or mutate known solutions to test the harness:
-
-```sh
-npm run arena -- --offline
-npm run arena -- --offline --task team-board@1 --workflow parallel-review
-node arena/report.ts COMPLETE_BATCH_OR_MATRIX_DIRECTORY
-npm run arena:bootstrap
-npm run arena:doctor
-npm run arena:local -- --agent pinata --preview
-```
-
-The corpus includes Checkout, Reservations, Incidents and Team Board. Task definitions
-freeze prompts, starters, solutions and oracle cases. Changes require a new task version. Bootstrap
-overwrites generated `arena/local/{codex,pi,pinata}.json`. Doctor checks executable
-startup and configuration; preview prints commands and prompts. Neither establishes model
-authentication or availability or spends tokens.
-
-Native and external trials require separate token-spend authorization and
-`--allow-external`, for example `npm run arena:local -- --agent pinata --task
-checkout --allow-external`. Requested `--concurrency N` is an experimental condition
-whose meaning can differ across frameworks.
-
-<details>
-<summary>Evidence, adapters and comparisons</summary>
-
-Batches durably record cell IDs, ordering, conditions, limits and source and task digests
-before launch. Started cells without published results read `interrupted_unknown`.
-Pending, failed, timed-out and interrupted cells stay in the denominator. An uncertain
-active cell needs explicit reconciliation before retry. Reports preserve all attempts
-at new paths.
-
-Results separate execution, oracle correctness, capabilities, usage and workflow
-attestation. Missing, corrupt or conflicting observations keep totals unknown, including
-missing child records. Outer process supervision does not attest inner planning,
-delegation or review. Native and external workflow comparison eligibility stays false
-until independently attested. A passed oracle establishes only tested candidate
-contracts; it does not establish framework superiority.
-
-Oracles use a separate Node process with filesystem permission flags, fresh IPC,
-no credentials and a trusted score channel. Candidate stdout cannot supply a score.
-These are process guardrails. Use independent isolation for untrusted code;
-network confinement and hostile native-code containment are outside demonstrated coverage.
-
-External configs contain `schemaVersion`, `adapter`, `condition`, optional `limits`,
-validated by [adapter schemas](arena/adapters.ts). Commands run in the candidate
-checkout with an absolute request-file argument. Return one JSON response on stdout;
-Stderr and raw streams remain. Requests disclose no private oracle or reference solution
-paths. The native Piñata adapter loads the extension with ordinary coding tools
-and the shared command API.
-
-Source evidence includes declared harness, runtime and corpus roots, untracked source and
-package and lockfile configuration, excluding credentials and results. External dependency
-coverage stays partial. Candidate snapshots are immutable and timed, with capture cost
-separate. Match task version, starting files, model and settings, prompts, tools, limits,
-host and workflow; record unmatched differences and order. Results remain bound
-to the exact code, task, conditions and observed execution recorded for that trial.
 
 </details>
 

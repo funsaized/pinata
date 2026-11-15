@@ -17,8 +17,13 @@ import {
   type ConversationManifest,
 } from "../storage/conversation.ts";
 import { canonicalJson } from "../contracts/digest.ts";
-import type { ConversationQueryResult, RuntimeQuery } from "../contracts/runtime.ts";
+import type {
+  ConversationPreview,
+  ConversationQueryResult,
+  RuntimeQuery,
+} from "../contracts/runtime.ts";
 import type { CoreState } from "../contracts/lifecycle.ts";
+import { readConversationPreview } from "./preview.ts";
 
 type ConversationRequest = Extract<RuntimeQuery, { kind: "conversation" }>;
 export type ConversationSnapshot = {
@@ -108,9 +113,26 @@ export class ConversationQueries {
   >();
   private cachedBytes = 0;
   private generation = 0;
+  private readonly previews = new Map<string, Promise<ConversationPreview>>();
 
   constructor(artifacts: Pick<ArtifactPort, "read">) {
     this.artifacts = artifacts;
+  }
+
+  async preview(ref: AssignmentRef, snapshot?: ConversationSnapshot): Promise<ConversationPreview> {
+    const key = JSON.stringify([assignmentKey(ref), snapshot]);
+    let pending = this.previews.get(key);
+    if (!pending) {
+      if (this.previews.size >= 32) this.previews.delete(this.previews.keys().next().value ?? "");
+      pending = readConversationPreview(ref, snapshot, this.artifacts);
+      this.previews.set(key, pending);
+    }
+    try {
+      return structuredClone(await pending);
+    } catch (error) {
+      if (this.previews.get(key) === pending) this.previews.delete(key);
+      throw error;
+    }
   }
 
   async query(
@@ -256,6 +278,7 @@ export class ConversationQueries {
     this.snapshots.clear();
     this.loading.clear();
     this.cachedBytes = 0;
+    this.previews.clear();
   }
 
   private encode(cursor: ConversationCursor): string {

@@ -102,7 +102,7 @@ export class UiSource implements RuntimeSource {
   readonly listeners = new Set<(event: RuntimeEvent) => void | Promise<void>>();
   readonly connections = new Set<(connected: boolean) => void>();
   readonly calls: unknown[] = [];
-  respond?: (input: unknown) => Promise<SurfaceReply>;
+  respond?: (input: unknown, signal?: AbortSignal) => Promise<SurfaceReply>;
   constructor(state = uiState()) {
     this.state = state;
     this.run = state.run;
@@ -145,7 +145,7 @@ export class UiSource implements RuntimeSource {
       text,
     });
   }
-  async request(input: unknown): Promise<SurfaceReply> {
+  async request(input: unknown, signal?: AbortSignal): Promise<SurfaceReply> {
     const call = surfaceCallSchema.parse(input);
     if (
       call.method === "query" &&
@@ -159,7 +159,28 @@ export class UiSource implements RuntimeSource {
         response: { method: "query", result: { kind: "config", config: null } },
       };
     this.calls.push(structuredClone(input));
-    if (this.respond) return this.respond(input);
+    if (this.respond) return this.respond(input, signal);
+    if (
+      call.method === "query" &&
+      typeof call.input === "object" &&
+      call.input !== null &&
+      "kind" in call.input &&
+      call.input.kind === "conversation_preview" &&
+      "ref" in call.input
+    )
+      return {
+        status: "ok",
+        response: {
+          method: "query",
+          result: {
+            kind: "conversation_preview",
+            ref: call.input.ref as AssignmentRef,
+            source: "assignment",
+            complete: true,
+            message: { text: "Retained assistant message", truncated: false },
+          },
+        },
+      };
     if (
       call.method === "query" &&
       typeof call.input === "object" &&

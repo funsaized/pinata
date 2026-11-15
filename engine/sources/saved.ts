@@ -52,6 +52,7 @@ export async function openSavedSource(directory: string): Promise<RuntimeSource>
   });
   const source: RuntimeSource = {
     run: state.run,
+    location: { workspace: inspected.manifest.workspace, directory },
     capabilities: {
       live: false,
       control: false,
@@ -111,6 +112,14 @@ export async function openSavedSource(directory: string): Promise<RuntimeSource>
           );
         const query = runtimeQuerySchema.parse(call.input);
         switch (query.kind) {
+          case "conversation_preview":
+            return {
+              status: "ok",
+              response: {
+                method: "query",
+                result: await conversations.preview(query.ref, savedConversation(state, query.ref)),
+              },
+            };
           case "messages":
             return {
               status: "ok",

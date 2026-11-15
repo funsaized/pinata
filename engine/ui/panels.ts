@@ -1,5 +1,5 @@
 import { visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
-import type { Paint } from "./palette.ts";
+import { agentAccent, type Paint } from "./palette.ts";
 import { resolveKeys, resolveConversationKeys, type ConversationKeys } from "./keys.ts";
 import { displayText, fit, padded } from "./text.ts";
 import type { ScreenRouter } from "./router.ts";
@@ -94,19 +94,24 @@ export function helpPanel(
           {
             title: "Fleet",
             rows: [
-              ["↑ / ↓", "Select subagent"],
+              ["↑ / ↓", "Select subagent or scroll the focused inspector"],
+              ["Tab", "Focus list / inspector"],
+              ["r", "Browse runs in this project when available"],
               ["Enter", "Open conversation"],
               ["← / →", "Collapse / expand children"],
               ["/", "Search agent or task; Enter applies, Esc cancels, Ctrl+U clears"],
-              ["f", "Cycle All agents / Unfinished / Failed or interrupted"],
-              ["h", "Show / hide finished work and assignment history"],
-              ["w", "Show / hide waiting and queued work"],
-              ["d", "Expand / collapse selected agent details"],
+              ["f", "Cycle Unfinished / Working / Queued / Attention / Finished"],
+              ["h", "Show finished assignments and history; press again to return"],
+              ["w", "Show queued assignments; press again to return"],
+              ["d", "Expand / collapse the prompt, last message and execution details"],
               ["a", "Stop / manage agents"],
             ],
           },
           stopping,
-          { ...navigation, rows: [["PageUp / PageDown", "Scroll fleet"], ...navigation.rows] },
+          {
+            ...navigation,
+            rows: [["PageUp / PageDown", "Scroll the focused pane"], ...navigation.rows],
+          },
         ]
       : composing
         ? [
@@ -152,7 +157,7 @@ export function helpPanel(
                 ["/worker <id> [n]", "Open an agent's latest or numbered assignment"],
                 ["/assignment <n>", "Open a numbered assignment for this agent"],
                 ["/fleet /main", "Return to the fleet or coordinator"],
-                ["/queued", "Toggle queued work and open the fleet"],
+                ["/queued", "Open the Queued filter; repeat to return"],
                 ["/scroll up|down|N", "Scroll the transcript"],
                 ["/palette <name>", "Change the viewer palette"],
               ],
@@ -269,6 +274,8 @@ export function actionsPanel(
   height: number,
   paint: Paint,
 ): string[] {
+  const worker = router.selected ? router.state.workers[router.selected.worker] : undefined;
+  const color = worker ? (worker.color ?? agentAccent(worker.agent)) : "muted";
   const target = router.selected
     ? `${router.selected.worker}/${router.selected.assignment}`
     : "no assignment selected";
@@ -304,7 +311,7 @@ export function actionsPanel(
   });
   const header = [
     paint("strong", "Agent actions"),
-    fit(paint("accent.purple", `Selected: ${displayText(target)}`), width),
+    fit(paint(color, `Selected: ${displayText(target)}`), width),
     ...wrapTextWithAnsi("Stops keep output and edits; cleanup may take time.", width).map((line) =>
       paint("muted", line),
     ),

@@ -1,4 +1,4 @@
-import { renderFleet } from "./fleet.ts";
+import { renderFleet, type FleetRegions } from "./fleet.ts";
 import { actionsPanel, helpPanel } from "./panels.ts";
 import { renderConversation, type ConversationPresentation } from "./conversation.ts";
 import { resolveConversationKeys, type ConversationKeys } from "./keys.ts";
@@ -25,6 +25,8 @@ export type RenderOptions = {
   paint: Paint;
   ascii?: boolean;
   hitRows?: Map<number, AssignmentRef>;
+  fleetRegions?: FleetRegions;
+  projectRuns?: boolean;
   presentation?: ConversationPresentation;
   conversationKeys?: ConversationKeys;
 };
@@ -276,6 +278,11 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
   const { paint } = options;
   const conversationKeys = options.conversationKeys ?? resolveConversationKeys(router.keys);
   options.hitRows?.clear();
+  if (options.fleetRegions) {
+    options.fleetRegions.list = undefined;
+    options.fleetRegions.inspector = undefined;
+    options.fleetRegions.filters = [];
+  }
   if (router.actions || router.help)
     return (
       router.actions
@@ -338,15 +345,13 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
       const view = router.conversation();
       const details = assignmentDetails(router.state, assignment);
       const worker = router.state.workers[assignment.ref.worker];
+      const color = worker.color ?? agentAccent(worker.agent);
       const context = router.state.contextUsage[assignmentKey(assignment.ref)];
       output.push(
         fit(
           paint(
             "strong",
-            paint(
-              "accent.blue",
-              displayText(`${assignment.ref.worker}/${assignment.ref.assignment}`),
-            ),
+            paint(color, displayText(`${assignment.ref.worker}/${assignment.ref.assignment}`)),
           ) +
             paint("border", " › ") +
             paint(
@@ -441,7 +446,7 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
       footer.push(
         fit(
           paint("focus", router.transcriptFocus ? " TRANSCRIPT " : " AGENT MESSAGE ") +
-            paint("accent.blue", ` ${displayText(assignment.ref.worker)}`) +
+            paint(color, ` ${displayText(assignment.ref.worker)}`) +
             paint("muted", ` · ${router.transcriptFocus ? "↑↓ scroll" : action} · `) +
             paint(
               view.follow ? "success" : view.newOutput ? "warning" : "accent.cyan",
@@ -467,7 +472,7 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
       ]
     : router.screen === "fleet"
       ? [
-          ...(width >= 30 ? [["↑↓", "select"] as Shortcut] : []),
+          ...(width >= 30 ? [["↑↓", router.inspectorFocus ? "scroll" : "select"] as Shortcut] : []),
           ["a", "actions"],
           ["?", "help"],
           ["Esc", "back"],
@@ -497,12 +502,14 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
     : router.screen === "fleet"
       ? [
           ...(router.selected ? [["Enter", "open"] as Shortcut] : []),
+          ...(options.fleetRegions?.inspector
+            ? [["Tab", router.inspectorFocus ? "list" : "inspector"] as Shortcut]
+            : []),
           ["d", router.details ? "less" : "details"],
           ...(hasBranches ? [["←→", "branches"] as Shortcut] : []),
           ["/", "search"],
           ["f", "filter"],
-          ["h", "finished/history"],
-          ["w", "queued"],
+          ...(options.projectRuns ? [["r", "runs"] as Shortcut] : []),
         ]
       : preview
         ? [

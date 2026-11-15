@@ -39,7 +39,7 @@ const ref = (worker = 1, assignment = 1): AssignmentRef => ({
   assignment,
 });
 
-test("fleet rows identify worker models with distinct colors and thinking levels", async () => {
+test("the inspector follows the selected model while fleet rows stay compact", async () => {
   const state = uiState(3);
   const models = ["gpt-6-luna", "gpt-6.1-terra", "gpt-6-astra"];
   Object.values(state.workers).forEach((worker, index) => {
@@ -60,15 +60,19 @@ test("fleet rows identify worker models with distinct colors and thinking levels
   const router = new ScreenRouter(source);
   await router.start();
   router.navigate("fleet", ref());
-  router.showQueued = true;
-  const rendered = stripTerminalSequences(
-    renderScreen(router, {
-      width: 180,
-      height: 24,
-      paint: createPaint("pinata"),
-    }).join("\n"),
-  );
-  for (const model of models) assert(rendered.includes(`[${model} · high]`));
+  for (const [index, model] of models.entries()) {
+    router.navigate("fleet", ref(index + 1));
+    const rendered = stripTerminalSequences(
+      renderScreen(router, {
+        width: 180,
+        height: 30,
+        paint: createPaint("pinata"),
+      }).join("\n"),
+    );
+    assert(rendered.includes(`${model} · high`));
+    for (const other of models.filter((candidate) => candidate !== model))
+      assert(!rendered.includes(other));
+  }
   assert.equal(new Set(models.map((model) => modelAccent(model, models))).size, 3);
   assert.equal(modelAccent(models[0], models), modelAccent(models[0], [...models].reverse()));
   router.dispose();
@@ -113,9 +117,10 @@ test("staged fleets use aligned rows, one shared model, and keep the selected ag
       [...hitRows.values()].some((target) => target.worker === "worker-4"),
       "resize must not hide the selected agent",
     );
-    assert.match(output, /2 active · 3 queued/);
+    assert.match(output, /Unfinished 5/);
     assert.doesNotMatch(output, /waiting: dependency|after:/);
-    if (width >= 80) {
+    if (width >= 120) {
+      assert.match(output, /Working 2\s+Queued 3/);
       assert.equal(output.match(/shared-model/g)?.length, 1);
       assert.equal(hitRows.size, 5, "each stage occupies one selectable row");
       const activeRows = [...hitRows]
@@ -124,11 +129,16 @@ test("staged fleets use aligned rows, one shared model, and keep the selected ag
       assert.equal(activeRows[0].indexOf("Running"), activeRows[1].indexOf("Running"));
       assert.match(output, /Waiting for worker-3\/1/);
       if (width >= 300) {
-        assert.equal(visibleWidth(activeRows[0].trimEnd()), width);
         const divider = rows.map(stripTerminalSequences).find((row) => /^─+$/.test(row.trimEnd()));
         assert.equal(visibleWidth(divider?.trimEnd() ?? ""), width);
-        const task = rows.map(stripTerminalSequences).find((row) => row.startsWith("Task:"));
-        assert(visibleWidth(task?.trimEnd() ?? "") > 300, "selected task uses the viewport width");
+        const task = rows
+          .map(stripTerminalSequences)
+          .find((row) => row.includes("│ Research task 4"));
+        assert(task, "the selected prompt stays beside the list");
+        assert(
+          visibleWidth(task.split("│ ").at(-1)?.trimEnd() ?? "") <= 64,
+          "the prompt retains a readable width",
+        );
       }
     }
   }
@@ -171,15 +181,16 @@ test("fleet rows preserve actual parent branches and unconfirmed cleanup blocker
         "\n",
       ),
     );
-  assert.match(render(), /1 need attention/);
+  assert.match(render(), /Attention 1/);
   assert.match(render(), /Failed !/);
-  assert.match(render(), /└───────\s+worker-2\/1/);
-  assert.match(render(), /Waiting for worker-1\/1 \(failed; cleanup unconfirmed\)/);
+  assert.match(render(), /└─ ───── worker-2\/1/);
+  assert.match(render(), /Waiting for worker-1\/1 \(failed; cleanup/);
+  assert.match(render(), /unconfirmed\)/);
   router.navigate("fleet", ref());
   router.collapse(true);
-  assert.doesNotMatch(render(), /└───────\s+worker-2\/1/);
+  assert.doesNotMatch(render(), /└─ ───── worker-2\/1/);
   router.collapse(false);
-  assert.match(render(), /└───────\s+worker-2\/1/);
+  assert.match(render(), /└─ ───── worker-2\/1/);
   router.dispose();
 });
 function accepted(input: unknown): SurfaceReply {
@@ -411,12 +422,11 @@ test("wheel and click act on the visible fleet or conversation, and mismatched c
   tui.requestRender = () => {};
   const screen = new PinataScreen({ tui, router, main() {} });
   router.navigate("fleet", ref());
-  router.showQueued = true;
   screen.render(80);
   const mouse = {
     button: "none" as const,
     x: 5,
-    y: 2,
+    y: 4,
     screenX: 5,
     screenY: 2,
     width: 80,
@@ -777,14 +787,19 @@ test(
 );
 
 test("Pi screens use a full-viewport overlay and preserve parent and worker drafts across source switches", async () => {
-  const source = new UiSource();
-  const other = new UiSource({
-    ...uiState(),
-    run: "other-run",
-    workers: {},
-    assignments: {},
-    latest: {},
+  const source = Object.assign(new UiSource(), {
+    location: { workspace: "/project", directory: "/project/first-run" },
   });
+  const other = Object.assign(
+    new UiSource({
+      ...uiState(),
+      run: "other-run",
+      workers: {},
+      assignments: {},
+      latest: {},
+    }),
+    { location: { workspace: "/project", directory: "/project/other-run" } },
+  );
   const terminal = new MemoryTerminal();
   const tui = new TuiAltScreen(terminal);
   tui.requestRender = () => {};
@@ -850,7 +865,28 @@ test("Pi screens use a full-viewport overlay and preserve parent and worker draf
       },
     },
   } as unknown as ExtensionContext;
-  const ui = installCoordinatorUi(pi, async () => source);
+  const available = [source, other];
+  const ui = installCoordinatorUi(pi, async () => source, {
+    runs: () => ({
+      workspace: "/project",
+      async list() {
+        return {
+          runs: available.map((source) => ({
+            run: source.run,
+            ...source.location,
+            live: true,
+            control: true,
+          })),
+          skipped: 0,
+        };
+      },
+      async open(run) {
+        const selected = available.find((source) => source.run === run.run);
+        assert(selected);
+        return selected;
+      },
+    }),
+  });
   const router = await ui.bind(context);
   await events.get("session_start")?.({}, context);
   assert.equal(stripTerminalSequences(statuses.get("pinata.shortcut") ?? ""), "🤖 Shift + ↓");
@@ -884,14 +920,31 @@ test("Pi screens use a full-viewport overlay and preserve parent and worker draf
   await first;
   assert.equal(draft, "parent draft 👩🏽‍💻");
   assert.equal(router.draft, "worker draft");
+  router.setFilter("queued");
   const reopened = ui.open(context, "conversation", ref());
   await tick();
-  const switched = ui.open(context, "fleet", undefined, other);
+  component?.handleInput("\u001b[1;2B");
+  component?.handleInput("r");
+  await tick();
+  assert.match(stripTerminalSequences(component?.render(160).join("\n") ?? ""), /Project runs/);
+  component?.handleInput("\u001b[B");
+  component?.handleInput("\r");
   await tick();
   await reopened;
   assert.equal(component?.router.source.run, "other-run");
+  component?.handleInput("r");
+  await tick();
+  // The picker starts on the current run, so Up returns to the first run.
+  component?.handleInput("\u001b[A");
+  component?.handleInput("\r");
+  await tick();
+  assert.equal(component?.router, router);
+  assert.equal(router.filter, "queued");
+  assert.deepEqual(router.selected, ref());
+  assert.equal(router.draft, "worker draft");
+  assert.equal(other.calls.length, 0, "Browsing a run never dispatches a control");
   ui.navigate("main");
-  await switched;
+  await tick();
   assert.equal(draft, "parent draft 👩🏽‍💻");
   for (const options of customOptions)
     assert.deepEqual(options, {
@@ -1050,9 +1103,9 @@ test("fleet help, search, filtering and actions are usable without a composer", 
     ["worker-2"],
   );
   screen.handleInput("f");
-  assert.equal(router.filter, "active");
+  assert.equal(router.filter, "working");
   screen.handleInput("h");
-  assert.equal(router.history, true);
+  assert.equal(router.filter, "finished");
   screen.handleInput("a");
   assert.match(screen.render(80).join("\n"), /Stop entire fleet/);
   screen.handleInput("\u001b");
@@ -1724,6 +1777,7 @@ test("selected task details wrap without hiding fleet controls", async () => {
   const router = new ScreenRouter(source);
   await router.start();
   router.navigate("fleet", ref());
+  router.details = true;
   for (const width of [5, 32, 80]) {
     const rows = renderScreen(router, {
       width,
@@ -1734,7 +1788,7 @@ test("selected task details wrap without hiding fleet controls", async () => {
     assert(rows.length <= 24);
     if (width === 32) {
       const prompt = rows.map(stripTerminalSequences).join(" ");
-      assert(prompt.includes("Selected: worker-1/1"));
+      assert(prompt.includes("worker-1/1"));
       assert(prompt.includes("second paragraph."));
       assert(rows.join("\n").includes("select"));
     }
@@ -1773,7 +1827,6 @@ test("tree activity loops without idle frames around completed ancestors and que
   t.after(() => router.dispose());
   await router.start();
   router.navigate("fleet");
-  router.showQueued = true;
   const paint = createPaint("terminal-default");
   for (const ascii of [false, true]) {
     const tracks = new Set<string>();
@@ -1793,13 +1846,10 @@ test("tree activity loops without idle frames around completed ancestors and que
       tracks.add(activeRows[0].split("worker-")[0]);
       assert(
         activeRows.some((line) => /[cC]/.test(line.split("worker-")[0])),
-        `idle fleet frame ${frame}`,
+        `missing fleet activity at frame ${frame}`,
       );
     }
-    assert(
-      tracks.size > 4,
-      "fleet animation travels across the branch instead of pulsing in place",
-    );
+    assert(tracks.size > 4, "fleet activity travels along the shared tree animation track");
     for (const motion of ["reduced", "off"] as const) {
       router.motion = motion;
       const track = () =>
@@ -1824,8 +1874,9 @@ test("fleet retains completed dependency references without inventing ancestry",
   source.state.assignments[assignmentKey(ref(3))].after = [ref(), ref(2)];
   const router = new ScreenRouter(source);
   await router.start();
-  router.history = true;
+  router.setFilter("finished");
   router.navigate("fleet", ref(3));
+  router.details = true;
   const rows = renderScreen(router, {
     width: 100,
     height: 30,

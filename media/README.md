@@ -1,27 +1,27 @@
 # README media
 
-The fleet screenshot, fleet video and navigation GIF were recorded on 2026-11-12
-from a native Foot terminal. The fleet run used Piñata at `3270cbf`, the process
-backend and `openai/gpt-6.1-sol` with low reasoning effort. Its nine workers include
-two levels of delegation. The fleet video plays at 6× speed. Frames preserve
-the full terminal without captions or simulated output.
+The screenshot, navigation GIF and MP4 demo were recorded on 2026-11-15 from the
+fleet UI in Pi 1.5.0, using an isolated offline PTY at 160 columns by 38 rows. Eight
+scripted assignments demonstrate the inspector, tree, filters, conversation and
+project run picker. The second run demonstrates saved, read-only browsing.
 
-All nine assignments in that run completed with confirmed cleanup and complete
-reported usage.
-The coordinator reran the generated CLI's 19 integration checks successfully. The
-read-only reviewer found one large-number formatting defect in that demo CLI; the
-recording does not establish coding-quality superiority or defect-free output.
-Pi reported approximately $0.379 in model cost, which is usage evidence rather than
-an invoice.
+These are UI demonstrations, not live model results or coding-quality evidence.
+The capture rejects provider requests and made zero model calls. PNG frames
+rasterize the exact ANSI rows returned to Pi, using Adwaita Mono and the Piñata
+palette. The GIF and MP4 play the same 40-second sequence at its original speed,
+with four frames per second. No captions or generated UI elements were added.
 
-The navigation GIF comes from a separate live run at `18b1a77`, using the same
-model and backend. It joins two navigation excerpts at normal speed and begins
-with seven active workers, a completed scout and a queued reviewer. The activity
-markers animate while work runs. All nine assignments completed with confirmed
-cleanup and complete usage; Pi reported approximately $0.354 in model cost.
+To reproduce on Linux, install Python with Pillow, fontconfig, Adwaita Mono and
+FFmpeg, then run:
 
-The source drivers, raw captures, earlier capture attempts, keyboard events, worker
-results and cleanup evidence remain locally in
-`bench/results/live-media-refresh-20261112/` and
-`bench/results/live-media-animation-20261112/`. Those generated files are ignored by
-Git. The live media runs are not performance comparisons.
+```sh
+python3 test/readiness/fleet-demo.py --root "$PWD" \
+  --out bench/results/fleet-media-unique \
+  --pi node "$PWD/node_modules/@earendil-works/pi-coding-agent/dist/cli.js"
+```
+
+The driver retains raw PTY bytes, timed keyboard and render events, PNG frames and
+encoded media. The published capture is retained locally in
+`bench/results/fleet-media-publish-20261115/`; earlier attempts from this refresh
+remain beside it. Generated evidence is ignored by Git. The checked-in drivers
+reproduce the workflow without credentials.

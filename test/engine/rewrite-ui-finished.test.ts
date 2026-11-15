@@ -49,10 +49,10 @@ test("finished runs disappear for every outcome and remain available through the
       screen.handleInput("\r");
       assert.equal(router.screen, "fleet", "an empty fleet cannot open a hidden assignment");
       screen.handleInput("h");
-      assert.equal(router.history, true);
+      assert.equal(router.filter, "finished");
       assert.equal(router.fleetAssignments().length, 1);
       assert.match(fleet(router), /worker-1\/1/);
-      assert.match(fleet(router), /h hide finished/);
+      assert.match(fleet(router), /\[Finished 1\]/);
       screen.handleInput("h");
       assert.equal(router.selected, undefined);
       assert.deepEqual(router.fleetAssignments(), []);
@@ -161,7 +161,7 @@ test("finished parents remain as context for live children and disappear with th
   assert.deepEqual(router.fleetAssignments(), []);
 });
 
-test("h restores older and finished assignments while w toggles waiting work and q only exits", async (t) => {
+test("h and w switch to finished and queued views and restore the previous selection; q only exits", async (t) => {
   const source = new UiSource(uiState(3));
   source.state.assignments[assignmentKey(ref())].execution = {
     phase: "ended",
@@ -197,23 +197,26 @@ test("h restores older and finished assignments while w toggles waiting work and
     [ref(2), ref(3)],
   );
   screen.handleInput("h");
-  assert.equal(router.fleetAssignments().length, 4);
+  assert.deepEqual(
+    router.fleetAssignments().map((row) => row.ref),
+    [ref(), ref(1, 2)],
+  );
   router.navigate("fleet", ref());
   screen.handleInput("h");
   assert.equal(router.selected?.worker, "worker-2");
   screen.handleInput("w");
-  assert.equal(router.showQueued, false);
+  assert.equal(router.filter, "queued");
   assert.deepEqual(
     router.fleetAssignments().map((row) => row.ref),
-    [ref(2)],
+    [ref(3)],
   );
   screen.handleInput("Q");
-  assert.equal(router.showQueued, false, "uppercase Q no longer controls queued visibility");
+  assert.equal(router.filter, "queued", "uppercase Q does not change filters");
   assert.equal(exits, 0);
   screen.handleInput("w");
-  assert.equal(router.showQueued, true);
+  assert.equal(router.filter, "unfinished");
   screen.handleInput("?");
-  assert.match(stripTerminalSequences(screen.render(150).join("\n")), /waiting and queued work/);
+  assert.match(stripTerminalSequences(screen.render(150).join("\n")), /Show queued assignments/);
   screen.handleInput("?");
   screen.handleInput("q");
   assert.equal(exits, 1);

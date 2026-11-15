@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Remove the coding arena and its evaluation guidance.
+- Give the default reviewer shell access for Git inspection and assigned checks,
+  with instructions to leave source files and commits untouched.
+- Keep all schema families at v1, including command discovery and the API catalog.
+
 ## 0.0.4
 
 - Resume Pi coordinators when all watched assignments settle. Persist exact
@@ -25,7 +32,7 @@
 
 Migration: move job `{workers, config}` into a canonical `create` command with a
 durable request ID, submitted through Pi tools, extension RPC or an embedded host.
-Use command schema `pinata.command.v2`. Replace `attach` with `view` and omit
+Use command schema `pinata.command.v1`. Replace `attach` with `view` and omit
 `--saved` from inspection commands. `AttachedSource`, `startIpcServer`, job/IPC
 schemas and scheduling tools are removed; integrations own external timers and
 transports. Stop older runs and finish pending applications or uncertain helper

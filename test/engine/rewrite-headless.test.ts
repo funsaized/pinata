@@ -64,7 +64,7 @@ test("CLI discovers schemas, tools and definitions without opening a host", asyn
   const world = await fixture(t);
   assert.throws(() => parseArguments(["schema", "--json", "--json"]), /only once/);
   assert.throws(() => parseArguments(["schema", "--unknown"]), /Unknown option/);
-  const schemas = await invoke(["schema", "pinata.command.v2"]);
+  const schemas = await invoke(["schema", "pinata.command.v1"]);
   assert.equal(schemas.code, 0, schemas.stderr);
   assert.match(schemas.stdout, /requestId/);
   const tools = await invoke(["tools"]);

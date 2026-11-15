@@ -18,6 +18,11 @@ import { ScreenRouter, type MessageAction } from "./router.ts";
 import type { ConversationPresentation } from "./conversation.ts";
 import { agentActions } from "./panels.ts";
 import { padded } from "./text.ts";
+import type { FleetRegions, Pane } from "./fleet.ts";
+import type { ProjectRunCatalog } from "../sources/project.ts";
+import type { RuntimeSource } from "../sources/runtime.ts";
+import { renderRuns, type RunPicker } from "./runs.ts";
+import { surfaceError } from "../sources/runtime.ts";
 
 import { resolveKeys, resolveConversationKeys, type UiKeys } from "./keys.ts";
 export { resolveKeys } from "./keys.ts";
@@ -30,6 +35,8 @@ export type ScreenOptions = {
   keybindings?: Pick<KeybindingsManager, "getKeys">;
   ascii?: boolean;
   error?(error: unknown): void;
+  runs?: ProjectRunCatalog;
+  openRun?(source: RuntimeSource): void | Promise<void>;
 };
 
 export class PinataScreen implements Component, Focusable {
@@ -48,6 +55,8 @@ export class PinataScreen implements Component, Focusable {
   private editorTop = 0;
   private editorOffset = 0;
   private readonly hitRows = new Map<number, AssignmentRef>();
+  private readonly fleetRegions: FleetRegions = {};
+  private runPicker?: RunPicker;
 
   constructor(options: ScreenOptions) {
     this.options = options;
@@ -104,6 +113,16 @@ export class PinataScreen implements Component, Focusable {
   render(width: number): string[] {
     this.syncEditor();
     const height = Math.max(1, this.options.tui.terminal.rows);
+    if (this.runPicker && this.options.runs) {
+      this.router.setInspectorVisible(false);
+      return renderRuns(this.runPicker, {
+        width: Math.max(1, width - 2),
+        height,
+        workspace: this.options.runs.workspace,
+        current: this.router.source.location?.directory,
+        paint: this.paint(),
+      }).map((line) => this.paint()("background", padded(" " + line, width)));
+    }
     const renderedEditor =
       this.router.screen === "conversation" &&
       this.router.selected &&
@@ -128,8 +147,11 @@ export class PinataScreen implements Component, Focusable {
           paint: this.paint(),
           ascii: this.options.ascii,
           hitRows: this.hitRows,
+          fleetRegions: this.fleetRegions,
+          projectRuns: Boolean(this.options.runs),
         })
       : [];
+    this.router.setInspectorVisible(Boolean(available && this.fleetRegions.inspector));
     // Normal screens own their footer layout; pad shorter help and action panels.
     rows.splice(
       Math.max(0, rows.length - 1),
@@ -153,6 +175,32 @@ export class PinataScreen implements Component, Focusable {
   }
   handleInput(data: string): void {
     if (!this.alive) return;
+    if (this.runPicker) {
+      if (matchesKey(data, "escape")) this.runPicker = undefined;
+      else if (data === "r") this.run(() => this.openRunPicker());
+      else if (matchesKey(data, "up"))
+        this.runPicker.selected = Math.max(0, this.runPicker.selected - 1);
+      else if (matchesKey(data, "down"))
+        this.runPicker.selected = Math.min(
+          this.runPicker.runs.length - 1,
+          this.runPicker.selected + 1,
+        );
+      else if (matchesKey(data, "pageUp"))
+        this.runPicker.selected = Math.max(
+          0,
+          this.runPicker.selected -
+            Math.max(1, Math.floor((this.options.tui.terminal.rows - 6) / 2)),
+        );
+      else if (matchesKey(data, "pageDown"))
+        this.runPicker.selected = Math.min(
+          this.runPicker.runs.length - 1,
+          this.runPicker.selected +
+            Math.max(1, Math.floor((this.options.tui.terminal.rows - 6) / 2)),
+        );
+      else if (matchesKey(data, "enter")) this.run(() => this.selectRun());
+      this.requestRender();
+      return;
+    }
     if (this.router.actions) {
       if (matchesKey(data, "escape")) this.router.actions = false;
       else if (matchesKey(data, "up"))
@@ -223,6 +271,11 @@ export class PinataScreen implements Component, Focusable {
       this.requestRender();
       return;
     }
+    if (this.router.screen === "fleet" && matchesKey(data, "tab")) {
+      if (this.fleetRegions.inspector) this.router.inspectorFocus = !this.router.inspectorFocus;
+      this.requestRender();
+      return;
+    }
     const composing =
       this.router.screen === "conversation" &&
       Boolean(this.router.selected) &&
@@ -288,10 +341,20 @@ export class PinataScreen implements Component, Focusable {
       matchesKey(data, this.keys.scrollDown)
     ) {
       const direction = matchesKey(data, "pageUp") || matchesKey(data, this.keys.scrollUp) ? -1 : 1;
-      this.router.scroll(direction * Math.max(1, this.options.tui.terminal.rows - 10));
+      const page =
+        this.router.screen === "fleet"
+          ? this.router.inspectorFocus
+            ? this.router.inspectorPageSize
+            : this.router.fleetPageSize
+          : Math.max(1, this.options.tui.terminal.rows - 10);
+      this.router.scroll(direction * page);
       return;
     }
     if (this.router.screen === "fleet") {
+      if (data === "r" && this.options.runs) {
+        this.run(() => this.openRunPicker());
+        return;
+      }
       if (data === "q") {
         this.router.navigate("main");
         this.options.main();
@@ -300,6 +363,7 @@ export class PinataScreen implements Component, Focusable {
       if (data === "w") return this.router.toggleQueued();
       if (data === "d") {
         this.router.details = !this.router.details;
+        this.router.inspectorScroll = 0;
         this.requestRender();
         return;
       }
@@ -311,18 +375,15 @@ export class PinataScreen implements Component, Focusable {
         return;
       }
       if (data === "h") {
-        this.router.history = !this.router.history;
-        this.router.refreshView();
+        this.router.toggleFilter("finished");
         return;
       }
       if (data === "f") {
-        this.router.filter =
-          this.router.filter === "all"
-            ? "active"
-            : this.router.filter === "active"
-              ? "failed"
-              : "all";
-        this.router.refreshView();
+        this.router.cycleFilter();
+        return;
+      }
+      if (this.router.inspectorFocus && (matchesKey(data, "up") || matchesKey(data, "down"))) {
+        this.router.scroll(matchesKey(data, "up") ? -1 : 1);
         return;
       }
       if (matchesKey(data, "left")) return this.router.collapse(true);
@@ -360,15 +421,52 @@ export class PinataScreen implements Component, Focusable {
   }
   handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
     if (!this.alive) return undefined;
+    if (this.runPicker) {
+      const index = this.runPicker.hitRows.get(event.y);
+      if (event.type === "click" && index !== undefined) {
+        this.runPicker.selected = index;
+        if ((event.clickCount ?? 1) > 1) this.run(() => this.selectRun());
+      } else if (event.type === "wheel" && event.wheelDelta)
+        this.runPicker.selected = Math.max(
+          0,
+          Math.min(this.runPicker.runs.length - 1, this.runPicker.selected + event.wheelDelta),
+        );
+      return { handled: true, render: true };
+    }
     if (this.router.help || this.router.actions || this.router.searching)
       return { handled: true, render: false };
+    const inside = (pane: Pane | undefined) =>
+      Boolean(
+        pane &&
+        event.x - 1 >= pane.x &&
+        event.x - 1 < pane.x + pane.width &&
+        event.y >= pane.y &&
+        event.y < pane.y + pane.height,
+      );
+    if (this.router.screen === "fleet" && event.type === "click") {
+      const filter = this.fleetRegions.filters?.find(inside);
+      if (filter) {
+        this.router.setFilter(filter.filter);
+        return { handled: true, focus: true, render: true };
+      }
+      if (inside(this.fleetRegions.inspector)) {
+        this.router.inspectorFocus = true;
+        return { handled: true, focus: true, render: true };
+      }
+    }
     if (event.type === "wheel" && event.wheelDelta) {
+      if (this.router.screen === "fleet") {
+        if (!inside(this.fleetRegions.list) && !inside(this.fleetRegions.inspector))
+          return undefined;
+        this.router.inspectorFocus = inside(this.fleetRegions.inspector);
+      }
       this.router.scroll(event.wheelDelta);
       return { handled: true, render: true };
     }
     if (this.router.screen === "fleet" && event.type === "click") {
-      const ref = this.hitRows.get(event.y);
+      const ref = inside(this.fleetRegions.list) ? this.hitRows.get(event.y) : undefined;
       if (ref) {
+        this.router.inspectorFocus = false;
         this.router.navigate("fleet", ref);
         if ((event.clickCount ?? 1) > 1) this.router.navigate("conversation");
         return { handled: true, focus: true, render: true };
@@ -389,6 +487,55 @@ export class PinataScreen implements Component, Focusable {
         this.router.selected && assignmentKey(row.ref) === assignmentKey(this.router.selected),
     );
     this.router.selectRow(Math.max(0, Math.min(rows.length - 1, index + amount)));
+  }
+  private async openRunPicker(): Promise<void> {
+    if (!this.options.runs) return;
+    const picker: RunPicker = {
+      runs: [],
+      selected: 0,
+      scroll: 0,
+      loading: true,
+      skipped: 0,
+      hitRows: new Map(),
+    };
+    this.runPicker = picker;
+    this.router.setInspectorVisible(false);
+    this.requestRender();
+    try {
+      const result = await this.options.runs.list();
+      if (!this.alive || this.runPicker !== picker) return;
+      picker.runs = result.runs;
+      picker.skipped = result.skipped;
+      picker.selected = Math.max(
+        0,
+        result.runs.findIndex((run) => run.directory === this.router.source.location?.directory),
+      );
+    } catch (error) {
+      picker.error = surfaceError(error).message;
+    } finally {
+      picker.loading = false;
+      this.requestRender();
+    }
+  }
+  private async selectRun(): Promise<void> {
+    const picker = this.runPicker;
+    const run = picker?.runs[picker.selected];
+    if (!picker || !run || picker.loading || !this.options.runs) return;
+    picker.loading = true;
+    this.requestRender();
+    try {
+      const source = await this.options.runs.open(run);
+      if (!this.alive || this.runPicker !== picker) return;
+      this.runPicker = undefined;
+      this.requestRender();
+      await this.options.openRun?.(source);
+    } catch (error) {
+      if (this.alive) this.runPicker = picker;
+      picker.error = surfaceError(error).message;
+    } finally {
+      picker.loading = false;
+      this.requestRender();
+    }
   }
   private async submit(): Promise<void> {
     const text = this.editor.getExpandedText();
@@ -526,6 +673,7 @@ export class PinataScreen implements Component, Focusable {
   dispose(): void {
     if (!this.alive) return;
     this.alive = false;
+    this.router.setInspectorVisible(false);
     this.unsubscribe();
   }
 }

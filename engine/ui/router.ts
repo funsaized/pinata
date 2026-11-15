@@ -7,6 +7,8 @@ import {
   type CommandReceipt,
   type Config,
   type ConversationQueryResult,
+  type ConversationPreview,
+  conversationPreviewSchema,
   type CoreState,
   type DefinitionSummary,
   type QueryResult,
@@ -15,7 +17,13 @@ import {
 } from "../contracts/index.ts";
 import { reduce } from "../core/state.ts";
 import { type RuntimeSource, surfaceError } from "../sources/runtime.ts";
-import { assignments, isFinished, steerTarget } from "./projection.ts";
+import {
+  assignments,
+  fleetFilters,
+  matchesFleetFilter,
+  steerTarget,
+  type FleetFilter,
+} from "./projection.ts";
 import { type PaletteName } from "./palette.ts";
 import { assignmentTree } from "./tree.ts";
 
@@ -44,6 +52,13 @@ export type RouterOptions = {
   changed?(): void;
   accepted?(receipt: Extract<CommandReceipt, { status: "accepted" }>, messageId?: string): void;
   now?(): number;
+  project?: string;
+};
+export type PreviewView = {
+  result?: ConversationPreview;
+  error?: string;
+  loading: boolean;
+  revision?: number;
 };
 
 // A single router owns selection and drafts across the Pi screen and standalone
@@ -63,7 +78,12 @@ export class ScreenRouter {
   fleetScroll = 0;
   fleetPageSize = 1;
   fleetRenderedSelection?: string;
-  showQueued = true;
+  inspectorFocus = false;
+  inspectorScroll = 0;
+  inspectorMaxScroll = 0;
+  inspectorPageSize = 1;
+  inspectorVisible = false;
+  connectionAvailable = true;
   help = false;
   helpScroll = 0;
   actions = false;
@@ -73,8 +93,8 @@ export class ScreenRouter {
   searchSelected?: AssignmentRef;
   definitionScroll = 0;
   searching = false;
-  history = false;
-  filter: "all" | "active" | "failed" = "all";
+  filter: FleetFilter = "unfinished";
+  private filterReturn?: { filter: FleetFilter; selected?: AssignmentRef };
   readonly collapsed = new Set<string>();
   transcriptFocus = false;
   details = false;
@@ -97,6 +117,11 @@ export class ScreenRouter {
   private readonly observedTimes = new Map<string, { start: number; end?: number }>();
   private ticker?: NodeJS.Timeout;
   private lastConversationRead = -Infinity;
+  private lastPreviewRead = -Infinity;
+  private previewTimer?: NodeJS.Timeout;
+  private previewRequest?: AbortController;
+  private previewGeneration = 0;
+  private readonly previews = new Map<string, PreviewView>();
 
   constructor(source: RuntimeSource, options: RouterOptions = {}) {
     this.source = source;
@@ -114,6 +139,9 @@ export class ScreenRouter {
   get notice(): string {
     return this.noticeText;
   }
+  get project(): string | undefined {
+    return this.options.project;
+  }
   set notice(text: string) {
     this.noticeText = text;
     this.noticeTone = "warning";
@@ -123,11 +151,17 @@ export class ScreenRouter {
     if (this.connected || !this.alive) return;
     this.connected = true;
     this.disconnect = this.source.onConnectionChange?.((connected) => {
+      this.connectionAvailable = connected;
       if (!connected) this.clearTiming();
+      this.cancelPreview();
       this.notice = connected
         ? "Reconnected to the owning runtime; retained drafts are unchanged"
         : "Connection unavailable. /reconnect refreshes authority; drafts and pending receipt IDs are retained";
       this.changed();
+      if (connected) {
+        if (this.selected) this.preview().revision = undefined;
+        this.schedulePreview();
+      }
     });
     const unsubscribe = await this.source.subscribe((event) => this.receive(event));
     if (this.alive) this.unsubscribe = unsubscribe;
@@ -155,6 +189,8 @@ export class ScreenRouter {
       this.generation++;
       this.activity.clear();
       this.activityOrdinals.clear();
+      this.cancelPreview();
+      this.previews.clear();
       this.clearTiming();
       for (const conversation of this.conversations.values())
         if (conversation.page) conversation.page.cursor = undefined;
@@ -205,6 +241,7 @@ export class ScreenRouter {
     if (previous.config?.digest !== this.state.config?.digest)
       void this.loadSettings().catch((error: unknown) => this.fail(error));
     if (!this.selected && !this.definition) this.selected = assignments(this.state)[0]?.ref;
+    const previousSelection = this.selected && assignmentKey(this.selected);
     if (this.screen === "fleet") {
       const rows = this.fleetAssignments();
       if (
@@ -212,9 +249,20 @@ export class ScreenRouter {
           (row) => this.selected && assignmentKey(row.ref) === assignmentKey(this.selected),
         )
       )
-        this.selected = rows[0]?.ref;
+        this.selected = this.preferredSelection(rows);
+      if (previousSelection !== (this.selected && assignmentKey(this.selected))) {
+        this.cancelPreview();
+        this.inspectorScroll = 0;
+      }
     }
     this.changed();
+    if (
+      event.kind === "snapshot" ||
+      (event.kind === "committed" &&
+        (event.transition.kind === "settled" || event.transition.kind === "response_observed")) ||
+      previousSelection !== (this.selected && assignmentKey(this.selected))
+    )
+      this.schedulePreview();
     if (
       this.screen === "conversation" &&
       this.selected &&
@@ -237,6 +285,7 @@ export class ScreenRouter {
       this.changed();
       return false;
     }
+    const previous = this.selected && assignmentKey(this.selected);
     if (this.noticeTone === "success") this.notice = "";
     if (ref) {
       this.selected = { ...ref };
@@ -250,9 +299,11 @@ export class ScreenRouter {
           (row) => this.selected && assignmentKey(row.ref) === assignmentKey(this.selected),
         )
       )
-        this.selected = rows[0]?.ref;
+        this.selected = this.preferredSelection(rows);
     }
     this.screen = screen;
+    if (previous !== (this.selected && assignmentKey(this.selected))) this.inspectorScroll = 0;
+    this.cancelPreview();
     if (screen === "conversation" && this.selected) {
       const view = this.conversation();
       view.follow = true;
@@ -260,6 +311,7 @@ export class ScreenRouter {
     }
     this.generation++;
     this.changed();
+    if (screen === "fleet") this.schedulePreview();
     if (screen === "conversation" && this.selected)
       void this.loadConversation().catch((error: unknown) => this.fail(error));
     return true;
@@ -302,11 +354,14 @@ export class ScreenRouter {
     return this.fleetNodes().map((node) => node.assignment);
   }
   fleetNodes(ascii = false): ReturnType<typeof assignmentTree> {
+    const include = new Set(
+      this.matchingAssignments()
+        .filter((assignment) => matchesFleetFilter(this.state, assignment, this.filter))
+        .map((assignment) => assignmentKey(assignment.ref)),
+    );
     const nodes = assignmentTree(this.state, {
       ascii,
-      selected: this.selected,
-      queued: this.showQueued,
-      finished: this.history,
+      include,
     });
     const hidden = new Set<string>();
     return nodes.filter((node) => {
@@ -318,28 +373,67 @@ export class ScreenRouter {
         hidden.add(key);
         return false;
       }
-      if (this.filter === "active" && isFinished(assignment)) return false;
-      if (
-        this.filter === "failed" &&
-        !(
-          assignment.execution.phase === "ended" &&
-          ["failed", "interrupted"].includes(assignment.execution.reason)
-        )
-      )
-        return false;
+      return true;
+    });
+  }
+  matchingAssignments(): ReturnType<typeof assignments> {
+    return assignments(this.state).filter((assignment) => {
+      const worker = this.state.workers[assignment.ref.worker];
       return `${worker.id} ${worker.agent} ${assignment.task}`
         .toLowerCase()
         .includes(this.search.toLowerCase());
     });
   }
+  setFilter(filter: FleetFilter): void {
+    this.filter = filter;
+    this.fleetScroll = 0;
+    this.inspectorScroll = 0;
+    this.refreshView();
+  }
+  private preferredSelection(rows: ReturnType<typeof assignments>): AssignmentRef | undefined {
+    const matches = new Set(
+      this.matchingAssignments()
+        .filter((assignment) => matchesFleetFilter(this.state, assignment, this.filter))
+        .map((assignment) => assignmentKey(assignment.ref)),
+    );
+    return (rows.find((assignment) => matches.has(assignmentKey(assignment.ref))) ?? rows[0])?.ref;
+  }
+  cycleFilter(): void {
+    this.filterReturn = undefined;
+    this.setFilter(fleetFilters[(fleetFilters.indexOf(this.filter) + 1) % fleetFilters.length]);
+  }
+  toggleFilter(filter: "queued" | "finished"): void {
+    if (this.filter === filter) {
+      const previous = this.filterReturn;
+      this.filterReturn = undefined;
+      this.setFilter(previous?.filter ?? "unfinished");
+      const selected = previous?.selected;
+      if (
+        selected &&
+        this.fleetAssignments().some(
+          (assignment) => assignmentKey(assignment.ref) === assignmentKey(selected),
+        )
+      )
+        this.navigate("fleet", selected);
+      return;
+    }
+    this.filterReturn = { filter: this.filter, selected: this.selected };
+    this.setFilter(filter);
+  }
   refreshView(): void {
+    const previous = this.selected && assignmentKey(this.selected);
     const rows = this.fleetAssignments();
     if (
       !rows.some((row) => this.selected && assignmentKey(row.ref) === assignmentKey(this.selected))
     )
-      this.selected = rows[0]?.ref;
+      this.selected = this.preferredSelection(rows);
+    if (previous !== (this.selected && assignmentKey(this.selected))) {
+      this.inspectorScroll = 0;
+      this.cancelPreview();
+    }
     this.fleetRenderedSelection = undefined;
     this.changed();
+    this.schedulePreview();
   }
   collapse(value: boolean): void {
     if (!this.selected) return;
@@ -349,9 +443,7 @@ export class ScreenRouter {
     this.refreshView();
   }
   toggleQueued(): void {
-    this.showQueued = !this.showQueued;
-    this.fleetRenderedSelection = undefined;
-    this.changed();
+    this.toggleFilter("queued");
   }
   private now(): number {
     return this.options.now?.() ?? performance.now();
@@ -371,6 +463,7 @@ export class ScreenRouter {
         () => {
           this.changed();
           this.refreshFollowingConversation();
+          if (this.now() - this.lastPreviewRead >= 1000) this.schedulePreview();
         },
         this.motion === "full" ? 250 : 1000,
       );
@@ -482,6 +575,123 @@ export class ScreenRouter {
     }
     return view;
   }
+  preview(ref = this.selected): PreviewView {
+    if (!ref) return { loading: false };
+    const key = assignmentKey(ref);
+    let view = this.previews.get(key);
+    if (!view) {
+      view = { loading: false };
+      if (this.previews.size >= 32) this.previews.delete(this.previews.keys().next().value ?? "");
+      this.previews.set(key, view);
+    }
+    return view;
+  }
+  setInspectorVisible(visible: boolean): void {
+    if (this.inspectorVisible === visible) return;
+    this.inspectorVisible = visible;
+    if (visible) this.schedulePreview();
+    else {
+      this.inspectorFocus = false;
+      this.cancelPreview();
+    }
+  }
+  private cancelPreview(): void {
+    this.previewGeneration++;
+    if (this.previewTimer) clearTimeout(this.previewTimer);
+    this.previewTimer = undefined;
+    this.previewRequest?.abort();
+    this.previewRequest = undefined;
+    for (const view of this.previews.values()) view.loading = false;
+  }
+  private schedulePreview(): void {
+    if (
+      !this.alive ||
+      this.screen !== "fleet" ||
+      !this.inspectorVisible ||
+      !this.selected ||
+      !this.connectionAvailable ||
+      this.help ||
+      this.actions ||
+      this.previewTimer ||
+      this.previewRequest
+    )
+      return;
+    const assignment = this.state.assignments[assignmentKey(this.selected)];
+    if (!assignment || assignment.execution.phase === "queued") return;
+    const view = this.preview();
+    if (
+      (view.result || view.error) &&
+      view.revision === this.state.revision &&
+      (!this.source.capabilities.live || assignment.execution.phase === "ended")
+    )
+      return;
+    const delay =
+      assignment.execution.phase === "ended"
+        ? 75
+        : Math.max(75, 1000 - (this.now() - this.lastPreviewRead));
+    this.previewTimer = setTimeout(() => {
+      this.previewTimer = undefined;
+      void this.loadPreview();
+    }, delay);
+    this.previewTimer.unref();
+  }
+  async loadPreview(): Promise<void> {
+    const ref = this.selected;
+    if (
+      !ref ||
+      !this.alive ||
+      this.screen !== "fleet" ||
+      !this.inspectorVisible ||
+      !this.connectionAvailable ||
+      this.previewRequest
+    )
+      return;
+    const view = this.preview(ref);
+    const generation = this.previewGeneration;
+    const revision = this.state.revision;
+    const request = new AbortController();
+    this.previewRequest = request;
+    view.loading = true;
+    this.lastPreviewRead = this.now();
+    this.changed();
+    try {
+      const reply = await this.source.request(
+        { method: "query", input: { kind: "conversation_preview", ref } },
+        request.signal,
+      );
+      if (
+        !this.alive ||
+        generation !== this.previewGeneration ||
+        !this.selected ||
+        assignmentKey(this.selected) !== assignmentKey(ref)
+      )
+        return;
+      view.revision = revision;
+      if (reply.status === "error") {
+        view.error = reply.error.message;
+        return;
+      }
+      const parsed =
+        reply.response.method === "query"
+          ? conversationPreviewSchema.safeParse(reply.response.result)
+          : undefined;
+      if (!parsed?.success || assignmentKey(parsed.data.ref) !== assignmentKey(ref)) {
+        view.error = "Source returned an incompatible conversation preview";
+        return;
+      }
+      view.result = parsed.data;
+      view.error = undefined;
+    } catch (error) {
+      if (generation === this.previewGeneration) {
+        view.error = surfaceError(error).message;
+        view.revision = revision;
+      }
+    } finally {
+      if (this.previewRequest === request) this.previewRequest = undefined;
+      if (generation === this.previewGeneration) view.loading = false;
+      this.changed();
+    }
+  }
   scroll(lines: number): void {
     if (this.screen === "conversation" && this.definition && !this.selected) {
       this.definitionScroll = Math.max(0, this.definitionScroll + lines);
@@ -489,7 +699,12 @@ export class ScreenRouter {
       return;
     }
     if (this.screen === "fleet") {
-      this.fleetScroll = Math.max(0, this.fleetScroll + lines);
+      if (this.inspectorFocus)
+        this.inspectorScroll = Math.max(
+          0,
+          Math.min(this.inspectorMaxScroll, this.inspectorScroll + lines),
+        );
+      else this.fleetScroll = Math.max(0, this.fleetScroll + lines);
       this.changed();
       return;
     }
@@ -589,6 +804,7 @@ export class ScreenRouter {
     }
     this.state = this.source.snapshot().snapshot;
     if (this.screen === "conversation" && this.selected) await this.loadConversation();
+    if (this.screen === "fleet") await this.loadPreview();
     else this.refreshView();
   }
 
@@ -795,6 +1011,7 @@ export class ScreenRouter {
   dispose(): void {
     if (!this.alive) return;
     this.alive = false;
+    this.cancelPreview();
     this.generation++;
     this.unsubscribe?.();
     this.disconnect?.();

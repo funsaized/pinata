@@ -1,4 +1,3 @@
-// Scripted behavior checks; model-backed arena trials are separate.
 import { spawnSync } from "node:child_process";
 import { readdirSync } from "node:fs";
 import { join } from "node:path";

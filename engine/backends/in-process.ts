@@ -255,7 +255,24 @@ export class InProcessBackend implements BackendPort {
             });
           });
       };
-      const checkpoint = () => checkpointConversation(manager, launch.worker.id, launch.artifacts);
+      const assignmentTranscript = async (saved: SessionCheckpoint): Promise<ArtifactRef> => {
+        const entries = manager.getEntries().slice(initialEntryCount);
+        return storeConversation(
+          Buffer.from(entries.map((entry) => JSON.stringify(entry) + "\n").join("")),
+          {
+            kind: "assignment",
+            ref: launch.ref,
+            session: saved.id,
+            fromEntry: initialBranch,
+            throughEntry: saved.branch,
+          },
+          launch.artifacts,
+        );
+      };
+      const checkpoint = async (): Promise<SessionCheckpoint> => {
+        const saved = await checkpointConversation(manager, launch.worker.id, launch.artifacts);
+        return { ...saved, transcript: await assignmentTranscript(saved) };
+      };
       const flushConsumed = async (): Promise<void> => {
         const ready = [...pendingInputs.entries()].filter(
           ([id, item]) => item.entryId && !consumed.has(id),
@@ -812,19 +829,10 @@ export class InProcessBackend implements BackendPort {
         let saved: SessionCheckpoint | undefined;
         let transcript: ArtifactRef | undefined;
         try {
-          saved = await checkpoint();
-          const entries = manager.getEntries().slice(initialEntryCount);
-          transcript = await storeConversation(
-            Buffer.from(entries.map((entry) => JSON.stringify(entry) + "\n").join("")),
-            {
-              kind: "assignment",
-              ref: launch.ref,
-              session: saved.id,
-              fromEntry: initialBranch,
-              throughEntry: saved.branch,
-            },
-            launch.artifacts,
-          );
+          // Keep the worker checkpoint even if publishing its assignment excerpt fails.
+          saved = await checkpointConversation(manager, launch.worker.id, launch.artifacts);
+          transcript = await assignmentTranscript(saved);
+          saved = { ...saved, transcript };
         } catch (error) {
           errorMessage ??= error instanceof Error ? error.message : String(error);
         }
