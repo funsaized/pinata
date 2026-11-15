@@ -115,6 +115,7 @@ function inspector(router: ScreenRouter, pane: Pane, options: FleetOptions): str
   const { paint, ascii } = options;
   const { width, height } = pane;
   const worker = router.state.workers[ref.worker];
+  const color = worker.color ?? agentAccent(worker.agent);
   const view = router.preview();
   const message = view.result?.message;
   let preview = message?.text;
@@ -134,9 +135,9 @@ function inspector(router: ScreenRouter, pane: Pane, options: FleetOptions): str
   const content = [
     paint(
       router.inspectorFocus ? "focus" : "strong",
-      padded(ellipsis(`${ref.worker}/${ref.assignment}`, width), width),
+      paint(color, padded(ellipsis(`${ref.worker}/${ref.assignment}`, width), width)),
     ),
-    paint("muted", ellipsis(worker.agent, width)),
+    paint(color, ellipsis(worker.agent, width)),
     fit(
       paint(statusColor(assignment), status(assignment)) +
         paint("muted", ` · observed ${duration(router.observedElapsed(ref), ascii)}`),
@@ -151,7 +152,7 @@ function inspector(router: ScreenRouter, pane: Pane, options: FleetOptions): str
     );
   if (assignment.execution.phase === "ended" && assignment.execution.cleanup === "unconfirmed")
     content.push(...lines("Cleanup unconfirmed", width).map((line) => paint("error", line)));
-  content.push("", paint("strong", "Last message"));
+  content.push("", paint("strong", paint(color, "Last message")));
   if (!router.connectionAvailable || (view.error && message))
     content.push(paint("warning", "Retained preview · connection unavailable"));
   content.push(
@@ -159,7 +160,7 @@ function inspector(router: ScreenRouter, pane: Pane, options: FleetOptions): str
       paint(message ? "text" : "muted", line),
     ),
   );
-  content.push("", paint("strong", "Prompt"));
+  content.push("", paint("strong", paint(color, "Prompt")));
   content.push(
     ...excerpt(assignment.task, width, router.details ? Infinity : Math.min(8, sectionLimit)).map(
       (line) => paint("text", line),
@@ -172,7 +173,7 @@ function inspector(router: ScreenRouter, pane: Pane, options: FleetOptions): str
     ),
   );
   if (router.details) {
-    content.push("", paint("strong", "Execution details"));
+    content.push("", paint("strong", paint(color, "Execution details")));
     if (assignment.after.length)
       content.push(
         ...lines(
@@ -299,6 +300,7 @@ function list(router: ScreenRouter, pane: Pane, options: FleetOptions): string[]
   for (const node of nodes.slice(first, first + available)) {
     const assignment = node.assignment;
     const worker = router.state.workers[assignment.ref.worker];
+    const color = worker.color ?? agentAccent(worker.agent);
     const selected = assignmentKey(assignment.ref) === selection;
     const working = matchesFleetFilter(router.state, assignment, "working");
     const marker = working
@@ -320,7 +322,7 @@ function list(router: ScreenRouter, pane: Pane, options: FleetOptions): string[]
         ? "+ "
         : "- "
       : "";
-    const identityText = `${selected ? ">" : " "} ${branch}${disclosure}${selected ? marker : paint(worker.color ?? agentAccent(worker.agent), marker)} ${displayText(worker.id)}/${assignment.ref.assignment}`;
+    const identityText = `${selected ? ">" : " "} ${branch}${disclosure}${marker} ${displayText(worker.id)}/${assignment.ref.assignment}`;
     const identity =
       visibleWidth(identityText) > identityWidth
         ? fit(identityText, identityWidth - 1) + "…"
@@ -335,11 +337,8 @@ function list(router: ScreenRouter, pane: Pane, options: FleetOptions): string[]
       infoWidth >= 12 ? "   " + ellipsis(context, infoWidth - 1) : "",
     ];
     const text = selected
-      ? paint("focus", displayText(padded(fields.join(""), width)))
-      : paint(
-          matchesFleetFilter(router.state, assignment, router.filter) ? "text" : "muted",
-          fields[0],
-        ) +
+      ? paint("focus", paint(color, displayText(padded(fields.join(""), width))))
+      : paint(color, fields[0]) +
         fields[1] +
         paint(statusColor(assignment), fields[2]) +
         paint("muted", fields[3]) +

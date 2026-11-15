@@ -1,5 +1,5 @@
 import { visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
-import type { Paint } from "./palette.ts";
+import { agentAccent, type Paint } from "./palette.ts";
 import { resolveKeys, resolveConversationKeys, type ConversationKeys } from "./keys.ts";
 import { displayText, fit, padded } from "./text.ts";
 import type { ScreenRouter } from "./router.ts";
@@ -274,6 +274,8 @@ export function actionsPanel(
   height: number,
   paint: Paint,
 ): string[] {
+  const worker = router.selected ? router.state.workers[router.selected.worker] : undefined;
+  const color = worker ? (worker.color ?? agentAccent(worker.agent)) : "muted";
   const target = router.selected
     ? `${router.selected.worker}/${router.selected.assignment}`
     : "no assignment selected";
@@ -309,7 +311,7 @@ export function actionsPanel(
   });
   const header = [
     paint("strong", "Agent actions"),
-    fit(paint("accent.purple", `Selected: ${displayText(target)}`), width),
+    fit(paint(color, `Selected: ${displayText(target)}`), width),
     ...wrapTextWithAnsi("Stops keep output and edits; cleanup may take time.", width).map((line) =>
       paint("muted", line),
     ),

@@ -345,15 +345,13 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
       const view = router.conversation();
       const details = assignmentDetails(router.state, assignment);
       const worker = router.state.workers[assignment.ref.worker];
+      const color = worker.color ?? agentAccent(worker.agent);
       const context = router.state.contextUsage[assignmentKey(assignment.ref)];
       output.push(
         fit(
           paint(
             "strong",
-            paint(
-              "accent.blue",
-              displayText(`${assignment.ref.worker}/${assignment.ref.assignment}`),
-            ),
+            paint(color, displayText(`${assignment.ref.worker}/${assignment.ref.assignment}`)),
           ) +
             paint("border", " › ") +
             paint(
@@ -448,7 +446,7 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
       footer.push(
         fit(
           paint("focus", router.transcriptFocus ? " TRANSCRIPT " : " AGENT MESSAGE ") +
-            paint("accent.blue", ` ${displayText(assignment.ref.worker)}`) +
+            paint(color, ` ${displayText(assignment.ref.worker)}`) +
             paint("muted", ` · ${router.transcriptFocus ? "↑↓ scroll" : action} · `) +
             paint(
               view.follow ? "success" : view.newOutput ? "warning" : "accent.cyan",
