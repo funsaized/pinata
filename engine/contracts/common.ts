@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const versions = Object.freeze({
-  command: 2,
+  command: 1,
   config: 1,
   definition: 1,
   manifest: 1,

@@ -1581,7 +1581,7 @@ test("compact discovery exposes launch grants while preserving full definitions 
   assert(schemaText?.type === "text");
   const index = JSON.parse(schemaText.text);
   assert.equal(index.kind, "schema_index");
-  assert(index.names.includes("pinata.command.v2"));
+  assert(index.names.includes("pinata.command.v1"));
   assert.equal(surfaceReplySchema.parse(schemas.details).status, "ok");
 });
 

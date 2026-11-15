@@ -125,7 +125,7 @@ async function main() {
       import assert from "node:assert/strict";
       const contracts = await import("pi-pinata/contracts");
       const runtime = await import("pi-pinata/runtime");
-      assert.equal(typeof contracts.schemaRegistry["pinata.command.v2"].safeParse, "function");
+      assert.equal(typeof contracts.schemaRegistry["pinata.command.v1"].safeParse, "function");
       assert.equal(typeof runtime.Runtime.open, "function");
       console.log(JSON.stringify({ node: process.version, pureImports: true }));
     `,
@@ -188,7 +188,7 @@ async function main() {
     };
     const definitions = JSON.parse(command(["agents", "list", "--json"]));
     assert.match(JSON.stringify(definitions), /"name":"scout"/);
-    assert.match(command(["schema", "pinata.command.v2", "--json"]), /requestId/);
+    assert.match(command(["schema", "pinata.command.v1", "--json"]), /requestId/);
     assert.match(command(["tools", "--json"]), /pinata_integrate/);
     const smoke = await runPiSmoke({ packageRoot: installed, installed: true });
     console.log(

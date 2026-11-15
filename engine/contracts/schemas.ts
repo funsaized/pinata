@@ -115,7 +115,7 @@ export const schemaRegistry = {
   "pinata.memory-revision.v1": memoryRevisionSchema,
   "pinata.memory-edit.v1": memoryEditSchema,
   "pinata.memory-clear.v1": memoryClearSchema,
-  "pinata.command.v2": commandEnvelopeSchema,
+  "pinata.command.v1": commandEnvelopeSchema,
   "pinata.receipt.v1": commandReceiptSchema,
   "pinata.config.v1": configSchema,
   "pinata.config-layer.v1": configLayerSchema,

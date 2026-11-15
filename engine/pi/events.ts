@@ -198,7 +198,7 @@ export async function bindPiEvents(options: {
       request: "pinata.extension-request.v1",
       reply: "pinata.extension-reply.v1",
       event: "pinata.extension-event.v1",
-      command: "pinata.command.v2",
+      command: "pinata.command.v1",
     },
   });
   const unsubscribe = await source.subscribe((event: RuntimeEvent) => {

@@ -142,7 +142,8 @@ export async function runPricesIncident(options: {
     );
     assert.equal(assignment.task, historical.invocation.args.tasks[0].task);
     assert.deepEqual(assignment.context, ["Review base: HEAD. Treat this as review context."]);
-    assert.equal(accepted.workers.audit.access, "read");
+    assert.equal(accepted.workers.audit.access, "write");
+    assert(accepted.workers.audit.tools.includes("bash"));
     assert.equal(accepted.workers.audit.workspace, "shared");
     await writeFile(
       join(directory, "accepted-graph.json"),

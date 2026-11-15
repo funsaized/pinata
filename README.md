@@ -549,11 +549,16 @@ outcome is understood. See [recovery](#recovery).
 
 ## Custom agents
 
-| Shipped agent | Tools                           | Purpose                                                 |
-| ------------- | ------------------------------- | ------------------------------------------------------- |
-| `scout`       | `read`, `grep`, `find`, `ls`    | Trace code, data flow and risks.                        |
-| `builder`     | `read`, `write`, `edit`, `bash` | Implement a concrete task and report actual checks.     |
-| `reviewer`    | `read`, `grep`, `find`, `ls`    | Find defects and missing evidence in a supplied change. |
+| Shipped agent | Tools                                | Purpose                                                 |
+| ------------- | ------------------------------------ | ------------------------------------------------------- |
+| `scout`       | `read`, `grep`, `find`, `ls`         | Trace code, data flow and risks.                        |
+| `builder`     | `read`, `write`, `edit`, `bash`      | Implement a concrete task and report actual checks.     |
+| `reviewer`    | `read`, `grep`, `find`, `ls`, `bash` | Find defects and missing evidence in a supplied change. |
+
+The reviewer requests write access because shell execution requires it. Its
+instructions leave source files and commits untouched; this is a behavioral
+instruction, and shell access can mutate files. The coordinator chooses checks and
+decides acceptance.
 
 Save a specialist as `.pi/pinata/agents/api-scout.md`:
 
@@ -994,16 +999,16 @@ their complete evidence checks.
 Surface errors also include `internal_error`, `protocol_version`, `unauthenticated`,
 `transport_closed`, `transport_limit`, with an optional field where useful.
 
-| Contract                          | Version/schema                                          |
-| --------------------------------- | ------------------------------------------------------- |
-| Config                            | `1`: `pinata.config.v1`, `pinata.config-layer.v1`.      |
-| Definition                        | `1`: `pinata.definition.v1`.                            |
-| Manifest                          | `1`: `pinata.manifest.v1`.                              |
-| Journal                           | `1`: `pinata.journal.v1`.                               |
-| Event                             | `1`: `pinata.event.v1`.                                 |
-| Extension RPC                     | `1`: `pinata.extension-*.v1`.                           |
-| Application journal               | `1`: `pinata.application-journal.v1`.                   |
-| Commands/workers/results/surfaces | Command/envelope `v2`; other named schemas remain `v1`. |
+| Contract                          | Version/schema                                     |
+| --------------------------------- | -------------------------------------------------- |
+| Config                            | `1`: `pinata.config.v1`, `pinata.config-layer.v1`. |
+| Definition                        | `1`: `pinata.definition.v1`.                       |
+| Manifest                          | `1`: `pinata.manifest.v1`.                         |
+| Journal                           | `1`: `pinata.journal.v1`.                          |
+| Event                             | `1`: `pinata.event.v1`.                            |
+| Extension RPC                     | `1`: `pinata.extension-*.v1`.                      |
+| Application journal               | `1`: `pinata.application-journal.v1`.              |
+| Commands/workers/results/surfaces | All named schemas use `v1`.                        |
 
 Package and data versions are independent; unknown versions fail explicitly.
 JSON Schema describes shape. Canonical validation also checks grants, graph
@@ -1243,8 +1248,8 @@ remote CLI controls and active schedules have been removed. The root exports
 `AttachedSource` and `startIpcServer`, job/IPC schema families and scheduling tools
 are gone. Move `{workers, config}` from a job into a canonical `create` command
 with a durable request ID. Submit it through Pi tools, extension RPC or an embedded
-host. The command and envelope catalogs are now `v2`; extension protocol starts at
-`v1`. Stored manifest, journal and runtime event versions remain `v1`.
+host. All schema families, including commands, envelopes and extension RPC, use
+`v1`. Stored manifest, journal and runtime event versions also use `v1`.
 
 Replace `attach` with `view`; saved inspection no longer needs `--saved`. Replace
 CLI mutation commands with canonical commands on the owning runtime. Integrations

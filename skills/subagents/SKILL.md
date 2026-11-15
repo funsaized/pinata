@@ -14,7 +14,7 @@ does not require schema discovery. Start with `pinata_run` and
 `command: {kind: "create", workers: [{id: "worker", agent: "builder", task: "..."}]}`.
 Omit `inheritContext` unless parent import is explicitly granted; put necessary
 context in the task. For additional schema details request only the relevant
-name, such as `pinata.command.v2` or `pinata_run`, rather than the entire registry. [reference.md](reference.md) explains the current tool vocabulary.
+name, such as `pinata.command.v1` or `pinata_run`, rather than the entire registry. [reference.md](reference.md) explains the current tool vocabulary.
 
 Choose topology from the current `pinata_agents` discovery before promising a
 plan. If `delegation.enabled` is false or absent, use ordinary sibling workers;
