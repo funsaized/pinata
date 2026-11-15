@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Remove the coding arena and its evaluation guidance.
+
 ## 0.0.4
 
 - Resume Pi coordinators when all watched assignments settle. Persist exact

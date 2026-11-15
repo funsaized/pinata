@@ -98,8 +98,8 @@ standalone CLI to your shell's `PATH`. From this checkout, use
 
 Piñata targets Linux, macOS and Windows. See [platform prerequisites](#platforms)
 for worker launchers and the Windows compiler requirement. Running workers uses
-provider tokens. Schema discovery, input validation, ordinary tests and offline
-arena controls make no model calls.
+provider tokens. Schema discovery, input validation and ordinary tests make no model
+calls.
 
 Let active work settle or cancel it before removal, then use
 `pi remove npm:pi-pinata` (or the exact registered local path). For the global CLI,
@@ -1432,7 +1432,6 @@ pinata/
 |-- docs/reference/      # Generated schema and tool catalog
 |-- test/engine/         # Contract, runtime and integration regressions
 |-- bench/               # Scripted and loopback overhead measurements
-|-- arena/               # Repeatable coding trials and retained evidence
 |-- scripts/             # Catalog generation, checks and package releases
 `-- .github/workflows/   # CI, npm publishing and package mirror
 ```
@@ -1468,7 +1467,6 @@ node --test test/engine/rewrite-contracts.test.ts
 node --test test/engine/rewrite-child-backends.test.ts
 node test/engine/pi-smoke.ts
 node test/engine/package-smoke.ts
-npm run arena -- --offline
 node scripts/reference.ts --check
 node scripts/public-api.ts --check
 ```
@@ -1598,72 +1596,10 @@ command status identifies the original directory. Match source, lockfile, script
 tools, runtime, hardware, storage and launcher. Compare measurements only when their
 boundaries and coverage match. No Windows latency baseline is accepted.
 
-Before attributing an arena improvement to runtime optimization, matched profiles
-must show overhead accounts for at least 10% of the affected path. Smaller changes
+Before attributing a runtime performance improvement, matched profiles must show
+coordination overhead accounts for at least 10% of the affected path. Smaller changes
 remain local improvements. Retain source closures, raw attempts and the exact
 measurement profile with each result.
-
-</details>
-
-### Coding arena
-
-The arena runs repeatable assignments with independent oracles and complete
-trial evidence. Offline controls copy or mutate known solutions to test the harness:
-
-```sh
-npm run arena -- --offline
-npm run arena -- --offline --task team-board@1 --workflow parallel-review
-node arena/report.ts COMPLETE_BATCH_OR_MATRIX_DIRECTORY
-npm run arena:bootstrap
-npm run arena:doctor
-npm run arena:local -- --agent pinata --preview
-```
-
-The corpus includes Checkout, Reservations, Incidents and Team Board. Task definitions
-freeze prompts, starters, solutions and oracle cases. Changes require a new task version. Bootstrap
-overwrites generated `arena/local/{codex,pi,pinata}.json`. Doctor checks executable
-startup and configuration; preview prints commands and prompts. Neither establishes model
-authentication or availability or spends tokens.
-
-Native and external trials require separate token-spend authorization and
-`--allow-external`, for example `npm run arena:local -- --agent pinata --task
-checkout --allow-external`. Requested `--concurrency N` is an experimental condition
-whose meaning can differ across frameworks.
-
-<details>
-<summary>Evidence, adapters and comparisons</summary>
-
-Batches durably record cell IDs, ordering, conditions, limits and source and task digests
-before launch. Started cells without published results read `interrupted_unknown`.
-Pending, failed, timed-out and interrupted cells stay in the denominator. An uncertain
-active cell needs explicit reconciliation before retry. Reports preserve all attempts
-at new paths.
-
-Results separate execution, oracle correctness, capabilities, usage and workflow
-attestation. Missing, corrupt or conflicting observations keep totals unknown, including
-missing child records. Outer process supervision does not attest inner planning,
-delegation or review. Native and external workflow comparison eligibility stays false
-until independently attested. A passed oracle establishes only tested candidate
-contracts; it does not establish framework superiority.
-
-Oracles use a separate Node process with filesystem permission flags, fresh IPC,
-no credentials and a trusted score channel. Candidate stdout cannot supply a score.
-These are process guardrails. Use independent isolation for untrusted code;
-network confinement and hostile native-code containment are outside demonstrated coverage.
-
-External configs contain `schemaVersion`, `adapter`, `condition`, optional `limits`,
-validated by [adapter schemas](arena/adapters.ts). Commands run in the candidate
-checkout with an absolute request-file argument. Return one JSON response on stdout;
-Stderr and raw streams remain. Requests disclose no private oracle or reference solution
-paths. The native Piñata adapter loads the extension with ordinary coding tools
-and the shared command API.
-
-Source evidence includes declared harness, runtime and corpus roots, untracked source and
-package and lockfile configuration, excluding credentials and results. External dependency
-coverage stays partial. Candidate snapshots are immutable and timed, with capture cost
-separate. Match task version, starting files, model and settings, prompts, tools, limits,
-host and workflow; record unmatched differences and order. Results remain bound
-to the exact code, task, conditions and observed execution recorded for that trial.
 
 </details>
 

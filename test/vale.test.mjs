@@ -8,7 +8,6 @@ test("reader scope preserves generated output, historical evidence and fixtures"
     "docs/reference/api.md",
     "docs/tutorials/first-run.md",
     "examples/README.md",
-    "arena/README.md",
   ]) {
     assert.equal(isDocumentation(path), true, path);
   }
@@ -18,7 +17,6 @@ test("reader scope preserves generated output, historical evidence and fixtures"
     "docs/maintainers/rewrite-progress.md",
     "examples/relay/expected-report.md",
     "examples/relay/starter/REQUIREMENTS.md",
-    "arena/corpus/prompt.md",
     "bench/results/report.md",
     "engine/index.ts",
   ]) {

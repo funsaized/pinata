@@ -4,7 +4,6 @@ import { mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { surfaceReplySchema, type CoreState } from "../../engine/contracts/index.ts";
-import { captureSource, EvidenceStore } from "../../arena/evidence.ts";
 import { piCommand, record, rpc, type RpcRecord } from "./rewrite-smoke-rpc.ts";
 
 const root = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
@@ -177,20 +176,6 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const command = piCommand();
   const version = spawnSync(command[0], [...command.slice(1), "--version"], { encoding: "utf8" });
   assert.equal(version.status, 0, version.stderr);
-  const store = new EvidenceStore(join(directory, "artifacts"));
-  const source = await captureSource(root, store);
-  const fixtureFiles = [
-    "rewrite-prices-incident.ts",
-    "rewrite-smoke-rpc.ts",
-    "fixtures/rewrite-incident-provider.ts",
-    "fixtures/rewrite-prices-incident.json",
-  ];
-  const fixtures = await Promise.all(
-    fixtureFiles.map(async (path) => ({
-      path,
-      artifact: await store.put(await readFile(join(root, "test/engine", path))),
-    })),
-  );
   await writeFile(
     join(directory, "manifest.json"),
     JSON.stringify(
@@ -202,8 +187,6 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
         version: version.stdout.trim(),
         harnessNode: process.version,
         platform: process.platform,
-        source,
-        fixtures,
       },
       null,
       2,

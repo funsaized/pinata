@@ -2,13 +2,14 @@ node_modules/
 *.tgz
 coverage/
 bench/results/
+# Keep existing arena evidence and local configs out of version control.
 arena/results/
 .pinata/
 .env
 .env.*
 *.log
 
-# Machine-specific arena adapter paths (regenerate with arena:bootstrap).
+# Preserve machine-specific arena adapter configs from existing checkouts.
 arena/local/
 
 # Pinned documentation tools and downloaded upstream styles.

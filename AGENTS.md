@@ -25,25 +25,16 @@ declarations before using new APIs. Keep Linux, macOS, and Windows supported.
 Run `npm run check` and relevant tests after code changes. Use
 `node --test test/engine/<name>.test.ts` for focused checks and `npm test` for the
 full local suite. These use scripted providers without paid model calls. Live
-smokes, quality evaluations, and model-backed arena runs require authorization
-for their token spend. See [development](./README.md#development)
-for smoke, backend, and performance checks relevant to the change.
+smokes and quality evaluations require authorization for their token spend. See
+[development](./README.md#development) for smoke, backend, and performance checks
+relevant to the change.
 
-## Tests, benchmarks, and arena
+## Tests and benchmarks
 
 Tests establish behavior and regressions (`npm test`). Benchmarks measure
 coordination overhead with scripted or loopback providers (`npm run bench`);
 they do not measure model coding quality. See
 [performance](./README.md#performance) for measurement gates.
-
-The arena runs repeatable coding assignments and retains trial evidence.
-Use `npm run arena -- --offline` to check the harness with scripted controls.
-For local model runs, use `npm run arena:bootstrap`, `npm run arena:doctor`, then
-`npm run arena:local`; bootstrap overwrites generated local adapter configs.
-Retain complete batches, including failures. Distinguish oracle correctness from
-verified workflow execution; offline controls and unverified adapters do not
-establish live coding quality or framework superiority. See
-[coding arena](./README.md#coding-arena) for operation and comparison rules.
 
 ## Code standards
 

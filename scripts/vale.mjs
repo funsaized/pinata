@@ -29,7 +29,7 @@ export function isDocumentation(path, agents = false) {
   if (/^(agents|prompts|skills|examples\/agents)\//.test(path)) return agents;
   if (["AGENTS.md", "STYLE.md"].includes(path)) return agents;
   if (agents) return false;
-  if (path === "README.md" || path === "arena/README.md") return true;
+  if (path === "README.md") return true;
   if (path.startsWith("docs/")) {
     return !/^docs\/(reference\/generated\.md|maintainers\/(history|rewrite-[^/]+)\.md)$/.test(
       path,
