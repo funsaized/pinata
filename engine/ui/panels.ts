@@ -94,19 +94,24 @@ export function helpPanel(
           {
             title: "Fleet",
             rows: [
-              ["↑ / ↓", "Select subagent"],
+              ["↑ / ↓", "Select subagent or scroll the focused inspector"],
+              ["Tab", "Focus list / inspector"],
+              ["r", "Browse runs in this project when available"],
               ["Enter", "Open conversation"],
               ["← / →", "Collapse / expand children"],
               ["/", "Search agent or task; Enter applies, Esc cancels, Ctrl+U clears"],
-              ["f", "Cycle All agents / Unfinished / Failed or interrupted"],
-              ["h", "Show / hide finished work and assignment history"],
-              ["w", "Show / hide waiting and queued work"],
-              ["d", "Expand / collapse selected agent details"],
+              ["f", "Cycle Unfinished / Working / Queued / Attention / Finished"],
+              ["h", "Show finished assignments and history; press again to return"],
+              ["w", "Show queued assignments; press again to return"],
+              ["d", "Expand / collapse the prompt, last message and execution details"],
               ["a", "Stop / manage agents"],
             ],
           },
           stopping,
-          { ...navigation, rows: [["PageUp / PageDown", "Scroll fleet"], ...navigation.rows] },
+          {
+            ...navigation,
+            rows: [["PageUp / PageDown", "Scroll the focused pane"], ...navigation.rows],
+          },
         ]
       : composing
         ? [
@@ -152,7 +157,7 @@ export function helpPanel(
                 ["/worker <id> [n]", "Open an agent's latest or numbered assignment"],
                 ["/assignment <n>", "Open a numbered assignment for this agent"],
                 ["/fleet /main", "Return to the fleet or coordinator"],
-                ["/queued", "Toggle queued work and open the fleet"],
+                ["/queued", "Open the Queued filter; repeat to return"],
                 ["/scroll up|down|N", "Scroll the transcript"],
                 ["/palette <name>", "Change the viewer palette"],
               ],

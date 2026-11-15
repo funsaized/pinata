@@ -11,6 +11,7 @@ import {
   queryResultSchema,
   type ArtifactPort,
   type AssignmentRef,
+  type ArtifactRef,
   type CallerAuthority,
 } from "../../engine/contracts/index.ts";
 import { Runtime } from "../../engine/runtime/index.ts";
@@ -19,6 +20,7 @@ import { bindRuntime } from "../../engine/sources/runtime.ts";
 import { openSavedSource } from "../../engine/sources/saved.ts";
 import { parseConversationManifest, storeConversation } from "../../engine/storage/conversation.ts";
 import { digestBytes } from "../../engine/storage/io.ts";
+import { DurableStore } from "../../engine/storage/index.ts";
 import { piFixture } from "./rewrite-pi-fixture.ts";
 
 function deferred() {
@@ -447,6 +449,34 @@ test(
       assert.equal(live.source, "checkpoint");
       assert(live.artifact);
       assert(live.entries.length > 0);
+      const readArtifact = DurableStore.prototype.readArtifact;
+      const previewReads: string[] = [];
+      const read = t.mock.method(
+        DurableStore.prototype,
+        "readArtifact",
+        async function (this: DurableStore, artifact: ArtifactRef) {
+          previewReads.push(artifact.digest);
+          return readArtifact.call(this, artifact);
+        },
+      );
+      const preview = await world.runtime.query(
+        { kind: "conversation_preview", ref },
+        world.caller,
+      );
+      read.mock.restore();
+      assert.equal(
+        previewReads.includes(live.artifact.digest),
+        false,
+        "a preview must not scan the whole worker checkpoint",
+      );
+      assert.equal(preview.kind, "conversation_preview");
+      if (preview.kind !== "conversation_preview") throw new Error("Expected a preview");
+      assert.equal(preview.source, "assignment", "live previews carry an assignment transcript");
+      assert.equal(
+        preview.message,
+        undefined,
+        "an unanswered assignment must not borrow earlier context",
+      );
       assert.equal((await world.runtime.query({ kind: "status" }, world.caller)).kind, "status");
     } finally {
       release.resolve();
@@ -500,6 +530,25 @@ test(
     const direct = bindRuntime(world.runtime, { ...world.caller, kind: "viewer" });
     const request = { method: "query", input: { kind: "conversation", ref } };
     assert.deepEqual(await saved.request(request), await direct.request(request));
+    for (const [assignment, text] of [
+      [1, "Scripted reply 1"],
+      [2, "Scripted reply 2"],
+    ] as const) {
+      const previewRequest = {
+        method: "query",
+        input: { kind: "conversation_preview", ref: { ...ref, assignment } },
+      };
+      const livePreview = await direct.request(previewRequest);
+      assert.deepEqual(await saved.request(previewRequest), livePreview);
+      assert.equal(livePreview.status, "ok");
+      if (
+        livePreview.status !== "ok" ||
+        livePreview.response.method !== "query" ||
+        livePreview.response.result.kind !== "conversation_preview"
+      )
+        throw new Error("Expected a preview");
+      assert.equal(livePreview.response.result.message?.text, text);
+    }
     await assert.rejects(
       world.runtime.query(
         { kind: "conversation", ref: { ...ref, run: "elsewhere" } },
@@ -581,4 +630,85 @@ test("chunked first pages validate Pi parent links beyond the requested page", a
     ),
     /broken entry chain/,
   );
+});
+
+test("assistant previews exclude thinking, tool data and other assignments and cache immutable excerpts", async () => {
+  const { artifacts, reads } = conversationArtifacts();
+  const ref: AssignmentRef = { run: "preview", worker: "reader", assignment: 2 };
+  const entries = [
+    { type: "message", message: { role: "assistant", content: "Earlier response" } },
+    {
+      type: "message",
+      message: {
+        role: "assistant",
+        content: [
+          { type: "thinking", thinking: "Private reasoning" },
+          { type: "text", text: "Latest answer" },
+          { type: "toolCall", name: "bash", arguments: { command: "private tool input" } },
+        ],
+      },
+    },
+    { type: "message", message: { role: "toolResult", content: "Tool output" } },
+    { type: "custom_message", customType: "pinata.input", content: "Coordinator instruction" },
+  ];
+  const artifact = await artifacts.put(
+    Buffer.from(canonicalJson({ schemaVersion: 1, ref, entries })),
+  );
+  const queries = new ConversationQueries(artifacts);
+  const snapshot = { source: "assignment" as const, artifact };
+  const preview = await queries.preview(ref, snapshot);
+  queryResultSchema.parse(preview);
+  assert.deepEqual(preview.message, { text: "Latest answer", truncated: false });
+  assert.equal(preview.complete, true);
+  const count = reads.length;
+  preview.message!.text = "Caller mutation";
+  assert.equal((await queries.preview(ref, snapshot)).message?.text, "Latest answer");
+  assert.equal(reads.length, count, "the same immutable artifact reuses its bounded excerpt");
+  await assert.rejects(queries.preview({ ...ref, assignment: 1 }, snapshot), /another assignment/);
+  const checkpoint = await queries.preview(ref, { source: "checkpoint", artifact });
+  assert.equal(checkpoint.message, undefined);
+  assert.equal(checkpoint.complete, false);
+  queries.clear();
+  await queries.preview(ref, snapshot);
+  assert(reads.length > count);
+});
+
+test("preview scans are bounded, read only tail chunks and distinguish incomplete from empty", async () => {
+  const { artifacts, reads } = conversationArtifacts();
+  const ref: AssignmentRef = { run: "preview", worker: "reader", assignment: 1 };
+  const queries = new ConversationQueries(artifacts);
+  const store = (entries: unknown[]) =>
+    storeConversation(
+      Buffer.from(entries.map((entry) => JSON.stringify(entry) + "\n").join("")),
+      { kind: "assignment", ref, session: "session", fromEntry: null, throughEntry: "last" },
+      artifacts,
+    );
+  const tool = { type: "message", message: { role: "toolResult", content: "tool text" } };
+  const assistant = { type: "message", message: { role: "assistant", content: "Final text" } };
+  const artifact = await store([...Array.from({ length: 2_000 }, () => tool), assistant]);
+  const preview = await queries.preview(ref, { source: "assignment", artifact });
+  assert.equal(preview.message?.text, "Final text");
+  assert.equal(reads.length, 2, "preview reads the manifest and the last chunk only");
+  const noRecentText = await store([assistant, ...Array.from({ length: 2_000 }, () => tool)]);
+  reads.length = 0;
+  const incomplete = await queries.preview(ref, { source: "assignment", artifact: noRecentText });
+  assert.equal(incomplete.complete, false);
+  assert.equal(incomplete.message, undefined);
+  assert(reads.length <= 6, "a preview does not page the full transcript looking for old text");
+  const empty = await queries.preview(ref, { source: "assignment", artifact: await store([tool]) });
+  assert.equal(empty.complete, true);
+  assert.equal(empty.message, undefined);
+  const huge = { digest: "a".repeat(64), size: 3 * 1024 * 1024 };
+  reads.length = 0;
+  assert.equal(
+    (await queries.preview(ref, { source: "assignment", artifact: huge })).complete,
+    false,
+  );
+  assert.equal(reads.length, 0, "oversized monolithic evidence is not read for a preview");
+  const long = await store([
+    { type: "message", message: { role: "assistant", content: "🪅".repeat(5_000) } },
+  ]);
+  const clipped = await queries.preview(ref, { source: "assignment", artifact: long });
+  assert.equal(clipped.message?.truncated, true);
+  assert.equal(Array.from(clipped.message?.text ?? "").length, 4096);
 });

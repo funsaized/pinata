@@ -28,6 +28,7 @@ import {
 } from "./mention-input.ts";
 import { installCoordinatorUi } from "../ui/pi.ts";
 import { ToolPages } from "../sources/pages.ts";
+import { projectRuns } from "../sources/project.ts";
 import { registerMemoryCommand } from "./memory.ts";
 import { completionWatchType, CoordinatorCompletion } from "./completion.ts";
 
@@ -226,6 +227,10 @@ export function createPinataExtension(options: PiExtensionOptions = {}): Extensi
       pi,
       async (context) => (await getBinding(context)).host.source,
       {
+        runs: (context, source) =>
+          projectRuns(source.location?.workspace ?? context.cwd, () =>
+            [...bindings.values()].map((binding) => binding.host.source),
+          ),
         settings: (_context, source) =>
           [...bindings.values()].find((binding) => binding.host.source === source)?.host.config.ui,
         mode: (_context, source) =>

@@ -25,11 +25,10 @@ pi install npm:pi-pinata
 [Workflows](#workflows) · [Agents](#custom-agents) · [Configuration](#configuration) ·
 [Tools](#tools) · [CLI](#cli-reference) · [API](#package-api) ·
 [Implementation](#architecture-and-implementation-index) · [Development](#development)
-pinata-navigation.gif
 
-![A live Piñata fleet with nine agents, two levels of delegation, a scout and a queued reviewer.](media/pinata-fleet.png)
+![Piñata fleet with project filters, full-row selection and a prompt and last-message inspector. Scripted demonstration.](media/pinata-fleet.png)
 
-https://github.com/user-attachments/assets/e2c60738-1052-4cf4-beaf-8cfe9f7a5e3a
+[Watch the fleet demo (MP4)](media/pinata-demo.mp4) · [Recording details](media/README.md)
 
 ## Why Piñata
 
@@ -165,35 +164,49 @@ automatic returns until the next user turn. Closing the session stops wake-ups;
 reopening it restores retained watches. These continuations use the shared engine's
 settled results. Embedded hosts own their notification policy.
 
-![Navigate a live nine-agent fleet with animated activity and two delegation levels: collapse branches, open conversations, switch workers, and search.](media/pinata-navigation.gif)
+![Navigate a scripted project fleet: inspect prompts and messages, filter queued and finished work, and open a worker conversation.](media/pinata-navigation.gif)
 
-The coordinator shows a compact Agents tree while work is active or queued.
-Workers have activity markers, model labels and execution state; real children
-branch beneath their parent. Dependencies appear as `after:` references. Finished
-work disappears from the compact widget and is hidden in the fleet by default.
-Use `h` in the fleet to show finished work and older assignments. Work awaiting
-cleanup stays visible, and active children retain their parent branch for context.
-Results and recovery evidence remain available. `/pinata` opens an idle fleet.
+The coordinator shows a compact Agents tree while work is active or queued. Real
+children branch beneath their parent; dependencies appear as `after:` references.
+Finished work disappears from the widget. `/pinata` opens the full fleet.
+
+The fleet highlights the selected row and shows its last assistant message and
+prompt in an inspector. Wide terminals place the inspector on the right; smaller
+terminals stack it directly below the list. Tab moves focus between panes, page
+keys scroll the focused pane, and the wheel scrolls the pane under the pointer.
+`d` expands the exact prompt, message and execution details. Cleanup problems stay
+visible when details are collapsed. Enter opens the full conversation.
+
+The filter strip counts Unfinished, Working, Queued, Attention and Finished work.
+Working includes preparing, running and stopping; rows keep those exact states.
+Attention includes unresolved cleanup and failed or interrupted assignments that
+are latest for their worker or still have queued dependents. Finished means execution ended
+with confirmed cleanup, not necessarily success or acceptance. Counts apply after
+search and before branch collapse; parents shown only for context do not add to
+counts. `f` cycles filters. `h` selects Finished, including earlier assignments;
+`w` selects Queued. Press the same shortcut again to restore the previous filter
+and selection. Dependencies do not create parent/child branches.
+
+Search with `/`, apply with Enter, cancel with Escape, or clear with Ctrl+U.
+Cancelling restores the previous query and selection. The Observed column measures
+time since this viewer witnessed execution start. A dash means the start is unknown;
+it is not an estimate of total execution time. Model settings live in the inspector.
+
+Last-message previews use retained assistant text for the selected assignment,
+excluding thinking and tool payloads. Reads are bounded and cached by artifact;
+only the visible selection refreshes. Incomplete evidence and disconnected previews
+are labeled. A whole-worker checkpoint is never attributed to a later assignment.
+
+Press `r` for runs in this project. Related Git worktrees share a run list, with
+workspace paths to distinguish them; non-Git folders use their canonical workspace
+root. Matching runs already bound to custom stores also appear. Opening saved
+evidence is read-only and does not acquire ownership or start workers. Each run
+keeps its selection, filters and drafts. Fleet controls target only the selected run,
+including its hidden assignments.
 
 Fleet and conversation screens fill the terminal. Pi renders user cards, Markdown,
 syntax highlighting and tool output using its theme. Completion cards show
 "Subagent result" with the worker, outcome, summary and conversation command.
-Backend and context metadata remain available through the details control.
-
-The fleet keeps the animated tree, with one aligned row per assignment and status
-near the agent name. The animation travels along active branches; reduced and off
-motion settings keep the branches still.
-Queued stages are visible by default and show what they are waiting for. `w` hides
-other queued stages while keeping the selected agent visible. Search with `/`,
-apply with Enter, cancel with Escape, or clear with Ctrl+U. Cancelling restores the
-previous query and selected agent. Dependency edges do not create parent/child
-branches. Shared model settings appear once;
-mixed models get their own column when there is room. The selected agent's task
-and waiting reason appear in a separate panel, with `d` for execution details.
-Task previews and the selected panel expand to the terminal width. Elapsed time
-appears as a value with a unit, such as `1.7s`, and measures time since this viewer
-witnessed an assignment start. A dash means the start is unknown. It is not an
-estimate of total execution time.
 
 | Input                                             | Action                                                      |
 | ------------------------------------------------- | ----------------------------------------------------------- |
@@ -204,13 +217,15 @@ estimate of total execution time.
 | Alt+Left/Right                                    | Browse earlier/later assignments for that worker.           |
 | Left/Right in the fleet                           | Collapse/expand a child branch.                             |
 | Mouse click/double click                          | Select/open a fleet row.                                    |
-| Mouse wheel, PageUp/PageDown, Alt+PageUp/PageDown | Scroll the selected view.                                   |
+| Mouse wheel, PageUp/PageDown, Alt+PageUp/PageDown | Scroll the focused pane; wheel follows pointer.             |
 | `/` in the fleet                                  | Search workers/tasks; Enter keeps the filter.               |
-| `f` in the fleet                                  | Cycle all/unfinished/failed.                                |
-| `h` in the fleet                                  | Show/hide finished work and assignment history.             |
-| `w` in the fleet                                  | Show/hide waiting and queued work.                          |
+| `f` in the fleet                                  | Cycle the five status filters.                              |
+| `h` in the fleet                                  | Select Finished; press again to restore the previous view.  |
+| `w` in the fleet                                  | Select Queued; press again to restore the previous view.    |
 | `a` in the fleet                                  | Show stop actions for an assignment, agent or entire fleet. |
 | `d` in the fleet                                  | Expand details for the selected assignment.                 |
+| Tab in the fleet                                  | Switch list/inspector focus.                                |
+| `r` in the fleet                                  | Browse runs in the current project.                         |
 | Tab in a conversation                             | Switch composer/transcript focus.                           |
 | Ctrl+O in a conversation                          | Expand/collapse tool output.                                |
 | Ctrl+T in a conversation                          | Show/hide thinking output.                                  |
@@ -949,12 +964,19 @@ Worker requests require `id`, `agent`, `task`. Optional fields: `origin`, `messa
 assignment in the same run. It copies no context or files and adds no dependency;
 supply these explicitly when replacing work.
 
-Queries: `status`, `messages`, `config`, `receipt`, `result`, `events`, `schemas`, `definitions`,
-`conversation`, `changes`, `application`, `wait`. Result/conversation/changes select
-`ref`; receipt selects `requestId`; application selects `operationId`. Conversation
+Queries: `status`, `messages`, `config`, `receipt`, `result`, `events`, `schemas`,
+`definitions`, `conversation`, `conversation_preview`, `changes`, `application`,
+`wait`. Result, conversation, preview and changes select `ref`; receipt selects
+`requestId`; application selects `operationId`. Conversation
 paging uses returned `cursor`; events and messages use `since`. Messages can filter
 by `worker`. Unnamed model-facing schema
 discovery returns an index. Request a named schema or tool for its fields.
+
+`conversation_preview` returns up to 4,096 code points of assistant text, with its
+source and completeness. It searches at most 512 recent entries within 2 MiB of
+retained evidence. A checkpoint fallback reports its source without attributing
+whole-worker history to the selected assignment. Full conversation queries retain
+their complete evidence checks.
 
 ### Errors and versions
 

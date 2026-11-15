@@ -90,6 +90,28 @@ export function needsAttention(state: CoreState, assignment: Assignment): boolea
   );
 }
 
+export const fleetFilters = ["unfinished", "working", "queued", "attention", "finished"] as const;
+export type FleetFilter = (typeof fleetFilters)[number];
+
+export function matchesFleetFilter(
+  state: CoreState,
+  assignment: Assignment,
+  filter: FleetFilter,
+): boolean {
+  switch (filter) {
+    case "unfinished":
+      return !isFinished(assignment);
+    case "working":
+      return !["ended", "queued"].includes(assignment.execution.phase);
+    case "queued":
+      return assignment.execution.phase === "queued";
+    case "attention":
+      return needsAttention(state, assignment);
+    case "finished":
+      return isFinished(assignment);
+  }
+}
+
 export function queueLabel(
   state: CoreState,
   assignment: Assignment,

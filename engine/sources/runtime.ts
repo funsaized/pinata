@@ -28,6 +28,7 @@ export type RuntimeService = Pick<
 >;
 export type RuntimeSource = {
   readonly run: string;
+  readonly location?: { workspace: string; directory: string };
   readonly capabilities: SurfaceCapabilities;
   request(input: unknown, signal?: AbortSignal): Promise<SurfaceReply>;
   snapshot(): SnapshotEvent;

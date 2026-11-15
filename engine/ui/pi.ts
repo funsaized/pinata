@@ -8,8 +8,14 @@ import { ScreenRouter, type ScreenName } from "./router.ts";
 import { PinataScreen, resolveKeys } from "./screen.ts";
 import { createPaint, rainbowText, type Paint, type SemanticToken } from "./palette.ts";
 import { fleetWidget } from "./render.ts";
+import { projectRuns, type ProjectRunCatalog } from "../sources/project.ts";
 
-type UiBinding = { session: string; router: ScreenRouter; context: ExtensionContext };
+type UiBinding = {
+  session: string;
+  router: ScreenRouter;
+  context: ExtensionContext;
+  runs?: ProjectRunCatalog;
+};
 export type CoordinatorUi = {
   bind(context: ExtensionContext, source?: RuntimeSource): Promise<ScreenRouter>;
   open(
@@ -25,6 +31,7 @@ export type CoordinatorUi = {
 export type CoordinatorUiOptions = {
   settings?(context: ExtensionContext, source: RuntimeSource): Partial<Config["ui"]> | undefined;
   mode?(context: ExtensionContext, source: RuntimeSource): Config["mode"] | undefined;
+  runs?(context: ExtensionContext, source: RuntimeSource): ProjectRunCatalog | undefined;
 };
 
 function inherit(theme: Theme, token: SemanticToken, text: string): string {
@@ -129,12 +136,13 @@ export function installCoordinatorUi(
     async bind(context, source) {
       const resolved = source ?? (await sourceProvider(context));
       const session = context.sessionManager.getSessionId();
-      const key = `${session}/${resolved.run}`;
+      const key = `${session}/${resolved.location?.directory ?? resolved.run}`;
       let binding = bindings.get(key);
       if (!binding) {
         const router = new ScreenRouter(resolved, {
           ui: options.settings?.(context, resolved),
           mode: options.mode?.(context, resolved),
+          project: resolved.location?.workspace ?? context.cwd,
           accepted(receipt, messageId) {
             pi.sendMessage(
               {
@@ -151,7 +159,18 @@ export function installCoordinatorUi(
             );
           },
         });
-        binding = { session, router, context };
+        binding = {
+          session,
+          router,
+          context,
+          runs:
+            options.runs?.(context, resolved) ??
+            (resolved.location
+              ? projectRuns(resolved.location.workspace, () =>
+                  [...bindings.values()].map((binding) => binding.router.source),
+                )
+              : undefined),
+        };
         bindings.set(key, binding);
         await router.start();
       }
@@ -216,6 +235,8 @@ export function installCoordinatorUi(
                 },
                 ascii: process.env.TERM === "dumb" || process.env.PINATA_ASCII === "1",
                 error: (error) => errors(context, error),
+                runs: binding.runs,
+                openRun: (source) => api.open(context, "fleet", undefined, source),
               });
             },
             {

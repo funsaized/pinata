@@ -605,18 +605,28 @@ export class Runtime {
         await readChanges(request.ref, snapshot, { read: (ref) => this.store.readArtifact(ref) }),
       );
     }
-    if (request.kind === "conversation") {
+    if (request.kind === "conversation" || request.kind === "conversation_preview") {
       const saved = await this.serialize(async () => {
         this.authorize(caller, false);
         return savedConversation(this.state, request.ref);
       });
-      if (request.cursor || saved) return immutable(await this.conversations.query(request, saved));
+      if (request.kind === "conversation" && (request.cursor || saved))
+        return immutable(await this.conversations.query(request, saved));
+      if (request.kind === "conversation_preview" && saved)
+        return immutable(await this.conversations.preview(request.ref, saved));
       // Backend checkpointing may flush observations through the runtime queue.
       // Keep that wait outside serialization so queries cannot deadlock control.
-      const checkpoint = await this.execution?.checkpoint(request.ref);
+      const checkpoint =
+        request.kind === "conversation_preview"
+          ? await this.execution?.previewCheckpoint(request.ref)
+          : await this.execution?.checkpoint(request.ref);
       const snapshot = checkpoint
-        ? { source: "checkpoint" as const, artifact: checkpoint.artifact }
+        ? request.kind === "conversation_preview" && checkpoint.transcript
+          ? { source: "assignment" as const, artifact: checkpoint.transcript }
+          : { source: "checkpoint" as const, artifact: checkpoint.artifact }
         : await this.serialize(async () => savedConversation(this.state, request.ref));
+      if (request.kind === "conversation_preview")
+        return immutable(await this.conversations.preview(request.ref, snapshot));
       return immutable(await this.conversations.query(request, snapshot));
     }
     return this.serialize(async () => {

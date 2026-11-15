@@ -584,6 +584,20 @@
                   "properties": {
                     "kind": {
                       "type": "string",
+                      "const": "conversation_preview"
+                    },
+                    "ref": {
+                      "$ref": "#/definitions/__schema7"
+                    }
+                  },
+                  "required": ["kind", "ref"],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
                       "const": "changes"
                     },
                     "ref": {
@@ -1695,6 +1709,47 @@
                                     }
                                   },
                                   "required": ["kind", "ref", "source", "entries", "complete"],
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "type": "string",
+                                      "const": "conversation_preview"
+                                    },
+                                    "ref": {
+                                      "$ref": "#/definitions/__schema6"
+                                    },
+                                    "source": {
+                                      "type": "string",
+                                      "enum": ["assignment", "checkpoint", "unavailable"]
+                                    },
+                                    "artifact": {
+                                      "allOf": [
+                                        {
+                                          "$ref": "#/definitions/__schema16"
+                                        }
+                                      ]
+                                    },
+                                    "message": {
+                                      "type": "object",
+                                      "properties": {
+                                        "text": {
+                                          "type": "string"
+                                        },
+                                        "truncated": {
+                                          "type": "boolean"
+                                        }
+                                      },
+                                      "required": ["text", "truncated"],
+                                      "additionalProperties": false
+                                    },
+                                    "complete": {
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": ["kind", "ref", "source", "complete"],
                                   "additionalProperties": false
                                 },
                                 {
@@ -10263,6 +10318,47 @@
                             }
                           },
                           "required": ["kind", "ref", "source", "entries", "complete"],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "conversation_preview"
+                            },
+                            "ref": {
+                              "$ref": "#/definitions/__schema6"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": ["assignment", "checkpoint", "unavailable"]
+                            },
+                            "artifact": {
+                              "allOf": [
+                                {
+                                  "$ref": "#/definitions/__schema16"
+                                }
+                              ]
+                            },
+                            "message": {
+                              "type": "object",
+                              "properties": {
+                                "text": {
+                                  "type": "string"
+                                },
+                                "truncated": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": ["text", "truncated"],
+                              "additionalProperties": false
+                            },
+                            "complete": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": ["kind", "ref", "source", "complete"],
                           "additionalProperties": false
                         },
                         {
@@ -26104,6 +26200,20 @@
           "properties": {
             "kind": {
               "type": "string",
+              "const": "conversation_preview"
+            },
+            "ref": {
+              "$ref": "#/definitions/__schema3"
+            }
+          },
+          "required": ["kind", "ref"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
               "const": "changes"
             },
             "ref": {
@@ -26661,6 +26771,47 @@
             }
           },
           "required": ["kind", "ref", "source", "entries", "complete"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "conversation_preview"
+            },
+            "ref": {
+              "$ref": "#/definitions/__schema6"
+            },
+            "source": {
+              "type": "string",
+              "enum": ["assignment", "checkpoint", "unavailable"]
+            },
+            "artifact": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/__schema8"
+                }
+              ]
+            },
+            "message": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string"
+                },
+                "truncated": {
+                  "type": "boolean"
+                }
+              },
+              "required": ["text", "truncated"],
+              "additionalProperties": false
+            },
+            "complete": {
+              "type": "boolean"
+            }
+          },
+          "required": ["kind", "ref", "source", "complete"],
           "additionalProperties": false
         },
         {
@@ -37103,6 +37254,20 @@
                 "properties": {
                   "kind": {
                     "type": "string",
+                    "const": "conversation_preview"
+                  },
+                  "ref": {
+                    "$ref": "#/definitions/__schema3"
+                  }
+                },
+                "required": ["kind", "ref"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
                     "const": "changes"
                   },
                   "ref": {
@@ -37952,6 +38117,7 @@
     "schemas",
     "definitions",
     "conversation",
+    "conversation_preview",
     "changes",
     "application"
   ],

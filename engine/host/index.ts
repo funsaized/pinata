@@ -325,7 +325,7 @@ export async function openHost(options: HostOptions): Promise<Host> {
     directory,
     workspace,
     config,
-    source: bindRuntime(runtime, caller),
+    source: { ...bindRuntime(runtime, caller), location: { workspace, directory } },
     close: (reason = "Host closed") => runtime.close({ reason }),
   };
 }

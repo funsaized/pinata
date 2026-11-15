@@ -52,11 +52,13 @@ export function assignmentTree(
     attention?: boolean;
     limit?: number;
     trailing?: boolean;
+    include?: ReadonlySet<string>;
   } = {},
 ): TreeNode[] {
   const all = assignments(state);
   const selected = options.selected ? assignmentKey(options.selected) : undefined;
   let chosen = all.filter((assignment) => {
+    if (options.include) return options.include.has(assignmentKey(assignment.ref));
     const phase = assignment.execution.phase;
     if (options.finished === false && isFinished(assignment)) return false;
     if (assignmentKey(assignment.ref) === selected) return true;

@@ -115,13 +115,26 @@ export class ExecutionCoordinator {
   }
 
   async checkpoint(ref: AssignmentRef): Promise<SessionCheckpoint | undefined> {
+    const checkpoint = await this.liveCheckpoint(ref);
+    if (!checkpoint) return undefined;
+    await verifyConversationArtifact(checkpoint.artifact, this.host.artifacts);
+    await this.host.assertOwner();
+    return checkpoint;
+  }
+
+  // The preview reader verifies the assignment manifest and the bounded excerpt
+  // it reads. Do not scan the whole worker's history for a sidebar preview.
+  async previewCheckpoint(ref: AssignmentRef): Promise<SessionCheckpoint | undefined> {
+    return this.liveCheckpoint(ref);
+  }
+
+  private async liveCheckpoint(ref: AssignmentRef): Promise<SessionCheckpoint | undefined> {
     const active = this.active.get(assignmentKey(ref));
     if (!active?.handle) return undefined;
     await this.host.assertOwner();
     const checkpoint = sessionCheckpointSchema.parse(await active.handle.checkpoint());
     if (checkpoint.worker !== ref.worker)
       throw new DomainError("context_unavailable", "Live checkpoint belongs to another worker");
-    await verifyConversationArtifact(checkpoint.artifact, this.host.artifacts);
     await this.host.assertOwner();
     return checkpoint;
   }

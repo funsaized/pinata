@@ -407,3 +407,55 @@ test(
     assert(world.releases.length > 0);
   },
 );
+
+test("a failed assignment transcript write retains the worker checkpoint for inspection and recovery", async (t) => {
+  const world = await piFixture(t, () => fauxAssistantMessage("Retained despite excerpt failure"));
+  const start = world.backend.start.bind(world.backend);
+  const failExcerpt: typeof world.backend.start = (launch, observe, signal) =>
+    start(
+      {
+        ...launch,
+        artifacts: {
+          ...launch.artifacts,
+          async put(bytes) {
+            const text = Buffer.from(bytes).toString("utf8");
+            if (text.startsWith("{") && text.includes('"ref":') && text.includes('"entries":'))
+              throw new Error("Scripted assignment excerpt write failure");
+            return launch.artifacts.put(bytes);
+          },
+        },
+      },
+      observe,
+      signal,
+    );
+  t.mock.method(world.backend, "start", failExcerpt);
+  const accepted = await world.runtime.execute(
+    {
+      requestId: "start",
+      command: {
+        kind: "create",
+        workers: [{ id: "worker", agent: "fixture", task: "Preserve the response" }],
+      },
+    },
+    world.caller,
+  );
+  assert.equal(accepted.status, "accepted");
+  const ended = await world.runtime.wait({}, world.caller, AbortSignal.timeout(10_000));
+  const ref = ended.results[0].ref;
+  assert.deepEqual(ended.results[0].execution, {
+    phase: "ended",
+    reason: "failed",
+    cleanup: "confirmed",
+  });
+  const result = await world.runtime.query({ kind: "result", ref }, world.caller);
+  assert(result.kind === "result" && result.result);
+  assert(
+    result.result.session,
+    "the full worker checkpoint remains referenced after excerpt failure",
+  );
+  assert.equal(result.result.transcript, undefined);
+  const conversation = await world.runtime.query({ kind: "conversation", ref }, world.caller);
+  assert(conversation.kind === "conversation");
+  assert.equal(conversation.source, "checkpoint");
+  assert.match(JSON.stringify(conversation.entries), /Retained despite excerpt failure/);
+});

@@ -71,6 +71,7 @@ export const runtimeQuerySchema = z.discriminatedUnion("kind", [
     ref: assignmentRefSchema,
     cursor: textSchema.optional(),
   }),
+  z.strictObject({ kind: z.literal("conversation_preview"), ref: assignmentRefSchema }),
   z.strictObject({ kind: z.literal("changes"), ref: assignmentRefSchema }),
   z.strictObject({ kind: z.literal("application"), operationId: identitySchema }),
 ]);
@@ -134,6 +135,15 @@ export const conversationQueryResultSchema = z.strictObject({
   complete: z.boolean(),
 });
 export type ConversationQueryResult = z.infer<typeof conversationQueryResultSchema>;
+export const conversationPreviewSchema = z.strictObject({
+  kind: z.literal("conversation_preview"),
+  ref: assignmentRefSchema,
+  source: z.enum(["assignment", "checkpoint", "unavailable"]),
+  artifact: artifactRefSchema.optional(),
+  message: z.strictObject({ text: z.string(), truncated: z.boolean() }).optional(),
+  complete: z.boolean(),
+});
+export type ConversationPreview = z.infer<typeof conversationPreviewSchema>;
 export const changesQueryResultSchema = z.strictObject({
   kind: z.literal("changes"),
   ref: assignmentRefSchema,
@@ -173,6 +183,7 @@ export const queryResultSchema = z.discriminatedUnion("kind", [
   receiptQueryResultSchema,
   assignmentQueryResultSchema,
   conversationQueryResultSchema,
+  conversationPreviewSchema,
   z.strictObject({
     kind: z.literal("definitions"),
     definitions: z.array(definitionSummarySchema),
