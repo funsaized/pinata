@@ -183,14 +183,14 @@ test("fleet rows preserve actual parent branches and unconfirmed cleanup blocker
     );
   assert.match(render(), /Attention 1/);
   assert.match(render(), /Failed !/);
-  assert.match(render(), /└─ ● worker-2\/1/);
+  assert.match(render(), /└─ ───── worker-2\/1/);
   assert.match(render(), /Waiting for worker-1\/1 \(failed; cleanup/);
   assert.match(render(), /unconfirmed\)/);
   router.navigate("fleet", ref());
   router.collapse(true);
-  assert.doesNotMatch(render(), /└─ ● worker-2\/1/);
+  assert.doesNotMatch(render(), /└─ ───── worker-2\/1/);
   router.collapse(false);
-  assert.match(render(), /└─ ● worker-2\/1/);
+  assert.match(render(), /└─ ───── worker-2\/1/);
   router.dispose();
 });
 function accepted(input: unknown): SurfaceReply {
@@ -1845,11 +1845,11 @@ test("tree activity loops without idle frames around completed ancestors and que
         .filter((line) => /worker-(3|5)\/1/.test(line));
       tracks.add(activeRows[0].split("worker-")[0]);
       assert(
-        activeRows.some((line) => /[|/\\◐◓◑◒-]/.test(line.split("worker-")[0])),
+        activeRows.some((line) => /[cC]/.test(line.split("worker-")[0])),
         `missing fleet activity at frame ${frame}`,
       );
     }
-    assert(tracks.size === 4, "fleet activity uses a compact four-frame marker");
+    assert(tracks.size > 4, "fleet activity travels along the shared tree animation track");
     for (const motion of ["reduced", "off"] as const) {
       router.motion = motion;
       const track = () =>
@@ -1861,7 +1861,7 @@ test("tree activity loops without idle frames around completed ancestors and que
       const initial = track();
       now = 750;
       assert.deepEqual(track(), initial, `${motion} motion keeps fleet branches still`);
-      assert(initial.every((line) => line.includes(ascii ? "*" : "●")));
+      assert(initial.every((line) => line.includes(ascii ? "-----" : "─────")));
     }
     router.motion = "full";
   }

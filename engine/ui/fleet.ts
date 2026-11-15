@@ -11,6 +11,7 @@ import {
 import { agentAccent, type Paint } from "./palette.ts";
 import type { ScreenRouter } from "./router.ts";
 import { displayText, fit, lines, padded } from "./text.ts";
+import { activityIndicator } from "./tree.ts";
 
 export type Pane = { x: number; y: number; width: number; height: number };
 export type FleetRegions = {
@@ -271,7 +272,7 @@ function list(router: ScreenRouter, pane: Pane, options: FleetOptions): string[]
           visibleWidth(node.assignment.ref.worker) +
           String(node.assignment.ref.assignment).length +
           node.prefix.length +
-          4,
+          8,
       ),
     ),
     Math.max(8, Math.min(32, Math.floor(width * 0.4))),
@@ -296,26 +297,27 @@ function list(router: ScreenRouter, pane: Pane, options: FleetOptions): string[]
     router.fleetRenderedSelection = selection;
   }
   router.fleetScroll = first;
-  const frame = Math.floor(performance.now() / 250);
-  for (const node of nodes.slice(first, first + available)) {
+  const visible = nodes.slice(first, first + available);
+  const activeCount = visible.filter((node) =>
+    matchesFleetFilter(router.state, node.assignment, "working"),
+  ).length;
+  const now = performance.now();
+  let activeRow = 0;
+  for (const node of visible) {
     const assignment = node.assignment;
     const worker = router.state.workers[assignment.ref.worker];
     const color = worker.color ?? agentAccent(worker.agent);
     const selected = assignmentKey(assignment.ref) === selection;
     const working = matchesFleetFilter(router.state, assignment, "working");
     const marker = working
-      ? router.motion === "full"
-        ? (ascii ? ["|", "/", "-", "\\"] : ["◐", "◓", "◑", "◒"])[frame % 4]
-        : ascii
-          ? "*"
-          : "●"
+      ? activityIndicator(router.motion, now, "", activeRow++, activeCount + 4, ascii ?? false)
       : assignment.execution.phase === "queued"
         ? ascii
-          ? "o"
-          : "○"
+          ? "  o  "
+          : "  ○  "
         : assignment.execution.phase === "ended" && assignment.execution.reason === "completed"
-          ? "+"
-          : "!";
+          ? "  +  "
+          : "  !  ";
     const branch = node.prefix.slice(3);
     const disclosure = node.hasChildren
       ? router.collapsed.has(assignmentKey(assignment.ref))
