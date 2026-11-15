@@ -121,7 +121,7 @@ function inspector(router: ScreenRouter, pane: Pane, options: FleetOptions): str
   if (message?.truncated) preview += "…";
   if (!preview) {
     if (assignment.execution.phase === "queued") preview = "Not started yet.";
-    else if (view.loading) preview = "Loading last message…";
+    else if (view.loading && !view.result && !view.error) preview = "Loading last message…";
     else if (view.error) preview = "Preview unavailable. Enter opens the conversation.";
     else if (view.result?.complete) preview = "No assistant message yet.";
     else if (view.result?.source === "checkpoint")

@@ -318,3 +318,99 @@ test("a disconnected inspector retains its preview and refreshes a finished assi
   assert.equal(router.preview().result?.message?.text, "Fresh after reconnect");
   assert.equal(source.calls.length, count + 1);
 });
+
+test("background preview refreshes keep the last resolved sidebar state visible", async (t) => {
+  const cases: { name: string; reply: SurfaceReply; expected: string }[] = [
+    {
+      name: "assistant message",
+      reply: previewReply(ref(), "A readable progress update"),
+      expected: "A readable progress update",
+    },
+    {
+      name: "empty transcript",
+      reply: {
+        status: "ok",
+        response: {
+          method: "query",
+          result: {
+            kind: "conversation_preview",
+            ref: ref(),
+            source: "assignment",
+            complete: true,
+          },
+        },
+      },
+      expected: "No assistant message yet.",
+    },
+    {
+      name: "incomplete transcript",
+      reply: {
+        status: "ok",
+        response: {
+          method: "query",
+          result: {
+            kind: "conversation_preview",
+            ref: ref(),
+            source: "assignment",
+            complete: false,
+          },
+        },
+      },
+      expected: "Preview incomplete.",
+    },
+    {
+      name: "unavailable preview",
+      reply: {
+        status: "error",
+        error: { code: "context_unavailable", message: "Temporary read failure" },
+      },
+      expected: "Preview unavailable.",
+    },
+  ];
+  for (const scenario of cases)
+    await t.test(scenario.name, async (t) => {
+      const source = new UiSource(uiState(1));
+      source.state.assignments[assignmentKey(ref())].execution = { phase: "running" };
+      let respond: (reply: SurfaceReply) => void = () => {
+        throw new Error("No pending preview request");
+      };
+      source.respond = () =>
+        new Promise((resolve) => {
+          respond = resolve;
+        });
+      const router = new ScreenRouter(source);
+      t.after(() => router.dispose());
+      await router.start();
+      router.navigate("fleet", ref());
+      router.setInspectorVisible(true);
+      const render = () =>
+        stripTerminalSequences(
+          renderScreen(router, {
+            width: 160,
+            height: 32,
+            paint: createPaint("terminal-default"),
+          }).join("\n"),
+        );
+      const first = router.loadPreview();
+      assert.match(render(), /Loading last message/);
+      respond(scenario.reply);
+      await first;
+      assert(render().includes(scenario.expected));
+      for (let refresh = 0; refresh < 3; refresh++) {
+        const pending = router.loadPreview();
+        const during = render();
+        assert(
+          during.includes(scenario.expected),
+          `${scenario.name} must remain readable during refresh`,
+        );
+        assert.doesNotMatch(during, /Loading last message/);
+        respond(scenario.reply);
+        await pending;
+        assert(render().includes(scenario.expected));
+      }
+      const update = router.loadPreview();
+      respond(previewReply(ref(), "New assistant message"));
+      await update;
+      assert.match(render(), /New assistant message/);
+    });
+});
