@@ -1,7 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.0.5
 
+- Add a fleet inspector and project run browsing.
+- Show addressed messages in worker conversations. Keep sidebar previews stable
+  during refresh, coordinate agent colors across detail views and use the shared
+  activity trail in the fleet.
 - Remove the coding arena and its evaluation guidance.
 - Give the default reviewer shell access for Git inspection and assigned checks,
   with instructions to leave source files and commits untouched.
