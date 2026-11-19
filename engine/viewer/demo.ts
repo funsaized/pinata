@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type {
@@ -150,7 +150,7 @@ const backend: BackendPort = {
 };
 
 export async function withDemoFleet(view: (source: RuntimeSource) => Promise<void>): Promise<void> {
-  const directory = await mkdtemp(join(tmpdir(), "pinata-demo-"));
+  const directory = await realpath(await mkdtemp(join(tmpdir(), "pinata-demo-")));
   const caller: CallerAuthority = {
     id: "coordinator",
     kind: "coordinator",
