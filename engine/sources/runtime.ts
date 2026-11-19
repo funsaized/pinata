@@ -5,6 +5,7 @@ import {
   surfaceReplySchema,
   runtimeQuerySchema,
   type CallerAuthority,
+  type AssignmentRef,
   type RuntimeEvent,
   type SurfaceCapabilities,
   type SurfaceError,
@@ -34,6 +35,7 @@ export type RuntimeSource = {
   snapshot(): SnapshotEvent;
   subscribe(consume: (event: RuntimeEvent) => void | Promise<void>): Promise<() => void>;
   onConnectionChange?(consume: (connected: boolean) => void): () => void;
+  inspectWorktree?(ref: AssignmentRef, signal: AbortSignal): Promise<string>;
   reconnect?(): Promise<void>;
 };
 export class SurfaceFailure extends Error {

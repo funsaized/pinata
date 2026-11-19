@@ -16,6 +16,8 @@ import { activityIndicator } from "./tree.ts";
 export type Pane = { x: number; y: number; width: number; height: number };
 export type FleetRegions = {
   list?: Pane;
+  dependencyLink?: Pane;
+  dependencyChoices?: Map<number, number>;
   inspector?: Pane;
   filters?: (Pane & { filter: FleetFilter })[];
 };
@@ -145,6 +147,8 @@ function inspector(router: ScreenRouter, pane: Pane, options: FleetOptions): str
       width,
     ),
   ];
+  const handoff = router.handoff(Boolean(ascii));
+  if (handoff) content.push(paint("accent.pink", fit(handoff, width)));
   if (assignment.execution.phase === "queued")
     content.push(
       ...excerpt(waiting(router, assignment), width, router.details ? Infinity : 2).map((line) =>
@@ -153,6 +157,48 @@ function inspector(router: ScreenRouter, pane: Pane, options: FleetOptions): str
     );
   if (assignment.execution.phase === "ended" && assignment.execution.cleanup === "unconfirmed")
     content.push(...lines("Cleanup unconfirmed", width).map((line) => paint("error", line)));
+  const result = router.state.results[assignmentKey(ref)]?.result;
+  if (result && assignment.execution.phase === "ended") {
+    const application = Object.values(router.state.applications).findLast(
+      (op) => assignmentKey(op.intent.ref) === assignmentKey(ref),
+    );
+    content.push(
+      "",
+      paint("strong", result.report ? "Worker report" : "Result"),
+      ...excerpt(result.summary, width, router.details ? Infinity : 4),
+    );
+    if (result.reportingError) content.push(...lines(result.reportingError, width));
+    if (result.report) content.push(...lines("Report artifact " + result.report.digest, width));
+    if (result.worktree) content.push(...lines("Worktree " + result.worktree.path, width));
+    content.push(
+      ...lines(
+        worker.workspace === "worktree"
+          ? "Application · " + (application?.status ?? "no recorded application")
+          : "Shared checkout",
+        width,
+      ),
+    );
+    if (
+      assignment.execution.reason === "interrupted" ||
+      assignment.execution.cleanup === "unconfirmed"
+    )
+      content.push(
+        ...lines(
+          `Evidence · ${result.artifacts.length} retained artifacts${router.source.capabilities.recover ? " · recover from Actions" : ""}`,
+          width,
+        ),
+      );
+    content.push(
+      ...lines(
+        "Enter transcript" +
+          (router.source.capabilities.control && router.state.latest[ref.worker] === ref.assignment
+            ? " / ask worker"
+            : "") +
+          (worker.workspace === "worktree" ? " · p inspect changes" : ""),
+        width,
+      ),
+    );
+  }
   content.push("", paint("strong", paint(color, "Last message")));
   if (!router.connectionAvailable || (view.error && message))
     content.push(paint("warning", "Retained preview · connection unavailable"));
@@ -167,6 +213,23 @@ function inspector(router: ScreenRouter, pane: Pane, options: FleetOptions): str
       (line) => paint("text", line),
     ),
   );
+  let dependencyRow: number | undefined;
+  const links = router.dependencyLinks();
+  if (links.length) {
+    const downstream = links.filter((link) => link.direction === "downstream");
+    if (downstream.length)
+      content.push(
+        ...excerpt(
+          downstream
+            .map(({ ref, label }) => label + " " + ref.worker + "/" + ref.assignment)
+            .join(" · "),
+          width,
+          2,
+        ),
+      );
+    dependencyRow = content.length;
+    content.push(paint("accent.cyan", "b browse dependencies"));
+  }
   content.push("", paint("muted", "Model"));
   content.push(
     ...lines(worker.model ? `${worker.model.id} · ${worker.model.thinking}` : "Unknown", width).map(
@@ -200,13 +263,23 @@ function inspector(router: ScreenRouter, pane: Pane, options: FleetOptions): str
   router.inspectorPageSize = Math.max(1, height - 1);
   router.inspectorMaxScroll = Math.max(0, content.length - router.inspectorPageSize);
   router.inspectorScroll = Math.min(router.inspectorScroll, router.inspectorMaxScroll);
-  const result = content.slice(
+  if (options.fleetRegions && dependencyRow !== undefined) {
+    const row = dependencyRow - router.inspectorScroll;
+    if (row >= 0 && row < router.inspectorPageSize)
+      options.fleetRegions.dependencyLink = {
+        x: pane.x,
+        y: pane.y + row,
+        width: Math.min(width, 21),
+        height: 1,
+      };
+  }
+  const visibleLines = content.slice(
     router.inspectorScroll,
     router.inspectorScroll + router.inspectorPageSize,
   );
   if (router.inspectorMaxScroll > 0) {
-    while (result.length < height - 1) result.push("");
-    result.push(
+    while (visibleLines.length < height - 1) visibleLines.push("");
+    visibleLines.push(
       paint(
         "muted",
         fit(
@@ -216,15 +289,23 @@ function inspector(router: ScreenRouter, pane: Pane, options: FleetOptions): str
       ),
     );
   }
-  return result.slice(0, height);
+  return visibleLines.slice(0, height);
 }
 
 function filterStrip(router: ScreenRouter, options: FleetOptions, row: number): string {
   const { width, paint } = options;
   const matched = router.matchingAssignments();
+  const counts = { unfinished: 0, working: 0, queued: 0, attention: 0, finished: 0 };
+  for (const assignment of matched) {
+    if (matchesFleetFilter(router.state, assignment, "finished")) counts.finished++;
+    else counts.unfinished++;
+    if (assignment.execution.phase === "queued") counts.queued++;
+    else if (assignment.execution.phase !== "ended") counts.working++;
+    if (matchesFleetFilter(router.state, assignment, "attention")) counts.attention++;
+  }
   const labels = fleetFilters.map((filter) => ({
     filter,
-    text: `${filterLabels[filter]} ${matched.filter((assignment) => matchesFleetFilter(router.state, assignment, filter)).length}`,
+    text: `${filterLabels[filter]} ${counts[filter]}`,
   }));
   const selected = labels.find((label) => label.filter === router.filter);
   const chosen = width >= 80 ? labels : labels.filter((label) => label === selected);
@@ -256,11 +337,15 @@ function filterStrip(router: ScreenRouter, options: FleetOptions, row: number): 
   return fit(output, width);
 }
 
-function list(router: ScreenRouter, pane: Pane, options: FleetOptions): string[] {
+function list(
+  router: ScreenRouter,
+  pane: Pane,
+  options: FleetOptions,
+  nodes: ReturnType<ScreenRouter["fleetNodes"]>,
+): string[] {
   const { paint, ascii } = options;
   const { width, height } = pane;
   if (!height) return [];
-  const nodes = router.fleetNodes(ascii);
   const statusWidth = Math.min(13, Math.max(7, Math.floor(width * 0.25)));
   const showTime = width >= 65;
   const timeWidth = showTime ? 10 : 0;
@@ -403,7 +488,7 @@ export function renderFleet(router: ScreenRouter, options: FleetOptions): string
   const available = Math.max(0, height - output.length);
   const wide = width >= 120 && available >= 8 && Boolean(router.selected);
   const inspectorWidth = wide ? Math.min(64, Math.max(40, Math.floor(width * 0.35))) : width;
-  const nodes = router.fleetAssignments();
+  const nodes = router.fleetNodes(ascii);
   const stacked = !wide && Boolean(router.selected) && available >= 12;
   const listHeight = stacked
     ? Math.min(Math.max(3, nodes.length + 1), Math.max(3, Math.floor(available * 0.4)))
@@ -423,7 +508,7 @@ export function renderFleet(router: ScreenRouter, options: FleetOptions): string
     options.fleetRegions.list = listPane;
     options.fleetRegions.inspector = inspectorPane;
   }
-  const rows = list(router, listPane, options);
+  const rows = list(router, listPane, options, nodes);
   const details = inspectorPane ? inspector(router, inspectorPane, options) : [];
   if (wide) {
     for (let index = 0; index < available; index++)

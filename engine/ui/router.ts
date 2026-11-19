@@ -15,12 +15,14 @@ import {
   type RuntimeEvent,
   type SurfaceReply,
 } from "../contracts/index.ts";
+import { dependentAssignments, readinessFor, indexSnapshot } from "../core/indexes.ts";
 import { reduce } from "../core/state.ts";
 import { type RuntimeSource, surfaceError } from "../sources/runtime.ts";
 import {
   assignments,
   fleetFilters,
   matchesFleetFilter,
+  isFinished,
   steerTarget,
   type FleetFilter,
 } from "./projection.ts";
@@ -37,6 +39,7 @@ export type ConversationView = {
   maxScroll?: number;
   refreshPending?: boolean;
   inspection?: QueryResult;
+  worktreePatch?: string;
   follow?: boolean;
   newOutput?: boolean;
 };
@@ -86,6 +89,25 @@ export class ScreenRouter {
   connectionAvailable = true;
   help = false;
   helpScroll = 0;
+  dependencies?: {
+    origin: AssignmentRef;
+    index: number;
+    links: { ref: AssignmentRef; label: string }[];
+  };
+  private fleetOrigin?: AssignmentRef;
+  private release?: { from: AssignmentRef; targets: AssignmentRef[]; at: number };
+  private fleetCache?: {
+    state: CoreState;
+    search: string;
+    filter: FleetFilter;
+    ascii: boolean;
+    nodes: ReturnType<typeof assignmentTree>;
+  };
+  private searchCache?: {
+    state: CoreState;
+    search: string;
+    matched: ReturnType<typeof assignments>;
+  };
   actions = false;
   actionIndex = 0;
   search = "";
@@ -119,6 +141,7 @@ export class ScreenRouter {
   private lastConversationRead = -Infinity;
   private lastPreviewRead = -Infinity;
   private previewTimer?: NodeJS.Timeout;
+  private patchRequest?: AbortController;
   private previewRequest?: AbortController;
   private previewGeneration = 0;
   private readonly previews = new Map<string, PreviewView>();
@@ -127,7 +150,7 @@ export class ScreenRouter {
     this.source = source;
     this.options = options;
     const initial = source.snapshot();
-    this.state = initial.snapshot;
+    this.state = indexSnapshot(initial.snapshot);
     this.epoch = initial.ownerEpoch;
     this.palette = options.ui?.palette ?? "inherit";
     this.mode = options.mode ?? "lean";
@@ -186,6 +209,8 @@ export class ScreenRouter {
     const changedOwner = event.ownerEpoch !== this.epoch;
     if (changedOwner) {
       this.epoch = event.ownerEpoch;
+      this.dependencies = undefined;
+      this.patchRequest?.abort();
       this.generation++;
       this.activity.clear();
       this.activityOrdinals.clear();
@@ -215,7 +240,7 @@ export class ScreenRouter {
     if (event.kind === "snapshot") {
       if (!changedOwner && event.revision < this.state.revision) return;
       if (event.revision !== this.state.revision) this.clearTiming();
-      this.state = event.snapshot;
+      this.state = indexSnapshot(event.snapshot);
     } else if (!changedOwner && event.revision <= this.state.revision) return;
     else if (!changedOwner && event.revision === this.state.revision + 1)
       this.state = reduce(this.state, event.transition, event.revision);
@@ -235,6 +260,17 @@ export class ScreenRouter {
         if (timing && timing.end === undefined && assignment.execution.phase === "ended")
           timing.end = this.now();
       }
+    }
+    if (event.kind === "committed" && event.transition.kind === "settled") {
+      const from = event.transition.result.ref;
+      const targets = dependentAssignments(this.state, assignmentKey(from))
+        .filter(
+          (a) =>
+            readinessFor(previous, assignmentKey(a.ref)) === "dependency" &&
+            readinessFor(this.state, assignmentKey(a.ref)) === "ready",
+        )
+        .map((a) => a.ref);
+      if (targets.length) this.release = { from, targets, at: this.now() };
     }
     if (event.kind === "snapshot" || previous.assignments !== this.state.assignments)
       this.updateTicker();
@@ -271,6 +307,61 @@ export class ScreenRouter {
     )
       void this.loadConversation().catch((error: unknown) => this.fail(error));
   }
+  dependencyLinks() {
+    const selected = this.selected && this.state.assignments[assignmentKey(this.selected)];
+    if (!selected) return [];
+    const upstreamLinks = selected.after.flatMap((ref) => {
+      const upstream = this.state.assignments[assignmentKey(ref)];
+      if (!upstream) return [];
+      return [{ ref, direction: "upstream", label: isFinished(upstream) ? "After" : "Needs" }];
+    });
+    return [
+      ...upstreamLinks.filter((link) => link.label === "Needs"),
+      ...upstreamLinks.filter((link) => link.label === "After"),
+      ...dependentAssignments(this.state, assignmentKey(selected.ref))
+        .filter((a) => a.execution.phase === "queued")
+        .map((a) => ({
+          direction: "downstream",
+          ref: a.ref,
+          label: isFinished(selected)
+            ? "Precedes"
+            : a.after.filter((ref) => !isFinished(this.state.assignments[assignmentKey(ref)]))
+                  .length === 1
+              ? "Last prerequisite for"
+              : "Also needed by",
+        })),
+    ];
+  }
+  browseDependencies(): void {
+    const origin = this.selected;
+    const links = this.dependencyLinks();
+    if (!origin || !links.length) return;
+    this.dependencies = { origin, index: 0, links };
+    if (links.length === 1) this.openDependency();
+    this.changed();
+  }
+  openDependency(): void {
+    const menu = this.dependencies;
+    if (!menu) return;
+    const target = menu.links[menu.index];
+    this.dependencies = undefined;
+    if (!target) return;
+    this.fleetOrigin = menu.origin;
+    this.navigate("conversation", target.ref);
+  }
+  handoff(ascii: boolean): string | undefined {
+    const release = this.release;
+    if (!release || !this.selected || this.now() - release.at >= 2200) return;
+    const key = assignmentKey(this.selected);
+    const target =
+      release.targets.find((ref) => assignmentKey(ref) === key) ??
+      (assignmentKey(release.from) === key ? release.targets[0] : undefined);
+    if (!target) return;
+    const step = Math.min(3, Math.floor((this.now() - release.at) / 250));
+    const trail =
+      this.motion === "full" && !ascii ? "─".repeat(step) + "◆" + "─".repeat(3 - step) : "->";
+    return `${release.from.worker} ${trail} ${target.worker} ready`;
+  }
   private fail(error: unknown): void {
     this.notice = surfaceError(error).message;
     this.changed();
@@ -285,6 +376,10 @@ export class ScreenRouter {
       this.changed();
       return false;
     }
+    this.patchRequest?.abort();
+    if (screen === "fleet" && this.screen === "conversation") ref ??= this.fleetOrigin;
+    if (screen !== "conversation") this.fleetOrigin = undefined;
+    this.dependencies = undefined;
     const previous = this.selected && assignmentKey(this.selected);
     if (this.noticeTone === "success") this.notice = "";
     if (ref) {
@@ -354,6 +449,14 @@ export class ScreenRouter {
     return this.fleetNodes().map((node) => node.assignment);
   }
   fleetNodes(ascii = false): ReturnType<typeof assignmentTree> {
+    const cached = this.fleetCache;
+    if (
+      cached?.state === this.state &&
+      cached.filter === this.filter &&
+      cached.search === this.search &&
+      cached.ascii === ascii
+    )
+      return cached.nodes;
     const include = new Set(
       this.matchingAssignments()
         .filter((assignment) => matchesFleetFilter(this.state, assignment, this.filter))
@@ -364,7 +467,7 @@ export class ScreenRouter {
       include,
     });
     const hidden = new Set<string>();
-    return nodes.filter((node) => {
+    const visible = nodes.filter((node) => {
       const assignment = node.assignment;
       const key = assignmentKey(assignment.ref);
       const worker = this.state.workers[assignment.ref.worker];
@@ -375,14 +478,26 @@ export class ScreenRouter {
       }
       return true;
     });
+    this.fleetCache = {
+      state: this.state,
+      search: this.search,
+      filter: this.filter,
+      ascii,
+      nodes: visible,
+    };
+    return visible;
   }
   matchingAssignments(): ReturnType<typeof assignments> {
-    return assignments(this.state).filter((assignment) => {
+    if (this.searchCache?.state === this.state && this.searchCache.search === this.search)
+      return this.searchCache.matched;
+    const matched = assignments(this.state).filter((assignment) => {
       const worker = this.state.workers[assignment.ref.worker];
       return `${worker.id} ${worker.agent} ${assignment.task}`
         .toLowerCase()
         .includes(this.search.toLowerCase());
     });
+    this.searchCache = { state: this.state, search: this.search, matched };
+    return matched;
   }
   setFilter(filter: FleetFilter): void {
     this.filter = filter;
@@ -438,6 +553,7 @@ export class ScreenRouter {
   collapse(value: boolean): void {
     if (!this.selected) return;
     const key = assignmentKey(this.selected);
+    this.fleetCache = undefined;
     if (value) this.collapsed.add(key);
     else this.collapsed.delete(key);
     this.refreshView();
@@ -455,13 +571,18 @@ export class ScreenRouter {
   private updateTicker(): void {
     const running =
       this.listeners.size > 0 &&
-      Object.values(this.state.assignments).some(
-        (assignment) => !["queued", "ended"].includes(assignment.execution.phase),
-      );
+      (Boolean(this.release) ||
+        Object.values(this.state.assignments).some(
+          (assignment) => !["queued", "ended"].includes(assignment.execution.phase),
+        ));
     if (running && !this.ticker) {
       this.ticker = setInterval(
         () => {
           this.changed();
+          if (this.release && this.now() - this.release.at >= 2200) {
+            this.release = undefined;
+            this.updateTicker();
+          }
           this.refreshFollowingConversation();
           if (this.now() - this.lastPreviewRead >= 1000) this.schedulePreview();
         },
@@ -498,6 +619,7 @@ export class ScreenRouter {
     void this.loadConversation().catch((error: unknown) => this.fail(error));
   }
   private clearTiming(): void {
+    this.release = undefined;
     this.observedTimes.clear();
     if (this.ticker) clearInterval(this.ticker);
     this.ticker = undefined;
@@ -802,7 +924,7 @@ export class ScreenRouter {
       await this.reconnect();
       return;
     }
-    this.state = this.source.snapshot().snapshot;
+    this.state = indexSnapshot(this.source.snapshot().snapshot);
     if (this.screen === "conversation" && this.selected) await this.loadConversation();
     if (this.screen === "fleet") await this.loadPreview();
     else this.refreshView();
@@ -817,7 +939,7 @@ export class ScreenRouter {
     }
     try {
       await this.source.reconnect();
-      this.state = this.source.snapshot().snapshot;
+      this.state = indexSnapshot(this.source.snapshot().snapshot);
       await this.loadConversation();
     } catch (error) {
       this.fail(error);
@@ -911,20 +1033,62 @@ export class ScreenRouter {
     this.changed();
     return reply;
   }
+  async inspectPatch(): Promise<void> {
+    const ref = this.selected;
+    if (!ref) return;
+    const result = this.state.results[assignmentKey(ref)]?.result;
+    if (!result) return;
+    const view = this.conversation();
+    view.worktreePatch = undefined;
+    view.inspection = undefined;
+    if (result.snapshot) {
+      await this.control("changes");
+      return;
+    }
+    const worktree = result.worktree;
+    if (!worktree) {
+      this.notice = "No worktree evidence available";
+      this.changed();
+      return;
+    }
+    if (!this.source.inspectWorktree) {
+      view.worktreePatch = `Open the worktree at ${worktree.path}
+Run git diff ${worktree.base} and git status --short to inspect current files.`;
+      this.changed();
+      return;
+    }
+    this.patchRequest?.abort();
+    const request = new AbortController();
+    this.patchRequest = request;
+    this.notice = "Reading current worktree patch…";
+    this.changed();
+    try {
+      const patch = await this.source.inspectWorktree(ref, request.signal);
+      if (!request.signal.aborted) {
+        view.worktreePatch = patch;
+        this.notice = "";
+      }
+    } catch (error) {
+      if (!request.signal.aborted) this.fail(error);
+    } finally {
+      if (this.patchRequest === request) this.patchRequest = undefined;
+      this.changed();
+    }
+  }
   async control(
-    kind: "cancel" | "background" | "recover" | "inspect",
+    kind: "cancel" | "background" | "recover" | "inspect" | "changes",
     scope: "assignment" | "worker" | "run" = "worker",
   ): Promise<SurfaceReply> {
     const ref = this.selected;
     if (!ref && kind !== "background" && !(kind === "cancel" && scope === "run"))
       return this.unavailable("Select an assignment first");
-    if (kind !== "inspect" && !this.source.capabilities.control)
+    if (kind !== "inspect" && kind !== "changes" && !this.source.capabilities.control)
       return this.unavailable("This source is read-only; control requires the owning runtime");
     if (kind === "recover" && !this.source.capabilities.recover)
       return this.unavailable("Recovery is unavailable from this source");
     const call =
-      kind === "inspect"
-        ? { method: "query", input: { kind: "result", ref } }
+      kind === "inspect" || kind === "changes"
+        ? { method: "query", input: { kind: kind === "inspect" ? "result" : "changes", ref } }
         : kind === "recover"
           ? { method: "recover", input: { targets: [ref] } }
           : {
@@ -947,8 +1111,11 @@ export class ScreenRouter {
     const reply = await this.source.request(call);
     if (reply.status === "error") this.notice = reply.error.message;
     else if (reply.response.method === "query") {
+      if (!ref || !this.selected || assignmentKey(ref) !== assignmentKey(this.selected))
+        return reply;
       this.conversation().inspection = reply.response.result;
-      this.notice = "Retained assignment result";
+      this.notice =
+        kind === "changes" ? "Retained workspace changes" : "Retained assignment result";
     } else if (reply.response.method === "execute") {
       const receipt = reply.response.result;
       if (receipt.status !== "accepted") this.notice = receipt.error.message;
@@ -1009,6 +1176,7 @@ export class ScreenRouter {
     return reply;
   }
   dispose(): void {
+    this.patchRequest?.abort();
     if (!this.alive) return;
     this.alive = false;
     this.cancelPreview();

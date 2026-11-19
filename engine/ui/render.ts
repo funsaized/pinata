@@ -279,9 +279,38 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
   const conversationKeys = options.conversationKeys ?? resolveConversationKeys(router.keys);
   options.hitRows?.clear();
   if (options.fleetRegions) {
+    options.fleetRegions.dependencyLink = undefined;
+    options.fleetRegions.dependencyChoices = undefined;
     options.fleetRegions.list = undefined;
     options.fleetRegions.inspector = undefined;
     options.fleetRegions.filters = [];
+  }
+  if (router.dependencies) {
+    const { links, origin, index } = router.dependencies;
+    const selected = index;
+    const available = Math.max(1, height - 2);
+    const first = Math.max(0, selected - available + 1);
+    if (options.fleetRegions)
+      options.fleetRegions.dependencyChoices = new Map(
+        links.slice(first, first + available).map((_, row) => [row + 1, first + row]),
+      );
+    return [
+      paint("strong", "Dependencies · " + displayText(origin.worker)),
+      ...links
+        .slice(first, first + available)
+        .map(({ ref, label }, index) =>
+          paint(
+            first + index === selected ? "focus" : "text",
+            padded(
+              `${first + index < 9 ? String(first + index + 1) + " " : ""}${label}  ${displayText(ref.worker)}/${ref.assignment}`,
+              width,
+            ),
+          ),
+        ),
+      paint("muted", "1–9 jump · ↑↓ select · Enter open · Esc back"),
+    ]
+      .slice(0, height)
+      .map((line) => fit(line, width));
   }
   if (router.actions || router.help)
     return (
@@ -420,7 +449,26 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
               "Inspect /inspect · reconcile owned activity /recover · replace /replace <new-id> <task>",
             ]
           : []),
-        ...(view.inspection ? ["Retained result", JSON.stringify(view.inspection, null, 2)] : []),
+        ...(view.worktreePatch
+          ? ["Current worktree · changes since frozen base", view.worktreePatch]
+          : []),
+        ...(view.inspection?.kind === "changes"
+          ? [
+              "Workspace changes",
+              ...(view.inspection.source === "unavailable"
+                ? ["No retained snapshot"]
+                : view.inspection.changes.length
+                  ? view.inspection.changes.map(
+                      (change) =>
+                        (change.before ? (change.after ? "Modified" : "Deleted") : "Added") +
+                        "  " +
+                        change.path,
+                    )
+                  : ["No file changes"]),
+            ]
+          : view.inspection
+            ? ["Retained result", JSON.stringify(view.inspection, null, 2)]
+            : []),
       ].flatMap((line) => (Array.isArray(line) ? line : conversationLines(view, line, width)));
       // Reserve the focus, feedback and shortcut rows even when feedback is empty.
       const available = Math.max(0, height - output.length - 3);

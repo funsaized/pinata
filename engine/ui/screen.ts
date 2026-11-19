@@ -201,6 +201,19 @@ export class PinataScreen implements Component, Focusable {
       this.requestRender();
       return;
     }
+    if (this.router.dependencies !== undefined) {
+      const menu = this.router.dependencies;
+      if (matchesKey(data, "escape") || data === "b") this.router.dependencies = undefined;
+      else if (matchesKey(data, "up")) menu.index = Math.max(0, menu.index - 1);
+      else if (matchesKey(data, "down"))
+        menu.index = Math.min(menu.links.length - 1, menu.index + 1);
+      else if (/^[1-9]$/.test(data) && Number(data) <= menu.links.length) {
+        menu.index = Number(data) - 1;
+        this.router.openDependency();
+      } else if (matchesKey(data, "enter")) this.router.openDependency();
+      this.requestRender();
+      return;
+    }
     if (this.router.actions) {
       if (matchesKey(data, "escape")) this.router.actions = false;
       else if (matchesKey(data, "up"))
@@ -351,6 +364,18 @@ export class PinataScreen implements Component, Focusable {
       return;
     }
     if (this.router.screen === "fleet") {
+      if (data === "b") return this.router.browseDependencies();
+      if (data === "p" && this.router.selected) {
+        const ref = this.router.selected;
+        if (
+          this.router.state.workers[ref.worker].workspace === "worktree" &&
+          this.router.state.results[assignmentKey(ref)]
+        ) {
+          this.router.navigate("conversation");
+          this.run(() => this.router.inspectPatch());
+        }
+        return;
+      }
       if (data === "r" && this.options.runs) {
         this.run(() => this.openRunPicker());
         return;
@@ -433,6 +458,14 @@ export class PinataScreen implements Component, Focusable {
         );
       return { handled: true, render: true };
     }
+    if (this.router.dependencies) {
+      const choice = this.fleetRegions.dependencyChoices?.get(event.y);
+      if (event.type === "click" && choice !== undefined) {
+        this.router.dependencies.index = choice;
+        this.router.openDependency();
+      }
+      return { handled: true, render: true };
+    }
     if (this.router.help || this.router.actions || this.router.searching)
       return { handled: true, render: false };
     const inside = (pane: Pane | undefined) =>
@@ -444,6 +477,10 @@ export class PinataScreen implements Component, Focusable {
         event.y < pane.y + pane.height,
       );
     if (this.router.screen === "fleet" && event.type === "click") {
+      if (inside(this.fleetRegions.dependencyLink)) {
+        this.router.browseDependencies();
+        return { handled: true, focus: true, render: true };
+      }
       const filter = this.fleetRegions.filters?.find(inside);
       if (filter) {
         this.router.setFilter(filter.filter);

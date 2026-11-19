@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.0.6
+
+- Press `b` to visit a dependency and return to the original fleet selection.
+  A brief candy animation shows which worker became ready. ASCII and reduced
+  motion use a stationary arrow.
+- Reuse assignment indexes and fleet projections when navigating long runs.
+- Inspect finished results and worktree patches from the fleet. Expand a folded
+  completion card to read its report and cleanup evidence.
+- Try `pinata demo` to steer a scout and release a queued reviewer offline.
+
 ## 0.0.5
 
 - Add a fleet inspector and project run browsing.

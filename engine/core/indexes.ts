@@ -302,6 +302,14 @@ export function indexTransition(state: CoreState, next: CoreState, input: Transi
     };
   }
   value = Object.freeze({ ...value, entries: updateBuckets(previous.entries, changes) });
+  return indexedProjection(next, value);
+}
+
+export function indexSnapshot(state: CoreState): CoreState {
+  return indexedProjection(state, rebuild(state));
+}
+
+function indexedProjection(next: CoreState, value: Indexes): CoreState {
   const result = { ...next };
   Object.defineProperty(result, derived, {
     value: Object.freeze({
@@ -313,6 +321,10 @@ export function indexTransition(state: CoreState, next: CoreState, input: Transi
     }),
   });
   return result;
+}
+
+export function dependentAssignments(state: CoreState, key: string): Assignment[] {
+  return entryAt(indexes(state).entries, key).dependents.map((id) => state.assignments[id]);
 }
 
 export function assignmentAttempts(state: CoreState, key: string): AttemptState[] {

@@ -17,6 +17,7 @@ type UiBinding = {
   runs?: ProjectRunCatalog;
 };
 export type CoordinatorUi = {
+  animateReveal(): boolean;
   bind(context: ExtensionContext, source?: RuntimeSource): Promise<ScreenRouter>;
   open(
     context: ExtensionContext,
@@ -84,6 +85,7 @@ export function installCoordinatorUi(
   options: CoordinatorUiOptions = {},
 ): CoordinatorUi {
   const bindings = new Map<string, UiBinding>();
+  let animateReveal: (() => boolean) | undefined;
   let selected: UiBinding | undefined;
   let closeScreen: (() => void) | undefined;
   let opening: Promise<void> | undefined;
@@ -115,6 +117,16 @@ export function installCoordinatorUi(
     if (binding.context.mode !== "tui") return;
     hint(binding.context, true, binding.router.keys);
     binding.context.ui.setWidget("pinata.fleet.v1", (tui): Component & { dispose(): void } => {
+      // Pi gives message renderers no render handle. Share this widget's redraw
+      // while it is mounted, and cancel the short reveal when the widget closes.
+      let timers: NodeJS.Timeout[] = [];
+      const reveal = () => {
+        if (binding.router.motion !== "full") return false;
+        for (const timer of timers) clearTimeout(timer);
+        timers = [65, 130].map((delay) => setTimeout(() => tui.requestRender(), delay).unref());
+        return true;
+      };
+      animateReveal = reveal;
       const unsubscribe = binding.router.onChange(() => tui.requestRender());
       return {
         render: (width) =>
@@ -128,11 +140,16 @@ export function installCoordinatorUi(
             ascii: process.env.TERM === "dumb" || process.env.PINATA_ASCII === "1",
           }),
         invalidate() {},
-        dispose: unsubscribe,
+        dispose() {
+          unsubscribe();
+          for (const timer of timers) clearTimeout(timer);
+          if (animateReveal === reveal) animateReveal = undefined;
+        },
       };
     });
   };
   const api: CoordinatorUi = {
+    animateReveal: () => animateReveal?.() ?? false,
     async bind(context, source) {
       const resolved = source ?? (await sourceProvider(context));
       const session = context.sessionManager.getSessionId();

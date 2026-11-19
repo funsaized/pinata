@@ -108,6 +108,12 @@ after package removal.
 
 ## Quick start
 
+To try the fleet offline, run `pinata demo` in a terminal. From a source checkout,
+use `node bin/pinata.mjs demo`. The reviewer is waiting for a scout. Press `b`,
+send the scout a correction, then press Escape to see the reviewer start. Send the
+reviewer a message to finish. Press `h` in the fleet to inspect both results.
+The demo uses a temporary workspace and a scripted backend with zero provider calls.
+
 Open a project in Pi and type:
 
 ```text
@@ -177,6 +183,21 @@ keys scroll the focused pane, and the wheel scrolls the pane under the pointer.
 `d` expands the exact prompt, message and execution details. Cleanup problems stay
 visible when details are collapsed. Enter opens the full conversation.
 
+Press `b` or click **browse dependencies** to visit a prerequisite or a queued assignment that depends on this one.
+A single link opens its conversation directly. For multiple links, press a numbered
+key or use the arrows and Enter. Escape returns to the original fleet selection
+if it still matches your filter. When a settlement makes a dependent ready, the
+inspector briefly shows a candy moving between their names. ASCII and reduced
+motion use a stationary arrow.
+
+Finished assignments show their result summary, report reference and handoff
+information. Enter opens the transcript, including any submitted report. For a
+worktree, `p` opens a patch preview in the owning host. It compares current files
+with the frozen base, including eligible untracked files, and displays up to
+32 KiB. Later edits can change the preview. A saved viewer shows the checkout and
+Git inspection commands. Older assignments with a retained snapshot show their
+recorded file changes.
+
 The filter strip counts Unfinished, Working, Queued, Attention and Finished work.
 Working includes preparing, running and stopping; rows keep those exact states.
 Attention includes unresolved cleanup and failed or interrupted assignments that
@@ -205,8 +226,10 @@ keeps its selection, filters and drafts. Fleet controls target only the selected
 including its hidden assignments.
 
 Fleet and conversation screens fill the terminal. Pi renders user cards, Markdown,
-syntax highlighting and tool output using its theme. Completion cards show
-"Subagent result" with the worker, outcome, summary and conversation command.
+syntax highlighting and tool output using its theme. Folded completion cards show
+the worker, outcome, a short summary and the conversation command. Expand a card
+for its retained evidence, including small typed reports, worktree details and
+cleanup status when available.
 
 | Input                                             | Action                                                      |
 | ------------------------------------------------- | ----------------------------------------------------------- |
@@ -898,6 +921,7 @@ wait for exact assignments, retrieve results and close the host in `finally`.
 The CLI discovers schemas and definitions and reads retained runs directly:
 
 ```sh
+pinata demo
 pinata view RUN_DIRECTORY
 pinata status RUN_DIRECTORY --json
 pinata result RUN_DIRECTORY map 1 --json
@@ -1552,7 +1576,11 @@ npm run bench:loopback
 npm run bench:process -- --repeat 5 --scenario fanout-1 --scenario fanout-8
 PINATA_PI=/path/to/pi npm run bench -- --host tui --scenario ux-8
 node --expose-gc bench/viewer.ts --repeat 3
+node bench/fleet-navigation.ts
 ```
+
+The navigation probe times arrow-key input through the render request and composed
+viewport with 8 running workers, 8 queued workers, and 1 or 1,024 older assignments.
 
 Workloads cover fan-out at 1/8/32/64 workers, dependencies, mixed work and streaming.
 Scale probes are `scale-queue-1000`, `scale-fanin-256`, `scale-batches-8`; select with

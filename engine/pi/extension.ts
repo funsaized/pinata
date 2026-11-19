@@ -80,7 +80,6 @@ async function modelRuntime(context: ExtensionContext, agentDir: string): Promis
 export function createPinataExtension(options: PiExtensionOptions = {}): ExtensionFactory {
   return (pi) => {
     if (process.env.PINATA_AGENT === "1") return;
-    registerPinataMessageRenderers(pi);
     const bindings = new Map<string, Binding>();
     const pending = new Map<string, Promise<Binding>>();
     const startedSessions = new Set<string>();
@@ -238,6 +237,7 @@ export function createPinataExtension(options: PiExtensionOptions = {}): Extensi
             .mode,
       },
     );
+    registerPinataMessageRenderers(pi, () => ui.animateReveal());
     registerCoordinatorTools(
       pi,
       async (context) => {
