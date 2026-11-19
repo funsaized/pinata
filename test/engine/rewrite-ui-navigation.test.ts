@@ -1,3 +1,4 @@
+import { withDemoFleet } from "../../engine/viewer/demo.ts";
 import assert from "node:assert/strict";
 import test, { type TestContext } from "node:test";
 import { TuiAltScreen, stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
@@ -247,4 +248,101 @@ test("custom shortcuts cannot replace text entry, paging or reserved fleet contr
     assert.throws(() => resolveKeys({ stop: key }), /reserved|intercept message text/);
   assert.equal(resolveKeys({ stop: "f2" }).stop, "f2");
   assert.equal(resolveKeys({ stop: "ctrl+k" }).stop, "ctrl+k");
+});
+
+test("dependency choices cross search filters and Back restores the original assignment and draft", async (t) => {
+  const state = uiState(3);
+  Object.values(state.assignments)[2].after = [ref(), ref(2)];
+  const { router, screen } = await setup(t, new UiSource(state));
+  router.search = "worker-3";
+  router.navigate("fleet", ref(3));
+  screen.handleInput("b");
+  const choices = stripTerminalSequences(screen.render(80).join("\n"));
+  assert.match(choices, /Needs\s+worker-1\/1/);
+  assert.match(choices, /Needs\s+worker-2\/1/);
+  screen.handleInput("\x1b[B");
+  screen.handleInput("\r");
+  assert.deepEqual(router.selected, ref(2));
+  router.setDraft("Trace the HTTP parser");
+  screen.handleInput("\x1b");
+  assert.deepEqual(router.selected, ref(3));
+  assert.equal(router.search, "worker-3");
+  router.navigate("conversation", ref(2));
+  assert.equal(router.draft, "Trace the HTTP parser");
+});
+
+test("offline demo consumes a correction, releases review and preserves the coordinator's place", async () => {
+  await withDemoFleet(async (source) => {
+    let now = 0;
+    const router = new ScreenRouter(source, { now: () => now });
+    async function waitForRunning(worker: string) {
+      const deadline = AbortSignal.timeout(5000);
+      while (
+        !Object.values(router.state.assignments).some(
+          (a) => a.ref.worker === worker && a.execution.phase === "running",
+        )
+      ) {
+        deadline.throwIfAborted();
+        await tick();
+      }
+    }
+    try {
+      await router.start();
+      await waitForRunning("scout");
+      const review = { run: source.run, worker: "review", assignment: 1 };
+      router.navigate("fleet", review);
+      router.browseDependencies();
+      assert.equal(router.selected?.worker, "scout");
+      const loaded = AbortSignal.timeout(5000);
+      while (router.conversation().loading) {
+        loaded.throwIfAborted();
+        await tick();
+      }
+      assert.equal(router.conversation().error, undefined);
+      assert.match(JSON.stringify(router.conversation().page?.entries), /CLI parser/);
+      router.setDraft("Trace the HTTP parser");
+      const reply = await router.submit();
+      assert.equal(reply.status, "ok");
+      // Wait on the exact assignment, including cleanup, just as the coordinator does.
+      await source.request(
+        { method: "wait", input: { targets: [router.selected] } },
+        AbortSignal.timeout(5000),
+      );
+      router.navigate("fleet");
+      assert.deepEqual(router.selected, review);
+      assert.match(router.handoff(false) ?? "", /◆.*review ready/);
+      assert.match(router.handoff(true) ?? "", /scout -> review ready/);
+      router.motion = "off";
+      assert.match(router.handoff(false) ?? "", / -> /);
+      now += 2500;
+      assert.equal(router.handoff(false), undefined);
+      assert(
+        Object.values(router.state.inbox).some((m) => m.kind === "steer" && m.state === "consumed"),
+      );
+      const scout = Object.values(router.state.results)[0].result;
+      assert.match(scout.summary, /Correction received/);
+      await waitForRunning("review");
+      router.navigate("conversation", review);
+      router.setDraft("Finish the review");
+      await router.submit();
+      await source.request(
+        { method: "wait", input: { targets: [review] } },
+        AbortSignal.timeout(5000),
+      );
+      router.setFilter("finished");
+      router.navigate("fleet", review);
+      assert.match(
+        stripTerminalSequences(
+          renderScreen(router, {
+            width: 140,
+            height: 40,
+            paint: createPaint("terminal-default"),
+          }).join("\n"),
+        ),
+        /Review complete/,
+      );
+    } finally {
+      router.dispose();
+    }
+  });
 });

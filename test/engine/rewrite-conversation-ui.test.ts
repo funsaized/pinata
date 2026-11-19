@@ -327,7 +327,7 @@ test("Pinata notices use readable headings without exposing saved-message versio
     customType: "pinata.completion.v1",
     content,
     display: true,
-    details: { ref },
+    details: { ref, evidence: "Worker report · typed findings" },
     timestamp: 0,
   };
   const theme = {
@@ -348,6 +348,7 @@ test("Pinata notices use readable headings without exposing saved-message versio
     assert.match(output, /\/pinata-conversation tests 1/);
     assert.doesNotMatch(output, /completion\.v1|pinata-notice|Full result: \{/);
     assert.equal(output.includes("Run: retained-run"), expanded);
+    assert.equal(output.includes("typed findings"), expanded);
     assert(rows.every((line) => visibleWidth(line) <= 80));
   }
   assert.equal(message.content, content, "stored delivery evidence remains unchanged");

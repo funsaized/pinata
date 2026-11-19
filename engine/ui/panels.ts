@@ -98,6 +98,8 @@ export function helpPanel(
               ["Tab", "Focus list / inspector"],
               ["r", "Browse runs in this project when available"],
               ["Enter", "Open conversation"],
+              ["b", "Jump to a dependency or choose from related assignments"],
+              ["p", "Inspect retained file changes for a finished worktree"],
               ["← / →", "Collapse / expand children"],
               ["/", "Search agent or task; Enter applies, Esc cancels, Ctrl+U clears"],
               ["f", "Cycle Unfinished / Working / Queued / Attention / Finished"],

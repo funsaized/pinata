@@ -93,7 +93,7 @@ export function parseArguments(argv: readonly string[]): CliArguments {
       `${result.command} was removed. Operate fleets through Pi tools, pi.events RPC, or an embedded host; use view/status to inspect saved runs.`,
     );
   if (
-    !["help", "schema", "tools", "agents"].includes(result.command) &&
+    !["help", "demo", "schema", "tools", "agents"].includes(result.command) &&
     !savedCommands.has(result.command)
   )
     throw new DomainError("invalid_input", `Unknown command ${result.command}`);
@@ -107,6 +107,7 @@ export function requireArgument(args: CliArguments, index: number, name: string)
 }
 
 export const usage = `Usage:
+  pinata demo [--palette name]                    steer an offline practice fleet
   pinata view <run-directory> [--palette name]    browse a saved run
   pinata query <run-directory> <query.json|->     query retained data
   pinata status|logs <run-directory> [--json]      inspect retained state or events

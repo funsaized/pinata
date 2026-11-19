@@ -1,3 +1,6 @@
+import { worktreePreviews } from "../../engine/host/patch.ts";
+import { assignmentKey } from "../../engine/contracts/index.ts";
+import { UiSource, uiState } from "./rewrite-ui-fixture.ts";
 import assert from "node:assert/strict";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -153,4 +156,36 @@ test("an unpublished worktree selection can retry the same operation without cha
   } finally {
     await recovered.close();
   }
+});
+
+test("fleet patch preview shows current tracked and untracked work without applying it", async (t) => {
+  const f = await fixture(t);
+  const state = uiState(1);
+  state.run = ref.run;
+  state.workers.worker = {
+    ...state.workers["worker-1"],
+    id: "worker",
+    workspacePlan: f.worktree.plan,
+  };
+  state.results[assignmentKey(ref)] = {
+    artifact: f.worktree.plan,
+    result: {
+      ref,
+      summary: "Complete",
+      execution: { phase: "ended", reason: "completed", cleanup: "confirmed" },
+      worktree: f.worktree,
+      artifacts: [],
+      usage: { complete: true, expectedAttempts: [], observations: [] },
+    },
+  };
+  const previews = worktreePreviews(new UiSource(state), f.directory);
+  t.after(() => previews.close());
+  const index = await readFile(join(f.worktree.gitDirectory, "index"));
+  await writeFile(join(f.worktree.path, "file.txt"), "current edit\n");
+  await writeFile(join(f.worktree.path, "new.txt"), "new evidence\n");
+  const patch = await previews.inspect(ref, new AbortController().signal);
+  assert.match(patch, /\+current edit/);
+  assert.match(patch, /\+new evidence/);
+  assert.equal(await readFile(join(f.root, "file.txt"), "utf8"), "base\n");
+  assert.deepEqual(await readFile(join(f.worktree.gitDirectory, "index")), index);
 });

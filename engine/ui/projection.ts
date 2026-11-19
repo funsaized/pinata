@@ -5,7 +5,8 @@ import {
   type CoreState,
   type UsageCoverage,
 } from "../contracts/index.ts";
-import { readiness, type ReadinessReason } from "../core/readiness.ts";
+import { dependentAssignments } from "../core/indexes.ts";
+import { readinessFor, type ReadinessReason } from "../core/readiness.ts";
 import { assignmentUsage } from "../core/usage.ts";
 
 export function assignments(state: CoreState): Assignment[] {
@@ -51,7 +52,7 @@ export function assignmentDetails(state: CoreState, assignment: Assignment): str
   const status = executionLabel(assignment);
   const mode = `${worker.backend} · ${worker.workspace} · ${worker.lifetime} · ${worker.access}`;
   const queue =
-    assignment.execution.phase === "queued" ? ` · waiting: ${readiness(state)[key]}` : "";
+    assignment.execution.phase === "queued" ? ` · waiting: ${readinessFor(state, key)}` : "";
   return [
     `${assignment.ref.worker}/${assignment.ref.assignment} · ${status}${queue}`,
     mode,
@@ -82,10 +83,8 @@ export function needsAttention(state: CoreState, assignment: Assignment): boolea
   if (!["failed", "interrupted"].includes(assignment.execution.reason)) return false;
   return (
     state.latest[assignment.ref.worker] === assignment.ref.assignment ||
-    Object.values(state.assignments).some(
-      (pending) =>
-        pending.execution.phase === "queued" &&
-        pending.after.some((ref) => assignmentKey(ref) === assignmentKey(assignment.ref)),
+    dependentAssignments(state, assignmentKey(assignment.ref)).some(
+      (pending) => pending.execution.phase === "queued",
     )
   );
 }
@@ -115,7 +114,7 @@ export function matchesFleetFilter(
 export function queueLabel(
   state: CoreState,
   assignment: Assignment,
-  reason: ReadinessReason = readiness(state)[assignmentKey(assignment.ref)],
+  reason: ReadinessReason = readinessFor(state, assignmentKey(assignment.ref)) ?? "dependency",
 ): string {
   if (reason !== "dependency") return reason;
   const blocked = assignment.after.flatMap((ref) => {

@@ -205,6 +205,17 @@ export async function runCli(argv: readonly string[], io: CliIO): Promise<number
   try {
     args = parseArguments(argv);
     switch (args.command) {
+      case "demo": {
+        if (!(io.terminal || (process.stdin.isTTY && process.stdout.isTTY)))
+          throw new DomainError("invalid_input", "The demo needs an interactive terminal");
+        const palette = paletteSchema.parse(args.options.get("palette") ?? "pinata");
+        const { withDemoFleet } = await import("../viewer/demo.ts");
+        const { openViewer } = await import("../viewer/main.ts");
+        await withDemoFleet((source) =>
+          openViewer({ source, terminal: io.terminal, signal: io.signal, ui: { palette } }),
+        );
+        return 0;
+      }
       case "help":
         io.out(`${usage}\n`);
         return 0;

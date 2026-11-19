@@ -1,3 +1,4 @@
+import { worktreePreviews } from "./patch.ts";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, realpath } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -319,13 +320,18 @@ export async function openHost(options: HostOptions): Promise<Host> {
     notifications: options.notifications,
     onDiagnostic: options.onDiagnostic,
   });
+  const source = bindRuntime(runtime, caller);
+  const previews = worktreePreviews(source, directory, options.nodeCommand);
   return {
     runtime,
     caller,
     directory,
     workspace,
     config,
-    source: { ...bindRuntime(runtime, caller), location: { workspace, directory } },
-    close: (reason = "Host closed") => runtime.close({ reason }),
+    source: { ...source, inspectWorktree: previews.inspect, location: { workspace, directory } },
+    async close(reason = "Host closed") {
+      await previews.close();
+      return runtime.close({ reason });
+    },
   };
 }
