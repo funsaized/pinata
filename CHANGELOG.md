@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Open worker conversations with Pi’s thinking and tool output settings. Folded
+  dependency cards show the assignment and result information.
+
 ## 0.0.6
 
 - Press `b` to visit a dependency and return to the original fleet selection.

@@ -1,5 +1,8 @@
 import { renderConversation } from "../../engine/ui/conversation.ts";
 import assert from "node:assert/strict";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { TuiAltScreen, stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
@@ -786,7 +789,11 @@ test(
   },
 );
 
-test("Pi screens use a full-viewport overlay and preserve parent and worker drafts across source switches", async () => {
+test("Pi overlays inherit display settings and preserve drafts across source switches", async (t) => {
+  const cwd = await mkdtemp(join(tmpdir(), "pinata-ui-settings-"));
+  t.after(() => rm(cwd, { recursive: true, force: true }));
+  await mkdir(join(cwd, ".pi"));
+  await writeFile(join(cwd, ".pi", "settings.json"), JSON.stringify({ hideThinkingBlock: true }));
   const source = Object.assign(new UiSource(), {
     location: { workspace: "/project", directory: "/project/first-run" },
   });
@@ -826,8 +833,11 @@ test("Pi screens use a full-viewport overlay and preserve parent and worker draf
   } as unknown as ExtensionAPI;
   const context = {
     mode: "tui",
+    cwd,
+    isProjectTrusted: () => true,
     sessionManager: { getSessionId: () => "parent-session" },
     ui: {
+      getToolsExpanded: () => true,
       getEditorText: () => draft,
       setEditorText: (text: string) => {
         draft = text;
@@ -915,6 +925,12 @@ test("Pi screens use a full-viewport overlay and preserve parent and worker draf
   await tick();
   assert(component);
   component.render(80);
+  assert.equal(router.expandedTools, true);
+  assert.equal(router.showThinking, false);
+  component.handleInput("\u000f");
+  component.handleInput("\u0014");
+  assert.equal(router.expandedTools, false);
+  assert.equal(router.showThinking, true);
   component.handleInput("worker draft");
   ui.navigate("main");
   await first;
@@ -923,6 +939,8 @@ test("Pi screens use a full-viewport overlay and preserve parent and worker draf
   router.setFilter("queued");
   const reopened = ui.open(context, "conversation", ref());
   await tick();
+  assert.equal(router.expandedTools, true, "reopening uses the parent tool setting");
+  assert.equal(router.showThinking, false, "reopening uses the parent thinking setting");
   component?.handleInput("\u001b[1;2B");
   component?.handleInput("r");
   await tick();

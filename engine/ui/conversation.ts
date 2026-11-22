@@ -1,4 +1,5 @@
 import { Markdown, type MarkdownTheme } from "@earendil-works/pi-tui";
+import { dependencyPageSchema } from "../contracts/dependencies.ts";
 import type { Paint } from "./palette.ts";
 import { displayText, fit, lines } from "./text.ts";
 
@@ -7,6 +8,7 @@ export type ConversationSurface = "pending" | "success" | "error" | "custom";
 export type ConversationPresentation = {
   markdown: MarkdownTheme;
   cacheKey: string;
+  outputPad?: number;
   surface?(kind: ConversationSurface, rows: string[], width: number): string[];
   user(text: string, width: number): string[];
   thinking?(text: string, width: number): string[];
@@ -58,14 +60,77 @@ function theme(paint: Paint): MarkdownTheme {
   };
 }
 
+export function conversationMarkdown(
+  value: string,
+  width: number,
+  paint: Paint,
+  presentation?: ConversationPresentation,
+): string[] {
+  return new Markdown(
+    displayText(value),
+    width > 2 ? (presentation?.outputPad ?? 1) : 0,
+    0,
+    presentation?.markdown ?? theme(paint),
+  ).render(width);
+}
+
+function parseJson(value: string): unknown {
+  try {
+    return JSON.parse(value);
+  } catch {
+    // A retained tool may return plain text or a fragment of a paginated result.
+    return undefined;
+  }
+}
+
+function dependencyOutput(details: unknown, raw: string, expanded: boolean): string | undefined {
+  let parsed = dependencyPageSchema.safeParse(details);
+  if (!parsed.success) parsed = dependencyPageSchema.safeParse(parseJson(raw));
+  if (!parsed.success) return undefined;
+  const page = parsed.data;
+  if (page.kind === "list") {
+    if (expanded) return JSON.stringify(page, null, 2);
+    return [
+      `${page.total} ${page.total === 1 ? "prerequisite" : "prerequisites"}`,
+      ...page.entries.map(
+        ({ ref, execution, summary, summaryComplete }) =>
+          `${ref.worker}/${ref.assignment} · ${execution.phase === "ended" ? execution.reason : execution.phase}` +
+          (summary
+            ? `
+${summary}${summaryComplete ? "" : "…"}`
+            : ""),
+      ),
+    ].join("\n");
+  }
+  const { text: fragment, ...metadata } = page;
+  const frozen =
+    page.offset === 0 && page.next === undefined ? object(parseJson(fragment)) : undefined;
+  if (expanded)
+    return `${JSON.stringify(metadata, null, 2)}
+
+${frozen ? JSON.stringify(frozen, null, 2) : fragment}`;
+  const end = page.next ?? page.total;
+  const result = `${page.ref.worker}/${page.ref.assignment} · ${page.offset === 0 && end === page.total ? "Frozen result" : `Result page ${page.offset}–${end} of ${page.total}`}`;
+  return typeof frozen?.summary === "string"
+    ? `${result}
+${frozen.summary}`
+    : result;
+}
+
 // Render retained data using Pi's public Markdown component. Tool bursts are
 // shown with bounded output previews without hiding the agent's progress.
 function renderEntries(entries: unknown[], options: ConversationOptions): string[] {
   const { width, paint, expanded } = options;
   const output: string[] = [];
-  const calls = new Map<string, string>();
-  const paths = new Map<string, string>();
-  const argumentsByCall = new Map<string, unknown>();
+  const calls = new Map<string, { label: string; args?: unknown; path?: string }>();
+  const toolWidth =
+    options.presentation?.surface && width > 2
+      ? width - 2 * (options.presentation.outputPad ?? 1)
+      : width;
+  const toolHint = options.toolShortcut ?? "ctrl+o";
+  const thinkingHint = options.thinkingShortcut ?? "ctrl+t";
+  const code = (value: string, language: string) =>
+    options.presentation?.code(value, language, toolWidth) ?? lines(value, toolWidth);
   const results = new Set<string>();
   for (const entry of entries) {
     const message = object(object(entry)?.message);
@@ -79,9 +144,11 @@ function renderEntries(entries: unknown[], options: ConversationOptions): string
       const label = displayText(
         `${String(item.name)} ${typeof target === "string" ? target.split("\n")[0] : ""}`,
       ).trim();
-      calls.set(String(item.id), label);
-      argumentsByCall.set(String(item.id), item.arguments);
-      if (typeof args?.path === "string") paths.set(String(item.id), args.path);
+      calls.set(String(item.id), {
+        label,
+        args: item.arguments,
+        path: typeof args?.path === "string" ? args.path : undefined,
+      });
     }
   }
   const surface = (start: number, kind: ConversationSurface) => {
@@ -91,12 +158,8 @@ function renderEntries(entries: unknown[], options: ConversationOptions): string
     output.push(...options.presentation.surface(kind, rows, width), "");
   };
   const markdown = (value: string) =>
-    new Markdown(
-      displayText(value),
-      width > 2 ? 1 : 0,
-      0,
-      options.presentation?.markdown ?? theme(paint),
-    ).render(width);
+    conversationMarkdown(value, width, paint, options.presentation);
+  const expansionHint = toolHint ? ` · ${toolHint} to expand` : "";
   const inputTexts = new Set<string>();
   for (const value of entries) {
     const entry = object(value);
@@ -147,39 +210,47 @@ function renderEntries(entries: unknown[], options: ConversationOptions): string
         surface(start, "custom");
         continue;
       }
-      const label =
-        calls.get(String(message.toolCallId)) ?? displayText(String(message.toolName ?? "tool"));
+      const call = calls.get(String(message.toolCallId));
+      const label = call?.label ?? displayText(String(message.toolName ?? "tool"));
       output.push(
         paint(
           message.isError ? "error" : "strong",
-          fit(`${label}${message.isError ? " · failed" : ""}`, width),
+          fit(`${label}${message.isError ? " · failed" : ""}`, toolWidth),
         ),
       );
-      const args = argumentsByCall.get(String(message.toolCallId));
-      if (expanded && args !== undefined) {
-        const argsText = JSON.stringify(args, null, 2);
-        output.push(
-          ...(options.presentation?.code(argsText, "json", width) ?? lines(argsText, width)),
-        );
+      if (expanded && call?.args !== undefined) {
+        output.push(...code(JSON.stringify(call.args, null, 2), "json"), "");
       }
-      const path = paths.get(String(message.toolCallId));
-      const body =
-        path && message.toolName === "read" && options.presentation
-          ? options.presentation.file(text(message.content), path, width)
-          : (options.presentation?.code(text(message.content), "text", width) ??
-            lines(text(message.content), width));
-      const previewRows = 10;
-      output.push(...(expanded ? body : body.slice(0, previewRows)));
-      if (!expanded && body.length > previewRows)
-        output.push(
-          paint(
-            "muted",
-            fit(
-              `… ${body.length - previewRows} more lines · ${options.toolShortcut ?? "ctrl+o"} to expand`,
-              width,
+      const raw = text(message.content);
+      const dependency =
+        message.toolName === "pinata_dependency" && !message.isError
+          ? dependencyOutput(message.details, raw, expanded)
+          : undefined;
+      const structured =
+        !dependency && !message.isError && message.toolName !== "read" && /^\s*[[{]/.test(raw)
+          ? parseJson(raw)
+          : undefined;
+      if (structured !== undefined && !expanded) {
+        output.push(paint("muted", fit(`JSON output${expansionHint}`, toolWidth)));
+      } else {
+        const body =
+          call?.path && message.toolName === "read" && options.presentation
+            ? options.presentation.file(raw, call.path, toolWidth)
+            : structured !== undefined
+              ? code(JSON.stringify(structured, null, 2), "json")
+              : code(dependency ?? raw, "text");
+        const previewRows = dependency ? 4 : 10;
+        output.push(...(expanded ? body : body.slice(0, previewRows)));
+        if (!expanded && dependency)
+          output.push(paint("muted", fit(`Retained evidence${expansionHint}`, toolWidth)));
+        else if (!expanded && body.length > previewRows)
+          output.push(
+            paint(
+              "muted",
+              fit(`… ${body.length - previewRows} more lines${expansionHint}`, toolWidth),
             ),
-          ),
-        );
+          );
+      }
       output.push("");
       surface(start, message.isError ? "error" : "success");
       continue;
@@ -223,20 +294,18 @@ function renderEntries(entries: unknown[], options: ConversationOptions): string
       for (const part of message.content) {
         const item = object(part);
         if (item?.type === "text" && role === "assistant") {
-          output.push(...markdown(String(item.text ?? "")), "");
+          const reply = String(item.text ?? "").trim();
+          if (reply) output.push(...markdown(reply), "");
         } else if (item?.type === "toolCall") {
           if (results.has(String(item.id))) continue;
           const callStart = output.length;
-          const label = calls.get(String(item.id)) ?? displayText(String(item.name));
+          const label = calls.get(String(item.id))?.label ?? displayText(String(item.name));
           if (expanded) {
-            output.push(paint("strong", fit(label, width)));
-            const argsText = JSON.stringify(item.arguments, null, 2);
-            output.push(
-              ...(options.presentation?.code(argsText, "json", width) ?? lines(argsText, width)),
-              "",
-            );
+            output.push(paint("strong", fit(label, toolWidth)));
+            if (item.arguments !== undefined)
+              output.push(...code(JSON.stringify(item.arguments, null, 2), "json"), "");
           } else if (item.name !== "submit_result") {
-            output.push(paint("accent", fit(label, width)));
+            output.push(paint("accent", fit(label, toolWidth)));
           }
           if (output.length > callStart) {
             surface(callStart, "pending");
@@ -252,7 +321,7 @@ function renderEntries(entries: unknown[], options: ConversationOptions): string
             output.push(
               paint(
                 "muted",
-                fit(`Thinking · ${options.thinkingShortcut ?? "ctrl+t"} to show`, width),
+                fit(`Thinking${thinkingHint ? ` · ${thinkingHint} to show` : ""}`, width),
               ),
               "",
             );

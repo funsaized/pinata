@@ -225,9 +225,13 @@ evidence is read-only and does not acquire ownership or start workers. Each run
 keeps its selection, filters and drafts. Fleet controls target only the selected run,
 including its hidden assignments.
 
-Fleet and conversation screens fill the terminal. Pi renders user cards, Markdown,
-syntax highlighting and tool output using its theme. Folded completion cards show
-the worker, outcome, a short summary and the conversation command. Expand a card
+Fleet and conversation screens fill the terminal. Worker conversations in Pi use
+the host theme, Markdown spacing, thinking visibility, tool expansion state and
+keybindings when the fleet opens. Piñata key overrides take precedence, and
+conversation toggles apply within the fleet. Folded tool output summarizes
+dependency results and keeps the retained payload available when expanded.
+Folded completion cards show the worker, outcome, a short summary and the
+conversation command. Expand a card
 for its retained evidence, including small typed reports, worktree details and
 cleanup status when available.
 
