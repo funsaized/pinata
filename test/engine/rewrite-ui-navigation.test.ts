@@ -2,7 +2,11 @@ import { withDemoFleet } from "../../engine/viewer/demo.ts";
 import assert from "node:assert/strict";
 import test, { type TestContext } from "node:test";
 import { TuiAltScreen, stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
-import { definitionSchema, type AssignmentRef } from "../../engine/contracts/index.ts";
+import {
+  assignmentKey,
+  definitionSchema,
+  type AssignmentRef,
+} from "../../engine/contracts/index.ts";
 import { createPaint } from "../../engine/ui/palette.ts";
 import { renderScreen } from "../../engine/ui/render.ts";
 import { ScreenRouter } from "../../engine/ui/router.ts";
@@ -250,24 +254,71 @@ test("custom shortcuts cannot replace text entry, paging or reserved fleet contr
   assert.equal(resolveKeys({ stop: "ctrl+k" }).stop, "ctrl+k");
 });
 
-test("dependency choices cross search filters and Back restores the original assignment and draft", async (t) => {
-  const state = uiState(3);
-  Object.values(state.assignments)[2].after = [ref(), ref(2)];
+test("inline dependency links reveal filtered and collapsed assignments without losing drafts", async (t) => {
+  const state = uiState(4);
+  state.workers["worker-2"].parentAssignment = ref();
+  state.assignments[assignmentKey(ref(3))].after = [ref(), ref(2)];
+  state.assignments[assignmentKey(ref(2))].execution = {
+    phase: "ended",
+    reason: "completed",
+    cleanup: "confirmed",
+  };
   const { router, screen } = await setup(t, new UiSource(state));
+  router.navigate("fleet", ref());
+  router.collapse(true);
   router.search = "worker-3";
   router.navigate("fleet", ref(3));
-  screen.handleInput("b");
-  const choices = stripTerminalSequences(screen.render(80).join("\n"));
-  assert.match(choices, /Needs\s+worker-1\/1/);
-  assert.match(choices, /Needs\s+worker-2\/1/);
+  const rows = screen.render(80).map(stripTerminalSequences);
+  const origin = rows.findIndex((row) => /> .*worker-3\/1/.test(row));
+  assert.match(rows[origin + 1], /├─ ↑ Needs worker-1\/1/);
+  assert.match(rows[origin + 2], /└─ ↑ After worker-2\/1/);
+  assert.match(rows.at(-2) ?? "", /Esc/);
+  screen.handleInput("\x1b[C");
   screen.handleInput("\x1b[B");
+  assert.equal(router.focusedDependency, assignmentKey(ref(2)));
+  assert.deepEqual(
+    router.selected,
+    ref(3),
+    "focusing a link keeps controls on its actual assignment row",
+  );
   screen.handleInput("\r");
+  assert.equal(router.screen, "fleet");
   assert.deepEqual(router.selected, ref(2));
+  assert(router.fleetNodes().some((node) => node.assignment.ref.worker === "worker-2"));
+  assert(router.collapsed.has(assignmentKey(ref())), "revealing preserves branch settings");
+  assert.equal(router.filter, "unfinished");
+  screen.handleInput("\r");
+  assert.equal(router.screen, "conversation");
   router.setDraft("Trace the HTTP parser");
   screen.handleInput("\x1b");
+  assert.deepEqual(router.selected, ref(2));
+  screen.handleInput("\x7f");
   assert.deepEqual(router.selected, ref(3));
   assert.equal(router.search, "worker-3");
-  router.navigate("conversation", ref(2));
+  assert(!router.fleetNodes().some((node) => node.assignment.ref.worker === "worker-2"));
+
+  screen.handleInput("\x1b[D");
+  assert.doesNotMatch(screen.render(80).join("\n"), /After worker-2\/1/);
+  screen.handleInput("\x1b[C");
+  const rerendered = screen.render(80).map(stripTerminalSequences);
+  const linkRow = rerendered.findIndex((row) => row.includes("After worker-2/1"));
+  assert.deepEqual(
+    screen.handleMouse({
+      type: "click",
+      button: "left",
+      x: 8,
+      y: linkRow,
+      screenX: 8,
+      screenY: linkRow,
+      shift: false,
+      alt: false,
+      ctrl: false,
+      width: 80,
+      height: rerendered.length,
+    }),
+    { handled: true, focus: true, render: true },
+  );
+  assert.deepEqual(router.selected, ref(2));
   assert.equal(router.draft, "Trace the HTTP parser");
 });
 
@@ -291,7 +342,8 @@ test("offline demo consumes a correction, releases review and preserves the coor
       await waitForRunning("scout");
       const review = { run: source.run, worker: "review", assignment: 1 };
       router.navigate("fleet", review);
-      router.browseDependencies();
+      router.followDependency(assignmentKey({ ...review, worker: "scout" }));
+      router.navigate("conversation");
       assert.equal(router.selected?.worker, "scout");
       const loaded = AbortSignal.timeout(5000);
       while (router.conversation().loading) {
@@ -309,6 +361,7 @@ test("offline demo consumes a correction, releases review and preserves the coor
         AbortSignal.timeout(5000),
       );
       router.navigate("fleet");
+      router.returnToDependencyOrigin();
       assert.deepEqual(router.selected, review);
       assert.match(router.handoff(false) ?? "", /◆.*review ready/);
       assert.match(router.handoff(true) ?? "", /scout -> review ready/);

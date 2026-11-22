@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
   assignmentKey,
   commandEnvelopeSchema,
+  type Assignment,
   type AssignmentRef,
   type CommandEnvelope,
   type CommandReceipt,
@@ -31,6 +32,11 @@ import { assignmentTree } from "./tree.ts";
 
 export type ScreenName = "main" | "fleet" | "conversation";
 export type MessageAction = "steer" | "follow_up" | "continue";
+export type DependencyLink = {
+  assignment: Assignment;
+  direction: "upstream" | "downstream";
+  label: string;
+};
 export type ConversationView = {
   page?: ConversationQueryResult;
   loading: boolean;
@@ -89,18 +95,16 @@ export class ScreenRouter {
   connectionAvailable = true;
   help = false;
   helpScroll = 0;
-  dependencies?: {
-    origin: AssignmentRef;
-    index: number;
-    links: { ref: AssignmentRef; label: string }[];
-  };
-  private fleetOrigin?: AssignmentRef;
+  focusedDependency?: string;
+  private revealedAssignment?: AssignmentRef;
+  private readonly dependencyHistory: AssignmentRef[] = [];
   private release?: { from: AssignmentRef; targets: AssignmentRef[]; at: number };
   private fleetCache?: {
     state: CoreState;
     search: string;
     filter: FleetFilter;
     ascii: boolean;
+    revealed?: AssignmentRef;
     nodes: ReturnType<typeof assignmentTree>;
   };
   private searchCache?: {
@@ -120,6 +124,7 @@ export class ScreenRouter {
   readonly collapsed = new Set<string>();
   transcriptFocus = false;
   details = false;
+  transcriptDetails = false;
   expandedTools = false;
   showThinking = false;
   readonly activity = new Map<string, string>();
@@ -209,7 +214,7 @@ export class ScreenRouter {
     const changedOwner = event.ownerEpoch !== this.epoch;
     if (changedOwner) {
       this.epoch = event.ownerEpoch;
-      this.dependencies = undefined;
+      this.clearDependencyNavigation();
       this.patchRequest?.abort();
       this.generation++;
       this.activity.clear();
@@ -289,6 +294,7 @@ export class ScreenRouter {
       if (previousSelection !== (this.selected && assignmentKey(this.selected))) {
         this.cancelPreview();
         this.inspectorScroll = 0;
+        this.focusedDependency = undefined;
       }
     }
     this.changed();
@@ -307,47 +313,58 @@ export class ScreenRouter {
     )
       void this.loadConversation().catch((error: unknown) => this.fail(error));
   }
-  dependencyLinks() {
-    const selected = this.selected && this.state.assignments[assignmentKey(this.selected)];
+  dependencyLinks(): DependencyLink[] {
+    const key = this.selected && assignmentKey(this.selected);
+    const selected = key && this.state.assignments[key];
     if (!selected) return [];
-    const upstreamLinks = selected.after.flatMap((ref) => {
-      const upstream = this.state.assignments[assignmentKey(ref)];
-      if (!upstream) return [];
-      return [{ ref, direction: "upstream", label: isFinished(upstream) ? "After" : "Needs" }];
-    });
+    const upstream: DependencyLink[] = [];
+    for (const ref of selected.after) {
+      const assignment = this.state.assignments[assignmentKey(ref)];
+      if (assignment)
+        upstream.push({
+          assignment,
+          direction: "upstream",
+          label: isFinished(assignment) ? "After" : "Needs",
+        });
+    }
     return [
-      ...upstreamLinks.filter((link) => link.label === "Needs"),
-      ...upstreamLinks.filter((link) => link.label === "After"),
-      ...dependentAssignments(this.state, assignmentKey(selected.ref))
-        .filter((a) => a.execution.phase === "queued")
-        .map((a) => ({
+      ...upstream.filter((link) => link.label === "Needs"),
+      ...upstream.filter((link) => link.label === "After"),
+      ...dependentAssignments(this.state, assignmentKey(selected.ref)).map(
+        (assignment): DependencyLink => ({
+          assignment,
           direction: "downstream",
-          ref: a.ref,
-          label: isFinished(selected)
-            ? "Precedes"
-            : a.after.filter((ref) => !isFinished(this.state.assignments[assignmentKey(ref)]))
-                  .length === 1
-              ? "Last prerequisite for"
-              : "Also needed by",
-        })),
+          label: isFinished(selected) ? "Precedes" : "Required by",
+        }),
+      ),
     ];
   }
-  browseDependencies(): void {
-    const origin = this.selected;
-    const links = this.dependencyLinks();
-    if (!origin || !links.length) return;
-    this.dependencies = { origin, index: 0, links };
-    if (links.length === 1) this.openDependency();
+  focusDependency(ref?: AssignmentRef): void {
+    this.focusedDependency = ref && assignmentKey(ref);
     this.changed();
   }
-  openDependency(): void {
-    const menu = this.dependencies;
-    if (!menu) return;
-    const target = menu.links[menu.index];
-    this.dependencies = undefined;
-    if (!target) return;
-    this.fleetOrigin = menu.origin;
-    this.navigate("conversation", target.ref);
+  followDependency(key = this.focusedDependency): void {
+    const target = this.dependencyLinks().find(
+      (link) => assignmentKey(link.assignment.ref) === key,
+    );
+    if (!this.selected || !target) return;
+    this.dependencyHistory.push(this.selected);
+    this.revealedAssignment = target.assignment.ref;
+    this.navigate("fleet", target.assignment.ref);
+  }
+  get canReturnToDependencyOrigin(): boolean {
+    return this.dependencyHistory.length > 0;
+  }
+  returnToDependencyOrigin(): void {
+    const origin = this.dependencyHistory.pop();
+    if (!origin) return;
+    this.revealedAssignment = origin;
+    this.navigate("fleet", origin);
+  }
+  clearDependencyNavigation(): void {
+    this.focusedDependency = undefined;
+    this.revealedAssignment = undefined;
+    this.dependencyHistory.length = 0;
   }
   handoff(ascii: boolean): string | undefined {
     const release = this.release;
@@ -377,9 +394,7 @@ export class ScreenRouter {
       return false;
     }
     this.patchRequest?.abort();
-    if (screen === "fleet" && this.screen === "conversation") ref ??= this.fleetOrigin;
-    if (screen !== "conversation") this.fleetOrigin = undefined;
-    this.dependencies = undefined;
+    this.focusedDependency = undefined;
     const previous = this.selected && assignmentKey(this.selected);
     if (this.noticeTone === "success") this.notice = "";
     if (ref) {
@@ -387,6 +402,22 @@ export class ScreenRouter {
       this.definition = undefined;
     }
     if (screen === "fleet") {
+      if (
+        ref &&
+        this.revealedAssignment &&
+        assignmentKey(ref) !== assignmentKey(this.revealedAssignment)
+      ) {
+        const key = assignmentKey(ref);
+        const wasVisible = this.fleetNodes().some(
+          (row) => assignmentKey(row.assignment.ref) === key,
+        );
+        this.revealedAssignment = undefined;
+        if (
+          wasVisible &&
+          !this.fleetNodes().some((row) => assignmentKey(row.assignment.ref) === key)
+        )
+          this.revealedAssignment = ref;
+      }
       this.definition = undefined;
       const rows = this.fleetAssignments();
       if (
@@ -441,10 +472,6 @@ export class ScreenRouter {
       history[(current + direction + history.length) % history.length]?.ref,
     );
   }
-  selectRow(index: number): void {
-    const row = this.fleetAssignments()[index];
-    if (row) this.navigate(this.screen, row.ref);
-  }
   fleetAssignments(): ReturnType<typeof assignments> {
     return this.fleetNodes().map((node) => node.assignment);
   }
@@ -454,6 +481,7 @@ export class ScreenRouter {
       cached?.state === this.state &&
       cached.filter === this.filter &&
       cached.search === this.search &&
+      cached.revealed === this.revealedAssignment &&
       cached.ascii === ascii
     )
       return cached.nodes;
@@ -462,6 +490,15 @@ export class ScreenRouter {
         .filter((assignment) => matchesFleetFilter(this.state, assignment, this.filter))
         .map((assignment) => assignmentKey(assignment.ref)),
     );
+    const revealedPath = new Set<string>();
+    let revealed = this.revealedAssignment;
+    if (revealed) include.add(assignmentKey(revealed));
+    while (revealed) {
+      const key = assignmentKey(revealed);
+      if (revealedPath.has(key)) break;
+      revealedPath.add(key);
+      revealed = this.state.workers[revealed.worker]?.parentAssignment;
+    }
     const nodes = assignmentTree(this.state, {
       ascii,
       include,
@@ -472,7 +509,7 @@ export class ScreenRouter {
       const key = assignmentKey(assignment.ref);
       const worker = this.state.workers[assignment.ref.worker];
       const parent = worker.parentAssignment ? assignmentKey(worker.parentAssignment) : undefined;
-      if (parent && (hidden.has(parent) || this.collapsed.has(parent))) {
+      if (parent && !revealedPath.has(key) && (hidden.has(parent) || this.collapsed.has(parent))) {
         hidden.add(key);
         return false;
       }
@@ -483,9 +520,27 @@ export class ScreenRouter {
       search: this.search,
       filter: this.filter,
       ascii,
+      revealed: this.revealedAssignment,
       nodes: visible,
     };
     return visible;
+  }
+  moveFleetSelection(amount: number): void {
+    const rows = this.fleetNodes();
+    const selected = this.selected && assignmentKey(this.selected);
+    const index = rows.findIndex((row) => assignmentKey(row.assignment.ref) === selected);
+    const links = this.selectedBranchCollapsed ? [] : this.dependencyLinks();
+    const linkIndex = links.findIndex(
+      (link) => assignmentKey(link.assignment.ref) === this.focusedDependency,
+    );
+    if (amount > 0 && links[linkIndex + 1]) {
+      this.focusDependency(links[linkIndex + 1].assignment.ref);
+    } else if (amount < 0 && linkIndex >= 0) {
+      this.focusDependency(links[linkIndex - 1]?.assignment.ref);
+    } else {
+      const next = rows[index < 0 ? 0 : index + amount];
+      if (next) this.navigate("fleet", next.assignment.ref);
+    }
   }
   matchingAssignments(): ReturnType<typeof assignments> {
     if (this.searchCache?.state === this.state && this.searchCache.search === this.search)
@@ -500,6 +555,7 @@ export class ScreenRouter {
     return matched;
   }
   setFilter(filter: FleetFilter): void {
+    this.clearDependencyNavigation();
     this.filter = filter;
     this.fleetScroll = 0;
     this.inspectorScroll = 0;
@@ -536,6 +592,7 @@ export class ScreenRouter {
     this.setFilter(filter);
   }
   refreshView(): void {
+    this.focusedDependency = undefined;
     const previous = this.selected && assignmentKey(this.selected);
     const rows = this.fleetAssignments();
     if (
@@ -549,6 +606,9 @@ export class ScreenRouter {
     this.fleetRenderedSelection = undefined;
     this.changed();
     this.schedulePreview();
+  }
+  get selectedBranchCollapsed(): boolean {
+    return Boolean(this.selected && this.collapsed.has(assignmentKey(this.selected)));
   }
   collapse(value: boolean): void {
     if (!this.selected) return;

@@ -153,7 +153,7 @@ test("staged fleets use aligned rows, one shared model, and keep the selected ag
   router.setDraft("keep this draft");
   screen.handleInput("d");
   assert.equal(router.details, true);
-  assert.match(stripTerminalSequences(screen.render(120).join("\n")), /After: worker-3\/1/);
+  assert.match(stripTerminalSequences(screen.render(120).join("\n")), /↑ Needs worker-3\/1/);
   assert.match(stripTerminalSequences(screen.render(120).join("\n")), /in-process/);
   screen.handleInput("d");
   assert.equal(router.details, false);
@@ -522,15 +522,15 @@ test("steering requires the visible active assignment; factual labels distinguis
   assert.match(router.notice, /visible assignment/);
   router.navigate("conversation", ref());
   await tick();
-  router.details = true;
+  router.transcriptDetails = true;
   const rendered = renderScreen(router, {
     width: 200,
     height: 50,
     paint: createPaint("terminal-default"),
   }).join("\n");
-  assert.match(rendered, /cleanup pending/);
-  assert.match(rendered, /acceptance: no decision recorded · correctness: unknown/);
-  assert.match(rendered, /context unknown/);
+  assert.match(rendered, /Cleanup +pending/);
+  assert.match(rendered, /Acceptance +No decision recorded · correctness unknown/);
+  assert.match(rendered, /Context +Unknown/);
   source.capabilities.control = false;
   assert.equal((await router.control("cancel")).status, "error");
   assert.equal(router.draft, "cannot accidentally steer assignment 1");
@@ -1210,7 +1210,7 @@ test("composer editing keys preserve focus and transcript controls are explicit"
   screen.handleInput("f");
   assert.equal(router.conversation().follow, true, "f no longer toggles following");
   screen.handleInput("d");
-  assert.equal(router.details, true);
+  assert.equal(router.transcriptDetails, true);
   screen.render(100);
   screen.handleInput("\u001b[A");
   assert.equal(router.conversation().follow, false);
@@ -1264,7 +1264,8 @@ test("Pi conversation shortcuts toggle tools and thinking independently without 
         screen.handleInput("d");
         assert.equal(router.expandedTools, false);
         assert.equal(router.showThinking, false);
-        assert.equal(router.details, true);
+        assert.equal(router.transcriptDetails, true);
+        assert.equal(router.details, false);
         assert.equal(router.draft, "Keep this draft");
         assert.equal(source.calls.length, calls);
       } finally {
@@ -1901,7 +1902,8 @@ test("fleet retains completed dependency references without inventing ancestry",
     paint: createPaint("terminal-default"),
     ascii: true,
   });
-  assert.match(rows.join("\n"), /After: worker-1\/1, worker-2\/1/);
+  assert.match(rows.join("\n"), /\^ After worker-1\/1/);
+  assert.match(rows.join("\n"), /\^ After worker-2\/1/);
   assert(router.fleetNodes(true).every((node) => !node.hasChildren));
   router.dispose();
 });

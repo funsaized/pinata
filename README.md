@@ -109,9 +109,11 @@ after package removal.
 ## Quick start
 
 To try the fleet offline, run `pinata demo` in a terminal. From a source checkout,
-use `node bin/pinata.mjs demo`. The reviewer is waiting for a scout. Press `b`,
-send the scout a correction, then press Escape to see the reviewer start. Send the
-reviewer a message to finish. Press `h` in the fleet to inspect both results.
+use `node bin/pinata.mjs demo`. The selected reviewer is waiting for the scout.
+Press Down and Enter to follow the scout link, then Enter to open its conversation.
+Ask the scout to trace the HTTP parser. Press Escape and Backspace to return to the
+reviewer, then open its conversation and send a message to finish. Press `h` in the
+fleet to inspect both results.
 The demo uses a temporary workspace and a scripted backend with zero provider calls.
 
 Open a project in Pi and type:
@@ -180,19 +182,23 @@ The fleet highlights the selected row and shows its last assistant message and
 prompt in an inspector. Wide terminals place the inspector on the right; smaller
 terminals stack it directly below the list. Tab moves focus between panes, page
 keys scroll the focused pane, and the wheel scrolls the pane under the pointer.
-`d` expands the exact prompt, message and execution details. Cleanup problems stay
-visible when details are collapsed. Enter opens the full conversation.
+`d` expands the prompt and last message and shows execution, handoff and resource
+details. Cleanup problems stay visible when details are collapsed. Enter on an
+assignment opens its conversation.
 
-Press `b` or click **browse dependencies** to visit a prerequisite or a queued assignment that depends on this one.
-A single link opens its conversation directly. For multiple links, press a numbered
-key or use the arrows and Enter. Escape returns to the original fleet selection
-if it still matches your filter. When a settlement makes a dependent ready, the
-inspector briefly shows a candy moving between their names. ASCII and reduced
-motion use a stationary arrow.
+The selected assignment shows its dependency links directly beneath it. Up arrows
+point to prerequisites and down arrows point to dependents. Move onto a link and
+press Enter, or click it, to select that assignment in the fleet. Links can reveal
+assignments hidden by the current filter, search or a collapsed branch. Left folds
+the links when the assignment is selected. Backspace retraces your jumps. When a
+settlement makes a dependent ready, the inspector briefly shows a candy moving
+between their names. ASCII and reduced motion use a
+stationary arrow.
 
-Finished assignments show their result summary, report reference and handoff
-information. Enter opens the transcript, including any submitted report. For a
-worktree, `p` opens a patch preview in the owning host. It compares current files
+Finished assignments show their result summary. Expand the inspector for the report
+reference and handoff details. Enter opens the transcript, including any submitted
+report. For a worktree, `p` opens a patch preview in the owning host. It compares
+current files
 with the frozen base, including eligible untracked files, and displays up to
 32 KiB. Later edits can change the preview. A saved viewer shows the checkout and
 Git inspection commands. Older assignments with a retained snapshot show their
@@ -239,11 +245,12 @@ cleanup status when available.
 | ------------------------------------------------- | ----------------------------------------------------------- |
 | Shift+Down                                        | Open the fleet, including from a worker conversation.       |
 | Shift+Up or Escape                                | Return to the parent screen.                                |
-| Up/Down, Enter in the fleet                       | Select an assignment, then open it.                         |
+| Up/Down, Enter in the fleet                       | Select and open an assignment or follow a link.             |
 | Shift+Left/Right                                  | Select the previous/next worker.                            |
 | Alt+Left/Right                                    | Browse earlier/later assignments for that worker.           |
-| Left/Right in the fleet                           | Collapse/expand a child branch.                             |
-| Mouse click/double click                          | Select/open a fleet row.                                    |
+| Left/Right in the fleet                           | Collapse/expand branches or navigate dependency links.      |
+| Backspace in the fleet                            | Return to the previous assignment after following a link.   |
+| Mouse click/double click                          | Follow a link, or select/open an assignment.                |
 | Mouse wheel, PageUp/PageDown, Alt+PageUp/PageDown | Scroll the focused pane; wheel follows pointer.             |
 | `/` in the fleet                                  | Search workers/tasks; Enter keeps the filter.               |
 | `f` in the fleet                                  | Cycle the five status filters.                              |
