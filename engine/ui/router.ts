@@ -23,7 +23,6 @@ import {
   assignments,
   fleetFilters,
   matchesFleetFilter,
-  isFinished,
   steerTarget,
   type FleetFilter,
 } from "./projection.ts";
@@ -32,11 +31,24 @@ import { assignmentTree } from "./tree.ts";
 
 export type ScreenName = "main" | "fleet" | "conversation";
 export type MessageAction = "steer" | "follow_up" | "continue";
-export type DependencyLink = {
+export type DependencyGroup = "prerequisites" | "dependents";
+type DependencyLink = {
+  kind: "link";
+  key: string;
+  group: DependencyGroup;
   assignment: Assignment;
-  direction: "upstream" | "downstream";
-  label: string;
 };
+export type DependencyRow =
+  | DependencyLink
+  | {
+      kind: "group";
+      key: DependencyGroup;
+      group: DependencyGroup;
+      expanded: boolean;
+      total: number;
+      completed: number;
+      attention: number;
+    };
 export type ConversationView = {
   page?: ConversationQueryResult;
   loading: boolean;
@@ -96,6 +108,7 @@ export class ScreenRouter {
   help = false;
   helpScroll = 0;
   focusedDependency?: string;
+  private readonly dependencyDisclosure = new Map<string, boolean>();
   private revealedAssignment?: AssignmentRef;
   private readonly dependencyHistory: AssignmentRef[] = [];
   private release?: { from: AssignmentRef; targets: AssignmentRef[]; at: number };
@@ -215,6 +228,7 @@ export class ScreenRouter {
     if (changedOwner) {
       this.epoch = event.ownerEpoch;
       this.clearDependencyNavigation();
+      this.dependencyDisclosure.clear();
       this.patchRequest?.abort();
       this.generation++;
       this.activity.clear();
@@ -313,40 +327,110 @@ export class ScreenRouter {
     )
       void this.loadConversation().catch((error: unknown) => this.fail(error));
   }
-  dependencyLinks(): DependencyLink[] {
-    const key = this.selected && assignmentKey(this.selected);
-    const selected = key && this.state.assignments[key];
+  private dependencyLinks(): DependencyLink[] {
+    const selected = this.selected && this.state.assignments[assignmentKey(this.selected)];
     if (!selected) return [];
-    const upstream: DependencyLink[] = [];
+    const links: DependencyLink[] = [];
     for (const ref of selected.after) {
-      const assignment = this.state.assignments[assignmentKey(ref)];
-      if (assignment)
-        upstream.push({
-          assignment,
-          direction: "upstream",
-          label: isFinished(assignment) ? "After" : "Needs",
-        });
+      const key = assignmentKey(ref);
+      const assignment = this.state.assignments[key];
+      if (assignment) links.push({ kind: "link", group: "prerequisites", key, assignment });
     }
-    return [
-      ...upstream.filter((link) => link.label === "Needs"),
-      ...upstream.filter((link) => link.label === "After"),
-      ...dependentAssignments(this.state, assignmentKey(selected.ref)).map(
-        (assignment): DependencyLink => ({
-          assignment,
-          direction: "downstream",
-          label: isFinished(selected) ? "Precedes" : "Required by",
-        }),
-      ),
-    ];
+    for (const assignment of dependentAssignments(this.state, assignmentKey(selected.ref))) {
+      links.push({
+        kind: "link",
+        group: "dependents",
+        key: assignmentKey(assignment.ref),
+        assignment,
+      });
+    }
+    return links;
   }
-  focusDependency(ref?: AssignmentRef): void {
-    this.focusedDependency = ref && assignmentKey(ref);
+  get hasDependencies(): boolean {
+    const selected = this.selected && this.state.assignments[assignmentKey(this.selected)];
+    return Boolean(
+      selected &&
+      (selected.after.length ||
+        dependentAssignments(this.state, assignmentKey(selected.ref)).length),
+    );
+  }
+  dependencyRows(): DependencyRow[] {
+    if (!this.selected || this.selectedBranchCollapsed) return [];
+    const links = this.dependencyLinks();
+    const rows: DependencyRow[] = [];
+    for (const group of ["prerequisites", "dependents"] as const) {
+      const related = links.filter((link) => link.group === group);
+      if (!related.length) continue;
+      const completed: DependencyLink[] = [];
+      const attention: DependencyLink[] = [];
+      const pending: DependencyLink[] = [];
+      for (const link of related) {
+        const execution = link.assignment.execution;
+        if (execution.phase !== "ended") pending.push(link);
+        else if (execution.reason === "completed" && execution.cleanup === "confirmed")
+          completed.push(link);
+        else attention.push(link);
+      }
+      const expanded =
+        this.dependencyDisclosure.get(this.disclosureKey(this.selected, group)) ??
+        (completed.length !== related.length ||
+          completed.some((link) => link.key === this.focusedDependency));
+      rows.push({
+        kind: "group",
+        key: group,
+        group,
+        expanded,
+        total: related.length,
+        completed: completed.length,
+        attention: attention.length,
+      });
+      if (expanded) rows.push(...attention, ...pending, ...completed);
+    }
+    return rows;
+  }
+  private disclosureKey(ref: AssignmentRef, group: DependencyGroup): string {
+    return group + assignmentKey(ref);
+  }
+  toggleDependencyGroup(group: DependencyGroup, expanded?: boolean): void {
+    if (!this.selected) return;
+    const row = this.dependencyRows().find((row) => row.kind === "group" && row.group === group);
+    if (row?.kind !== "group") return;
+    this.dependencyDisclosure.set(
+      this.disclosureKey(this.selected, group),
+      expanded ?? !row.expanded,
+    );
+    this.focusDependency(group);
+  }
+  private focusDependency(key?: string): void {
+    this.focusedDependency = key;
     this.changed();
   }
+  activateDependency(): void {
+    const focused = this.focusedDependency;
+    if (focused === "prerequisites" || focused === "dependents")
+      this.toggleDependencyGroup(focused);
+    else this.followDependency(focused);
+  }
+  moveFleetBranch(direction: "left" | "right"): void {
+    const rows = this.dependencyRows();
+    const index = rows.findIndex((row) => row.key === this.focusedDependency);
+    const focused = rows[index];
+    if (direction === "left") {
+      if (!focused) this.collapse(true);
+      else if (focused.kind === "link") this.focusDependency(focused.group);
+      else if (focused.expanded) this.toggleDependencyGroup(focused.group, false);
+      else this.focusDependency();
+      return;
+    }
+    if (focused?.kind === "link") this.followDependency();
+    else if (focused?.kind === "group") {
+      if (focused.expanded) this.focusDependency(rows[index + 1]?.key);
+      else this.toggleDependencyGroup(focused.group, true);
+    } else if (this.selectedBranchCollapsed) this.collapse(false);
+    else if (rows.length) this.focusDependency(rows[0].key);
+  }
   followDependency(key = this.focusedDependency): void {
-    const target = this.dependencyLinks().find(
-      (link) => assignmentKey(link.assignment.ref) === key,
-    );
+    const target = this.dependencyLinks().find((link) => link.key === key);
     if (!this.selected || !target) return;
     this.dependencyHistory.push(this.selected);
     this.revealedAssignment = target.assignment.ref;
@@ -529,14 +613,12 @@ export class ScreenRouter {
     const rows = this.fleetNodes();
     const selected = this.selected && assignmentKey(this.selected);
     const index = rows.findIndex((row) => assignmentKey(row.assignment.ref) === selected);
-    const links = this.selectedBranchCollapsed ? [] : this.dependencyLinks();
-    const linkIndex = links.findIndex(
-      (link) => assignmentKey(link.assignment.ref) === this.focusedDependency,
-    );
-    if (amount > 0 && links[linkIndex + 1]) {
-      this.focusDependency(links[linkIndex + 1].assignment.ref);
-    } else if (amount < 0 && linkIndex >= 0) {
-      this.focusDependency(links[linkIndex - 1]?.assignment.ref);
+    const dependencies = this.dependencyRows();
+    const focused = dependencies.findIndex((row) => row.key === this.focusedDependency);
+    if (amount > 0 && dependencies[focused + 1]) {
+      this.focusDependency(dependencies[focused + 1].key);
+    } else if (amount < 0 && focused >= 0) {
+      this.focusDependency(dependencies[focused - 1]?.key);
     } else {
       const next = rows[index < 0 ? 0 : index + amount];
       if (next) this.navigate("fleet", next.assignment.ref);

@@ -401,20 +401,12 @@ export class PinataScreen implements Component, Focusable {
         this.router.scroll(matchesKey(data, "up") ? -1 : 1);
         return;
       }
-      if (matchesKey(data, "left")) {
-        if (this.router.focusedDependency) return this.router.focusDependency();
-        return this.router.collapse(true);
-      }
-      if (matchesKey(data, "right")) {
-        if (this.router.focusedDependency) return this.router.followDependency();
-        if (this.router.selectedBranchCollapsed) return this.router.collapse(false);
-        const first = this.router.dependencyLinks()[0];
-        if (first) return this.router.focusDependency(first.assignment.ref);
-      }
+      if (matchesKey(data, "left")) return this.router.moveFleetBranch("left");
+      if (matchesKey(data, "right")) return this.router.moveFleetBranch("right");
       if (matchesKey(data, "up")) this.router.moveFleetSelection(-1);
       else if (matchesKey(data, "down")) this.router.moveFleetSelection(1);
       else if (matchesKey(data, "enter") && this.router.selected) {
-        if (this.router.focusedDependency) this.router.followDependency();
+        if (this.router.focusedDependency) this.router.activateDependency();
         else this.router.navigate("conversation");
       }
       return;
@@ -473,7 +465,8 @@ export class PinataScreen implements Component, Focusable {
         inside(this.fleetRegions.list) && this.fleetRegions.dependencyRows?.get(event.y);
       if (dependency) {
         this.router.inspectorFocus = false;
-        this.router.followDependency(dependency);
+        if (dependency.kind === "group") this.router.toggleDependencyGroup(dependency.group);
+        else this.router.followDependency(dependency.key);
         return { handled: true, focus: true, render: true };
       }
       const filter = this.fleetRegions.filters?.find(inside);

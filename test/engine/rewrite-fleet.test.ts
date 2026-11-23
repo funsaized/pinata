@@ -103,6 +103,86 @@ test("wide fleets keep prompt and last message beside the selected full row; sta
   assert.equal(router.source.run, "ui-run");
 });
 
+test("dependency groups show distinct status icons, exceptions and static fallbacks", async (t) => {
+  const state = uiState(7);
+  const prerequisites = [ref(), ref(2), ref(3), ref(4), ref(5)];
+  state.assignments[assignmentKey(ref(6))].after = prerequisites;
+  state.assignments[assignmentKey(ref(7))].after = [ref(6)];
+  state.assignments[assignmentKey(ref())].execution = { phase: "running" };
+  state.assignments[assignmentKey(ref(3))].execution = {
+    phase: "ended",
+    reason: "failed",
+    cleanup: "confirmed",
+  };
+  state.assignments[assignmentKey(ref(4))].execution = {
+    phase: "ended",
+    reason: "completed",
+    cleanup: "unconfirmed",
+  };
+  for (const worker of [5, 7])
+    state.assignments[assignmentKey(ref(worker))].execution = {
+      phase: "ended",
+      reason: "completed",
+      cleanup: "confirmed",
+    };
+  const router = new ScreenRouter(new UiSource(state));
+  t.after(() => router.dispose());
+  await router.start();
+  router.navigate("fleet", ref(6));
+  const render = (ascii = false) =>
+    renderScreen(router, {
+      width: 150,
+      height: 32,
+      paint: createPaint("terminal-default"),
+      ascii,
+    })
+      .map(stripTerminalSequences)
+      .join("\n");
+
+  const full = render();
+  assert.match(full, /▾ Prerequisites +1\/5 complete · 2 need attention/);
+  assert.match(full, /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]  worker-1\/1/);
+  assert.match(full, /⧖  worker-2\/1/);
+  assert.match(full, /×  worker-3\/1 +Failed/);
+  assert.match(full, /!  worker-4\/1 +Cleanup unconfirmed/);
+  assert.match(full, /✓  worker-5\/1/);
+  assert(full.indexOf("×  worker-3/1") < full.indexOf("⧖  worker-2/1"));
+  assert(full.indexOf("⧖  worker-2/1") < full.indexOf("✓  worker-5/1"));
+  assert.match(full, /▸ Dependents +1 complete/);
+  assert.doesNotMatch(full, /✓  worker-7\/1/);
+  router.motion = "reduced";
+  assert.match(render(), /◐  worker-1\/1/);
+  assert.match(render(true), /~  worker-1\/1/);
+  assert.match(render(true), /o  worker-2\/1/);
+});
+
+test("a prerequisite that settles while focused stays visible until the user leaves it", async (t) => {
+  const state = uiState();
+  state.assignments[assignmentKey(ref(2))].after = [ref()];
+  const source = new UiSource(state);
+  const router = new ScreenRouter(source);
+  t.after(() => router.dispose());
+  await router.start();
+  router.navigate("fleet", ref(2));
+  router.moveFleetSelection(1);
+  router.moveFleetSelection(1);
+  assert.equal(router.focusedDependency, assignmentKey(ref()));
+  source.state.assignments[assignmentKey(ref())].execution = {
+    phase: "ended",
+    reason: "completed",
+    cleanup: "confirmed",
+  };
+  await source.emit(source.snapshot());
+  const render = () =>
+    renderScreen(router, { width: 80, height: 24, paint: createPaint("terminal-default") }).join(
+      "\n",
+    );
+  assert.match(render(), /> .*✓  worker-1\/1/);
+  router.moveFleetBranch("left");
+  assert.match(render(), /> .*▸ Prerequisites +1 complete/);
+  assert.doesNotMatch(render(), /✓  worker-1\/1/);
+});
+
 test("inspector scrolling and clicks cannot select the list row underneath", async (t) => {
   const state = uiState(3);
   state.assignments[assignmentKey(ref())].task = Array.from(

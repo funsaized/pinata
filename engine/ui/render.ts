@@ -493,7 +493,9 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
   if (router.notice || router.screen === "conversation")
     footer.push(fit(paint(router.noticeTone, displayText(router.notice)), width));
   const hasBranches = Object.values(router.state.workers).some((worker) => worker.parentAssignment);
-  const hasLinks = router.screen === "fleet" && router.dependencyLinks().length > 0;
+  const hasLinks = router.screen === "fleet" && router.hasDependencies;
+  const focusedGroup =
+    router.focusedDependency === "prerequisites" || router.focusedDependency === "dependents";
   const preview = router.screen === "conversation" && !router.selected;
   const primary: Shortcut[] = router.searching
     ? [
@@ -532,7 +534,12 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
     : router.screen === "fleet"
       ? [
           ...(router.selected
-            ? [["Enter", router.focusedDependency ? "follow link" : "open"] as Shortcut]
+            ? [
+                [
+                  "Enter",
+                  focusedGroup ? "toggle group" : router.focusedDependency ? "follow link" : "open",
+                ] as Shortcut,
+              ]
             : []),
           ...(router.canReturnToDependencyOrigin ? [["Backspace", "previous"] as Shortcut] : []),
           ...(options.fleetRegions?.inspector

@@ -270,9 +270,12 @@ test("inline dependency links reveal filtered and collapsed assignments without 
   router.navigate("fleet", ref(3));
   const rows = screen.render(80).map(stripTerminalSequences);
   const origin = rows.findIndex((row) => /> .*worker-3\/1/.test(row));
-  assert.match(rows[origin + 1], /├─ ↑ Needs worker-1\/1/);
-  assert.match(rows[origin + 2], /└─ ↑ After worker-2\/1/);
+  assert.match(rows[origin + 1], /└─ ▾ Prerequisites +1\/2 complete/);
+  assert.match(rows[origin + 2], /├─ ⧖  worker-1\/1/);
+  assert.match(rows[origin + 3], /└─ ✓  worker-2\/1/);
   assert.match(rows.at(-2) ?? "", /Esc/);
+  screen.handleInput("\x1b[C");
+  assert.equal(router.focusedDependency, "prerequisites");
   screen.handleInput("\x1b[C");
   screen.handleInput("\x1b[B");
   assert.equal(router.focusedDependency, assignmentKey(ref(2)));
@@ -297,27 +300,32 @@ test("inline dependency links reveal filtered and collapsed assignments without 
   assert.equal(router.search, "worker-3");
   assert(!router.fleetNodes().some((node) => node.assignment.ref.worker === "worker-2"));
 
-  screen.handleInput("\x1b[D");
-  assert.doesNotMatch(screen.render(80).join("\n"), /After worker-2\/1/);
   screen.handleInput("\x1b[C");
-  const rerendered = screen.render(80).map(stripTerminalSequences);
-  const linkRow = rerendered.findIndex((row) => row.includes("After worker-2/1"));
-  assert.deepEqual(
-    screen.handleMouse({
-      type: "click",
-      button: "left",
-      x: 8,
-      y: linkRow,
-      screenX: 8,
-      screenY: linkRow,
-      shift: false,
-      alt: false,
-      ctrl: false,
-      width: 80,
-      height: rerendered.length,
-    }),
-    { handled: true, focus: true, render: true },
-  );
+  screen.handleInput("\x1b[D");
+  const collapsed = screen.render(80).map(stripTerminalSequences);
+  assert.doesNotMatch(collapsed.join("\n"), /✓  worker-2\/1/);
+  const click = (rows: string[], label: string) => {
+    const row = rows.findIndex((line) => line.includes(label));
+    assert(row >= 0, label);
+    assert.deepEqual(
+      screen.handleMouse({
+        type: "click",
+        button: "left",
+        x: 8,
+        y: row,
+        screenX: 8,
+        screenY: row,
+        shift: false,
+        alt: false,
+        ctrl: false,
+        width: 80,
+        height: rows.length,
+      }),
+      { handled: true, focus: true, render: true },
+    );
+  };
+  click(collapsed, "▸ Prerequisites");
+  click(screen.render(80).map(stripTerminalSequences), "✓  worker-2/1");
   assert.deepEqual(router.selected, ref(2));
   assert.equal(router.draft, "Trace the HTTP parser");
 });

@@ -110,7 +110,8 @@ after package removal.
 
 To try the fleet offline, run `pinata demo` in a terminal. From a source checkout,
 use `node bin/pinata.mjs demo`. The selected reviewer is waiting for the scout.
-Press Down and Enter to follow the scout link, then Enter to open its conversation.
+Press Down twice and Enter to follow the scout link. Press Enter again to open
+its conversation.
 Ask the scout to trace the HTTP parser. Press Escape and Backspace to return to the
 reviewer, then open its conversation and send a message to finish. Press `h` in the
 fleet to inspect both results.
@@ -186,14 +187,18 @@ keys scroll the focused pane, and the wheel scrolls the pane under the pointer.
 details. Cleanup problems stay visible when details are collapsed. Enter on an
 assignment opens its conversation.
 
-The selected assignment shows its dependency links directly beneath it. Up arrows
-point to prerequisites and down arrows point to dependents. Move onto a link and
-press Enter, or click it, to select that assignment in the fleet. Links can reveal
-assignments hidden by the current filter, search or a collapsed branch. Left folds
-the links when the assignment is selected. Backspace retraces your jumps. When a
-settlement makes a dependent ready, the inspector briefly shows a candy moving
-between their names. ASCII and reduced motion use a
-stationary arrow.
+The selected assignment groups its links under **Prerequisites** and
+**Dependents**. A group starts folded when every assignment completed with
+confirmed cleanup. Open a group to see each assignment’s status. A Braille
+spinner marks running work, an hourglass marks queued work, and a checkmark
+marks completed work. Failures and cleanup problems carry text labels.
+Reduced motion uses a static running icon. ASCII mode uses text glyphs.
+
+Use Enter or click to toggle a group or follow a link. Left and Right fold
+and open branches and groups. Links can reveal assignments hidden by the
+current filter, search or a collapsed branch. Backspace retraces your jumps.
+When a settlement makes a dependent ready, the inspector briefly shows a candy
+moving between their names. ASCII and reduced motion use a stationary arrow.
 
 Finished assignments show their result summary. Expand the inspector for the report
 reference and handoff details. Enter opens the transcript, including any submitted
@@ -245,12 +250,12 @@ cleanup status when available.
 | ------------------------------------------------- | ----------------------------------------------------------- |
 | Shift+Down                                        | Open the fleet, including from a worker conversation.       |
 | Shift+Up or Escape                                | Return to the parent screen.                                |
-| Up/Down, Enter in the fleet                       | Select and open an assignment or follow a link.             |
+| Up/Down, Enter in the fleet                       | Open assignments, toggle groups and follow links.           |
 | Shift+Left/Right                                  | Select the previous/next worker.                            |
 | Alt+Left/Right                                    | Browse earlier/later assignments for that worker.           |
-| Left/Right in the fleet                           | Collapse/expand branches or navigate dependency links.      |
+| Left/Right in the fleet                           | Fold or open branches and dependency groups.                |
 | Backspace in the fleet                            | Return to the previous assignment after following a link.   |
-| Mouse click/double click                          | Follow a link, or select/open an assignment.                |
+| Mouse click/double click                          | Toggle groups, follow links or select/open assignments.     |
 | Mouse wheel, PageUp/PageDown, Alt+PageUp/PageDown | Scroll the focused pane; wheel follows pointer.             |
 | `/` in the fleet                                  | Search workers/tasks; Enter keeps the filter.               |
 | `f` in the fleet                                  | Cycle the five status filters.                              |

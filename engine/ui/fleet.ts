@@ -9,7 +9,7 @@ import {
   type FleetFilter,
 } from "./projection.ts";
 import { agentAccent, type Paint } from "./palette.ts";
-import type { DependencyLink, ScreenRouter } from "./router.ts";
+import type { DependencyRow, ScreenRouter } from "./router.ts";
 import { detailRows, displayText, fit, lines, padded } from "./text.ts";
 import { activityIndicator } from "./tree.ts";
 import { conversationMarkdown, type ConversationPresentation } from "./conversation.ts";
@@ -17,7 +17,7 @@ import { conversationMarkdown, type ConversationPresentation } from "./conversat
 export type Pane = { x: number; y: number; width: number; height: number };
 export type FleetRegions = {
   list?: Pane;
-  dependencyRows?: Map<number, string>;
+  dependencyRows?: Map<number, DependencyRow>;
   inspector?: Pane;
   filters?: (Pane & { filter: FleetFilter })[];
 };
@@ -290,28 +290,87 @@ function filterStrip(router: ScreenRouter, options: FleetOptions, row: number): 
   return fit(output, width);
 }
 
-function dependencyRow(
-  link: DependencyLink,
+// Pi's default Braille loader frames, advanced by the fleet's shared redraw timer.
+const workingFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+function dependencyStatus(
+  assignment: Assignment,
+  options: { ascii: boolean; animate: boolean; now: number },
+): { icon: string; label?: string } {
+  const { ascii, animate, now } = options;
+  const { execution } = assignment;
+  if (execution.phase === "queued") return { icon: ascii ? "o" : "⧖" };
+  if (execution.phase !== "ended") {
+    const icon = ascii
+      ? "~"
+      : animate
+        ? workingFrames[Math.floor(now / 250) % workingFrames.length]
+        : "◐";
+    return { icon, label: execution.phase === "running" ? undefined : status(assignment) };
+  }
+  if (execution.cleanup === "unconfirmed") return { icon: "!", label: "Cleanup unconfirmed" };
+  switch (execution.reason) {
+    case "completed":
+      return { icon: ascii ? "+" : "✓" };
+    case "failed":
+      return { icon: ascii ? "x" : "×", label: "Failed" };
+    case "cancelled":
+      return { icon: ascii ? "-" : "−", label: "Cancelled" };
+    case "interrupted":
+      return { icon: "!", label: "Interrupted" };
+  }
+}
+function renderDependencyRow(
+  row: DependencyRow,
   branch: string,
-  selected: boolean,
-  options: FleetOptions,
+  options: Pick<FleetOptions, "paint" | "ascii" | "width"> & {
+    selected: boolean;
+    animate: boolean;
+    now: number;
+  },
 ): string {
-  const { paint, width, ascii } = options;
-  const ref = link.assignment.ref;
-  const arrow = link.direction === "upstream" ? (ascii ? "^" : "↑") : ascii ? "v" : "↓";
-  const identity = `${selected ? ">" : " "} ${branch}${arrow} ${link.label} ${ref.worker}/${ref.assignment}`;
-  const label = fit(displayText(identity), width);
-  const state = ` · ${status(link.assignment)}`;
+  const { paint, width, selected, ascii, animate, now } = options;
+  const prefix = `${selected ? ">" : " "} ${branch}`;
+  if (row.kind === "group") {
+    const disclosure = row.expanded ? (ascii ? "-" : "▾") : ascii ? "+" : "▸";
+    const title = row.group === "prerequisites" ? "Prerequisites" : "Dependents";
+    const complete = row.completed === row.total ? row.total : `${row.completed}/${row.total}`;
+    const summary = `   ${complete} complete`;
+    const attention = row.attention
+      ? ` · ${row.attention} ${row.attention === 1 ? "needs" : "need"} attention`
+      : "";
+    const heading = `${disclosure} ${title}`;
+    return selected
+      ? paint("focus", padded(prefix + heading + summary + attention, width))
+      : fit(
+          paint("border", prefix) +
+            paint("strong", heading) +
+            paint("muted", summary) +
+            paint("warning", attention),
+          width,
+        );
+  }
+  const { ref } = row.assignment;
+  const { icon, label } = dependencyStatus(row.assignment, { ascii: Boolean(ascii), animate, now });
+  const identity = `  ${displayText(ref.worker)}/${ref.assignment}`;
+  const suffix = label ? `   ${label}` : "";
+  const color = statusColor(row.assignment);
   return selected
-    ? paint("focus", padded(label + state, width))
-    : fit(paint("accent.cyan", label) + paint(statusColor(link.assignment), state), width);
+    ? paint("focus", padded(prefix + icon + identity + suffix, width))
+    : fit(
+        paint("border", prefix) +
+          paint(color, icon) +
+          paint("text", identity) +
+          paint(color, suffix),
+        width,
+      );
 }
 function list(
   router: ScreenRouter,
   pane: Pane,
   options: FleetOptions,
   nodes: ReturnType<ScreenRouter["fleetNodes"]>,
-  links: DependencyLink[],
+  dependencies: DependencyRow[],
 ): string[] {
   const { paint, ascii } = options;
   const { width, height } = pane;
@@ -342,18 +401,16 @@ function list(
   const output = [fit(paint("muted", heading), width)];
   const selection = router.selected && assignmentKey(router.selected);
   const anchor = nodes.findIndex((node) => assignmentKey(node.assignment.ref) === selection);
-  const linkCount = anchor < 0 || router.selectedBranchCollapsed ? 0 : links.length;
-  const rowCount = nodes.length + linkCount;
+  const dependencyCount = anchor < 0 ? 0 : dependencies.length;
+  const rowCount = nodes.length + dependencyCount;
   const available = Math.max(1, height - 1 - (rowCount > height - 1 ? 1 : 0));
   const resized = router.fleetPageSize !== available;
   router.fleetPageSize = available;
   let first = Math.min(router.fleetScroll, Math.max(0, rowCount - available));
-  const focusedLink = links.findIndex(
-    (link) => assignmentKey(link.assignment.ref) === router.focusedDependency,
-  );
-  const focusKey = focusedLink < 0 ? selection : `link:${router.focusedDependency}`;
+  const focusedRow = dependencies.findIndex((row) => row.key === router.focusedDependency);
+  const index = anchor < 0 ? -1 : anchor + focusedRow + 1;
+  const focusKey = selection && `${selection}:${router.focusedDependency ?? ""}:${index}`;
   if (focusKey !== router.fleetRenderedSelection || resized) {
-    const index = anchor < 0 ? -1 : anchor + focusedLink + 1;
     if (index >= 0 && index < first) first = index;
     if (index >= first + available) first = index - available + 1;
     router.fleetRenderedSelection = focusKey;
@@ -361,28 +418,39 @@ function list(
   router.fleetScroll = first;
   const visible = Array.from({ length: Math.min(available, rowCount - first) }, (_, offset) => {
     const index = first + offset;
-    const linkIndex = index - anchor - 1;
-    if (linkIndex >= 0 && linkIndex < linkCount) return { link: links[linkIndex], linkIndex };
-    return { node: nodes[index > anchor ? index - linkCount : index] };
+    const dependencyIndex = index - anchor - 1;
+    if (dependencyIndex >= 0 && dependencyIndex < dependencyCount)
+      return { dependency: dependencies[dependencyIndex], dependencyIndex };
+    return { node: nodes[index > anchor ? index - dependencyCount : index] };
   });
   const activeCount = visible.filter(
     ({ node }) => node && matchesFleetFilter(router.state, node.assignment, "working"),
   ).length;
   const now = performance.now();
   let activeRow = 0;
-  for (const { node, link, linkIndex } of visible) {
-    if (link) {
+  for (const { node, dependency, dependencyIndex } of visible) {
+    if (dependency && dependencyIndex !== undefined) {
       const parent = nodes[anchor];
       const hasVisibleChildren = nodes[anchor + 1]?.prefix.length > parent.prefix.length;
-      const last = linkIndex === linkCount - 1 && !hasVisibleChildren;
-      const branch =
-        (parent.prefix.length === 3 ? "" : parent.continuation.slice(3)) +
-        (last ? (ascii ? "`- " : "└─ ") : ascii ? "|- " : "├─ ");
-      options.fleetRegions?.dependencyRows?.set(
-        pane.y + output.length,
-        assignmentKey(link.assignment.ref),
+      const hasNextBranch = hasVisibleChildren || dependencies.at(-1)?.group !== dependency.group;
+      let indent = parent.continuation.slice(3);
+      let last = !hasNextBranch;
+      if (dependency.kind === "link") {
+        indent += hasNextBranch ? (ascii ? "|  " : "│  ") : "   ";
+        last = dependencies[dependencyIndex + 1]?.group !== dependency.group;
+      }
+      const connector = last ? (ascii ? "`- " : "└─ ") : ascii ? "|- " : "├─ ";
+      options.fleetRegions?.dependencyRows?.set(pane.y + output.length, dependency);
+      output.push(
+        renderDependencyRow(dependency, indent + connector, {
+          width,
+          paint,
+          ascii,
+          selected: dependencyIndex === focusedRow,
+          animate: router.motion === "full",
+          now,
+        }),
       );
-      output.push(dependencyRow(link, branch, linkIndex === focusedLink, { ...options, width }));
       continue;
     }
     if (!node) continue;
@@ -402,12 +470,14 @@ function list(
           : "  !  ";
     const branch = node.prefix.slice(3);
     const disclosure =
-      node.hasChildren || (selected && links.length > 0)
+      node.hasChildren ||
+      (selected &&
+        (dependencyCount > 0 || (router.selectedBranchCollapsed && router.hasDependencies)))
         ? router.collapsed.has(assignmentKey(assignment.ref))
           ? "+ "
           : "- "
         : "";
-    const identityText = `${selected && focusedLink < 0 ? ">" : " "} ${branch}${disclosure}${marker} ${displayText(worker.id)}/${assignment.ref.assignment}`;
+    const identityText = `${selected && focusedRow < 0 ? ">" : " "} ${branch}${disclosure}${marker} ${displayText(worker.id)}/${assignment.ref.assignment}`;
     const identity =
       visibleWidth(identityText) > identityWidth
         ? fit(identityText, identityWidth - 1) + "…"
@@ -422,7 +492,7 @@ function list(
       infoWidth >= 12 ? "   " + ellipsis(context, infoWidth - 1) : "",
     ];
     const text = selected
-      ? paint(focusedLink < 0 ? "focus" : "strong", padded(fields.join(""), width))
+      ? paint(focusedRow < 0 ? "focus" : "strong", padded(fields.join(""), width))
       : paint(color, fields[0]) +
         fields[1] +
         paint(statusColor(assignment), fields[2]) +
@@ -484,13 +554,12 @@ export function renderFleet(router: ScreenRouter, options: FleetOptions): string
   const wide = width >= 120 && available >= 8 && Boolean(router.selected);
   const inspectorWidth = wide ? Math.min(64, Math.max(40, Math.floor(width * 0.39))) : width;
   const nodes = router.fleetNodes(ascii);
-  const links = router.dependencyLinks();
-  const visibleLinkCount = router.selectedBranchCollapsed ? 0 : links.length;
+  const dependencies = router.dependencyRows();
   const stacked = !wide && Boolean(router.selected) && available >= 12;
   const listHeight = stacked
     ? Math.min(
-        Math.max(3, nodes.length + visibleLinkCount + 1),
-        Math.max(3, Math.floor(available * 0.4)),
+        Math.max(3, nodes.length + dependencies.length + 1),
+        Math.max(3, Math.floor(available / 3)),
       )
     : available;
   const listPane = {
@@ -508,7 +577,7 @@ export function renderFleet(router: ScreenRouter, options: FleetOptions): string
     options.fleetRegions.list = listPane;
     options.fleetRegions.inspector = inspectorPane;
   }
-  const rows = list(router, listPane, options, nodes, links);
+  const rows = list(router, listPane, options, nodes, dependencies);
   const details = inspectorPane ? inspector(router, inspectorPane, options) : [];
   if (wide) {
     for (let index = 0; index < available; index++)

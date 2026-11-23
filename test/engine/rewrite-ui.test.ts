@@ -153,7 +153,7 @@ test("staged fleets use aligned rows, one shared model, and keep the selected ag
   router.setDraft("keep this draft");
   screen.handleInput("d");
   assert.equal(router.details, true);
-  assert.match(stripTerminalSequences(screen.render(120).join("\n")), /↑ Needs worker-3\/1/);
+  assert.match(stripTerminalSequences(screen.render(120).join("\n")), /⧖  worker-3\/1/);
   assert.match(stripTerminalSequences(screen.render(120).join("\n")), /in-process/);
   screen.handleInput("d");
   assert.equal(router.details, false);
@@ -1886,7 +1886,7 @@ test("tree activity loops without idle frames around completed ancestors and que
   }
 });
 
-test("fleet retains completed dependency references without inventing ancestry", async () => {
+test("completed dependency groups start folded and disclose links without inventing ancestry", async () => {
   const source = new UiSource(uiState(3));
   for (const assignment of Object.values(source.state.assignments))
     assignment.execution = { phase: "ended", reason: "completed", cleanup: "confirmed" };
@@ -1896,14 +1896,20 @@ test("fleet retains completed dependency references without inventing ancestry",
   router.setFilter("finished");
   router.navigate("fleet", ref(3));
   router.details = true;
-  const rows = renderScreen(router, {
-    width: 100,
-    height: 30,
-    paint: createPaint("terminal-default"),
-    ascii: true,
-  });
-  assert.match(rows.join("\n"), /\^ After worker-1\/1/);
-  assert.match(rows.join("\n"), /\^ After worker-2\/1/);
+  const render = () =>
+    renderScreen(router, {
+      width: 100,
+      height: 30,
+      paint: createPaint("terminal-default"),
+      ascii: true,
+    }).join("\n");
+  assert.match(render(), /\+ Prerequisites +2 complete/);
+  assert.doesNotMatch(render(), /\+  worker-[12]\/1/);
+  router.moveFleetBranch("right");
+  router.activateDependency();
+  assert.match(render(), /- Prerequisites +2 complete/);
+  assert.match(render(), /\+  worker-1\/1/);
+  assert.match(render(), /\+  worker-2\/1/);
   assert(router.fleetNodes(true).every((node) => !node.hasChildren));
   router.dispose();
 });
