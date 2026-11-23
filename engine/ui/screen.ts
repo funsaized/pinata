@@ -465,8 +465,7 @@ export class PinataScreen implements Component, Focusable {
         inside(this.fleetRegions.list) && this.fleetRegions.dependencyRows?.get(event.y);
       if (dependency) {
         this.router.inspectorFocus = false;
-        if (dependency.kind === "group") this.router.toggleDependencyGroup(dependency.group);
-        else this.router.followDependency(dependency.key);
+        this.router.activateDependency(dependency.key);
         return { handled: true, focus: true, render: true };
       }
       const filter = this.fleetRegions.filters?.find(inside);

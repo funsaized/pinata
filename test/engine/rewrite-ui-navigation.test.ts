@@ -254,7 +254,7 @@ test("custom shortcuts cannot replace text entry, paging or reserved fleet contr
   assert.equal(resolveKeys({ stop: "ctrl+k" }).stop, "ctrl+k");
 });
 
-test("inline dependency links reveal filtered and collapsed assignments without losing drafts", async (t) => {
+test("dependency drill-in opens conversations and can reveal filtered and collapsed assignments", async (t) => {
   const state = uiState(4);
   state.workers["worker-2"].parentAssignment = ref();
   state.assignments[assignmentKey(ref(3))].after = [ref(), ref(2)];
@@ -266,6 +266,11 @@ test("inline dependency links reveal filtered and collapsed assignments without 
   const { router, screen } = await setup(t, new UiSource(state));
   router.navigate("fleet", ref());
   router.collapse(true);
+  router.navigate("fleet", ref(3));
+  screen.handleInput("\x1b[B");
+  assert.deepEqual(router.selected, ref(4), "Down skips the visible dependency rows");
+  screen.handleInput("\x1b[A");
+  assert.deepEqual(router.selected, ref(3));
   router.search = "worker-3";
   router.navigate("fleet", ref(3));
   const rows = screen.render(80).map(stripTerminalSequences);
@@ -275,33 +280,42 @@ test("inline dependency links reveal filtered and collapsed assignments without 
   assert.match(rows[origin + 3], /└─ ✓  worker-2\/1/);
   assert.match(rows.at(-2) ?? "", /Esc/);
   screen.handleInput("\x1b[C");
-  assert.equal(router.focusedDependency, "prerequisites");
+  assert.equal(router.focusedDependency, assignmentKey(ref()));
+  screen.handleInput("\x1b[D");
+  assert.equal(router.focusedDependency, undefined, "Left returns directly to the assignment");
   screen.handleInput("\x1b[C");
   screen.handleInput("\x1b[B");
+  screen.handleInput("\x1b[B");
   assert.equal(router.focusedDependency, assignmentKey(ref(2)));
-  assert.deepEqual(
-    router.selected,
-    ref(3),
-    "focusing a link keeps controls on its actual assignment row",
-  );
+  assert.deepEqual(router.selected, ref(3), "Down stays inside the dependencies");
+
   screen.handleInput("\r");
+  assert.equal(router.screen, "conversation");
+  assert.deepEqual(router.selected, ref(2));
+  assert.equal(router.canReturnToDependencyOrigin, false);
+  router.setDraft("Trace the HTTP parser");
+  screen.handleInput("\x1b");
+  assert.equal(router.screen, "fleet");
+  assert.deepEqual(router.selected, ref(3));
+  assert.equal(router.focusedDependency, assignmentKey(ref(2)));
+
+  screen.handleInput("\x1b[C");
   assert.equal(router.screen, "fleet");
   assert.deepEqual(router.selected, ref(2));
+  assert.equal(router.draft, "Trace the HTTP parser");
   assert(router.fleetNodes().some((node) => node.assignment.ref.worker === "worker-2"));
   assert(router.collapsed.has(assignmentKey(ref())), "revealing preserves branch settings");
   assert.equal(router.filter, "unfinished");
-  screen.handleInput("\r");
-  assert.equal(router.screen, "conversation");
-  router.setDraft("Trace the HTTP parser");
-  screen.handleInput("\x1b");
-  assert.deepEqual(router.selected, ref(2));
   screen.handleInput("\x7f");
   assert.deepEqual(router.selected, ref(3));
+  assert.equal(router.focusedDependency, assignmentKey(ref(2)));
   assert.equal(router.search, "worker-3");
   assert(!router.fleetNodes().some((node) => node.assignment.ref.worker === "worker-2"));
 
-  screen.handleInput("\x1b[C");
-  screen.handleInput("\x1b[D");
+  screen.handleInput("\x1b[A");
+  screen.handleInput("\x1b[A");
+  assert.equal(router.focusedDependency, "prerequisites");
+  screen.handleInput("\r");
   const collapsed = screen.render(80).map(stripTerminalSequences);
   assert.doesNotMatch(collapsed.join("\n"), /✓  worker-2\/1/);
   const click = (rows: string[], label: string) => {
@@ -326,8 +340,57 @@ test("inline dependency links reveal filtered and collapsed assignments without 
   };
   click(collapsed, "▸ Prerequisites");
   click(screen.render(80).map(stripTerminalSequences), "✓  worker-2/1");
+  assert.equal(router.screen, "conversation");
   assert.deepEqual(router.selected, ref(2));
   assert.equal(router.draft, "Trace the HTTP parser");
+  screen.handleInput("\x1b");
+  assert.equal(router.focusedDependency, assignmentKey(ref(2)));
+});
+
+test("returning from a linked conversation restores the viewport and open groups across settlements", async (t) => {
+  const state = uiState(24);
+  const origin = ref(23);
+  const link = ref(17);
+  state.assignments[assignmentKey(origin)].after = Array.from({ length: 20 }, (_, index) =>
+    ref(index + 1),
+  );
+  state.assignments[assignmentKey(ref(24))].after = [origin];
+  const { source, router, screen } = await setup(t, new UiSource(state));
+  router.navigate("fleet", origin);
+  screen.handleInput("\x1b[C");
+  assert.equal(router.focusedDependency, "prerequisites", "two groups offer a choice");
+  screen.handleInput("\x1b[C");
+  for (let index = 1; index < 17; index++) screen.handleInput("\x1b[B");
+  const selectedRow = () =>
+    screen
+      .render(80)
+      .map(stripTerminalSequences)
+      .findIndex((row) => /^\s*> .*worker-17\/1/.test(row));
+  const row = selectedRow();
+  const scroll = router.fleetScroll;
+  assert(row >= 0 && scroll > 0);
+  screen.handleInput("\r");
+  assert.equal(router.screen, "conversation");
+  assert.deepEqual(router.selected, link);
+
+  for (const target of [origin, ref(24)])
+    source.state.assignments[assignmentKey(target)].execution = {
+      phase: "ended",
+      reason: "completed",
+      cleanup: "confirmed",
+    };
+  await source.emit(source.snapshot());
+  screen.handleInput("\x1b");
+  assert.equal(router.screen, "fleet");
+  assert.deepEqual(router.selected, origin, "the origin can finish while the transcript is open");
+  assert.equal(router.focusedDependency, assignmentKey(link));
+  assert.equal(selectedRow(), row);
+  assert.equal(router.fleetScroll, scroll);
+  assert(
+    router
+      .dependencyRows()
+      .some((item) => item.kind === "group" && item.group === "dependents" && item.expanded),
+  );
 });
 
 test("offline demo consumes a correction, releases review and preserves the coordinator's place", async () => {

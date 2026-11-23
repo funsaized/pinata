@@ -2,9 +2,9 @@
 
 ## Unreleased
 
-- Follow prerequisites and dependents in the fleet tree. Completed groups start
-  folded, and status icons mark running, queued and completed work. Use Backspace
-  to return to the previous assignment.
+- Press Right to browse dependency groups, Enter to open a linked conversation,
+  and Escape to return to the same fleet row. Completed groups start folded, and
+  icons mark running, queued and completed work.
 - Read grouped execution, handoff and resource details in the inspector.
 - Open worker conversations with Pi’s thinking and tool output settings. Folded
   dependency cards show the assignment and result information.

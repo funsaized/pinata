@@ -1906,7 +1906,7 @@ test("completed dependency groups start folded and disclose links without invent
   assert.match(render(), /\+ Prerequisites +2 complete/);
   assert.doesNotMatch(render(), /\+  worker-[12]\/1/);
   router.moveFleetBranch("right");
-  router.activateDependency();
+  assert.equal(router.focusedDependency, assignmentKey(ref()));
   assert.match(render(), /- Prerequisites +2 complete/);
   assert.match(render(), /\+  worker-1\/1/);
   assert.match(render(), /\+  worker-2\/1/);

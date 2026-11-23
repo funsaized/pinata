@@ -494,8 +494,8 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
     footer.push(fit(paint(router.noticeTone, displayText(router.notice)), width));
   const hasBranches = Object.values(router.state.workers).some((worker) => worker.parentAssignment);
   const hasLinks = router.screen === "fleet" && router.hasDependencies;
-  const focusedGroup =
-    router.focusedDependency === "prerequisites" || router.focusedDependency === "dependents";
+  const dependencyFocus = router.focusedDependency;
+  const focusedGroup = dependencyFocus === "prerequisites" || dependencyFocus === "dependents";
   const preview = router.screen === "conversation" && !router.selected;
   const primary: Shortcut[] = router.searching
     ? [
@@ -504,7 +504,14 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
       ]
     : router.screen === "fleet"
       ? [
-          ...(width >= 30 ? [["↑↓", router.inspectorFocus ? "scroll" : "select"] as Shortcut] : []),
+          ...(width >= 30
+            ? [
+                [
+                  "↑↓",
+                  router.inspectorFocus ? "scroll" : dependencyFocus ? "links" : "select",
+                ] as Shortcut,
+              ]
+            : []),
           ...(!router.focusedDependency ? [["a", "actions"] as Shortcut] : []),
           ["?", "help"],
           ["Esc", "back"],
@@ -534,21 +541,23 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
     : router.screen === "fleet"
       ? [
           ...(router.selected
-            ? [
-                [
-                  "Enter",
-                  focusedGroup ? "toggle group" : router.focusedDependency ? "follow link" : "open",
-                ] as Shortcut,
-              ]
+            ? [["Enter", focusedGroup ? "toggle group" : "open conversation"] as Shortcut]
             : []),
+          ...(dependencyFocus
+            ? ([
+                ["←", "assignment"],
+                ["→", focusedGroup ? "enter group" : "show in fleet"],
+              ] as Shortcut[])
+            : hasLinks
+              ? [["→", "dependencies"] as Shortcut]
+              : hasBranches
+                ? [["←→", "branches"] as Shortcut]
+                : []),
           ...(router.canReturnToDependencyOrigin ? [["Backspace", "previous"] as Shortcut] : []),
           ...(options.fleetRegions?.inspector
             ? [["Tab", router.inspectorFocus ? "list" : "inspector"] as Shortcut]
             : []),
           ["d", router.details ? "less" : "details"],
-          ...(hasBranches || hasLinks
-            ? [["←→", hasLinks ? "tree / links" : "branches"] as Shortcut]
-            : []),
           ["/", "search"],
           ["f", "filter"],
           ...(options.projectRuns ? [["r", "runs"] as Shortcut] : []),

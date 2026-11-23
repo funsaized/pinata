@@ -44,7 +44,7 @@ start = None
 sent = 0
 opened = False
 # Timed user input, including run switching, conversation, filters and inspector focus.
-steps = [(3, b"\x1b[B\x1b[B"), (5, b"\r"), (7, b"\t"), (9, b"\td"),
+steps = [(3, b"\x1b[C"), (5, b"\x1b[C"), (7, b"\t"), (9, b"\td"),
          (11, b"d\r"), (14, b"\x1b[1;2A"), (16, b"\x7fw"), (19, b"w"),
          (21, b"h"), (24, b"h"), (26, b"r"), (29, b"\x1b[B\r"),
          (32, b"h"), (35, b"r"), (37, b"\x1b[A\r"), (40, b"\x1b[1;2A"),

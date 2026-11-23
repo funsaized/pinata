@@ -110,11 +110,10 @@ after package removal.
 
 To try the fleet offline, run `pinata demo` in a terminal. From a source checkout,
 use `node bin/pinata.mjs demo`. The selected reviewer is waiting for the scout.
-Press Down twice and Enter to follow the scout link. Press Enter again to open
-its conversation.
-Ask the scout to trace the HTTP parser. Press Escape and Backspace to return to the
-reviewer, then open its conversation and send a message to finish. Press `h` in the
-fleet to inspect both results.
+Press Right, then Enter to open the scout’s conversation. Ask the scout to trace
+the HTTP parser. Press Escape to return to the reviewer’s dependencies, then
+press Left and Enter to open the reviewer. Send a message to finish. Press `h`
+in the fleet to inspect both results.
 The demo uses a temporary workspace and a scripted backend with zero provider calls.
 
 Open a project in Pi and type:
@@ -194,9 +193,16 @@ spinner marks running work, an hourglass marks queued work, and a checkmark
 marks completed work. Failures and cleanup problems carry text labels.
 Reduced motion uses a static running icon. ASCII mode uses text glyphs.
 
-Use Enter or click to toggle a group or follow a link. Left and Right fold
-and open branches and groups. Links can reveal assignments hidden by the
-current filter, search or a collapsed branch. Backspace retraces your jumps.
+Use Up and Down to move between assignments. Press Right to enter dependencies.
+If there’s one group, this opens it and moves to its first link. Inside
+dependencies, Up and Down browse links and group headings. Left returns directly
+to the originating assignment.
+
+Enter toggles a group heading or opens a linked conversation. Clicking a link
+also opens its conversation. Escape returns to the originating fleet row with
+the scroll position and open groups restored. To show a linked assignment in
+the fleet, press Right on its link. This can reveal assignments hidden by a
+filter, search or collapsed branch. Backspace retraces those jumps.
 When a settlement makes a dependent ready, the inspector briefly shows a candy
 moving between their names. ASCII and reduced motion use a stationary arrow.
 
@@ -250,12 +256,12 @@ cleanup status when available.
 | ------------------------------------------------- | ----------------------------------------------------------- |
 | Shift+Down                                        | Open the fleet, including from a worker conversation.       |
 | Shift+Up or Escape                                | Return to the parent screen.                                |
-| Up/Down, Enter in the fleet                       | Open assignments, toggle groups and follow links.           |
+| Up/Down, Enter in the fleet                       | Browse assignments or links, open chats, toggle groups.     |
 | Shift+Left/Right                                  | Select the previous/next worker.                            |
 | Alt+Left/Right                                    | Browse earlier/later assignments for that worker.           |
-| Left/Right in the fleet                           | Fold or open branches and dependency groups.                |
-| Backspace in the fleet                            | Return to the previous assignment after following a link.   |
-| Mouse click/double click                          | Toggle groups, follow links or select/open assignments.     |
+| Left/Right in the fleet                           | Enter dependencies or return to the assignment.             |
+| Backspace in the fleet                            | Return after showing a link in the fleet.                   |
+| Mouse click/double click                          | Toggle groups, open links or select/open assignments.       |
 | Mouse wheel, PageUp/PageDown, Alt+PageUp/PageDown | Scroll the focused pane; wheel follows pointer.             |
 | `/` in the fleet                                  | Search workers/tasks; Enter keeps the filter.               |
 | `f` in the fleet                                  | Cycle the five status filters.                              |

@@ -164,8 +164,7 @@ test("a prerequisite that settles while focused stays visible until the user lea
   t.after(() => router.dispose());
   await router.start();
   router.navigate("fleet", ref(2));
-  router.moveFleetSelection(1);
-  router.moveFleetSelection(1);
+  router.moveFleetBranch("right");
   assert.equal(router.focusedDependency, assignmentKey(ref()));
   source.state.assignments[assignmentKey(ref())].execution = {
     phase: "ended",
@@ -179,7 +178,8 @@ test("a prerequisite that settles while focused stays visible until the user lea
     );
   assert.match(render(), /> .*✓  worker-1\/1/);
   router.moveFleetBranch("left");
-  assert.match(render(), /> .*▸ Prerequisites +1 complete/);
+  assert.match(render(), /▸ Prerequisites +1 complete/);
+  assert.equal(router.focusedDependency, undefined);
   assert.doesNotMatch(render(), /✓  worker-1\/1/);
 });
 
