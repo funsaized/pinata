@@ -182,9 +182,10 @@ The fleet highlights the selected row and shows its last assistant message and
 prompt in an inspector. Wide terminals place the inspector on the right; smaller
 terminals stack it directly below the list. Tab moves focus between panes, page
 keys scroll the focused pane, and the wheel scrolls the pane under the pointer.
-`d` expands the prompt and last message and shows execution, handoff and resource
-details. Cleanup problems stay visible when details are collapsed. Enter on an
-assignment opens its conversation.
+`d` expands and focuses the inspector. Use Up and Down to scroll the prompt,
+last message and execution, handoff and resource details. Press `d` again to
+collapse details and return focus to the list. Cleanup problems stay visible
+when details are collapsed. Enter on an assignment opens its conversation.
 
 The selected assignment groups its links under **Prerequisites** and
 **Dependents**. A group starts folded when every assignment completed with
@@ -268,7 +269,7 @@ cleanup status when available.
 | `h` in the fleet                                  | Select Finished; press again to restore the previous view.  |
 | `w` in the fleet                                  | Select Queued; press again to restore the previous view.    |
 | `a` in the fleet                                  | Show stop actions for an assignment, agent or entire fleet. |
-| `d` in the fleet                                  | Expand details for the selected assignment.                 |
+| `d` in the fleet                                  | Expand and focus details, or collapse them.                 |
 | Tab in the fleet                                  | Switch list/inspector focus.                                |
 | `r` in the fleet                                  | Browse runs in the current project.                         |
 | Tab in a conversation                             | Switch composer/transcript focus.                           |

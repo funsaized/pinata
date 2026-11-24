@@ -201,8 +201,15 @@ test("inspector scrolling and clicks cannot select the list row underneath", asy
     screen.dispose();
     router.dispose();
   });
+  screen.render(160);
   screen.handleInput("d");
   const rows = screen.render(160).map(stripTerminalSequences);
+  assert.equal(router.inspectorFocus, true);
+  screen.handleInput("\x1b[B");
+  assert.equal(router.inspectorScroll, 1);
+  assert.deepEqual(router.selected, ref());
+  screen.handleInput("\x1b[A");
+  assert.equal(router.inspectorScroll, 0);
   const row = rows.findIndex((line) => line.includes("worker-2/1"));
   const divider = rows[row].indexOf("│");
   const mouse = {
@@ -231,9 +238,16 @@ test("inspector scrolling and clicks cannot select the list row underneath", asy
   assert.match(bottom, /Observed time starts/);
   screen.handleInput("\t");
   assert.equal(router.inspectorFocus, false);
+  screen.handleInput("\t");
+  assert.equal(router.inspectorFocus, true);
+  screen.handleInput("d");
+  assert.equal(router.inspectorFocus, false);
+  assert.equal(router.inspectorScroll, 0);
   screen.handleMouse({ ...mouse, x: 5, type: "click" });
   assert.deepEqual(router.selected, ref(2));
   assert.equal(router.inspectorScroll, 0);
+  screen.handleInput("\x1b[B");
+  assert.deepEqual(router.selected, ref(3));
 });
 
 test("filter counts exclude context parents and Attention reveals confirmed failures", async (t) => {

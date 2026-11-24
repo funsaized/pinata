@@ -106,7 +106,7 @@ export function helpPanel(
               ["/", "Search agent or task; Enter applies, Esc cancels, Ctrl+U clears"],
               ["f", "Cycle Unfinished / Working / Queued / Attention / Finished"],
               ["h", "Show finished assignments and history; press again to return"],
-              ["d", "Expand / collapse the prompt, last message and execution details"],
+              ["d", "Expand and focus details, or collapse them"],
               ["a", "Stop / manage agents"],
             ],
           },
