@@ -44,10 +44,11 @@ start = None
 sent = 0
 opened = False
 # Timed user input, including run switching, conversation, filters and inspector focus.
-steps = [(3, b"\x1b[C"), (5, b"\x1b[C"), (7, b"\t"), (9, b"\td"),
-         (11, b"d\r"), (14, b"\x1b[1;2A"), (16, b"\x7fw"), (19, b"w"),
+steps = [(3, b"\x1b[C"), (5, b"\x1b[C"), (7, b"d"), (9, b"\x1b[B"),
+         (11, b"\x1b[D\r"), (14, b"\x1b[1;2A"), (16, b"\x7fw"), (19, b"w"),
          (21, b"h"), (24, b"h"), (26, b"r"), (29, b"\x1b[B\r"),
-         (32, b"h"), (35, b"r"), (37, b"\x1b[A\r"), (40, b"\x1b[1;2A"),
+         (32, b"h"), (35, b"r"), (37, b"\x1b[A\r"), (38, b"\t"),
+         (39, b"?"), (39.8, b"?"), (40, b"\x1b[1;2A"),
          (41, b"\x03"), (41.2, b"\x03")]
 try:
     deadline = time.monotonic() + 60
@@ -78,7 +79,7 @@ try:
     frames = [event for event in events if event["phase"] == "frame"]
     assert len(frames) > 50
     plain = "\n".join(re.sub(r"\x1b\[[0-9;]*m", "", line) for frame in frames for line in frame["output"])
-    for label in ["Prompt", "Last message", "Project runs", "previous-demo", "following latest", "Waiting for", "▾ Dependents", "⧖  evidence/1", "▾ Prerequisites", "  discovery/1"]:
+    for label in ["Prompt", "Last message", "Project runs", "previous-demo", "following latest", "Waiting for", "▾ Dependents", "⧖  evidence/1", "▾ Prerequisites", "  discovery/1", "[Working ", "Pinata help · Fleet"]:
         assert label in plain, f"Missing demo view: {label}"
 finally:
     if process.poll() is None:

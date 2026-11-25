@@ -279,6 +279,13 @@ test("dependency drill-in opens conversations and can reveal filtered and collap
   assert.match(rows[origin + 2], /├─ ⧖  worker-1\/1/);
   assert.match(rows[origin + 3], /└─ ✓  worker-2\/1/);
   assert.match(rows.at(-2) ?? "", /Esc/);
+  screen.handleInput("d");
+  assert.equal(router.inspectorFocus, true);
+  screen.handleInput("\x1b[C");
+  assert.equal(router.focusedDependency, undefined, "Right stays in details");
+  screen.handleInput("\x1b[D");
+  assert.equal(router.inspectorFocus, false);
+  assert.equal(router.selectedBranchCollapsed, false, "Left leaves details without folding links");
   screen.handleInput("\x1b[C");
   assert.equal(router.focusedDependency, assignmentKey(ref()));
   screen.handleInput("\x1b[D");

@@ -236,7 +236,7 @@ function inspector(router: ScreenRouter, pane: Pane, options: FleetOptions): str
       paint(
         "muted",
         fit(
-          `Tab ${router.inspectorFocus ? "list" : "inspector"} · ${router.inspectorScroll + 1}/${content.length}`,
+          `${router.inspectorScroll + 1}/${content.length} · ${router.inspectorFocus ? "↑↓ scroll · ← list" : "Wheel scroll"}`,
           width,
         ),
       ),
@@ -286,7 +286,9 @@ function filterStrip(router: ScreenRouter, options: FleetOptions, row: number): 
         text,
       ) + " ";
   }
-  if (width < 80) output += paint("muted", " f filter");
+  const remaining = width - visibleWidth(output);
+  const hint = remaining >= 16 ? " Tab next status" : " Tab";
+  if (hint.length <= remaining) output += paint("muted", hint);
   return fit(output, width);
 }
 
@@ -492,7 +494,10 @@ function list(
       infoWidth >= 12 ? "   " + ellipsis(context, infoWidth - 1) : "",
     ];
     const text = selected
-      ? paint(focusedRow < 0 ? "focus" : "strong", padded(fields.join(""), width))
+      ? paint(
+          focusedRow < 0 && !router.inspectorFocus ? "focus" : "strong",
+          padded(fields.join(""), width),
+        )
       : paint(color, fields[0]) +
         fields[1] +
         paint(statusColor(assignment), fields[2]) +
@@ -508,7 +513,7 @@ function list(
           ? "No matching assignments. / change search"
           : router.filter === "unfinished"
             ? "No unfinished work. h show finished"
-            : `No ${filterLabels[router.filter].toLowerCase()} work. f change filter`,
+            : `No ${filterLabels[router.filter].toLowerCase()} work. Tab for next status`,
         width,
       )
         .slice(0, available)
@@ -573,6 +578,7 @@ export function renderFleet(router: ScreenRouter, options: FleetOptions): string
     : stacked
       ? { x: 0, y: output.length + listHeight + 1, width, height: available - listHeight - 1 }
       : undefined;
+  if (!inspectorPane) router.inspectorFocus = false;
   if (options.fleetRegions) {
     options.fleetRegions.list = listPane;
     options.fleetRegions.inspector = inspectorPane;

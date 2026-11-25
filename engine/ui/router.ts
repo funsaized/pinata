@@ -431,7 +431,11 @@ export class ScreenRouter {
   moveFleetBranch(direction: "left" | "right"): void {
     if (direction === "left") {
       if (this.focusedDependency) this.focusDependency();
-      else this.collapse(true);
+      else if (this.selected && !this.selectedBranchCollapsed) {
+        const key = assignmentKey(this.selected);
+        const node = this.fleetNodes().find((row) => assignmentKey(row.assignment.ref) === key);
+        if (node?.hasChildren || this.hasDependencies) this.collapse(true);
+      }
       return;
     }
     if (this.selectedBranchCollapsed) this.collapse(false);
@@ -708,6 +712,7 @@ export class ScreenRouter {
     this.clearDependencyNavigation();
     this.filter = filter;
     this.fleetScroll = 0;
+    this.inspectorFocus = false;
     this.inspectorScroll = 0;
     this.refreshView();
   }
@@ -923,10 +928,7 @@ export class ScreenRouter {
     if (this.inspectorVisible === visible) return;
     this.inspectorVisible = visible;
     if (visible) this.schedulePreview();
-    else {
-      this.inspectorFocus = false;
-      this.cancelPreview();
-    }
+    else this.cancelPreview();
   }
   private cancelPreview(): void {
     this.previewGeneration++;

@@ -271,11 +271,6 @@ export class PinataScreen implements Component, Focusable {
       this.requestRender();
       return;
     }
-    if (this.router.screen === "fleet" && matchesKey(data, "tab")) {
-      if (this.fleetRegions.inspector) this.router.inspectorFocus = !this.router.inspectorFocus;
-      this.requestRender();
-      return;
-    }
     const composing =
       this.router.screen === "conversation" &&
       Boolean(this.router.selected) &&
@@ -353,6 +348,7 @@ export class PinataScreen implements Component, Focusable {
       return;
     }
     if (this.router.screen === "fleet") {
+      if (matchesKey(data, "tab")) return this.router.cycleFilter();
       if (matchesKey(data, "backspace")) return this.router.returnToDependencyOrigin();
       if (data === "p" && !this.router.focusedDependency && this.router.selected) {
         const ref = this.router.selected;
@@ -377,7 +373,7 @@ export class PinataScreen implements Component, Focusable {
       if (data === "w") return this.router.toggleQueued();
       if (data === "d") {
         this.router.details = !this.router.details;
-        this.router.inspectorFocus = this.router.details && Boolean(this.fleetRegions.inspector);
+        this.router.inspectorFocus = this.router.details && this.router.inspectorVisible;
         this.router.inspectorScroll = 0;
         this.requestRender();
         return;
@@ -394,16 +390,28 @@ export class PinataScreen implements Component, Focusable {
         this.router.toggleFilter("finished");
         return;
       }
-      if (data === "f") {
-        this.router.cycleFilter();
-        return;
-      }
-      if (this.router.inspectorFocus && (matchesKey(data, "up") || matchesKey(data, "down"))) {
-        this.router.scroll(matchesKey(data, "up") ? -1 : 1);
-        return;
+      if (this.router.inspectorFocus) {
+        if (matchesKey(data, "left")) {
+          this.router.inspectorFocus = false;
+          this.requestRender();
+          return;
+        }
+        if (matchesKey(data, "right")) return;
+        if (matchesKey(data, "up")) return this.router.scroll(-1);
+        if (matchesKey(data, "down")) return this.router.scroll(1);
       }
       if (matchesKey(data, "left")) return this.router.moveFleetBranch("left");
-      if (matchesKey(data, "right")) return this.router.moveFleetBranch("right");
+      if (matchesKey(data, "right")) {
+        if (
+          this.router.selectedBranchCollapsed ||
+          this.router.hasDependencies ||
+          !this.router.inspectorVisible
+        )
+          return this.router.moveFleetBranch("right");
+        this.router.inspectorFocus = true;
+        this.requestRender();
+        return;
+      }
       if (matchesKey(data, "up")) this.router.moveFleetSelection(-1);
       else if (matchesKey(data, "down")) this.router.moveFleetSelection(1);
       else if (matchesKey(data, "enter") && this.router.selected) {

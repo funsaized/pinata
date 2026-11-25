@@ -1120,8 +1120,11 @@ test("fleet help, search, filtering and actions are usable without a composer", 
     router.fleetAssignments().map((row) => row.ref.worker),
     ["worker-2"],
   );
-  screen.handleInput("f");
-  assert.equal(router.filter, "working");
+  assert.match(stripTerminalSequences(screen.render(80).join("\n")), /Tab next status/);
+  for (const status of ["working", "queued", "attention", "finished", "unfinished", "working"]) {
+    screen.handleInput("\t");
+    assert.equal(router.filter, status);
+  }
   screen.handleInput("h");
   assert.equal(router.filter, "finished");
   screen.handleInput("a");
@@ -1955,8 +1958,15 @@ test("help and footer follow fleet, transcript and composer context without swal
   router.navigate("fleet");
   screen.handleInput("?");
   assert.match(rendered(), /Pinata help · Fleet/);
+  assert.match(rendered(), /Tab\s+Next status/);
+  assert.match(rendered(), /←\s+Return to the list/);
   assert.match(rendered(), /alt\+left\s+Previous assignment/);
   assert.doesNotMatch(rendered(), /Send message|Follow latest|\/steer/);
+  const wideHelp = screen.render(240).map((row) => stripTerminalSequences(row).trimEnd());
+  assert(
+    wideHelp.some((row) => row.includes("Browse assignments") && row.includes("Agent controls")),
+  );
+  assert(wideHelp.every((row) => visibleWidth(row) <= 129));
   screen.handleInput("?");
   router.navigate("conversation", ref());
   router.transcriptFocus = true;

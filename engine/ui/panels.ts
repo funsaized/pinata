@@ -1,41 +1,98 @@
 import { visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { agentAccent, type Paint } from "./palette.ts";
-import { resolveKeys, resolveConversationKeys, type ConversationKeys } from "./keys.ts";
+import {
+  resolveKeys,
+  resolveConversationKeys,
+  type ConversationKeys,
+  type UiKeys,
+} from "./keys.ts";
 import { displayText, fit, padded } from "./text.ts";
 import type { ScreenRouter } from "./router.ts";
 
 type Section = { title: string; rows: [string, string][] };
 
+function helpColumn(sections: Section[], width: number, paint: Paint): string[] {
+  return sections.flatMap(({ title, rows }, start) => {
+    const keyWidth = Math.min(20, Math.max(...rows.map(([key]) => visibleWidth(key))));
+    return [
+      ...(start > 0 ? [""] : []),
+      paint("strong", title),
+      ...rows.flatMap(([key, description]) => {
+        if (width < keyWidth + 18 || visibleWidth(key) > keyWidth)
+          return [
+            ...wrapTextWithAnsi(key, width).map((line) => paint("accent.blue", line)),
+            ...wrapTextWithAnsi(description, Math.max(1, width - 2)).map((line) =>
+              paint("text", `  ${line}`),
+            ),
+          ];
+        return wrapTextWithAnsi(description, width - keyWidth - 2).map(
+          (line, index) =>
+            (index === 0 ? paint("accent.blue", padded(key, keyWidth)) : " ".repeat(keyWidth)) +
+            "  " +
+            paint("text", line),
+        );
+      }),
+    ];
+  });
+}
+
 function columns(sections: Section[], width: number, paint: Paint): string[] {
-  const count = Math.min(sections.length, Math.max(1, Math.floor(width / 42)));
-  const columnWidth = Math.floor((width - (count - 1) * 3) / count);
-  const output: string[] = [];
-  for (let start = 0; start < sections.length; start += count) {
-    const group = sections.slice(start, start + count).map((section) => {
-      const keyWidth = Math.min(23, Math.max(...section.rows.map(([key]) => visibleWidth(key))));
-      return [
-        paint("strong", section.title),
-        "",
-        ...section.rows.flatMap(([key, description]) => {
-          if (columnWidth < keyWidth + 14 || visibleWidth(key) > keyWidth)
-            return [
-              ...wrapTextWithAnsi(key, columnWidth).map((line) => paint("accent.blue", line)),
-              ...wrapTextWithAnsi(description, columnWidth - 2).map((line) => `  ${line}`),
-            ];
-          return wrapTextWithAnsi(description, columnWidth - keyWidth - 2).map(
-            (line, index) =>
-              (index === 0 ? paint("accent.blue", padded(key, keyWidth)) : " ".repeat(keyWidth)) +
-              "  " +
-              paint("muted", line),
-          );
-        }),
-      ];
-    });
-    for (let row = 0; row < Math.max(...group.map((column) => column.length)); row++)
-      output.push(group.map((column) => padded(column[row] ?? "", columnWidth)).join("   "));
-    output.push("", "");
-  }
-  return output;
+  if (width < 108 || sections.length === 1) return helpColumn(sections, Math.min(width, 68), paint);
+  const columnWidth = Math.min(62, Math.floor((width - 4) / 2));
+  const split = Math.ceil(sections.length / 2);
+  const left = helpColumn(sections.slice(0, split), columnWidth, paint);
+  const right = helpColumn(sections.slice(split), columnWidth, paint);
+  return Array.from({ length: Math.max(left.length, right.length) }, (_, row) =>
+    right[row] ? padded(left[row] ?? "", columnWidth) + "    " + right[row] : (left[row] ?? ""),
+  );
+}
+
+function fleetHelp(keys: UiKeys): Section[] {
+  return [
+    {
+      title: "Browse assignments",
+      rows: [
+        ["↑ / ↓", "Move through rows or scroll details"],
+        ["→", "Open branches, links or details"],
+        ["←", "Return to the list or fold a branch"],
+        ["Enter", "Open a conversation or toggle a group"],
+        ["d", "Expand and focus details, or collapse them"],
+        ["PageUp / PageDown", "Page through the focused pane"],
+        ["Backspace", "Retrace a link jump in the fleet"],
+        ["Click", "Select a row, toggle a group or open a link"],
+        ["p", "Preview changes from a finished worktree"],
+      ],
+    },
+    {
+      title: "Find work",
+      rows: [
+        ["Tab", "Next status"],
+        ["/", "Search by agent or task"],
+        ["w / h", "Toggle Queued / Finished"],
+        ["r", "Browse project runs when available"],
+      ],
+    },
+    {
+      title: "Agent controls",
+      rows: [
+        ["a", "Open the actions menu"],
+        [keys.stop, "Stop work for this agent and its children"],
+        [keys.background, "Release the wait and keep agents working"],
+        [keys.recover, "Recover the selected assignment"],
+        [keys.refresh, "Refresh or reconnect"],
+      ],
+    },
+    {
+      title: "Switch views",
+      rows: [
+        [keys.previousWorker, "Previous agent"],
+        [keys.nextWorker, "Next agent"],
+        [keys.previousAssignment, "Previous assignment"],
+        [keys.nextAssignment, "Next assignment"],
+        [`Esc / ${keys.parentScreen}`, "Leave the fleet and keep agents working"],
+      ],
+    },
+  ];
 }
 
 export function helpPanel(
@@ -90,32 +147,7 @@ export function helpPanel(
         },
       ]
     : fleet
-      ? [
-          {
-            title: "Fleet",
-            rows: [
-              ["↑ / ↓", "Move between assignments or browse links"],
-              ["Tab", "Focus list / inspector"],
-              ["r", "Browse runs in this project when available"],
-              ["w", "Show queued assignments; press again to return"],
-              ["Enter", "Open conversation or toggle group"],
-              ["Click", "Select assignment, toggle group or open link"],
-              ["Backspace", "Return after showing a link in the fleet"],
-              ["p", "Inspect retained file changes for a finished worktree"],
-              ["← / →", "Return to assignment / enter dependencies or show linked assignment"],
-              ["/", "Search agent or task; Enter applies, Esc cancels, Ctrl+U clears"],
-              ["f", "Cycle Unfinished / Working / Queued / Attention / Finished"],
-              ["h", "Show finished assignments and history; press again to return"],
-              ["d", "Expand and focus details, or collapse them"],
-              ["a", "Stop / manage agents"],
-            ],
-          },
-          stopping,
-          {
-            ...navigation,
-            rows: [["PageUp / PageDown", "Scroll the focused pane"], ...navigation.rows],
-          },
-        ]
+      ? fleetHelp(keys)
       : composing
         ? [
             {
@@ -189,6 +221,9 @@ export function helpPanel(
   const body = columns(sections, width, paint);
   const available = Math.max(1, height - 4);
   router.helpScroll = Math.min(router.helpScroll, Math.max(0, body.length - available));
+  let footer = "? / Esc close";
+  if (body.length > available)
+    footer += width < 40 ? " · ↑↓" : " · ↑↓ scroll · PageUp/PageDown page";
   return [
     paint("strong", `Pinata help · ${context}`),
     router.source.capabilities.control
@@ -199,10 +234,7 @@ export function helpPanel(
         ),
     ...body.slice(router.helpScroll, router.helpScroll + available),
     "",
-    paint(
-      "muted",
-      width < 40 ? "? / Esc close · ↑↓" : "? / Esc close · ↑↓ scroll · PageUp/PageDown page",
-    ),
+    paint("muted", footer),
   ]
     .slice(0, height)
     .map((line) => fit(line, width));

@@ -216,7 +216,10 @@ test("h and w switch to finished and queued views and restore the previous selec
   screen.handleInput("w");
   assert.equal(router.filter, "unfinished");
   screen.handleInput("?");
-  assert.match(stripTerminalSequences(screen.render(150).join("\n")), /Show queued assignments/);
+  assert.match(
+    stripTerminalSequences(screen.render(150).join("\n")),
+    /w \/ h\s+Toggle Queued \/ Finished/,
+  );
   screen.handleInput("?");
   screen.handleInput("q");
   assert.equal(exits, 1);

@@ -179,13 +179,13 @@ children branch beneath their parent; dependencies appear as `after:` references
 Finished work disappears from the widget. `/pinata` opens the full fleet.
 
 The fleet highlights the selected row and shows its last assistant message and
-prompt in an inspector. Wide terminals place the inspector on the right; smaller
-terminals stack it directly below the list. Tab moves focus between panes, page
-keys scroll the focused pane, and the wheel scrolls the pane under the pointer.
-`d` expands and focuses the inspector. Use Up and Down to scroll the prompt,
-last message and execution, handoff and resource details. Press `d` again to
-collapse details and return focus to the list. Cleanup problems stay visible
-when details are collapsed. Enter on an assignment opens its conversation.
+prompt in a details pane. Wide terminals place it on the right. Smaller terminals
+stack it below the list. Right focuses details when the row has no dependencies
+or folded branch to open. Press `d` to expand and focus details on any assignment.
+Use Up and Down to scroll, and Left to return to the list. Press `d` again to
+collapse details. Cleanup problems stay visible in the preview. Page keys scroll
+the focused pane, and the wheel scrolls the pane under the pointer. Enter on an
+assignment opens its conversation.
 
 The selected assignment groups its links under **Prerequisites** and
 **Dependents**. A group starts folded when every assignment completed with
@@ -222,9 +222,9 @@ Attention includes unresolved cleanup and failed or interrupted assignments that
 are latest for their worker or still have queued dependents. Finished means execution ended
 with confirmed cleanup, not necessarily success or acceptance. Counts apply after
 search and before branch collapse; parents shown only for context do not add to
-counts. `f` cycles filters. `h` selects Finished, including earlier assignments;
-`w` selects Queued. Press the same shortcut again to restore the previous filter
-and selection. Dependencies do not create parent/child branches.
+counts. Tab advances to the next status. `h` selects Finished, including earlier
+assignments, and `w` selects Queued. Press `h` or `w` again to restore the previous
+filter and selection. Dependencies do not create parent/child branches.
 
 Search with `/`, apply with Enter, cancel with Escape, or clear with Ctrl+U.
 Cancelling restores the previous query and selection. The Observed column measures
@@ -260,17 +260,16 @@ cleanup status when available.
 | Up/Down, Enter in the fleet                       | Browse assignments or links, open chats, toggle groups.     |
 | Shift+Left/Right                                  | Select the previous/next worker.                            |
 | Alt+Left/Right                                    | Browse earlier/later assignments for that worker.           |
-| Left/Right in the fleet                           | Enter dependencies or return to the assignment.             |
+| Left/Right in the fleet                           | Move between the list, branches, links and details.         |
 | Backspace in the fleet                            | Return after showing a link in the fleet.                   |
 | Mouse click/double click                          | Toggle groups, open links or select/open assignments.       |
 | Mouse wheel, PageUp/PageDown, Alt+PageUp/PageDown | Scroll the focused pane; wheel follows pointer.             |
 | `/` in the fleet                                  | Search workers/tasks; Enter keeps the filter.               |
-| `f` in the fleet                                  | Cycle the five status filters.                              |
+| Tab in the fleet                                  | Show the next work status.                                  |
 | `h` in the fleet                                  | Select Finished; press again to restore the previous view.  |
 | `w` in the fleet                                  | Select Queued; press again to restore the previous view.    |
 | `a` in the fleet                                  | Show stop actions for an assignment, agent or entire fleet. |
 | `d` in the fleet                                  | Expand and focus details, or collapse them.                 |
-| Tab in the fleet                                  | Switch list/inspector focus.                                |
 | `r` in the fleet                                  | Browse runs in the current project.                         |
 | Tab in a conversation                             | Switch composer/transcript focus.                           |
 | Ctrl+O in a conversation                          | Expand/collapse tool output.                                |

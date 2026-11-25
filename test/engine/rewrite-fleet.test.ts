@@ -183,8 +183,9 @@ test("a prerequisite that settles while focused stays visible until the user lea
   assert.doesNotMatch(render(), /✓  worker-1\/1/);
 });
 
-test("inspector scrolling and clicks cannot select the list row underneath", async (t) => {
+test("details use vertical arrows to scroll and Left returns to the list", async (t) => {
   const state = uiState(3);
+  state.assignments[assignmentKey(ref())].execution = { phase: "running" };
   state.assignments[assignmentKey(ref())].task = Array.from(
     { length: 100 },
     (_, index) => `Prompt line ${index + 1}`,
@@ -202,12 +203,24 @@ test("inspector scrolling and clicks cannot select the list row underneath", asy
     router.dispose();
   });
   screen.render(160);
+  screen.handleInput("\x1b[C");
+  assert.equal(router.inspectorFocus, true, "Right focuses the preview");
+  screen.handleInput("\x1b[D");
+  assert.equal(router.inspectorFocus, false);
   screen.handleInput("d");
   const rows = screen.render(160).map(stripTerminalSequences);
   assert.equal(router.inspectorFocus, true);
   screen.handleInput("\x1b[B");
   assert.equal(router.inspectorScroll, 1);
   assert.deepEqual(router.selected, ref());
+  screen.handleInput("\x1b[C");
+  assert.equal(router.inspectorScroll, 1);
+  assert.equal(router.inspectorFocus, true);
+  screen.handleInput("?");
+  screen.render(160);
+  screen.handleInput("\x1b");
+  screen.render(160);
+  assert.equal(router.inspectorFocus, true, "closing help returns to details");
   screen.handleInput("\x1b[A");
   assert.equal(router.inspectorScroll, 0);
   const row = rows.findIndex((line) => line.includes("worker-2/1"));
@@ -236,13 +249,22 @@ test("inspector scrolling and clicks cannot select the list row underneath", asy
   router.scroll(10_000);
   const bottom = stripTerminalSequences(screen.render(160).join("\n"));
   assert.match(bottom, /Observed time starts/);
-  screen.handleInput("\t");
+  const bottomOffset = router.inspectorScroll;
+  screen.handleInput("\x1b[D");
   assert.equal(router.inspectorFocus, false);
-  screen.handleInput("\t");
+  assert.equal(router.inspectorScroll, bottomOffset);
+  assert.equal(router.selectedBranchCollapsed, false);
+  screen.handleInput("\x1b[C");
   assert.equal(router.inspectorFocus, true);
+  assert.equal(router.inspectorScroll, bottomOffset);
+  screen.handleInput("\t");
+  assert.equal(router.filter, "working");
+  assert.equal(router.inspectorFocus, false);
   screen.handleInput("d");
   assert.equal(router.inspectorFocus, false);
   assert.equal(router.inspectorScroll, 0);
+  router.setFilter("unfinished");
+  screen.render(160);
   screen.handleMouse({ ...mouse, x: 5, type: "click" });
   assert.deepEqual(router.selected, ref(2));
   assert.equal(router.inspectorScroll, 0);
