@@ -1,23 +1,23 @@
 # The Relay build
 
-[![Pi’s fleet in a Foot terminal. Under relay-lead, event-parser and incident-stats are both running. The selected parser assignment asks it to implement src/parse.mjs and test malformed lines.](pinata-fleet.png)](pinata-demo.mp4)
+[![In Pi's fleet, relay-lead has two running children. The selected event-parser assignment asks for a parser and malformed-line tests. Its sibling is incident-stats.](pinata-fleet.png)](pinata-demo.mp4)
 
-[Watch the full build (2m 13s)](pinata-demo.mp4) · [Watch the hero GIF (29s)](pinata-navigation.gif) · [Share the poster (PNG)](pinata-fleet.png)
+[Full build (2m 04s)](pinata-demo.mp4) · [Hero GIF (29s)](pinata-navigation.gif) · [Share the poster (PNG)](pinata-fleet.png)
 
-| Time in the full build | What happens in Pi                                                                                                                                                                                                                                 |
-| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0:00                   | The terminal lists the project's three Markdown files. The lead's `handoffs` names both specialists.                                                                                                                                               |
-| 0:22                   | The user types `@relay-lead` in the composer. The fleet opens on the lead, then two running children appear beneath it.                                                                                                                            |
-| 0:50                   | The selected parser assignment names its file and tests. In the other branch, `incident-stats` writes `src/summarize.mjs` and checks which statuses count as failures and how to calculate p95 latency.                                            |
-| 1:08                   | In `event-parser`, the test output shows that valid events on either side of a malformed line survive.                                                                                                                                             |
-| 1:17                   | Back in `relay-lead`, the transcript shows its `pinata_children` call, the renderer and CLI writes, and its checks on the children's results.                                                                                                      |
-| 1:50                   | The coordinator runs all nine tests and prints the report. The four events include one failed API request and no invalid lines. `node verify.mjs` checks stdout against the [supplied report](../examples/relay/expected-report.md) byte for byte. |
+| Time | What to watch                                                                                                                                                                                                    |
+| ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0:00 | Three Markdown files define the team. The lead's `handoffs` field names both specialists.                                                                                                                        |
+| 0:17 | The user types the request in Pi. After submission, `event-parser` and `incident-stats` appear beneath `relay-lead`.                                                                                             |
+| 0:47 | `incident-stats` writes `src/summarize.mjs` and tests nearest-rank p95. In its 20-event sample, p95 is 19 ms.                                                                                                    |
+| 1:02 | `event-parser` writes `src/parse.mjs` and its tests. The test output shows that valid events survive on both sides of a malformed line.                                                                          |
+| 1:09 | The lead reads the specialists' work. Its transcript shows the `pinata_children` call that assigned both jobs and its own writes to `src/render.mjs` and `bin/relay.mjs`.                                        |
+| 1:36 | The coordinator runs all ten tests, then prints **4 events, 1 failure, 0 invalid lines**. `node verify.mjs` matches the CLI output to the [supplied report](../examples/relay/expected-report.md) byte for byte. |
 
 ## Rebuild the exports
 
-Both cuts show the same Foot window running Herdr and Pi 1.5.0 on Wayland. The recording retains the window frame, sidebar, Gruvbox colors and Operator Mono lettering. A small label in the sidebar gives the time skipped at each cut. The poster is the full frame at 1m 54s. The final verifier shot holds a compositor screenshot from the same session. [Download the source recording (MP4)](relay/session.mp4).
+Both cuts come from one live Pi 1.5.0 session in a standalone Foot window. The poster is the frame at 1m 18.5s in the [source recording](relay/session.mp4).
 
-Run the exporter from the Piñata checkout. It needs Python 3.10+, FFmpeg with libx264 and drawtext, and DejaVu Sans for the elapsed-time labels.
+Run the exporter from the Piñata checkout. It needs Python 3.10+ and FFmpeg with libx264.
 
 ```sh
 python3 media/relay/export.py /tmp/relay-exports
@@ -25,7 +25,17 @@ python3 media/relay/export.py /tmp/relay-exports
 
 ## Record a fresh build
 
-Get authorization for provider spend before submitting a live task. This take used OpenAI `gpt-6-luna`. Start in a Foot terminal running Herdr, in the Piñata checkout with dependencies installed.
+Get authorization for provider spend before submitting a live task. This take used OpenAI `gpt-6-luna`. From the Piñata checkout with dependencies installed, open a standalone Foot window with Bash. The take uses 95 columns, 25 rows and 18 pt Operator Mono.
+
+```sh
+foot -T Relay -W 95x25 -f 'Operator Mono:style=Book:size=18' \
+  -o 'font-bold=Operator Mono:style=Bold:size=18' \
+  -o 'font-italic=Operator Mono:style=Book Italic:size=18' \
+  -o 'font-bold-italic=Operator Mono:style=Bold Italic:size=18' \
+  -o line-height=22 -o pad=16x12 bash --noprofile --norc -i
+```
+
+Prepare a new Relay checkout inside that window.
 
 ```sh
 repo=$PWD
@@ -38,7 +48,7 @@ node -e 'console.log("/pinata-grants " + JSON.stringify(require("./examples/rela
 cd "$take/Relay"
 ```
 
-Give the window 1280 × 850 pixels and use 15 pt terminal text. On a wlroots desktop, run the following in a second terminal and select the whole Foot window, including its border. Press Ctrl+C in the recorder after the verifier result has been on screen for several seconds.
+On a wlroots desktop, run the following in a second terminal and select the whole Foot window. The original frame measures 1280 × 800 pixels. Press Ctrl+C in the recorder after the verifier result has been on screen for several seconds.
 
 ```sh
 wf-recorder -g "$(slurp)" --no-damage -r 12 -c libx264 -p crf=13 -x yuv420p -f relay-window.mkv
