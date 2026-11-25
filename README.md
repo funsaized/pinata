@@ -1,34 +1,30 @@
-# Piñata
+<a id="piñata"></a>
 
-**Subagents for Pi, with conversations you can steer and work you can recover.**
+# Define your own subagents. Watch them work together in Pi.
 
-[![npm](https://img.shields.io/npm/v/pi-pinata)](https://www.npmjs.com/package/pi-pinata)
-[![CI](https://github.com/funsaized/pinata/actions/workflows/ci.yml/badge.svg)](https://github.com/funsaized/pinata/actions/workflows/ci.yml)
-[![MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+Give a lead agent a task, follow the specialists it brings in, and open any branch to see the work behind the result.
 
-Piñata turns a conversation in [Pi](https://pi.dev) into orchestrated, autonomous sub-agents. Send a scout
-to trace an unfamiliar API, put builders on independent changes, and bring a
-reviewer into the conversation when the diff is ready. Open any worker's transcript,
-ask a follow-up, or redirect it while it works. You keep the context and decide
-what to test, accept and ship.
+<picture>
+  <source media="(prefers-reduced-motion: reduce)" srcset="media/pinata-fleet.png">
+  <img src="media/pinata-navigation.gif" alt="In Pi, relay-lead delegates JSONL parsing to event-parser and service statistics to incident-stats. A malformed-line test passes, and the CLI reports 4 events and 1 failure.">
+</picture>
 
-Workers share your checkout by default, so their edits are available immediately.
-For an experiment that needs its own patch, choose a Git worktree and apply the
-result explicitly. The same runtime supports Pi tools, extension events and embedded hosts. Saved
-conversations remain available after the host closes.
+[Watch the full build (MP4)](media/pinata-demo.mp4)
 
 ```sh
 pi install npm:pi-pinata
 ```
 
+[Define your first agent](#define-your-first-agent) · [Recording and text walkthrough](media/README.md)
+
+[![npm](https://img.shields.io/npm/v/pi-pinata)](https://www.npmjs.com/package/pi-pinata)
+[![CI](https://github.com/funsaized/pinata/actions/workflows/ci.yml/badge.svg)](https://github.com/funsaized/pinata/actions/workflows/ci.yml)
+[![MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
 [Install](#install) · [Quick start](#quick-start) · [Fleet](#fleet-and-conversations) ·
 [Workflows](#workflows) · [Agents](#custom-agents) · [Configuration](#configuration) ·
 [Tools](#tools) · [CLI](#cli-reference) · [API](#package-api) ·
 [Implementation](#architecture-and-implementation-index) · [Development](#development)
-
-![Piñata fleet with project filters, full-row selection and a prompt and last-message inspector. Scripted demonstration.](media/pinata-fleet.png)
-
-[Watch the fleet demo (MP4)](media/pinata-demo.mp4) · [Recording details](media/README.md)
 
 ## Why Piñata
 
@@ -171,8 +167,6 @@ Completion watches persist in the Pi session. Aborting the coordinator pauses it
 automatic returns until the next user turn. Closing the session stops wake-ups;
 reopening it restores retained watches. These continuations use the shared engine's
 settled results. Embedded hosts own their notification policy.
-
-![Navigate a scripted project fleet: inspect prompts and messages, filter queued and finished work, and open a worker conversation.](media/pinata-navigation.gif)
 
 The coordinator shows a compact Agents tree while work is active or queued. Real
 children branch beneath their parent; dependencies appear as `after:` references.
@@ -604,6 +598,8 @@ The reviewer requests write access because shell execution requires it. Its
 instructions leave source files and commits untouched; this is a behavioral
 instruction, and shell access can mutate files. The coordinator chooses checks and
 decides acceptance.
+
+### Define your first agent
 
 Save a specialist as `.pi/pinata/agents/api-scout.md`:
 
