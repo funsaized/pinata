@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.0.7
 
 - Press Right to browse dependency groups, Enter to open a linked conversation,
   and Escape to return to the same fleet row. Completed groups start folded, and

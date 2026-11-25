@@ -1,6 +1,6 @@
 {
   "name": "pi-pinata",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "description": "Define project subagents in Markdown, delegate work in Pi, and follow each branch from assignment to result.",
   "keywords": [
     "herdr",
