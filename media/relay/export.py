@@ -10,32 +10,26 @@ from typing import NamedTuple
 class Shot(NamedTuple):
     start: float
     end: float
-    hold: float = 0  # Seconds to keep the last frame on screen for reading.
 
 
 SOURCE = Path(__file__).with_name("session.mp4")
 HERO = [
-    Shot(57.50, 68.75),  # Submit the request and watch the two children appear.
-    Shot(77.25, 83.75),  # Select the parser and open its branch.
-    Shot(106.75, 109.75, 3),  # Read the malformed-line test result.
-    Shot(281.50, 287.00),  # Run the CLI and read the report.
+    Shot(42.50, 58.75),  # Submit, watch the fleet branch and open the parser.
+    Shot(115.75, 122.25),  # Check recovery from a malformed event.
+    Shot(238.25, 245.00),  # Run the CLI and read the report.
 ]
 BUILD = [
-    Shot(0.25, 13.75),  # Three Markdown definitions, handoffs and Pi.
-    Shot(25.50, 28.75),  # Sample events.
-    Shot(38, 48.75),  # Type the request.
-    Shot(60.75, 72),  # Submit, open the fleet and watch it branch.
-    Shot(76.75, 84.50),  # Select the parser assignment.
-    Shot(87.75, 97.25, 3),  # Statistics implementation and nearest-rank test.
-    Shot(103, 109.75, 3),  # Switch to the parser and inspect its checks.
-    Shot(125.75, 130.25),  # Return to the lead during integration.
-    Shot(203.25, 209.25),  # Expand the lead's pinata_children call.
-    Shot(219.50, 225.50),  # Read its two worker assignments.
-    Shot(250.50, 261),  # Renderer and CLI writes, then the child result.
-    Shot(261.75, 270.50),  # Coordinator tests.
-    Shot(279.75, 299.25),  # Render the report and verify it against the fixture.
+    Shot(0.25, 33.00),  # Definitions, handoffs, host grant and prompt.
+    Shot(45.00, 65.50),  # Submit, open the fleet and visit both children.
+    Shot(73.25, 77.00),  # Statistics implementation.
+    Shot(85.50, 96.50),  # Statistics tests and checks.
+    Shot(102.50, 105.50),  # Return to the parser.
+    Shot(112.50, 122.00),  # Inspect the corrected edit and malformed-line test.
+    Shot(136.50, 144.75),  # The lead tests and runs the assembled CLI.
+    Shot(168.00, 178.50),  # Expand its call and read both assignments.
+    Shot(213.25, 255.25),  # Renderer, CLI, child results and coordinator verification.
 ]
-POSTER = 78.50
+POSTER = 55.00
 
 
 def ffmpeg(*args):
@@ -48,8 +42,6 @@ def cut(source, shots, directory):
     for index, shot in enumerate(shots):
         clip = directory / f"{index:02d}.mp4"
         filters = ["fps=12", f"trim=duration={shot.end - shot.start}", "setpts=PTS-STARTPTS"]
-        if shot.hold:
-            filters.append(f"tpad=stop_mode=clone:stop_duration={shot.hold}")
         ffmpeg("-ss", str(shot.start), "-i", str(source), "-vf", ",".join(filters),
                "-an", "-c:v", "libx264", "-threads", "4", "-crf", "15",
                "-preset", "fast", "-pix_fmt", "yuv420p", str(clip))
