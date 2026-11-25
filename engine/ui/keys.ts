@@ -58,7 +58,6 @@ export function resolveKeys(config: Record<string, string>): UiKeys {
         "h",
         "w",
         "r",
-        "f",
         "a",
         "d",
         "m",

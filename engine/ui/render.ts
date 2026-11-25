@@ -15,7 +15,7 @@ import {
   steerTarget,
 } from "./projection.ts";
 import { agentAccent, modelAccent, type Paint } from "./palette.ts";
-import { displayText, fit, lines, padded } from "./text.ts";
+import { detailRows, displayText, fit, lines, padded } from "./text.ts";
 import type { ConversationView, ScreenRouter } from "./router.ts";
 import { activityIndicator, assignmentTree, type TreeNode } from "./tree.ts";
 
@@ -279,38 +279,10 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
   const conversationKeys = options.conversationKeys ?? resolveConversationKeys(router.keys);
   options.hitRows?.clear();
   if (options.fleetRegions) {
-    options.fleetRegions.dependencyLink = undefined;
-    options.fleetRegions.dependencyChoices = undefined;
+    options.fleetRegions.dependencyRows = new Map();
     options.fleetRegions.list = undefined;
     options.fleetRegions.inspector = undefined;
     options.fleetRegions.filters = [];
-  }
-  if (router.dependencies) {
-    const { links, origin, index } = router.dependencies;
-    const selected = index;
-    const available = Math.max(1, height - 2);
-    const first = Math.max(0, selected - available + 1);
-    if (options.fleetRegions)
-      options.fleetRegions.dependencyChoices = new Map(
-        links.slice(first, first + available).map((_, row) => [row + 1, first + row]),
-      );
-    return [
-      paint("strong", "Dependencies · " + displayText(origin.worker)),
-      ...links
-        .slice(first, first + available)
-        .map(({ ref, label }, index) =>
-          paint(
-            first + index === selected ? "focus" : "text",
-            padded(
-              `${first + index < 9 ? String(first + index + 1) + " " : ""}${label}  ${displayText(ref.worker)}/${ref.assignment}`,
-              width,
-            ),
-          ),
-        ),
-      paint("muted", "1–9 jump · ↑↓ select · Enter open · Esc back"),
-    ]
-      .slice(0, height)
-      .map((line) => fit(line, width));
   }
   if (router.actions || router.help)
     return (
@@ -327,7 +299,7 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
       "muted",
       ` · ${router.source.capabilities.live ? "live" : "saved"} · ${router.mode}${router.source.capabilities.control ? "" : " · read-only"}`,
     ) +
-    (router.details ? paint("muted", ` · ${displayText(router.state.run)}`) : "");
+    (router.transcriptDetails ? paint("muted", ` · ${displayText(router.state.run)}`) : "");
   const output = [fit(header, width)];
   const footer: string[] = [];
   if (router.screen === "main")
@@ -372,7 +344,7 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
       output.push(fit("Select a worker in the fleet to browse its assignments.", width));
     else {
       const view = router.conversation();
-      const details = assignmentDetails(router.state, assignment);
+      const status = executionLabel(assignment);
       const worker = router.state.workers[assignment.ref.worker];
       const color = worker.color ?? agentAccent(worker.agent);
       const context = router.state.contextUsage[assignmentKey(assignment.ref)];
@@ -383,10 +355,17 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
             paint(color, displayText(`${assignment.ref.worker}/${assignment.ref.assignment}`)),
           ) +
             paint("border", " › ") +
-            paint(
-              statusToken(executionLabel(assignment)),
-              displayText(details[0].split(" · ").slice(1).join(" · ")),
-            ),
+            paint(statusToken(status), status) +
+            (assignment.execution.phase === "queued"
+              ? paint(
+                  "muted",
+                  " · " + fit(displayText(queueLabel(router.state, assignment)), width),
+                )
+              : "") +
+            (assignment.execution.phase === "ended" &&
+            assignment.execution.cleanup === "unconfirmed"
+              ? paint("error", " · cleanup unconfirmed")
+              : ""),
           width,
         ),
       );
@@ -403,10 +382,6 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
           width,
         ),
       );
-      if (router.details) {
-        output.push(fit(displayText(`${details[1]} · ${details[2]}`), width));
-        output.push(fit(displayText(details[7]), width));
-      }
       const result = router.state.results[assignmentKey(assignment.ref)]?.result;
       const body = [
         ...(result &&
@@ -414,11 +389,15 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
         (result.execution.reason !== "completed" || !view.page?.entries.length)
           ? [`Result · ${result.execution.reason}`, result.summary, ""]
           : []),
-        ...(router.details ? [...details.slice(3, 7), ...details.slice(8)] : []),
-        ...(router.details || !view.page?.entries.length ? [`Task: ${assignment.task}`, ""] : []),
+        ...(router.transcriptDetails
+          ? [detailRows(assignmentDetails(router.state, assignment), width, paint)]
+          : []),
+        ...(router.transcriptDetails || !view.page?.entries.length
+          ? [`Task: ${assignment.task}`, ""]
+          : []),
         ...(view.loading && !view.page ? ["Loading retained conversation…"] : []),
         ...(view.error ? [`Conversation unavailable: ${view.error}`] : []),
-        ...(view.page && router.details
+        ...(view.page && router.transcriptDetails
           ? [
               `${view.page.source === "assignment" ? "Saved assignment transcript" : view.page.source === "checkpoint" ? "Live or saved session checkpoint" : "Conversation unavailable"}${view.page.artifact ? ` · ${view.page.artifact.digest.slice(0, 12)}` : ""}`,
             ]
@@ -430,14 +409,16 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
                 paint,
                 expanded: router.expandedTools,
                 showThinking: router.showThinking,
-                details: router.details,
+                details: router.transcriptDetails,
                 toolShortcut: conversationKeys.expandTools.join(" / "),
                 thinkingShortcut: conversationKeys.toggleThinking.join(" / "),
                 presentation: options.presentation,
               }),
             ]
           : []),
-        ...(view.page && !view.page.complete ? ["More retained entries: /more"] : []),
+        ...(view.page && !view.page.complete
+          ? [router.transcriptFocus ? "m load older entries" : "/more loads older entries"]
+          : []),
         ...(router.mode === "observe" && router.activity.get(assignmentKey(assignment.ref))
           ? [
               "Live activity (transient excerpt)",
@@ -511,7 +492,18 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
   }
   if (router.notice || router.screen === "conversation")
     footer.push(fit(paint(router.noticeTone, displayText(router.notice)), width));
-  const hasBranches = Object.values(router.state.workers).some((worker) => worker.parentAssignment);
+  const inspectorFocus = router.screen === "fleet" && router.inspectorFocus;
+  const dependencyFocus = router.focusedDependency;
+  const focusedGroup = dependencyFocus === "prerequisites" || dependencyFocus === "dependents";
+  const horizontal: Shortcut[] = [];
+  if (router.screen === "fleet") {
+    if (inspectorFocus) horizontal.push(["←", "list"]);
+    else if (dependencyFocus)
+      horizontal.push(["←", "assignment"], ["→", focusedGroup ? "enter group" : "show in fleet"]);
+    else if (router.hasDependencies) horizontal.push(["→", "dependencies"]);
+    else if (router.selectedBranchCollapsed) horizontal.push(["→", "expand branch"]);
+    else if (options.fleetRegions?.inspector) horizontal.push(["→", "details"]);
+  }
   const preview = router.screen === "conversation" && !router.selected;
   const primary: Shortcut[] = router.searching
     ? [
@@ -520,8 +512,10 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
       ]
     : router.screen === "fleet"
       ? [
-          ...(width >= 30 ? [["↑↓", router.inspectorFocus ? "scroll" : "select"] as Shortcut] : []),
-          ["a", "actions"],
+          ...(width >= 30
+            ? [["↑↓", inspectorFocus ? "scroll" : dependencyFocus ? "links" : "select"] as Shortcut]
+            : []),
+          ...(!router.focusedDependency ? [["a", "actions"] as Shortcut] : []),
           ["?", "help"],
           ["Esc", "back"],
         ]
@@ -549,14 +543,13 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
       ]
     : router.screen === "fleet"
       ? [
-          ...(router.selected ? [["Enter", "open"] as Shortcut] : []),
-          ...(options.fleetRegions?.inspector
-            ? [["Tab", router.inspectorFocus ? "list" : "inspector"] as Shortcut]
+          ...horizontal,
+          ...(router.selected
+            ? [["Enter", focusedGroup ? "toggle group" : "conversation"] as Shortcut]
             : []),
+          ...(router.canReturnToDependencyOrigin ? [["Backspace", "previous"] as Shortcut] : []),
           ["d", router.details ? "less" : "details"],
-          ...(hasBranches ? [["←→", "branches"] as Shortcut] : []),
           ["/", "search"],
-          ["f", "filter"],
           ...(options.projectRuns ? [["r", "runs"] as Shortcut] : []),
         ]
       : preview

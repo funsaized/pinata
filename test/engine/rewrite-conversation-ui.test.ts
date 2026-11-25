@@ -222,6 +222,50 @@ test("conversation display toggles keep thinking, tool output and assignment met
     );
 });
 
+test("dependency tool cards summarize frozen results and reveal the retained payload when expanded", () => {
+  initTheme("dark", false);
+  const ref = { run: "retained-run", worker: "scout", assignment: 2 };
+  const artifact = { digest: "a".repeat(64), size: 417 };
+  const frozen = JSON.stringify({ summary: "The parser is in server.ts.", artifacts: [artifact] });
+  const result = { kind: "result", ref, artifact, offset: 0, total: frozen.length, text: frozen };
+  const list = {
+    kind: "list",
+    offset: 0,
+    total: 1,
+    entries: [
+      {
+        ref,
+        artifact,
+        execution: { phase: "ended", reason: "completed", cleanup: "confirmed" },
+        summary: "Found the parser.",
+        summaryComplete: true,
+      },
+    ],
+  };
+  const next = 30;
+  const pages = [list, result, { ...result, text: frozen.slice(0, next), next }];
+  const entries = pages.map((page) => ({
+    message: {
+      role: "toolResult",
+      toolName: "pinata_dependency",
+      content: [{ type: "text", text: JSON.stringify(page) }],
+    },
+  }));
+  const before = structuredClone(entries);
+  const options = { width: 76, paint: createPaint("terminal-default") };
+  const folded = renderConversation(entries, { ...options, expanded: false }).join("\n");
+  assert.match(folded, /1 prerequisite/);
+  assert.match(folded, /scout\/2 · completed/);
+  assert.match(folded, /The parser is in server.ts/);
+  assert.match(folded, /Result page 0–30/);
+  assert.doesNotMatch(folded, /"digest"|"artifact"|retained-run/);
+  const expanded = renderConversation(entries, { ...options, expanded: true }).join("\n");
+  assert.match(expanded, /"summary": "The parser is in server.ts."/);
+  assert.match(expanded, /"digest"/);
+  assert.match(expanded, /"next": 30/);
+  assert.deepEqual(entries, before);
+});
+
 test("Pi tool and report surfaces use native state backgrounds with full-width padding", () => {
   initTheme("dark", false);
   const colors: Record<string, number> = {

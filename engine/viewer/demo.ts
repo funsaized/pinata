@@ -102,7 +102,7 @@ const backend: BackendPort = {
       append("user", message.text);
       const summary =
         ref.worker === "scout"
-          ? "Correction received. The HTTP parser is in server/parser.ts. Esc returns to the reviewer."
+          ? "Correction received. The HTTP parser is in server/parser.ts. Press Esc to return to the reviewer in the fleet."
           : "Review complete. Press Esc, then h to inspect both results.";
       append("assistant", summary);
       const completed = await outcome("completed", summary);
@@ -215,7 +215,7 @@ export async function withDemoFleet(view: (source: RuntimeSource) => Promise<voi
             {
               id: "review",
               agent: "reviewer",
-              task: "Press b to visit the scout. Ask it to trace the HTTP parser.",
+              task: "Press Right, then Enter to open the scout conversation. Ask the scout to trace the HTTP parser.",
               after: ["scout"],
             },
             { id: "scout", agent: "scout", task: "Locate the parser entry point." },

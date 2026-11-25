@@ -1,5 +1,10 @@
 import { piConversationPresentation } from "../pi/conversation.ts";
-import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
+import {
+  SettingsManager,
+  type ExtensionAPI,
+  type ExtensionContext,
+  type Theme,
+} from "@earendil-works/pi-coding-agent";
 import { matchesKey, type Component } from "@earendil-works/pi-tui";
 import { canonicalJson, type AssignmentRef, type Config } from "../contracts/index.ts";
 import { paletteSchema } from "../contracts/config.ts";
@@ -234,6 +239,11 @@ export function installCoordinatorUi(
           await context.ui.custom<void>(
             (tui, _theme, keys, done) => {
               closeScreen = () => done();
+              const settings = SettingsManager.create(context.cwd, undefined, {
+                projectTrusted: context.isProjectTrusted?.() ?? false,
+              });
+              router.expandedTools = context.ui.getToolsExpanded?.() ?? false;
+              router.showThinking = !settings.getHideThinkingBlock();
               return new PinataScreen({
                 tui,
                 router,
@@ -248,7 +258,10 @@ export function installCoordinatorUi(
                     Object.hasOwn(process.env, "NO_COLOR")
                   )
                     return undefined;
-                  return piConversationPresentation(binding.context.ui.theme);
+                  return piConversationPresentation(binding.context.ui.theme, {
+                    outputPad: settings.getOutputPad(),
+                    codeBlockIndent: settings.getCodeBlockIndent(),
+                  });
                 },
                 ascii: process.env.TERM === "dumb" || process.env.PINATA_ASCII === "1",
                 error: (error) => errors(context, error),

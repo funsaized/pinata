@@ -3,7 +3,6 @@ import {
   type Assignment,
   type AssignmentRef,
   type CoreState,
-  type UsageCoverage,
 } from "../contracts/index.ts";
 import { dependentAssignments } from "../core/indexes.ts";
 import { readinessFor, type ReadinessReason } from "../core/readiness.ts";
@@ -22,19 +21,14 @@ export function executionLabel(assignment: Assignment): string {
   const execution = assignment.execution;
   return execution.phase === "ended" ? execution.reason : execution.phase;
 }
-export function usageLabel(usage: UsageCoverage): string {
-  const total = usage.total ?? usage.observedTotal;
-  const known = usage.complete && usage.total !== null;
-  if (!known && !usage.observations.length) return "usage unknown";
-  if (!total) return "usage unknown";
-  return `${known ? "usage" : "usage partial"}: ${total.input} input + ${total.cacheRead} cache read + ${total.cacheWrite} cache write; ${total.output} output; ${total.cost === null ? "cost unknown" : `$${total.cost.toFixed(4)}`}`;
-}
 export function contextLabel(state: CoreState, ref: AssignmentRef): string {
   const usage = state.contextUsage[assignmentKey(ref)];
   if (!usage) return "context unknown";
   return `context ${usage.tokens ?? "?"}/${usage.window ?? "?"} tokens (${usage.percent === null ? "?" : usage.percent.toFixed(1)}%) · ${usage.source} · ${new Date(usage.timestamp).toISOString()}`;
 }
-export function assignmentDetails(state: CoreState, assignment: Assignment): string[] {
+export type DetailGroup = { title: string; fields: [label: string, value: string][] };
+
+export function assignmentDetails(state: CoreState, assignment: Assignment): DetailGroup[] {
   const key = assignmentKey(assignment.ref);
   const worker = state.workers[assignment.ref.worker];
   const result = state.results[key]?.result;
@@ -49,28 +43,74 @@ export function assignmentDetails(state: CoreState, assignment: Assignment): str
   const application = Object.values(state.applications).findLast(
     (operation) => assignmentKey(operation.intent.ref) === key,
   );
-  const status = executionLabel(assignment);
-  const mode = `${worker.backend} · ${worker.workspace} · ${worker.lifetime} · ${worker.access}`;
-  const queue =
-    assignment.execution.phase === "queued" ? ` · waiting: ${readinessFor(state, key)}` : "";
-  return [
-    `${assignment.ref.worker}/${assignment.ref.assignment} · ${status}${queue}`,
-    mode,
-    `cleanup ${assignment.execution.phase === "ended" ? assignment.execution.cleanup : "pending"}`,
-    `delivery: ${worker.workspace === "shared" ? "edits are in the shared workspace" : application?.receipt ? `${application.receipt.status} · ${application.receipt.operationId}` : "isolated worktree; no application receipt"}`,
-    `notification ${delivery?.state ?? "not recorded"}`,
-    ...(sent || received ? [`messages: ${sent} sent · ${received} received`] : []),
-    `reported assessment: ${result?.report ? "retained worker report" : "none"}${result?.reportingError ? ` · ${result.reportingError}` : ""}`,
-    "acceptance: no decision recorded · correctness: unknown",
-    contextLabel(state, assignment.ref),
-    usageLabel(result?.usage ?? assignmentUsage(state, assignment.ref)),
-    ...(worker.parentAssignment
-      ? [
-          `child of ${worker.parentAssignment.worker}/${worker.parentAssignment.assignment} · depth ${worker.depth}`,
-        ]
-      : []),
+  const context = state.contextUsage[key];
+  const usage = result?.usage ?? assignmentUsage(state, assignment.ref);
+  const totals = usage.total ?? usage.observedTotal;
+  const execution: DetailGroup = {
+    title: "Execution",
+    fields: [
+      ["Backend", `${worker.backend} · ${worker.lifetime}`],
+      ["Workspace", `${worker.workspace} · ${worker.access} access`],
+      [
+        "Cleanup",
+        assignment.execution.phase === "ended" ? assignment.execution.cleanup : "pending",
+      ],
+    ],
+  };
+  if (worker.parentAssignment)
+    execution.fields.push([
+      "Parent",
+      `${worker.parentAssignment.worker}/${worker.parentAssignment.assignment} · depth ${worker.depth}`,
+    ]);
+  const handoff: DetailGroup = {
+    title: "Handoff",
+    fields: [
+      [
+        "Delivery",
+        worker.workspace === "shared"
+          ? "Shared checkout"
+          : application?.receipt
+            ? `${application.receipt.status} · ${application.receipt.operationId}`
+            : "Isolated worktree · no application receipt",
+      ],
+      ["Notification", delivery?.state ?? "Not recorded"],
+      ["Assessment", result?.report ? "Retained worker report" : "None"],
+      ["Acceptance", "No decision recorded · correctness unknown"],
+    ],
+  };
+  if (sent || received) handoff.fields.push(["Messages", `${sent} sent · ${received} received`]);
+  if (result?.report) handoff.fields.push(["Report", result.report.digest]);
+  if (result?.worktree) handoff.fields.push(["Worktree", result.worktree.path]);
+  const resources: DetailGroup = { title: "Resources", fields: [] };
+  resources.fields.push([
+    "Context",
+    context
+      ? `${context.tokens ?? "?"} / ${context.window ?? "?"} tokens${context.percent === null ? "" : ` · ${context.percent.toFixed(1)}%`}`
+      : "Unknown",
+  ]);
+  if (context)
+    resources.fields.push([
+      "Measured",
+      `${context.source} · ${new Date(context.timestamp).toISOString()}`,
+    ]);
+  resources.fields.push([
+    "Usage",
+    totals
+      ? `${usage.complete && usage.total ? "" : "Partial · "}${totals.input} input · ${totals.output} output`
+      : "Unknown",
+  ]);
+  if (totals)
+    resources.fields.push(
+      ["Cache", `${totals.cacheRead} read · ${totals.cacheWrite} written`],
+      ["Cost", totals.cost === null ? "Unknown" : `$${totals.cost.toFixed(4)}`],
+    );
+  const groups = [execution, handoff, resources];
+  const errors = [
+    ...(result?.reportingError ? [result.reportingError] : []),
     ...(result?.finalizationErrors ?? []),
   ];
+  if (errors.length) groups.push({ title: "Errors", fields: errors.map((error) => ["", error]) });
+  return groups;
 }
 
 export function isFinished(assignment: Assignment): boolean {

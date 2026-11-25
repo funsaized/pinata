@@ -1,34 +1,30 @@
-# Piñata
+<a id="piñata"></a>
 
-**Subagents for Pi, with conversations you can steer and work you can recover.**
+# Define your own subagents. Watch them work together in Pi.
 
-[![npm](https://img.shields.io/npm/v/pi-pinata)](https://www.npmjs.com/package/pi-pinata)
-[![CI](https://github.com/funsaized/pinata/actions/workflows/ci.yml/badge.svg)](https://github.com/funsaized/pinata/actions/workflows/ci.yml)
-[![MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+Give a lead agent a task, follow the specialists it brings in, and open any branch to see the work behind the result.
 
-Piñata turns a conversation in [Pi](https://pi.dev) into orchestrated, autonomous sub-agents. Send a scout
-to trace an unfamiliar API, put builders on independent changes, and bring a
-reviewer into the conversation when the diff is ready. Open any worker's transcript,
-ask a follow-up, or redirect it while it works. You keep the context and decide
-what to test, accept and ship.
+<picture>
+  <source media="(prefers-reduced-motion: reduce)" srcset="media/pinata-fleet.png">
+  <img src="media/pinata-navigation.gif" alt="Pi in a Foot terminal. In the fleet tree, relay-lead branches into event-parser and incident-stats. The parser keeps valid events around a malformed line. The report shows 4 events and 1 failure.">
+</picture>
 
-Workers share your checkout by default, so their edits are available immediately.
-For an experiment that needs its own patch, choose a Git worktree and apply the
-result explicitly. The same runtime supports Pi tools, extension events and embedded hosts. Saved
-conversations remain available after the host closes.
+[Watch the full build (MP4)](media/pinata-demo.mp4)
 
 ```sh
 pi install npm:pi-pinata
 ```
 
+[Define your first agent](#define-your-first-agent) · [Recording and text walkthrough](media/README.md)
+
+[![npm](https://img.shields.io/npm/v/pi-pinata)](https://www.npmjs.com/package/pi-pinata)
+[![CI](https://github.com/funsaized/pinata/actions/workflows/ci.yml/badge.svg)](https://github.com/funsaized/pinata/actions/workflows/ci.yml)
+[![MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
 [Install](#install) · [Quick start](#quick-start) · [Fleet](#fleet-and-conversations) ·
 [Workflows](#workflows) · [Agents](#custom-agents) · [Configuration](#configuration) ·
 [Tools](#tools) · [CLI](#cli-reference) · [API](#package-api) ·
 [Implementation](#architecture-and-implementation-index) · [Development](#development)
-
-![Piñata fleet with project filters, full-row selection and a prompt and last-message inspector. Scripted demonstration.](media/pinata-fleet.png)
-
-[Watch the fleet demo (MP4)](media/pinata-demo.mp4) · [Recording details](media/README.md)
 
 ## Why Piñata
 
@@ -109,9 +105,11 @@ after package removal.
 ## Quick start
 
 To try the fleet offline, run `pinata demo` in a terminal. From a source checkout,
-use `node bin/pinata.mjs demo`. The reviewer is waiting for a scout. Press `b`,
-send the scout a correction, then press Escape to see the reviewer start. Send the
-reviewer a message to finish. Press `h` in the fleet to inspect both results.
+use `node bin/pinata.mjs demo`. The selected reviewer is waiting for the scout.
+Press Right, then Enter to open the scout’s conversation. Ask the scout to trace
+the HTTP parser. Press Escape to return to the reviewer’s dependencies, then
+press Left and Enter to open the reviewer. Send a message to finish. Press `h`
+in the fleet to inspect both results.
 The demo uses a temporary workspace and a scripted backend with zero provider calls.
 
 Open a project in Pi and type:
@@ -170,29 +168,43 @@ automatic returns until the next user turn. Closing the session stops wake-ups;
 reopening it restores retained watches. These continuations use the shared engine's
 settled results. Embedded hosts own their notification policy.
 
-![Navigate a scripted project fleet: inspect prompts and messages, filter queued and finished work, and open a worker conversation.](media/pinata-navigation.gif)
-
 The coordinator shows a compact Agents tree while work is active or queued. Real
 children branch beneath their parent; dependencies appear as `after:` references.
 Finished work disappears from the widget. `/pinata` opens the full fleet.
 
 The fleet highlights the selected row and shows its last assistant message and
-prompt in an inspector. Wide terminals place the inspector on the right; smaller
-terminals stack it directly below the list. Tab moves focus between panes, page
-keys scroll the focused pane, and the wheel scrolls the pane under the pointer.
-`d` expands the exact prompt, message and execution details. Cleanup problems stay
-visible when details are collapsed. Enter opens the full conversation.
+prompt in a details pane. Wide terminals place it on the right. Smaller terminals
+stack it below the list. Right focuses details when the row has no dependencies
+or folded branch to open. Press `d` to expand and focus details on any assignment.
+Use Up and Down to scroll, and Left to return to the list. Press `d` again to
+collapse details. Cleanup problems stay visible in the preview. Page keys scroll
+the focused pane, and the wheel scrolls the pane under the pointer. Enter on an
+assignment opens its conversation.
 
-Press `b` or click **browse dependencies** to visit a prerequisite or a queued assignment that depends on this one.
-A single link opens its conversation directly. For multiple links, press a numbered
-key or use the arrows and Enter. Escape returns to the original fleet selection
-if it still matches your filter. When a settlement makes a dependent ready, the
-inspector briefly shows a candy moving between their names. ASCII and reduced
-motion use a stationary arrow.
+The selected assignment groups its links under **Prerequisites** and
+**Dependents**. A group starts folded when every assignment completed with
+confirmed cleanup. Open a group to see each assignment’s status. A Braille
+spinner marks running work, an hourglass marks queued work, and a checkmark
+marks completed work. Failures and cleanup problems carry text labels.
+Reduced motion uses a static running icon. ASCII mode uses text glyphs.
 
-Finished assignments show their result summary, report reference and handoff
-information. Enter opens the transcript, including any submitted report. For a
-worktree, `p` opens a patch preview in the owning host. It compares current files
+Use Up and Down to move between assignments. Press Right to enter dependencies.
+If there’s one group, this opens it and moves to its first link. Inside
+dependencies, Up and Down browse links and group headings. Left returns directly
+to the originating assignment.
+
+Enter toggles a group heading or opens a linked conversation. Clicking a link
+also opens its conversation. Escape returns to the originating fleet row with
+the scroll position and open groups restored. To show a linked assignment in
+the fleet, press Right on its link. This can reveal assignments hidden by a
+filter, search or collapsed branch. Backspace retraces those jumps.
+When a settlement makes a dependent ready, the inspector briefly shows a candy
+moving between their names. ASCII and reduced motion use a stationary arrow.
+
+Finished assignments show their result summary. Expand the inspector for the report
+reference and handoff details. Enter opens the transcript, including any submitted
+report. For a worktree, `p` opens a patch preview in the owning host. It compares
+current files
 with the frozen base, including eligible untracked files, and displays up to
 32 KiB. Later edits can change the preview. A saved viewer shows the checkout and
 Git inspection commands. Older assignments with a retained snapshot show their
@@ -204,9 +216,9 @@ Attention includes unresolved cleanup and failed or interrupted assignments that
 are latest for their worker or still have queued dependents. Finished means execution ended
 with confirmed cleanup, not necessarily success or acceptance. Counts apply after
 search and before branch collapse; parents shown only for context do not add to
-counts. `f` cycles filters. `h` selects Finished, including earlier assignments;
-`w` selects Queued. Press the same shortcut again to restore the previous filter
-and selection. Dependencies do not create parent/child branches.
+counts. Tab advances to the next status. `h` selects Finished, including earlier
+assignments, and `w` selects Queued. Press `h` or `w` again to restore the previous
+filter and selection. Dependencies do not create parent/child branches.
 
 Search with `/`, apply with Enter, cancel with Escape, or clear with Ctrl+U.
 Cancelling restores the previous query and selection. The Observed column measures
@@ -225,9 +237,13 @@ evidence is read-only and does not acquire ownership or start workers. Each run
 keeps its selection, filters and drafts. Fleet controls target only the selected run,
 including its hidden assignments.
 
-Fleet and conversation screens fill the terminal. Pi renders user cards, Markdown,
-syntax highlighting and tool output using its theme. Folded completion cards show
-the worker, outcome, a short summary and the conversation command. Expand a card
+Fleet and conversation screens fill the terminal. Worker conversations in Pi use
+the host theme, Markdown spacing, thinking visibility, tool expansion state and
+keybindings when the fleet opens. Piñata key overrides take precedence, and
+conversation toggles apply within the fleet. Folded tool output summarizes
+dependency results and keeps the retained payload available when expanded.
+Folded completion cards show the worker, outcome, a short summary and the
+conversation command. Expand a card
 for its retained evidence, including small typed reports, worktree details and
 cleanup status when available.
 
@@ -235,19 +251,19 @@ cleanup status when available.
 | ------------------------------------------------- | ----------------------------------------------------------- |
 | Shift+Down                                        | Open the fleet, including from a worker conversation.       |
 | Shift+Up or Escape                                | Return to the parent screen.                                |
-| Up/Down, Enter in the fleet                       | Select an assignment, then open it.                         |
+| Up/Down, Enter in the fleet                       | Browse assignments or links, open chats, toggle groups.     |
 | Shift+Left/Right                                  | Select the previous/next worker.                            |
 | Alt+Left/Right                                    | Browse earlier/later assignments for that worker.           |
-| Left/Right in the fleet                           | Collapse/expand a child branch.                             |
-| Mouse click/double click                          | Select/open a fleet row.                                    |
+| Left/Right in the fleet                           | Move between the list, branches, links and details.         |
+| Backspace in the fleet                            | Return after showing a link in the fleet.                   |
+| Mouse click/double click                          | Toggle groups, open links or select/open assignments.       |
 | Mouse wheel, PageUp/PageDown, Alt+PageUp/PageDown | Scroll the focused pane; wheel follows pointer.             |
 | `/` in the fleet                                  | Search workers/tasks; Enter keeps the filter.               |
-| `f` in the fleet                                  | Cycle the five status filters.                              |
+| Tab in the fleet                                  | Show the next work status.                                  |
 | `h` in the fleet                                  | Select Finished; press again to restore the previous view.  |
 | `w` in the fleet                                  | Select Queued; press again to restore the previous view.    |
 | `a` in the fleet                                  | Show stop actions for an assignment, agent or entire fleet. |
-| `d` in the fleet                                  | Expand details for the selected assignment.                 |
-| Tab in the fleet                                  | Switch list/inspector focus.                                |
+| `d` in the fleet                                  | Expand and focus details, or collapse them.                 |
 | `r` in the fleet                                  | Browse runs in the current project.                         |
 | Tab in a conversation                             | Switch composer/transcript focus.                           |
 | Ctrl+O in a conversation                          | Expand/collapse tool output.                                |
@@ -582,6 +598,8 @@ The reviewer requests write access because shell execution requires it. Its
 instructions leave source files and commits untouched; this is a behavioral
 instruction, and shell access can mutate files. The coordinator chooses checks and
 decides acceptance.
+
+### Define your first agent
 
 Save a specialist as `.pi/pinata/agents/api-scout.md`:
 

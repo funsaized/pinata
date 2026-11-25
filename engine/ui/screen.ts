@@ -201,19 +201,6 @@ export class PinataScreen implements Component, Focusable {
       this.requestRender();
       return;
     }
-    if (this.router.dependencies !== undefined) {
-      const menu = this.router.dependencies;
-      if (matchesKey(data, "escape") || data === "b") this.router.dependencies = undefined;
-      else if (matchesKey(data, "up")) menu.index = Math.max(0, menu.index - 1);
-      else if (matchesKey(data, "down"))
-        menu.index = Math.min(menu.links.length - 1, menu.index + 1);
-      else if (/^[1-9]$/.test(data) && Number(data) <= menu.links.length) {
-        menu.index = Number(data) - 1;
-        this.router.openDependency();
-      } else if (matchesKey(data, "enter")) this.router.openDependency();
-      this.requestRender();
-      return;
-    }
     if (this.router.actions) {
       if (matchesKey(data, "escape")) this.router.actions = false;
       else if (matchesKey(data, "up"))
@@ -284,11 +271,6 @@ export class PinataScreen implements Component, Focusable {
       this.requestRender();
       return;
     }
-    if (this.router.screen === "fleet" && matchesKey(data, "tab")) {
-      if (this.fleetRegions.inspector) this.router.inspectorFocus = !this.router.inspectorFocus;
-      this.requestRender();
-      return;
-    }
     const composing =
       this.router.screen === "conversation" &&
       Boolean(this.router.selected) &&
@@ -315,7 +297,7 @@ export class PinataScreen implements Component, Focusable {
       this.router.setDraft(this.syncedDraft);
       return;
     }
-    if (!composing && data === "a") {
+    if (!composing && !this.router.focusedDependency && data === "a") {
       this.router.actions = true;
       this.requestRender();
       return;
@@ -342,10 +324,12 @@ export class PinataScreen implements Component, Focusable {
       }
       return;
     }
-    if (matchesKey(data, this.keys.stop)) return this.run(() => this.router.control("cancel"));
+    if (!this.router.focusedDependency && matchesKey(data, this.keys.stop))
+      return this.run(() => this.router.control("cancel"));
     if (matchesKey(data, this.keys.background))
       return this.run(() => this.router.control("background"));
-    if (matchesKey(data, this.keys.recover)) return this.run(() => this.router.control("recover"));
+    if (!this.router.focusedDependency && matchesKey(data, this.keys.recover))
+      return this.run(() => this.router.control("recover"));
     if (matchesKey(data, this.keys.refresh)) return this.run(() => this.router.refresh());
     if (
       matchesKey(data, "pageUp") ||
@@ -364,8 +348,9 @@ export class PinataScreen implements Component, Focusable {
       return;
     }
     if (this.router.screen === "fleet") {
-      if (data === "b") return this.router.browseDependencies();
-      if (data === "p" && this.router.selected) {
+      if (matchesKey(data, "tab")) return this.router.cycleFilter();
+      if (matchesKey(data, "backspace")) return this.router.returnToDependencyOrigin();
+      if (data === "p" && !this.router.focusedDependency && this.router.selected) {
         const ref = this.router.selected;
         if (
           this.router.state.workers[ref.worker].workspace === "worktree" &&
@@ -388,11 +373,13 @@ export class PinataScreen implements Component, Focusable {
       if (data === "w") return this.router.toggleQueued();
       if (data === "d") {
         this.router.details = !this.router.details;
+        this.router.inspectorFocus = this.router.details && this.router.inspectorVisible;
         this.router.inspectorScroll = 0;
         this.requestRender();
         return;
       }
       if (data === "/") {
+        this.router.clearDependencyNavigation();
         this.router.searchBeforeEdit = this.router.search;
         this.router.searchSelected = this.router.selected;
         this.router.searching = true;
@@ -403,20 +390,34 @@ export class PinataScreen implements Component, Focusable {
         this.router.toggleFilter("finished");
         return;
       }
-      if (data === "f") {
-        this.router.cycleFilter();
+      if (this.router.inspectorFocus) {
+        if (matchesKey(data, "left")) {
+          this.router.inspectorFocus = false;
+          this.requestRender();
+          return;
+        }
+        if (matchesKey(data, "right")) return;
+        if (matchesKey(data, "up")) return this.router.scroll(-1);
+        if (matchesKey(data, "down")) return this.router.scroll(1);
+      }
+      if (matchesKey(data, "left")) return this.router.moveFleetBranch("left");
+      if (matchesKey(data, "right")) {
+        if (
+          this.router.selectedBranchCollapsed ||
+          this.router.hasDependencies ||
+          !this.router.inspectorVisible
+        )
+          return this.router.moveFleetBranch("right");
+        this.router.inspectorFocus = true;
+        this.requestRender();
         return;
       }
-      if (this.router.inspectorFocus && (matchesKey(data, "up") || matchesKey(data, "down"))) {
-        this.router.scroll(matchesKey(data, "up") ? -1 : 1);
-        return;
+      if (matchesKey(data, "up")) this.router.moveFleetSelection(-1);
+      else if (matchesKey(data, "down")) this.router.moveFleetSelection(1);
+      else if (matchesKey(data, "enter") && this.router.selected) {
+        if (this.router.focusedDependency) this.router.activateDependency();
+        else this.router.navigate("conversation");
       }
-      if (matchesKey(data, "left")) return this.router.collapse(true);
-      if (matchesKey(data, "right")) return this.router.collapse(false);
-      if (matchesKey(data, "up")) this.moveRow(-1);
-      else if (matchesKey(data, "down")) this.moveRow(1);
-      else if (matchesKey(data, "enter") && this.router.selected)
-        this.router.navigate("conversation");
       return;
     }
     if (this.router.screen === "conversation" && this.router.definition && !this.router.selected) {
@@ -427,7 +428,7 @@ export class PinataScreen implements Component, Focusable {
     if (this.router.screen !== "conversation" || !this.router.selected) return;
     if (this.router.transcriptFocus) {
       if (data === "d") {
-        this.router.details = !this.router.details;
+        this.router.transcriptDetails = !this.router.transcriptDetails;
         this.requestRender();
       }
       if (data === "m") this.run(() => this.router.loadConversation(true));
@@ -458,14 +459,6 @@ export class PinataScreen implements Component, Focusable {
         );
       return { handled: true, render: true };
     }
-    if (this.router.dependencies) {
-      const choice = this.fleetRegions.dependencyChoices?.get(event.y);
-      if (event.type === "click" && choice !== undefined) {
-        this.router.dependencies.index = choice;
-        this.router.openDependency();
-      }
-      return { handled: true, render: true };
-    }
     if (this.router.help || this.router.actions || this.router.searching)
       return { handled: true, render: false };
     const inside = (pane: Pane | undefined) =>
@@ -477,8 +470,11 @@ export class PinataScreen implements Component, Focusable {
         event.y < pane.y + pane.height,
       );
     if (this.router.screen === "fleet" && event.type === "click") {
-      if (inside(this.fleetRegions.dependencyLink)) {
-        this.router.browseDependencies();
+      const dependency =
+        inside(this.fleetRegions.list) && this.fleetRegions.dependencyRows?.get(event.y);
+      if (dependency) {
+        this.router.inspectorFocus = false;
+        this.router.activateDependency(dependency.key);
         return { handled: true, focus: true, render: true };
       }
       const filter = this.fleetRegions.filters?.find(inside);
@@ -516,14 +512,6 @@ export class PinataScreen implements Component, Focusable {
         height: event.height - this.editorTop,
       });
     return undefined;
-  }
-  private moveRow(amount: number): void {
-    const rows = this.router.fleetAssignments();
-    const index = rows.findIndex(
-      (row) =>
-        this.router.selected && assignmentKey(row.ref) === assignmentKey(this.router.selected),
-    );
-    this.router.selectRow(Math.max(0, Math.min(rows.length - 1, index + amount)));
   }
   private async openRunPicker(): Promise<void> {
     if (!this.options.runs) return;

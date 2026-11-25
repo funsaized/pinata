@@ -9,15 +9,15 @@ import {
   type FleetFilter,
 } from "./projection.ts";
 import { agentAccent, type Paint } from "./palette.ts";
-import type { ScreenRouter } from "./router.ts";
-import { displayText, fit, lines, padded } from "./text.ts";
+import type { DependencyRow, ScreenRouter } from "./router.ts";
+import { detailRows, displayText, fit, lines, padded } from "./text.ts";
 import { activityIndicator } from "./tree.ts";
+import { conversationMarkdown, type ConversationPresentation } from "./conversation.ts";
 
 export type Pane = { x: number; y: number; width: number; height: number };
 export type FleetRegions = {
   list?: Pane;
-  dependencyLink?: Pane;
-  dependencyChoices?: Map<number, number>;
+  dependencyRows?: Map<number, DependencyRow>;
   inspector?: Pane;
   filters?: (Pane & { filter: FleetFilter })[];
 };
@@ -26,6 +26,7 @@ type FleetOptions = {
   height: number;
   paint: Paint;
   ascii?: boolean;
+  presentation?: ConversationPresentation;
   hitRows?: Map<number, AssignmentRef>;
   fleetRegions?: FleetRegions;
 };
@@ -104,10 +105,9 @@ function duration(elapsed: number | undefined, ascii = false): string {
   return elapsed < 60_000 ? `${(elapsed / 1000).toFixed(1)}s` : `${(elapsed / 60_000).toFixed(1)}m`;
 }
 
-function excerpt(text: string, width: number, limit: number): string[] {
-  const wrapped = lines(text, width);
-  if (wrapped.length <= limit) return wrapped;
-  return [...wrapped.slice(0, limit - 1), fit(wrapped[limit - 1], Math.max(1, width - 1)) + "…"];
+function excerpt(rows: string[], width: number, limit: number, paint: Paint): string[] {
+  if (rows.length <= limit) return rows;
+  return [...rows.slice(0, limit), paint("muted", fit("… d to expand", width))];
 }
 
 function inspector(router: ScreenRouter, pane: Pane, options: FleetOptions): string[] {
@@ -115,7 +115,7 @@ function inspector(router: ScreenRouter, pane: Pane, options: FleetOptions): str
   if (!ref) return [];
   const assignment = router.state.assignments[assignmentKey(ref)];
   if (!assignment) return [];
-  const { paint, ascii } = options;
+  const { paint, ascii, presentation } = options;
   const { width, height } = pane;
   const worker = router.state.workers[ref.worker];
   const color = worker.color ?? agentAccent(worker.agent);
@@ -134,50 +134,49 @@ function inspector(router: ScreenRouter, pane: Pane, options: FleetOptions): str
       preview = "Preview incomplete. Enter opens the conversation.";
     else preview = "No retained message available yet.";
   }
-  const sectionLimit = Math.max(1, Math.floor((height - 9) / 2));
-  const content = [
+  const sectionLimit = Math.max(1, Math.floor((height - 8) / 2));
+  const markdown = (value: string) => conversationMarkdown(value, width, paint, presentation);
+  const header = [
     paint(
       router.inspectorFocus ? "focus" : "strong",
       paint(color, padded(ellipsis(`${ref.worker}/${ref.assignment}`, width), width)),
     ),
-    paint(color, ellipsis(worker.agent, width)),
     fit(
       paint(statusColor(assignment), status(assignment)) +
         paint("muted", ` · observed ${duration(router.observedElapsed(ref), ascii)}`),
       width,
     ),
+    paint(
+      "muted",
+      ellipsis(
+        [worker.agent, worker.model?.id, worker.model?.thinking].filter(Boolean).join(" · "),
+        width,
+      ),
+    ),
   ];
+  const content: string[] = [];
   const handoff = router.handoff(Boolean(ascii));
   if (handoff) content.push(paint("accent.pink", fit(handoff, width)));
   if (assignment.execution.phase === "queued")
     content.push(
-      ...excerpt(waiting(router, assignment), width, router.details ? Infinity : 2).map((line) =>
-        paint("text", line),
+      ...excerpt(
+        lines(waiting(router, assignment), width),
+        width,
+        router.details ? Infinity : 2,
+        paint,
       ),
     );
   if (assignment.execution.phase === "ended" && assignment.execution.cleanup === "unconfirmed")
     content.push(...lines("Cleanup unconfirmed", width).map((line) => paint("error", line)));
   const result = router.state.results[assignmentKey(ref)]?.result;
   if (result && assignment.execution.phase === "ended") {
-    const application = Object.values(router.state.applications).findLast(
-      (op) => assignmentKey(op.intent.ref) === assignmentKey(ref),
-    );
     content.push(
       "",
       paint("strong", result.report ? "Worker report" : "Result"),
-      ...excerpt(result.summary, width, router.details ? Infinity : 4),
+      ...excerpt(markdown(result.summary), width, router.details ? Infinity : 4, paint),
     );
-    if (result.reportingError) content.push(...lines(result.reportingError, width));
-    if (result.report) content.push(...lines("Report artifact " + result.report.digest, width));
-    if (result.worktree) content.push(...lines("Worktree " + result.worktree.path, width));
-    content.push(
-      ...lines(
-        worker.workspace === "worktree"
-          ? "Application · " + (application?.status ?? "no recorded application")
-          : "Shared checkout",
-        width,
-      ),
-    );
+    if (result.reportingError && !router.details)
+      content.push(...lines(result.reportingError, width).map((line) => paint("error", line)));
     if (
       assignment.execution.reason === "interrupted" ||
       assignment.execution.cleanup === "unconfirmed"
@@ -202,94 +201,48 @@ function inspector(router: ScreenRouter, pane: Pane, options: FleetOptions): str
   content.push("", paint("strong", paint(color, "Last message")));
   if (!router.connectionAvailable || (view.error && message))
     content.push(paint("warning", "Retained preview · connection unavailable"));
+  const previewRows = message
+    ? markdown(preview)
+    : lines(preview, width).map((line) => paint("muted", line));
   content.push(
-    ...excerpt(preview, width, router.details ? Infinity : Math.min(4, sectionLimit)).map((line) =>
-      paint(message ? "text" : "muted", line),
+    ...excerpt(previewRows, width, router.details ? Infinity : Math.min(4, sectionLimit), paint),
+    "",
+    paint("strong", paint(color, "Prompt")),
+    ...excerpt(
+      lines(assignment.task, width).map((line) => paint("text", line)),
+      width,
+      router.details ? Infinity : Math.min(8, sectionLimit),
+      paint,
     ),
   );
-  content.push("", paint("strong", paint(color, "Prompt")));
-  content.push(
-    ...excerpt(assignment.task, width, router.details ? Infinity : Math.min(8, sectionLimit)).map(
-      (line) => paint("text", line),
-    ),
-  );
-  let dependencyRow: number | undefined;
-  const links = router.dependencyLinks();
-  if (links.length) {
-    const downstream = links.filter((link) => link.direction === "downstream");
-    if (downstream.length)
-      content.push(
-        ...excerpt(
-          downstream
-            .map(({ ref, label }) => label + " " + ref.worker + "/" + ref.assignment)
-            .join(" · "),
-          width,
-          2,
-        ),
-      );
-    dependencyRow = content.length;
-    content.push(paint("accent.cyan", "b browse dependencies"));
-  }
-  content.push("", paint("muted", "Model"));
-  content.push(
-    ...lines(worker.model ? `${worker.model.id} · ${worker.model.thinking}` : "Unknown", width).map(
-      (line) => paint("text", line),
-    ),
-  );
-  if (router.details) {
-    content.push("", paint("strong", paint(color, "Execution details")));
-    if (assignment.after.length)
-      content.push(
-        ...lines(
-          "After: " +
-            assignment.after
-              .map((dependency) => `${dependency.worker}/${dependency.assignment}`)
-              .join(", "),
-          width,
-        ).map((line) => paint("muted", line)),
-      );
+  if (router.details)
     content.push(
-      ...assignmentDetails(router.state, assignment).flatMap((line) =>
-        lines(line, width).map((part) => paint("muted", part)),
+      "",
+      ...detailRows(assignmentDetails(router.state, assignment), width, paint),
+      ...lines("Observed time starts when this viewer sees execution begin.", width).map((line) =>
+        paint("muted", line),
       ),
     );
-    content.push(
-      ...lines(
-        "Observed time starts when this viewer witnesses execution. A dash means the start is unknown.",
-        width,
-      ).map((line) => paint("muted", line)),
-    );
-  } else content.push("", paint("muted", "d expand prompt and details"));
-  router.inspectorPageSize = Math.max(1, height - 1);
+  router.inspectorPageSize = Math.max(1, height - header.length - 1);
   router.inspectorMaxScroll = Math.max(0, content.length - router.inspectorPageSize);
   router.inspectorScroll = Math.min(router.inspectorScroll, router.inspectorMaxScroll);
-  if (options.fleetRegions && dependencyRow !== undefined) {
-    const row = dependencyRow - router.inspectorScroll;
-    if (row >= 0 && row < router.inspectorPageSize)
-      options.fleetRegions.dependencyLink = {
-        x: pane.x,
-        y: pane.y + row,
-        width: Math.min(width, 21),
-        height: 1,
-      };
-  }
   const visibleLines = content.slice(
     router.inspectorScroll,
     router.inspectorScroll + router.inspectorPageSize,
   );
   if (router.inspectorMaxScroll > 0) {
-    while (visibleLines.length < height - 1) visibleLines.push("");
+    while (visibleLines.length < router.inspectorPageSize) visibleLines.push("");
     visibleLines.push(
       paint(
         "muted",
         fit(
-          `Tab ${router.inspectorFocus ? "list" : "inspector"} · ${router.inspectorScroll + 1}/${content.length}`,
+          `${router.inspectorScroll + 1}/${content.length} · ${router.inspectorFocus ? "↑↓ scroll · ← list" : "Wheel scroll"}`,
           width,
         ),
       ),
     );
   }
-  return visibleLines.slice(0, height);
+  return [...header, ...visibleLines].slice(0, height);
 }
 
 function filterStrip(router: ScreenRouter, options: FleetOptions, row: number): string {
@@ -333,15 +286,93 @@ function filterStrip(router: ScreenRouter, options: FleetOptions, row: number): 
         text,
       ) + " ";
   }
-  if (width < 80) output += paint("muted", " f filter");
+  const remaining = width - visibleWidth(output);
+  const hint = remaining >= 16 ? " Tab next status" : " Tab";
+  if (hint.length <= remaining) output += paint("muted", hint);
   return fit(output, width);
 }
 
+// Pi's default Braille loader frames, advanced by the fleet's shared redraw timer.
+const workingFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+function dependencyStatus(
+  assignment: Assignment,
+  options: { ascii: boolean; animate: boolean; now: number },
+): { icon: string; label?: string } {
+  const { ascii, animate, now } = options;
+  const { execution } = assignment;
+  if (execution.phase === "queued") return { icon: ascii ? "o" : "⧖" };
+  if (execution.phase !== "ended") {
+    const icon = ascii
+      ? "~"
+      : animate
+        ? workingFrames[Math.floor(now / 250) % workingFrames.length]
+        : "◐";
+    return { icon, label: execution.phase === "running" ? undefined : status(assignment) };
+  }
+  if (execution.cleanup === "unconfirmed") return { icon: "!", label: "Cleanup unconfirmed" };
+  switch (execution.reason) {
+    case "completed":
+      return { icon: ascii ? "+" : "✓" };
+    case "failed":
+      return { icon: ascii ? "x" : "×", label: "Failed" };
+    case "cancelled":
+      return { icon: ascii ? "-" : "−", label: "Cancelled" };
+    case "interrupted":
+      return { icon: "!", label: "Interrupted" };
+  }
+}
+function renderDependencyRow(
+  row: DependencyRow,
+  branch: string,
+  options: Pick<FleetOptions, "paint" | "ascii" | "width"> & {
+    selected: boolean;
+    animate: boolean;
+    now: number;
+  },
+): string {
+  const { paint, width, selected, ascii, animate, now } = options;
+  const prefix = `${selected ? ">" : " "} ${branch}`;
+  if (row.kind === "group") {
+    const disclosure = row.expanded ? (ascii ? "-" : "▾") : ascii ? "+" : "▸";
+    const title = row.group === "prerequisites" ? "Prerequisites" : "Dependents";
+    const complete = row.completed === row.total ? row.total : `${row.completed}/${row.total}`;
+    const summary = `   ${complete} complete`;
+    const attention = row.attention
+      ? ` · ${row.attention} ${row.attention === 1 ? "needs" : "need"} attention`
+      : "";
+    const heading = `${disclosure} ${title}`;
+    return selected
+      ? paint("focus", padded(prefix + heading + summary + attention, width))
+      : fit(
+          paint("border", prefix) +
+            paint("strong", heading) +
+            paint("muted", summary) +
+            paint("warning", attention),
+          width,
+        );
+  }
+  const { ref } = row.assignment;
+  const { icon, label } = dependencyStatus(row.assignment, { ascii: Boolean(ascii), animate, now });
+  const identity = `  ${displayText(ref.worker)}/${ref.assignment}`;
+  const suffix = label ? `   ${label}` : "";
+  const color = statusColor(row.assignment);
+  return selected
+    ? paint("focus", padded(prefix + icon + identity + suffix, width))
+    : fit(
+        paint("border", prefix) +
+          paint(color, icon) +
+          paint("text", identity) +
+          paint(color, suffix),
+        width,
+      );
+}
 function list(
   router: ScreenRouter,
   pane: Pane,
   options: FleetOptions,
   nodes: ReturnType<ScreenRouter["fleetNodes"]>,
+  dependencies: DependencyRow[],
 ): string[] {
   const { paint, ascii } = options;
   const { width, height } = pane;
@@ -370,25 +401,61 @@ function list(
     (showTime ? padded("  Observed", timeWidth) : "") +
     (infoWidth >= 12 ? "   Task / waiting" : "");
   const output = [fit(paint("muted", heading), width)];
-  const available = Math.max(1, height - 1 - (nodes.length > height - 1 ? 1 : 0));
+  const selection = router.selected && assignmentKey(router.selected);
+  const anchor = nodes.findIndex((node) => assignmentKey(node.assignment.ref) === selection);
+  const dependencyCount = anchor < 0 ? 0 : dependencies.length;
+  const rowCount = nodes.length + dependencyCount;
+  const available = Math.max(1, height - 1 - (rowCount > height - 1 ? 1 : 0));
   const resized = router.fleetPageSize !== available;
   router.fleetPageSize = available;
-  let first = Math.min(router.fleetScroll, Math.max(0, nodes.length - available));
-  const selection = router.selected && assignmentKey(router.selected);
-  if (selection !== router.fleetRenderedSelection || resized) {
-    const index = nodes.findIndex((node) => assignmentKey(node.assignment.ref) === selection);
+  let first = Math.min(router.fleetScroll, Math.max(0, rowCount - available));
+  const focusedRow = dependencies.findIndex((row) => row.key === router.focusedDependency);
+  const index = anchor < 0 ? -1 : anchor + focusedRow + 1;
+  const focusKey = selection && `${selection}:${router.focusedDependency ?? ""}:${index}`;
+  if (focusKey !== router.fleetRenderedSelection || resized) {
     if (index >= 0 && index < first) first = index;
     if (index >= first + available) first = index - available + 1;
-    router.fleetRenderedSelection = selection;
+    router.fleetRenderedSelection = focusKey;
   }
   router.fleetScroll = first;
-  const visible = nodes.slice(first, first + available);
-  const activeCount = visible.filter((node) =>
-    matchesFleetFilter(router.state, node.assignment, "working"),
+  const visible = Array.from({ length: Math.min(available, rowCount - first) }, (_, offset) => {
+    const index = first + offset;
+    const dependencyIndex = index - anchor - 1;
+    if (dependencyIndex >= 0 && dependencyIndex < dependencyCount)
+      return { dependency: dependencies[dependencyIndex], dependencyIndex };
+    return { node: nodes[index > anchor ? index - dependencyCount : index] };
+  });
+  const activeCount = visible.filter(
+    ({ node }) => node && matchesFleetFilter(router.state, node.assignment, "working"),
   ).length;
   const now = performance.now();
   let activeRow = 0;
-  for (const node of visible) {
+  for (const { node, dependency, dependencyIndex } of visible) {
+    if (dependency && dependencyIndex !== undefined) {
+      const parent = nodes[anchor];
+      const hasVisibleChildren = nodes[anchor + 1]?.prefix.length > parent.prefix.length;
+      const hasNextBranch = hasVisibleChildren || dependencies.at(-1)?.group !== dependency.group;
+      let indent = parent.continuation.slice(3);
+      let last = !hasNextBranch;
+      if (dependency.kind === "link") {
+        indent += hasNextBranch ? (ascii ? "|  " : "│  ") : "   ";
+        last = dependencies[dependencyIndex + 1]?.group !== dependency.group;
+      }
+      const connector = last ? (ascii ? "`- " : "└─ ") : ascii ? "|- " : "├─ ";
+      options.fleetRegions?.dependencyRows?.set(pane.y + output.length, dependency);
+      output.push(
+        renderDependencyRow(dependency, indent + connector, {
+          width,
+          paint,
+          ascii,
+          selected: dependencyIndex === focusedRow,
+          animate: router.motion === "full",
+          now,
+        }),
+      );
+      continue;
+    }
+    if (!node) continue;
     const assignment = node.assignment;
     const worker = router.state.workers[assignment.ref.worker];
     const color = worker.color ?? agentAccent(worker.agent);
@@ -404,12 +471,15 @@ function list(
           ? "  +  "
           : "  !  ";
     const branch = node.prefix.slice(3);
-    const disclosure = node.hasChildren
-      ? router.collapsed.has(assignmentKey(assignment.ref))
-        ? "+ "
-        : "- "
-      : "";
-    const identityText = `${selected ? ">" : " "} ${branch}${disclosure}${marker} ${displayText(worker.id)}/${assignment.ref.assignment}`;
+    const disclosure =
+      node.hasChildren ||
+      (selected &&
+        (dependencyCount > 0 || (router.selectedBranchCollapsed && router.hasDependencies)))
+        ? router.collapsed.has(assignmentKey(assignment.ref))
+          ? "+ "
+          : "- "
+        : "";
+    const identityText = `${selected && focusedRow < 0 ? ">" : " "} ${branch}${disclosure}${marker} ${displayText(worker.id)}/${assignment.ref.assignment}`;
     const identity =
       visibleWidth(identityText) > identityWidth
         ? fit(identityText, identityWidth - 1) + "…"
@@ -424,7 +494,10 @@ function list(
       infoWidth >= 12 ? "   " + ellipsis(context, infoWidth - 1) : "",
     ];
     const text = selected
-      ? paint("focus", paint(color, displayText(padded(fields.join(""), width))))
+      ? paint(
+          focusedRow < 0 && !router.inspectorFocus ? "focus" : "strong",
+          padded(fields.join(""), width),
+        )
       : paint(color, fields[0]) +
         fields[1] +
         paint(statusColor(assignment), fields[2]) +
@@ -440,20 +513,17 @@ function list(
           ? "No matching assignments. / change search"
           : router.filter === "unfinished"
             ? "No unfinished work. h show finished"
-            : `No ${filterLabels[router.filter].toLowerCase()} work. f change filter`,
+            : `No ${filterLabels[router.filter].toLowerCase()} work. Tab for next status`,
         width,
       )
         .slice(0, available)
         .map((line) => paint("muted", line)),
     );
-  if (nodes.length > available)
+  if (rowCount > available)
     output.push(
       paint(
         "muted",
-        fit(
-          `${first + 1}-${Math.min(nodes.length, first + available)} of ${nodes.length} assignments`,
-          width,
-        ),
+        fit(`${first + 1}-${Math.min(rowCount, first + available)} of ${rowCount} rows`, width),
       ),
     );
   return output.slice(0, height);
@@ -487,11 +557,15 @@ export function renderFleet(router: ScreenRouter, options: FleetOptions): string
   output.push(paint("border", (ascii ? "-" : "─").repeat(width)));
   const available = Math.max(0, height - output.length);
   const wide = width >= 120 && available >= 8 && Boolean(router.selected);
-  const inspectorWidth = wide ? Math.min(64, Math.max(40, Math.floor(width * 0.35))) : width;
+  const inspectorWidth = wide ? Math.min(64, Math.max(40, Math.floor(width * 0.39))) : width;
   const nodes = router.fleetNodes(ascii);
+  const dependencies = router.dependencyRows();
   const stacked = !wide && Boolean(router.selected) && available >= 12;
   const listHeight = stacked
-    ? Math.min(Math.max(3, nodes.length + 1), Math.max(3, Math.floor(available * 0.4)))
+    ? Math.min(
+        Math.max(3, nodes.length + dependencies.length + 1),
+        Math.max(3, Math.floor(available / 3)),
+      )
     : available;
   const listPane = {
     x: 0,
@@ -504,11 +578,12 @@ export function renderFleet(router: ScreenRouter, options: FleetOptions): string
     : stacked
       ? { x: 0, y: output.length + listHeight + 1, width, height: available - listHeight - 1 }
       : undefined;
+  if (!inspectorPane) router.inspectorFocus = false;
   if (options.fleetRegions) {
     options.fleetRegions.list = listPane;
     options.fleetRegions.inspector = inspectorPane;
   }
-  const rows = list(router, listPane, options, nodes);
+  const rows = list(router, listPane, options, nodes, dependencies);
   const details = inspectorPane ? inspector(router, inspectorPane, options) : [];
   if (wide) {
     for (let index = 0; index < available; index++)

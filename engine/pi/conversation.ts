@@ -12,6 +12,7 @@ import { displayText, fit } from "../ui/text.ts";
 // Presentation only: retained messages never create a Pi session or execute tools.
 export function piConversationPresentation(
   hostTheme?: Pick<Theme, "bg" | "fg">,
+  options: { outputPad?: number; codeBlockIndent?: string } = {},
 ): ConversationPresentation {
   const backgrounds = {
     pending: "toolPendingBg",
@@ -19,10 +20,14 @@ export function piConversationPresentation(
     error: "toolErrorBg",
     custom: "customMessageBg",
   } as const;
-  const markdown = getMarkdownTheme();
+  const markdown = { ...getMarkdownTheme(), codeBlockIndent: options.codeBlockIndent };
+  const outputPad = options.outputPad ?? 1;
   return {
     markdown,
+    outputPad,
     cacheKey: [
+      outputPad,
+      options.codeBlockIndent,
       markdown.heading("theme"),
       markdown.code("theme"),
       markdown.codeBlock("theme"),
@@ -35,7 +40,7 @@ export function piConversationPresentation(
       ? {
           surface(kind: ConversationSurface, rows: string[], width: number): string[] {
             // Match Pi's tool/custom-message shells, including full-width backgrounds.
-            const box = new Box(width > 2 ? 1 : 0, 1, (text) =>
+            const box = new Box(width > 2 ? outputPad : 0, 0, (text) =>
               hostTheme.bg(backgrounds[kind], text),
             );
             box.addChild({
@@ -49,7 +54,7 @@ export function piConversationPresentation(
       : {}),
     user(text, width) {
       // Pi prompt-zone markers belong to the parent transcript, not this overlay.
-      return new UserMessageComponent(displayText(text), markdown, width > 2 ? 1 : 0)
+      return new UserMessageComponent(displayText(text), markdown, width > 2 ? outputPad : 0)
         .render(width)
         .map((line) =>
           ["A", "B", "C"].reduce(
@@ -64,13 +69,19 @@ export function piConversationPresentation(
         .map((line) => fit(line, width));
     },
     thinking(text, width) {
-      return new Markdown(displayText(text), width > 2 ? 1 : 0, 0, markdown, {
+      return new Markdown(displayText(text), width > 2 ? outputPad : 0, 0, markdown, {
         color: (value) => hostTheme?.fg("thinkingText", value) ?? value,
         italic: true,
       }).render(width);
     },
     code(text, language, width) {
-      return highlightCode(displayText(text), language)
+      return (
+        language === "text"
+          ? displayText(text)
+              .split("\n")
+              .map((line) => hostTheme?.fg("toolOutput", line) ?? line)
+          : highlightCode(displayText(text), language)
+      )
         .flatMap((line) => wrapTextWithAnsi(line, width))
         .map((line) => fit(line, width));
     },

@@ -1,0 +1,13 @@
+{
+  "access": "write",
+  "tools": ["read", "write", "edit", "bash"],
+  "workspaces": ["shared"],
+  "inheritContext": false,
+  "memory": { "scope": "none", "access": "read" },
+  "delegation": {
+    "maxDepth": 1,
+    "agents": ["event-parser", "incident-stats"],
+    "tools": ["read", "write", "edit", "bash"],
+    "workspaces": ["shared"]
+  }
+}

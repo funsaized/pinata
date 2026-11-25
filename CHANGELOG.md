@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.0.7
+
+- Press Right to browse dependency groups, Enter to open a linked conversation,
+  and Escape to return to the same fleet row. Completed groups start folded, and
+  icons mark running, queued and completed work.
+- Read grouped execution, handoff and resource details in the inspector.
+- Open worker conversations with Pi’s thinking and tool output settings. Folded
+  dependency cards show the assignment and result information.
+
 ## 0.0.6
 
 - Press `b` to visit a dependency and return to the original fleet selection.

@@ -5,6 +5,9 @@ import {
   wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
 
+import type { Paint } from "./palette.ts";
+import type { DetailGroup } from "./projection.ts";
+
 // Runtime and worker strings are data. Remove control sequences before adding
 // palette-owned styling; preserve graphemes and newlines in the readable text.
 export function displayText(value: string): string {
@@ -32,4 +35,24 @@ export function lines(text: string, width: number): string[] {
 export function padded(text: string, width: number): string {
   const clipped = fit(text, width);
   return clipped + " ".repeat(Math.max(0, width - visibleWidth(clipped)));
+}
+
+export function detailRows(groups: DetailGroup[], width: number, paint: Paint): string[] {
+  return groups.flatMap(({ title, fields }) => {
+    const labelWidth = Math.max(...fields.map(([label]) => label.length)) + 2;
+    const align = width >= labelWidth + 16;
+    return [
+      paint("strong", fit(title, width)),
+      ...fields.flatMap(([label, value]) => {
+        if (!label) return lines(value, width).map((line) => paint("error", line));
+        if (!align) return [paint("muted", fit(label, width)), ...lines(value, width)];
+        return lines(value, width - labelWidth).map(
+          (line, index) =>
+            (index === 0 ? paint("muted", label.padEnd(labelWidth)) : " ".repeat(labelWidth)) +
+            paint("text", line),
+        );
+      }),
+      "",
+    ];
+  });
 }

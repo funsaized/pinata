@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "workspace": "shared",
+  "backend": "in-process",
+  "setup": false,
+  "codemode": false,
+  "models": { "default": { "provider": "openai", "id": "gpt-6-luna", "thinking": "medium" } },
+  "execution": { "maxConcurrent": 3 },
+  "ui": { "palette": "inherit", "motion": "full" }
+}

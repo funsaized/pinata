@@ -103,8 +103,89 @@ test("wide fleets keep prompt and last message beside the selected full row; sta
   assert.equal(router.source.run, "ui-run");
 });
 
-test("inspector scrolling and clicks cannot select the list row underneath", async (t) => {
+test("dependency groups show distinct status icons, exceptions and static fallbacks", async (t) => {
+  const state = uiState(7);
+  const prerequisites = [ref(), ref(2), ref(3), ref(4), ref(5)];
+  state.assignments[assignmentKey(ref(6))].after = prerequisites;
+  state.assignments[assignmentKey(ref(7))].after = [ref(6)];
+  state.assignments[assignmentKey(ref())].execution = { phase: "running" };
+  state.assignments[assignmentKey(ref(3))].execution = {
+    phase: "ended",
+    reason: "failed",
+    cleanup: "confirmed",
+  };
+  state.assignments[assignmentKey(ref(4))].execution = {
+    phase: "ended",
+    reason: "completed",
+    cleanup: "unconfirmed",
+  };
+  for (const worker of [5, 7])
+    state.assignments[assignmentKey(ref(worker))].execution = {
+      phase: "ended",
+      reason: "completed",
+      cleanup: "confirmed",
+    };
+  const router = new ScreenRouter(new UiSource(state));
+  t.after(() => router.dispose());
+  await router.start();
+  router.navigate("fleet", ref(6));
+  const render = (ascii = false) =>
+    renderScreen(router, {
+      width: 150,
+      height: 32,
+      paint: createPaint("terminal-default"),
+      ascii,
+    })
+      .map(stripTerminalSequences)
+      .join("\n");
+
+  const full = render();
+  assert.match(full, /▾ Prerequisites +1\/5 complete · 2 need attention/);
+  assert.match(full, /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]  worker-1\/1/);
+  assert.match(full, /⧖  worker-2\/1/);
+  assert.match(full, /×  worker-3\/1 +Failed/);
+  assert.match(full, /!  worker-4\/1 +Cleanup unconfirmed/);
+  assert.match(full, /✓  worker-5\/1/);
+  assert(full.indexOf("×  worker-3/1") < full.indexOf("⧖  worker-2/1"));
+  assert(full.indexOf("⧖  worker-2/1") < full.indexOf("✓  worker-5/1"));
+  assert.match(full, /▸ Dependents +1 complete/);
+  assert.doesNotMatch(full, /✓  worker-7\/1/);
+  router.motion = "reduced";
+  assert.match(render(), /◐  worker-1\/1/);
+  assert.match(render(true), /~  worker-1\/1/);
+  assert.match(render(true), /o  worker-2\/1/);
+});
+
+test("a prerequisite that settles while focused stays visible until the user leaves it", async (t) => {
+  const state = uiState();
+  state.assignments[assignmentKey(ref(2))].after = [ref()];
+  const source = new UiSource(state);
+  const router = new ScreenRouter(source);
+  t.after(() => router.dispose());
+  await router.start();
+  router.navigate("fleet", ref(2));
+  router.moveFleetBranch("right");
+  assert.equal(router.focusedDependency, assignmentKey(ref()));
+  source.state.assignments[assignmentKey(ref())].execution = {
+    phase: "ended",
+    reason: "completed",
+    cleanup: "confirmed",
+  };
+  await source.emit(source.snapshot());
+  const render = () =>
+    renderScreen(router, { width: 80, height: 24, paint: createPaint("terminal-default") }).join(
+      "\n",
+    );
+  assert.match(render(), /> .*✓  worker-1\/1/);
+  router.moveFleetBranch("left");
+  assert.match(render(), /▸ Prerequisites +1 complete/);
+  assert.equal(router.focusedDependency, undefined);
+  assert.doesNotMatch(render(), /✓  worker-1\/1/);
+});
+
+test("details use vertical arrows to scroll and Left returns to the list", async (t) => {
   const state = uiState(3);
+  state.assignments[assignmentKey(ref())].execution = { phase: "running" };
   state.assignments[assignmentKey(ref())].task = Array.from(
     { length: 100 },
     (_, index) => `Prompt line ${index + 1}`,
@@ -121,8 +202,27 @@ test("inspector scrolling and clicks cannot select the list row underneath", asy
     screen.dispose();
     router.dispose();
   });
+  screen.render(160);
+  screen.handleInput("\x1b[C");
+  assert.equal(router.inspectorFocus, true, "Right focuses the preview");
+  screen.handleInput("\x1b[D");
+  assert.equal(router.inspectorFocus, false);
   screen.handleInput("d");
   const rows = screen.render(160).map(stripTerminalSequences);
+  assert.equal(router.inspectorFocus, true);
+  screen.handleInput("\x1b[B");
+  assert.equal(router.inspectorScroll, 1);
+  assert.deepEqual(router.selected, ref());
+  screen.handleInput("\x1b[C");
+  assert.equal(router.inspectorScroll, 1);
+  assert.equal(router.inspectorFocus, true);
+  screen.handleInput("?");
+  screen.render(160);
+  screen.handleInput("\x1b");
+  screen.render(160);
+  assert.equal(router.inspectorFocus, true, "closing help returns to details");
+  screen.handleInput("\x1b[A");
+  assert.equal(router.inspectorScroll, 0);
   const row = rows.findIndex((line) => line.includes("worker-2/1"));
   const divider = rows[row].indexOf("│");
   const mouse = {
@@ -149,11 +249,27 @@ test("inspector scrolling and clicks cannot select the list row underneath", asy
   router.scroll(10_000);
   const bottom = stripTerminalSequences(screen.render(160).join("\n"));
   assert.match(bottom, /Observed time starts/);
-  screen.handleInput("\t");
+  const bottomOffset = router.inspectorScroll;
+  screen.handleInput("\x1b[D");
   assert.equal(router.inspectorFocus, false);
+  assert.equal(router.inspectorScroll, bottomOffset);
+  assert.equal(router.selectedBranchCollapsed, false);
+  screen.handleInput("\x1b[C");
+  assert.equal(router.inspectorFocus, true);
+  assert.equal(router.inspectorScroll, bottomOffset);
+  screen.handleInput("\t");
+  assert.equal(router.filter, "working");
+  assert.equal(router.inspectorFocus, false);
+  screen.handleInput("d");
+  assert.equal(router.inspectorFocus, false);
+  assert.equal(router.inspectorScroll, 0);
+  router.setFilter("unfinished");
+  screen.render(160);
   screen.handleMouse({ ...mouse, x: 5, type: "click" });
   assert.deepEqual(router.selected, ref(2));
   assert.equal(router.inspectorScroll, 0);
+  screen.handleInput("\x1b[B");
+  assert.deepEqual(router.selected, ref(3));
 });
 
 test("filter counts exclude context parents and Attention reveals confirmed failures", async (t) => {

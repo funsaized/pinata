@@ -1,5 +1,8 @@
 import { renderConversation } from "../../engine/ui/conversation.ts";
 import assert from "node:assert/strict";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { TuiAltScreen, stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
@@ -150,7 +153,7 @@ test("staged fleets use aligned rows, one shared model, and keep the selected ag
   router.setDraft("keep this draft");
   screen.handleInput("d");
   assert.equal(router.details, true);
-  assert.match(stripTerminalSequences(screen.render(120).join("\n")), /After: worker-3\/1/);
+  assert.match(stripTerminalSequences(screen.render(120).join("\n")), /⧖  worker-3\/1/);
   assert.match(stripTerminalSequences(screen.render(120).join("\n")), /in-process/);
   screen.handleInput("d");
   assert.equal(router.details, false);
@@ -519,15 +522,15 @@ test("steering requires the visible active assignment; factual labels distinguis
   assert.match(router.notice, /visible assignment/);
   router.navigate("conversation", ref());
   await tick();
-  router.details = true;
+  router.transcriptDetails = true;
   const rendered = renderScreen(router, {
     width: 200,
     height: 50,
     paint: createPaint("terminal-default"),
   }).join("\n");
-  assert.match(rendered, /cleanup pending/);
-  assert.match(rendered, /acceptance: no decision recorded · correctness: unknown/);
-  assert.match(rendered, /context unknown/);
+  assert.match(rendered, /Cleanup +pending/);
+  assert.match(rendered, /Acceptance +No decision recorded · correctness unknown/);
+  assert.match(rendered, /Context +Unknown/);
   source.capabilities.control = false;
   assert.equal((await router.control("cancel")).status, "error");
   assert.equal(router.draft, "cannot accidentally steer assignment 1");
@@ -786,7 +789,11 @@ test(
   },
 );
 
-test("Pi screens use a full-viewport overlay and preserve parent and worker drafts across source switches", async () => {
+test("Pi overlays inherit display settings and preserve drafts across source switches", async (t) => {
+  const cwd = await mkdtemp(join(tmpdir(), "pinata-ui-settings-"));
+  t.after(() => rm(cwd, { recursive: true, force: true }));
+  await mkdir(join(cwd, ".pi"));
+  await writeFile(join(cwd, ".pi", "settings.json"), JSON.stringify({ hideThinkingBlock: true }));
   const source = Object.assign(new UiSource(), {
     location: { workspace: "/project", directory: "/project/first-run" },
   });
@@ -826,8 +833,11 @@ test("Pi screens use a full-viewport overlay and preserve parent and worker draf
   } as unknown as ExtensionAPI;
   const context = {
     mode: "tui",
+    cwd,
+    isProjectTrusted: () => true,
     sessionManager: { getSessionId: () => "parent-session" },
     ui: {
+      getToolsExpanded: () => true,
       getEditorText: () => draft,
       setEditorText: (text: string) => {
         draft = text;
@@ -915,6 +925,12 @@ test("Pi screens use a full-viewport overlay and preserve parent and worker draf
   await tick();
   assert(component);
   component.render(80);
+  assert.equal(router.expandedTools, true);
+  assert.equal(router.showThinking, false);
+  component.handleInput("\u000f");
+  component.handleInput("\u0014");
+  assert.equal(router.expandedTools, false);
+  assert.equal(router.showThinking, true);
   component.handleInput("worker draft");
   ui.navigate("main");
   await first;
@@ -923,6 +939,8 @@ test("Pi screens use a full-viewport overlay and preserve parent and worker draf
   router.setFilter("queued");
   const reopened = ui.open(context, "conversation", ref());
   await tick();
+  assert.equal(router.expandedTools, true, "reopening uses the parent tool setting");
+  assert.equal(router.showThinking, false, "reopening uses the parent thinking setting");
   component?.handleInput("\u001b[1;2B");
   component?.handleInput("r");
   await tick();
@@ -1102,8 +1120,11 @@ test("fleet help, search, filtering and actions are usable without a composer", 
     router.fleetAssignments().map((row) => row.ref.worker),
     ["worker-2"],
   );
-  screen.handleInput("f");
-  assert.equal(router.filter, "working");
+  assert.match(stripTerminalSequences(screen.render(80).join("\n")), /Tab next status/);
+  for (const status of ["working", "queued", "attention", "finished", "unfinished", "working"]) {
+    screen.handleInput("\t");
+    assert.equal(router.filter, status);
+  }
   screen.handleInput("h");
   assert.equal(router.filter, "finished");
   screen.handleInput("a");
@@ -1192,7 +1213,7 @@ test("composer editing keys preserve focus and transcript controls are explicit"
   screen.handleInput("f");
   assert.equal(router.conversation().follow, true, "f no longer toggles following");
   screen.handleInput("d");
-  assert.equal(router.details, true);
+  assert.equal(router.transcriptDetails, true);
   screen.render(100);
   screen.handleInput("\u001b[A");
   assert.equal(router.conversation().follow, false);
@@ -1246,7 +1267,8 @@ test("Pi conversation shortcuts toggle tools and thinking independently without 
         screen.handleInput("d");
         assert.equal(router.expandedTools, false);
         assert.equal(router.showThinking, false);
-        assert.equal(router.details, true);
+        assert.equal(router.transcriptDetails, true);
+        assert.equal(router.details, false);
         assert.equal(router.draft, "Keep this draft");
         assert.equal(source.calls.length, calls);
       } finally {
@@ -1867,7 +1889,7 @@ test("tree activity loops without idle frames around completed ancestors and que
   }
 });
 
-test("fleet retains completed dependency references without inventing ancestry", async () => {
+test("completed dependency groups start folded and disclose links without inventing ancestry", async () => {
   const source = new UiSource(uiState(3));
   for (const assignment of Object.values(source.state.assignments))
     assignment.execution = { phase: "ended", reason: "completed", cleanup: "confirmed" };
@@ -1877,13 +1899,20 @@ test("fleet retains completed dependency references without inventing ancestry",
   router.setFilter("finished");
   router.navigate("fleet", ref(3));
   router.details = true;
-  const rows = renderScreen(router, {
-    width: 100,
-    height: 30,
-    paint: createPaint("terminal-default"),
-    ascii: true,
-  });
-  assert.match(rows.join("\n"), /After: worker-1\/1, worker-2\/1/);
+  const render = () =>
+    renderScreen(router, {
+      width: 100,
+      height: 30,
+      paint: createPaint("terminal-default"),
+      ascii: true,
+    }).join("\n");
+  assert.match(render(), /\+ Prerequisites +2 complete/);
+  assert.doesNotMatch(render(), /\+  worker-[12]\/1/);
+  router.moveFleetBranch("right");
+  assert.equal(router.focusedDependency, assignmentKey(ref()));
+  assert.match(render(), /- Prerequisites +2 complete/);
+  assert.match(render(), /\+  worker-1\/1/);
+  assert.match(render(), /\+  worker-2\/1/);
   assert(router.fleetNodes(true).every((node) => !node.hasChildren));
   router.dispose();
 });
@@ -1929,8 +1958,15 @@ test("help and footer follow fleet, transcript and composer context without swal
   router.navigate("fleet");
   screen.handleInput("?");
   assert.match(rendered(), /Pinata help · Fleet/);
+  assert.match(rendered(), /Tab\s+Next status/);
+  assert.match(rendered(), /←\s+Return to the list/);
   assert.match(rendered(), /alt\+left\s+Previous assignment/);
   assert.doesNotMatch(rendered(), /Send message|Follow latest|\/steer/);
+  const wideHelp = screen.render(240).map((row) => stripTerminalSequences(row).trimEnd());
+  assert(
+    wideHelp.some((row) => row.includes("Browse assignments") && row.includes("Agent controls")),
+  );
+  assert(wideHelp.every((row) => visibleWidth(row) <= 129));
   screen.handleInput("?");
   router.navigate("conversation", ref());
   router.transcriptFocus = true;
