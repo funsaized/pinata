@@ -6,7 +6,7 @@ Give a lead agent a task, follow the specialists it brings in, and open any bran
 
 <picture>
   <source media="(prefers-reduced-motion: reduce)" srcset="media/pinata-fleet.png">
-  <img src="media/pinata-navigation.gif" alt="In Pi, relay-lead delegates JSONL parsing to event-parser and service statistics to incident-stats. A malformed-line test passes, and the CLI reports 4 events and 1 failure.">
+  <img src="media/pinata-navigation.gif" alt="Pi in a Foot terminal. In the fleet tree, relay-lead branches into event-parser and incident-stats. The parser keeps valid events around a malformed line. The report shows 4 events and 1 failure.">
 </picture>
 
 [Watch the full build (MP4)](media/pinata-demo.mp4)

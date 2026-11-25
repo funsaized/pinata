@@ -1,24 +1,23 @@
 # The Relay build
 
-[![The live Relay fleet with relay-lead above its two running children. The selected event-parser assignment asks for src/parse.mjs and malformed-line tests.](pinata-fleet.png)](pinata-demo.mp4)
+[![Pi’s fleet in a Foot terminal. Under relay-lead, event-parser and incident-stats are both running. The selected parser assignment asks it to implement src/parse.mjs and test malformed lines.](pinata-fleet.png)](pinata-demo.mp4)
 
-[Watch the full build (2m 23s)](pinata-demo.mp4) · [Watch the short cut (29s)](pinata-navigation.gif) · [Share image (PNG)](pinata-fleet.png)
+[Watch the full build (2m 13s)](pinata-demo.mp4) · [Watch the hero GIF (29s)](pinata-navigation.gif) · [Share the poster (PNG)](pinata-fleet.png)
 
-| In the full build | What to look for                                                                                                                                                                                                                      |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0:00              | Three Markdown files live in the project. The lead's `handoffs` lists `event-parser` and `incident-stats`.                                                                                                                            |
-| 0:09              | The user addresses `@relay-lead` in Pi. The lead calls `pinata_children`, and the fleet branches beneath it.                                                                                                                          |
-| 0:50              | `event-parser` writes the parser. In the other branch, `incident-stats` tests the 5xx boundary and nearest-rank p95. Its first integration check reaches the unfinished parser. Once the parser is in, a follow-up checks the sample. |
-| 1:26              | The parser test keeps the valid events on either side of a malformed line. Back in the lead's transcript, the renderer and CLI writes sit beside the child result checks.                                                             |
-| 1:51              | The coordinator runs all 11 tests, prints **4 events, 1 failure, 0 invalid lines**, then runs `node verify.mjs`. The output matches the [supplied report](../examples/relay/expected-report.md) byte for byte.                        |
+| Time in the full build | What happens in Pi                                                                                                                                                                                                                                 |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0:00                   | The terminal lists the project's three Markdown files. The lead's `handoffs` names both specialists.                                                                                                                                               |
+| 0:22                   | The user types `@relay-lead` in the composer. The fleet opens on the lead, then two running children appear beneath it.                                                                                                                            |
+| 0:50                   | The selected parser assignment names its file and tests. In the other branch, `incident-stats` writes `src/summarize.mjs` and checks which statuses count as failures and how to calculate p95 latency.                                            |
+| 1:08                   | In `event-parser`, the test output shows that valid events on either side of a malformed line survive.                                                                                                                                             |
+| 1:17                   | Back in `relay-lead`, the transcript shows its `pinata_children` call, the renderer and CLI writes, and its checks on the children's results.                                                                                                      |
+| 1:50                   | The coordinator runs all nine tests and prints the report. The four events include one failed API request and no invalid lines. `node verify.mjs` checks stdout against the [supplied report](../examples/relay/expected-report.md) byte for byte. |
 
 ## Rebuild the exports
 
-Both cuts use one live Pi 1.5.0 terminal session with OpenAI `gpt-6-luna`. The clock in the caption is time since recording started. A cut shows how much time it skips. The short cut crops the terminal around the action. The poster is a crop of the fleet at 1m 50s.
+Both cuts show the same Foot window running Herdr and Pi 1.5.0 on Wayland. The recording retains the window frame, sidebar, Gruvbox colors and Operator Mono lettering. A small label in the sidebar gives the time skipped at each cut. The poster is the full frame at 1m 54s. The final verifier shot holds a compositor screenshot from the same session. [Download the source recording (MP4)](relay/session.mp4).
 
-The source recording contains the terminal output and its timing. [Download the compressed asciicast](relay/session.cast.gz).
-
-The exporter uses `agg` 1.9.0, Adwaita Mono, `fontconfig`, FFmpeg with libx264, and Python 3.10+ with Pillow. Run it from the Piñata checkout with a new output directory.
+Run the exporter from the Piñata checkout. It needs Python 3.10+, FFmpeg with libx264 and drawtext, and DejaVu Sans for the elapsed-time labels.
 
 ```sh
 python3 media/relay/export.py /tmp/relay-exports
@@ -26,7 +25,7 @@ python3 media/relay/export.py /tmp/relay-exports
 
 ## Record a fresh build
 
-A new take spends provider tokens. Get authorization for the provider and model before submitting the task. The following Linux setup uses the repository's installed Pi dependency and records output and timing with util-linux `script`. Start in the Piñata checkout with an 86-column, 27-row terminal.
+Get authorization for provider spend before submitting a live task. This take used OpenAI `gpt-6-luna`. Start in a Foot terminal running Herdr, in the Piñata checkout with dependencies installed.
 
 ```sh
 repo=$PWD
@@ -36,21 +35,30 @@ mkdir -p "$take/Relay/.pi/pinata"
 cp -R examples/agents/relay "$take/Relay/.pi/pinata/agents"
 cp examples/relay/recording/pinata.json "$take/Relay/.pi/"
 node -e 'console.log("/pinata-grants " + JSON.stringify(require("./examples/relay/recording/grants.json")))'
-
 cd "$take/Relay"
-TERM=xterm-256color COLORTERM=truecolor NO_COLOR=1 PI_TELEMETRY=0 \
-  script -qef -O "$take/terminal.log" -T "$take/terminal.time" -- \
+```
+
+Give the window 1280 × 850 pixels and use 15 pt terminal text. On a wlroots desktop, run the following in a second terminal and select the whole Foot window, including its border. Press Ctrl+C in the recorder after the verifier result has been on screen for several seconds.
+
+```sh
+wf-recorder -g "$(slurp)" --no-damage -r 12 -c libx264 -p crf=13 -x yuv420p -f relay-window.mkv
+```
+
+In the Relay window, show the [project definitions](../examples/agents/relay) and launch Pi with your terminal colors enabled.
+
+```sh
+ls -1 .pi/pinata/agents
+grep '^handoffs' .pi/pinata/agents/relay-lead.md
+env -u NO_COLOR COLORTERM=truecolor PI_TELEMETRY=0 \
   "$repo/node_modules/.bin/pi" --offline --no-session --no-extensions --no-skills \
-  --no-prompt-templates --no-themes --no-context-files -e "$repo/engine/pi/extension.ts" \
+  --no-prompt-templates --no-context-files -e "$repo/engine/pi/extension.ts" \
   --model openai/gpt-6-luna --thinking medium
 ```
 
-In Pi, submit the printed `/pinata-grants` command, then `/pinata-new`. The [host grant](../examples/relay/recording/grants.json) allows one level of delegation to the two named specialists in the shared workspace. The [project config](../examples/relay/recording/pinata.json) gives the three workers room to run together. Pi's `--offline` skips startup network operations. Submitting the assignment contacts the provider.
-
-1. Show the [definitions](../examples/agents/relay) in Pi with `!ls -1 .pi/pinata/agents` and `!grep '^handoffs' .pi/pinata/agents/relay-lead.md`.
-2. Type the request below. Hold it on screen before pressing Enter.
-3. Press Shift+Down to open the fleet. When both children appear, hold on the tree, select a child and press Enter. Shift+Left and Shift+Right switch workers. Page Up shows earlier edits and test results.
-4. Return to the lead for integration. Back at the Pi composer, run `!node --test --test-reporter=spec`, `!node bin/relay.mjs data/events.jsonl` and `!node verify.mjs`. Keep the report and verifier result on screen before closing Pi.
+1. Submit the printed `/pinata-grants` command, then `/pinata-new`. The [host grant](../examples/relay/recording/grants.json) allows the lead to delegate one level to its two specialists in the shared checkout. The [project config](../examples/relay/recording/pinata.json) gives all three workers a slot. See the [nested-delegation example](../README.md#nested-delegation).
+2. Show the input with `!cat data/events.jsonl`. Type the request below in Pi and hold it on screen before pressing Enter.
+3. Press Shift+Down for the fleet. Hold on the expanded tree, then select a child and press Enter. Shift+Left and Shift+Right switch between workers. In the lead's conversation, press Tab to focus the transcript and use the arrow keys to scroll back to its tool calls.
+4. Return to the coordinator. Run `!node --test --test-reporter=spec`, `!node bin/relay.mjs data/events.jsonl` and `!node verify.mjs`.
 
 ```text
 @relay-lead Build an incident report from data/events.jsonl. Give parsing and service statistics to your specialists, wire their work into the CLI, and show me the report.
