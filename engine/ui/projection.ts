@@ -3,8 +3,10 @@ import {
   type Assignment,
   type AssignmentRef,
   type CoreState,
+  type StoredWorkerMessage,
 } from "../contracts/index.ts";
 import { dependentAssignments } from "../core/indexes.ts";
+import { isOpenDecision } from "../core/messages.ts";
 import { readinessFor, type ReadinessReason } from "../core/readiness.ts";
 import { assignmentUsage } from "../core/usage.ts";
 
@@ -75,7 +77,7 @@ export function assignmentDetails(state: CoreState, assignment: Assignment): Det
       ],
       ["Notification", delivery?.state ?? "Not recorded"],
       ["Assessment", result?.report ? "Retained worker report" : "None"],
-      ["Acceptance", "No decision recorded · correctness unknown"],
+      ["Acceptance", "Not recorded · correctness unknown"],
     ],
   };
   if (sent || received) handoff.fields.push(["Messages", `${sent} sent · ${received} received`]);
@@ -117,8 +119,44 @@ export function isFinished(assignment: Assignment): boolean {
   return assignment.execution.phase === "ended" && assignment.execution.cleanup === "confirmed";
 }
 
+type FleetDecisions = {
+  open: StoredWorkerMessage[];
+  closed: StoredWorkerMessage[];
+};
+const decisionViews = new WeakMap<CoreState, Map<string, FleetDecisions>>();
+
+export function assignmentDecisions(
+  state: CoreState,
+  ref: AssignmentRef,
+): FleetDecisions | undefined {
+  let byAssignment = decisionViews.get(state);
+  if (!byAssignment) {
+    byAssignment = new Map<string, FleetDecisions>();
+    for (const message of Object.values(state.messages)) {
+      if (!message.decision) continue;
+      const key = assignmentKey(message.from);
+      const group = byAssignment.get(key) ?? { open: [], closed: [] };
+      if (isOpenDecision(state, message)) group.open.push(message);
+      else group.closed.push(message);
+      byAssignment.set(key, group);
+    }
+    for (const { open, closed } of byAssignment.values()) {
+      open.sort(
+        (a, b) =>
+          Number(b.decision === "wait") - Number(a.decision === "wait") || a.revision - b.revision,
+      );
+      closed.sort(
+        (a, b) => (b.answer?.revision ?? b.revision) - (a.answer?.revision ?? a.revision),
+      );
+    }
+    decisionViews.set(state, byAssignment);
+  }
+  return byAssignment.get(assignmentKey(ref));
+}
+
 export function needsAttention(state: CoreState, assignment: Assignment): boolean {
-  if (assignment.execution.phase !== "ended") return false;
+  if (assignment.execution.phase !== "ended")
+    return Boolean(assignmentDecisions(state, assignment.ref)?.open.length);
   if (assignment.execution.cleanup === "unconfirmed") return true;
   if (!["failed", "interrupted"].includes(assignment.execution.reason)) return false;
   return (

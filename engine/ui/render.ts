@@ -5,6 +5,7 @@ import { resolveConversationKeys, type ConversationKeys } from "./keys.ts";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { assignmentKey, type AssignmentRef, type CoreState } from "../contracts/index.ts";
 import {
+  assignmentDecisions,
   assignmentDetails,
   assignments,
   executionLabel,
@@ -109,6 +110,7 @@ function treeLines(state: CoreState, nodes: TreeNode[], options: TreeOptions): T
   for (const node of nodes) {
     const assignment = node.assignment;
     const worker = state.workers[assignment.ref.worker];
+    const question = assignmentDecisions(state, assignment.ref)?.open[0];
     const status = executionLabel(assignment);
     const elapsed = options.elapsed?.(assignment.ref);
     const duration =
@@ -160,6 +162,9 @@ function treeLines(state: CoreState, nodes: TreeNode[], options: TreeOptions): T
       ) +
       identity;
     const suffix =
+      (question
+        ? options.paint(question.decision === "wait" ? "warning" : "accent.cyan", "  ?")
+        : "") +
       options.paint(statusToken(status), ` · ${status}`) +
       options.paint("muted", options.width >= 60 ? duration : "");
     const identityWidth = Math.max(1, options.width - visibleWidth(suffix));
@@ -227,24 +232,27 @@ export function fleetWidget(state: CoreState, options: TreeOptions): string[] {
   const queued = all.filter((assignment) => assignment.execution.phase === "queued").length;
   const attention = all.filter(
     (assignment) => !isFinished(assignment) && needsAttention(state, assignment),
-  ).length;
-  if (!active && !queued && !attention) return [];
+  );
+  const cleanup = attention.filter((assignment) => assignment.execution.phase === "ended").length;
+  const visibleCount = active + cleanup;
+  if (!visibleCount && !queued) return [];
   const nodes = assignmentTree(state, {
     ascii: options.ascii,
     activeOnly: true,
     finished: false,
     attention: true,
     limit: 4,
-    trailing: queued > 0 || active > 4,
+    trailing: queued > 0 || visibleCount > 4,
   }).slice(0, 8);
   const output = [options.paint("accent.cyan", `${options.ascii ? "*" : "●"} Agents`)];
   output.push(...treeLines(state, nodes, options).map((row) => row.text));
-  if (attention) output.push(options.paint("error", `${attention} need attention`));
-  if (active + attention > 4)
+  if (attention.length)
+    output.push(options.paint(cleanup ? "error" : "warning", `${attention.length} need attention`));
+  if (visibleCount > 4)
     output.push(
       options.paint(
         "muted",
-        `${options.ascii ? "|-" : "├─"} ${active + attention - 4} more assignments · /pinata`,
+        `${options.ascii ? "|-" : "├─"} ${visibleCount - 4} more assignments · /pinata`,
       ),
     );
   if (queued)

@@ -529,7 +529,7 @@ test("steering requires the visible active assignment; factual labels distinguis
     paint: createPaint("terminal-default"),
   }).join("\n");
   assert.match(rendered, /Cleanup +pending/);
-  assert.match(rendered, /Acceptance +No decision recorded · correctness unknown/);
+  assert.match(rendered, /Acceptance +Not recorded · correctness unknown/);
   assert.match(rendered, /Context +Unknown/);
   source.capabilities.control = false;
   assert.equal((await router.control("cancel")).status, "error");

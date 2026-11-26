@@ -213,7 +213,13 @@ recorded file changes.
 The filter strip counts Unfinished, Working, Queued, Attention and Finished work.
 Working includes preparing, running and stopping; rows keep those exact states.
 Attention includes unresolved cleanup and failed or interrupted assignments that
-are latest for their worker or still have queued dependents. Finished means execution ended
+are latest for their worker or still have queued dependents. It also includes
+assignments with an open question for the coordinator. A `?` marks the worker’s
+row. Select it to read the question and see whether the worker is waiting or
+still working. Press `d` to see every question and the coordinator’s recorded
+answers. To weigh in, steer the coordinator in the main thread.
+
+Finished means execution ended
 with confirmed cleanup, not necessarily success or acceptance. Counts apply after
 search and before branch collapse; parents shown only for context do not add to
 counts. Tab advances to the next status. `h` selects Finished, including earlier

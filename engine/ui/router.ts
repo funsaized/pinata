@@ -23,6 +23,7 @@ import {
   assignments,
   fleetFilters,
   matchesFleetFilter,
+  needsAttention,
   steerTarget,
   type FleetFilter,
 } from "./projection.ts";
@@ -379,8 +380,10 @@ export class ScreenRouter {
       const pending: DependencyLink[] = [];
       for (const link of related) {
         const execution = link.assignment.execution;
-        if (execution.phase !== "ended") pending.push(link);
-        else if (execution.reason === "completed" && execution.cleanup === "confirmed")
+        if (execution.phase !== "ended") {
+          if (needsAttention(this.state, link.assignment)) attention.push(link);
+          else pending.push(link);
+        } else if (execution.reason === "completed" && execution.cleanup === "confirmed")
           completed.push(link);
         else attention.push(link);
       }

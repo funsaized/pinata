@@ -1,6 +1,13 @@
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { assignmentKey, type Assignment, type AssignmentRef } from "../contracts/index.ts";
 import {
+  assignmentKey,
+  type Assignment,
+  type AssignmentRef,
+  type CoreState,
+  type StoredWorkerMessage,
+} from "../contracts/index.ts";
+import {
+  assignmentDecisions,
   assignmentDetails,
   executionLabel,
   fleetFilters,
@@ -110,6 +117,47 @@ function excerpt(rows: string[], width: number, limit: number, paint: Paint): st
   return [...rows.slice(0, limit), paint("muted", fit("… d to expand", width))];
 }
 
+function questionStyle(question: StoredWorkerMessage): { color: string; label: string } {
+  return question.decision === "wait"
+    ? { color: "warning", label: "Waiting for coordinator" }
+    : { color: "accent.cyan", label: "Asked coordinator · still working" };
+}
+
+function decisionRows(
+  router: ScreenRouter,
+  ref: AssignmentRef,
+  width: number,
+  options: FleetOptions,
+): string[] {
+  const decisions = assignmentDecisions(router.state, ref);
+  if (!decisions) return [];
+  const { open, closed } = decisions;
+  const { paint, ascii } = options;
+  const rows: string[] = [];
+  const limit = router.details ? Infinity : 3;
+  function appendText(text: string) {
+    for (const line of excerpt(lines(text, width), width, limit, paint)) rows.push(line);
+  }
+  for (const question of router.details ? open : open.slice(0, 1)) {
+    const { color, label } = questionStyle(question);
+    const alsoAsked = question.decision === "continue" && open[0].decision === "wait";
+    rows.push(paint(color, fit(`? ${alsoAsked ? "Also asked the coordinator" : label}`, width)));
+    appendText(question.text);
+  }
+  if (!router.details && open.length) {
+    if (open.length > 1)
+      rows.push(paint("muted", fit(`+${open.length - 1} more open · d to expand`, width)));
+    return rows;
+  }
+  for (const question of router.details ? closed : closed.slice(0, 1)) {
+    const label = question.answer ? "Coordinator answered" : "Closed without an answer";
+    rows.push(paint("muted", fit(label, width)));
+    appendText(question.text);
+    if (question.answer) appendText(`${ascii ? ">" : "↳"} ${question.answer.text}`);
+  }
+  return rows;
+}
+
 function inspector(router: ScreenRouter, pane: Pane, options: FleetOptions): string[] {
   const ref = router.selected;
   if (!ref) return [];
@@ -198,6 +246,7 @@ function inspector(router: ScreenRouter, pane: Pane, options: FleetOptions): str
       ),
     );
   }
+  for (const row of decisionRows(router, ref, width, options)) content.push(row);
   content.push("", paint("strong", paint(color, "Last message")));
   if (!router.connectionAvailable || (view.error && message))
     content.push(paint("warning", "Retained preview · connection unavailable"));
@@ -323,6 +372,7 @@ function dependencyStatus(
   }
 }
 function renderDependencyRow(
+  state: CoreState,
   row: DependencyRow,
   branch: string,
   options: Pick<FleetOptions, "paint" | "ascii" | "width"> & {
@@ -353,10 +403,14 @@ function renderDependencyRow(
         );
   }
   const { ref } = row.assignment;
-  const { icon, label } = dependencyStatus(row.assignment, { ascii: Boolean(ascii), animate, now });
+  const question = assignmentDecisions(state, ref)?.open[0];
+  const style = question && questionStyle(question);
+  const { icon, label } = style
+    ? { icon: "?", label: style.label }
+    : dependencyStatus(row.assignment, { ascii: Boolean(ascii), animate, now });
   const identity = `  ${displayText(ref.worker)}/${ref.assignment}`;
   const suffix = label ? `   ${label}` : "";
-  const color = statusColor(row.assignment);
+  const color = style?.color ?? statusColor(row.assignment);
   return selected
     ? paint("focus", padded(prefix + icon + identity + suffix, width))
     : fit(
@@ -444,7 +498,7 @@ function list(
       const connector = last ? (ascii ? "`- " : "└─ ") : ascii ? "|- " : "├─ ";
       options.fleetRegions?.dependencyRows?.set(pane.y + output.length, dependency);
       output.push(
-        renderDependencyRow(dependency, indent + connector, {
+        renderDependencyRow(router.state, dependency, indent + connector, {
           width,
           paint,
           ascii,
@@ -461,6 +515,8 @@ function list(
     const color = worker.color ?? agentAccent(worker.agent);
     const selected = assignmentKey(assignment.ref) === selection;
     const working = matchesFleetFilter(router.state, assignment, "working");
+    const question = assignmentDecisions(router.state, assignment.ref)?.open[0];
+    const questionColor = question && questionStyle(question).color;
     const marker = working
       ? activityIndicator(router.motion, now, "", activeRow++, activeCount + 4, ascii ?? false)
       : assignment.execution.phase === "queued"
@@ -479,13 +535,16 @@ function list(
           ? "+ "
           : "- "
         : "";
-    const identityText = `${selected && focusedRow < 0 ? ">" : " "} ${branch}${disclosure}${marker} ${displayText(worker.id)}/${assignment.ref.assignment}`;
+    const identityText = `${selected && focusedRow < 0 ? ">" : " "} ${branch}${disclosure}${question ? "  ?  " : marker} ${displayText(worker.id)}/${assignment.ref.assignment}`;
     const identity =
       visibleWidth(identityText) > identityWidth
         ? fit(identityText, identityWidth - 1) + "…"
         : identityText;
     const context =
-      assignment.execution.phase === "queued" ? waiting(router, assignment, true) : assignment.task;
+      question?.text ??
+      (assignment.execution.phase === "queued"
+        ? waiting(router, assignment, true)
+        : assignment.task);
     const fields = [
       padded(identity, identityWidth),
       " ",
@@ -498,11 +557,11 @@ function list(
           focusedRow < 0 && !router.inspectorFocus ? "focus" : "strong",
           padded(fields.join(""), width),
         )
-      : paint(color, fields[0]) +
+      : paint(questionColor ?? color, fields[0]) +
         fields[1] +
         paint(statusColor(assignment), fields[2]) +
         paint("muted", fields[3]) +
-        paint("text", fields[4]);
+        paint(questionColor ?? "text", fields[4]);
     options.hitRows?.set(pane.y + output.length, assignment.ref);
     output.push(fit(text, width));
   }

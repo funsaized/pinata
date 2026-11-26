@@ -4,9 +4,12 @@ import { TuiAltScreen, stripTerminalSequences, visibleWidth } from "@earendil-wo
 import {
   assignmentKey,
   type AssignmentRef,
+  type StoredWorkerMessage,
   type SurfaceReply,
 } from "../../engine/contracts/index.ts";
-import { renderScreen } from "../../engine/ui/render.ts";
+import { prepareCommand } from "../../engine/core/accept.ts";
+import { reduce } from "../../engine/core/state.ts";
+import { fleetWidget, renderScreen } from "../../engine/ui/render.ts";
 import type { FleetRegions } from "../../engine/ui/fleet.ts";
 import { createPaint } from "../../engine/ui/palette.ts";
 import { ScreenRouter } from "../../engine/ui/router.ts";
@@ -30,6 +33,99 @@ const previewReply = (target: AssignmentRef, text: string): SurfaceReply => ({
       message: { text, truncated: false },
     },
   },
+});
+
+test("fleet follows worker questions through coordinator answers and saved history", async (t) => {
+  const state = uiState(4);
+  for (const assignment of Object.values(state.assignments))
+    assignment.execution = { phase: "running" };
+  function message(worker: number, text: string, decision?: StoredWorkerMessage["decision"]) {
+    const revision = ++state.revision;
+    const id = `message/${revision}`;
+    state.messages[id] = {
+      id,
+      revision,
+      requestDigest: "a".repeat(64),
+      from: ref(worker),
+      to: "coordinator",
+      text,
+      decision,
+    };
+    return id;
+  }
+  const format = message(1, "Which format?", "continue");
+  const policy = message(1, "Keep malformed lines?", "wait");
+  message(2, "Use UTF-8?", "continue");
+  message(3, "Progress update");
+  const source = new UiSource(state);
+  const router = new ScreenRouter(source);
+  await router.start();
+  t.after(() => router.dispose());
+  router.navigate("fleet", ref());
+  router.setDraft("Remember the example");
+  const paint = createPaint("terminal-default");
+  const render = (view = router, width = 100) =>
+    renderScreen(view, { width, height: 35, paint, ascii: true }).join("\n");
+  const compact = fleetWidget(router.state, { width: 90, paint }).join("\n");
+  assert.match(compact, /2 need attention/);
+  assert.doesNotMatch(compact, /more assignments/);
+  router.setFilter("attention");
+  assert.deepEqual(
+    router.fleetAssignments().map((a) => a.ref),
+    [ref(), ref(2)],
+  );
+  assert.match(render(), /\? +worker-1\/1 +Running/);
+  assert.match(render(), /\? Waiting for coordinator\s+Keep malformed lines\?/);
+  assert.match(render(), /\+1 more open/);
+  router.details = true;
+  assert.match(render(), /\? Also asked the coordinator\s+Which format\?/);
+
+  const answers = [
+    { decisionId: format, text: "Use CSV." },
+    { decisionId: policy, text: "Keep them.\x1b]0;fake title\x07" },
+  ];
+  const transition = prepareCommand(
+    source.state,
+    { requestId: "answers", command: { kind: "answer_decisions", answers } },
+    {
+      id: "coordinator",
+      kind: "coordinator",
+      run: state.run,
+      grants: state.workers["worker-1"].grants,
+    },
+  );
+  source.state = reduce(source.state, transition, source.state.revision + 1);
+  await source.emit({
+    kind: "committed",
+    schemaVersion: 1,
+    id: "answers",
+    revision: source.state.revision,
+    ownerEpoch: source.epoch,
+    transition,
+  });
+  assert.deepEqual(router.selected, ref(2));
+  assert.match(render(), /\[Attention 1\]/);
+  assert.match(render(), /\? Asked coordinator · still working\s+Use UTF-8\?/);
+  router.setFilter("working");
+  router.navigate("fleet", ref());
+  assert.equal(router.draft, "Remember the example");
+  assert.match(render(), /Coordinator answered\s+Keep malformed lines\?\s+> Keep them\./);
+  assert.doesNotMatch(render(), /fake title|Waiting for coordinator/);
+
+  const savedSource = new UiSource(structuredClone(source.state));
+  savedSource.capabilities.control = savedSource.capabilities.live = false;
+  savedSource.state.cancelled[assignmentKey(ref(2))] = { requestId: "cancel" };
+  const saved = new ScreenRouter(savedSource);
+  t.after(() => saved.dispose());
+  saved.navigate("fleet", ref());
+  saved.details = true;
+  assert.match(render(saved), /Saved · read-only/);
+  assert.match(render(saved), /> Use CSV\./);
+  saved.navigate("fleet", ref(2));
+  assert.match(render(saved), /Closed without an answer\s+Use UTF-8\?/);
+  saved.setFilter("attention");
+  assert.deepEqual(saved.fleetAssignments(), []);
+  assert.equal(savedSource.calls.length, 0);
 });
 
 test("wide fleets keep prompt and last message beside the selected full row; stacked layouts stay near the list", async (t) => {
