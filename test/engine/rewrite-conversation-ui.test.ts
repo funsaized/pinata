@@ -389,7 +389,7 @@ test("Pinata notices use readable headings without exposing saved-message versio
     const output = stripTerminalSequences(rows.join("\n"));
     assert.match(output, /Subagent result/);
     assert.match(output, /tests\/1: completed/);
-    assert.match(output, /\/pinata-conversation tests 1/);
+    assert.match(output, /\/pinata-conversation tests 1 --run retained-run/);
     assert.doesNotMatch(output, /completion\.v1|pinata-notice|Full result: \{/);
     assert.equal(output.includes("Run: retained-run"), expanded);
     assert.equal(output.includes("typed findings"), expanded);
@@ -418,7 +418,7 @@ test("Pinata notices use readable headings without exposing saved-message versio
   const output = stripTerminalSequences(update.render(80).join("\n"));
   assert.match(output, /Subagent message/);
   assert.match(output, /tests\/1: Still working/);
-  assert.match(output, /\/pinata-conversation tests 1/);
+  assert.match(output, /\/pinata-conversation tests 1 --run retained-run/);
   assert.doesNotMatch(output, /pinata-notice|pinata\.message|Subagent result/);
 });
 

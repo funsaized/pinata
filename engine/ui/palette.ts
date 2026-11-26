@@ -8,6 +8,11 @@ import { paletteSchema } from "../contracts/config.ts";
 import type { z } from "zod";
 
 export type PaletteName = z.infer<typeof paletteSchema>;
+export function readPalette(value: string, browse: string): PaletteName {
+  const result = paletteSchema.safeParse(value);
+  if (!result.success) throw new Error(`Unknown palette. Use ${browse} to choose a name.`);
+  return result.data;
+}
 export type SemanticToken =
   | "background"
   | "text"

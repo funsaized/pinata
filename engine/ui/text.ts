@@ -8,6 +8,15 @@ import {
 import type { Paint } from "./palette.ts";
 import type { DetailGroup } from "./projection.ts";
 
+export function runArgument(run: string): string {
+  if (/^[A-Za-z0-9._-]+$/.test(run)) return run;
+  // Keep even control characters and direction marks copyable on one terminal line.
+  return JSON.stringify(run).replace(
+    /[^ -~]/g,
+    (char) => "\\u" + char.charCodeAt(0).toString(16).padStart(4, "0"),
+  );
+}
+
 // Runtime and worker strings are data. Remove control sequences before adding
 // palette-owned styling; preserve graphemes and newlines in the readable text.
 export function displayText(value: string): string {

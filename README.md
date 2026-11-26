@@ -328,7 +328,9 @@ menu or leaves the view without stopping work.
 
 Other controls are `/inspect`, `/more`, `/refresh`,
 `/recover`, `/reconnect`, `/background`, `/queued`, `/scroll up|down|N`,
-`/palette <name>` and `/help`. `/replace <new-worker-id> <task>` creates a worker
+`/palette [name]` and `/help`. A mistyped slash command stays in the draft.
+To send it literally, use `/steer`, `/follow-up` or `/continue` followed by the text.
+`/replace <new-worker-id> <task>` creates a worker
 with the selected assignment recorded as origin.
 
 ### Agent mentions
@@ -360,8 +362,11 @@ See [recovery](#recovery) for session loss and retained envelopes.
 
 ### Palettes and accessibility
 
-`/pinata-palette <name>` or `ui.palette` selects a palette. The default, `inherit`,
-uses Pi's theme; the standalone viewer has its own fallback. Available names:
+Type `/pinata palette` or `/pinata-palette` to open the picker. It marks the
+current palette. Type to filter, press Enter to apply a palette, or Escape to
+cancel. In a worker conversation, use `/palette`. To select a palette directly,
+use its name, as in `/pinata palette dracula`. Set `ui.palette` for a persistent
+default. The default `inherit` follows Pi's theme and has a standalone fallback.
 
 ```text
 inherit             pinata              terminal-default
@@ -1133,10 +1138,19 @@ trusted `--bootstrap <module>`. Inspection accepts `--cursor`, `--since`,
 Exit codes: `0` observed, `1` failed/uncertain application evidence, `2` invalid or
 rejected request. Execution completion does not certify correctness.
 
-Pi commands: `/pinata`, `/pinata-main`, `/pinata-fleet`,
-`/pinata-conversation <worker> [assignment]`, `/pinata-palette <name>`,
-`/pinata-schema <name>`, `/pinata-grants <json>`, `/pinata-new`,
+Pi commands: `/pinata`, `/pinata help`, `/pinata-main`, `/pinata-fleet`,
+`/pinata-conversation <worker> [assignment] [--run <id>]`, `/pinata-palette [name]`,
+`/pinata-schema [name]`, `/pinata-grants <json>`, `/pinata-new`,
 `/pinata-retry <run>:<input-token>`, `/pinata-memory inspect|edit|clear ...`.
+
+Result cards include the run ID in their conversation command. An older card
+opens its recorded assignment, even if the selected run has reused the worker
+name. Saved runs open read-only.
+
+A schema describes a data format, including its fields and allowed values.
+`/pinata-schema` lets you search by name and page through one format at a time.
+Browsing stays in the terminal and preserves the coordinator's model context.
+Use `pinata schema <name> --json` to read the full definition from a script.
 
 ## Package API
 

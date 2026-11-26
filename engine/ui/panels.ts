@@ -194,7 +194,7 @@ export function helpPanel(
                 ["/fleet /main", "Return to the fleet or coordinator"],
                 ["/queued", "Open the Queued filter; repeat to return"],
                 ["/scroll up|down|N", "Scroll the transcript"],
-                ["/palette <name>", "Change the viewer palette"],
+                ["/palette [name]", "Choose a viewer palette or apply one by name"],
               ],
             },
           ]

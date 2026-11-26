@@ -812,15 +812,23 @@ test("Pi overlays inherit display settings and preserve drafts across source swi
   tui.requestRender = () => {};
   let draft = "parent draft 👩🏽‍💻";
   let component: PinataScreen | undefined;
+  let onOpen: (() => void) | undefined;
   let widget: { dispose?(): void } | undefined;
   const statuses = new Map<string, string | undefined>();
-  const registered = new Map<string, unknown>();
+  const registered = new Map<
+    string,
+    { handler(args: string, context: ExtensionContext): Promise<void> }
+  >();
+  const notices: string[] = [];
   const sent: unknown[] = [];
   const customOptions: unknown[] = [];
   const events = new Map<string, (event: unknown, context: ExtensionContext) => unknown>();
   let terminalInput: ((text: string) => unknown) | undefined;
   const pi = {
-    registerCommand(name: string, value: unknown) {
+    registerCommand(
+      name: string,
+      value: { handler(args: string, context: ExtensionContext): Promise<void> },
+    ) {
       registered.set(name, value);
     },
     on(name: string, handler: (event: unknown, context: ExtensionContext) => unknown) {
@@ -842,7 +850,9 @@ test("Pi overlays inherit display settings and preserve drafts across source swi
       setEditorText: (text: string) => {
         draft = text;
       },
-      notify() {},
+      notify(message: string) {
+        notices.push(message);
+      },
       setStatus(key: string, text: string | undefined) {
         statuses.set(key, text);
       },
@@ -871,22 +881,39 @@ test("Pi overlays inherit display settings and preserve drafts across source swi
             component?.dispose();
             resolve();
           });
+          onOpen?.();
         });
       },
     },
   } as unknown as ExtensionContext;
-  const available = [source, other];
+  const retained = await surfaceFixture(t, { execution: true });
+  await retained.runtime.execute(
+    {
+      requestId: "saved-worker",
+      command: {
+        kind: "create",
+        workers: [{ id: "worker-1", agent: "fixture", task: "Original assignment" }],
+      },
+    },
+    retained.caller,
+  );
+  await retained.runtime.wait({}, retained.caller, AbortSignal.timeout(5000));
+  const saved = await openSavedSource(retained.directory);
+  const available = [source, other, saved];
   const ui = installCoordinatorUi(pi, async () => source, {
     runs: () => ({
       workspace: "/project",
       async list() {
         return {
-          runs: available.map((source) => ({
-            run: source.run,
-            ...source.location,
-            live: true,
-            control: true,
-          })),
+          runs: available.map((source) => {
+            assert(source.location);
+            return {
+              run: source.run,
+              ...source.location,
+              live: source.capabilities.live,
+              control: source.capabilities.control,
+            };
+          }),
           skipped: 0,
         };
       },
@@ -977,11 +1004,72 @@ test("Pi overlays inherit display settings and preserve drafts across source swi
       },
     });
   assert.equal(sent.length, 0, "Opening and navigation never request a coordinator turn");
+  const conversation = registered.get("pinata-conversation");
+  assert(conversation);
+  const opened = new Promise<void>((resolve) => {
+    onOpen = resolve;
+  });
+  const linked = conversation.handler(`worker-1 1 --run ${retained.run}`, context);
+  await Promise.race([opened, linked]);
+  assert.equal(component?.router.source.run, retained.run);
+  assert.equal(component?.router.source.capabilities.control, false);
+  assert.deepEqual(component?.router.selected, { ...ref(), run: retained.run });
+  assert.equal(
+    component?.router.state.assignments[assignmentKey({ ...ref(), run: retained.run })].task,
+    "Original assignment",
+  );
+  ui.navigate("main");
+  await linked;
+  assert.equal(router.draft, "worker draft");
+  assert.equal(draft, "parent draft 👩🏽‍💻");
+  await conversation.handler("worker-1 1 --run missing", context);
+  assert.match(notices.at(-1) ?? "", /unavailable in this project/);
+  await conversation.handler("worker-1 2", context);
+  assert.match(notices.at(-1) ?? "", /assignment is unavailable/);
   assert(registered.has("pinata-main") && registered.has("pinata-palette"));
   ui.dispose();
   assert.equal(source.listeners.size, 0);
   assert.equal(other.listeners.size, 0);
   assert.equal(terminalInput, undefined);
+});
+
+test("worker palette selection and mistyped commands stay local and keep the selected assignment", async () => {
+  const source = new UiSource();
+  const router = new ScreenRouter(source);
+  await router.start();
+  const screen = new PinataScreen({
+    tui: new TuiAltScreen(new MemoryTerminal()),
+    router,
+    main() {},
+  });
+  try {
+    router.navigate("conversation", ref());
+    const submit = async (text: string) => {
+      router.setDraft(text);
+      screen.render(80);
+      screen.handleInput("\r");
+      await tick();
+    };
+    await submit("/pallete");
+    assert.match(stripTerminalSequences(screen.render(80).join("\n")), /Piñata palette/);
+    for (const key of "nord") screen.handleInput(key);
+    screen.handleInput("\r");
+    assert.equal(router.palette, "nord");
+    await submit("/palette");
+    screen.handleInput("\u001b[B");
+    screen.handleInput("\u001b");
+    assert.equal(router.palette, "nord");
+    await submit("/palette bogus");
+    assert.match(router.notice, /Use \/palette/);
+    await submit("/hepl");
+    assert.match(router.notice, /Unknown conversation command/);
+    assert.equal(router.draft, "/hepl");
+    assert.deepEqual(router.selected, ref());
+    assert(!source.calls.some((call) => surfaceCallSchema.parse(call).method === "execute"));
+  } finally {
+    screen.dispose();
+    router.dispose();
+  }
 });
 
 test("accepted visual intent is identical across runtime and saved views; lean only hides transient observations", async (t) => {

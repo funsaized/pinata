@@ -12,7 +12,8 @@ import {
 } from "@earendil-works/pi-tui";
 import { paletteSchema } from "../contracts/config.ts";
 import { assignmentKey, type AssignmentRef, type SurfaceReply } from "../contracts/index.ts";
-import { createPaint, type Paint } from "./palette.ts";
+import { createPaint, readPalette, type Paint } from "./palette.ts";
+import { namePicker } from "./name-picker.ts";
 import { renderScreen } from "./render.ts";
 import { ScreenRouter, type MessageAction } from "./router.ts";
 import type { ConversationPresentation } from "./conversation.ts";
@@ -57,6 +58,7 @@ export class PinataScreen implements Component, Focusable {
   private readonly hitRows = new Map<number, AssignmentRef>();
   private readonly fleetRegions: FleetRegions = {};
   private runPicker?: RunPicker;
+  private palettePicker?: Component;
 
   constructor(options: ScreenOptions) {
     this.options = options;
@@ -113,6 +115,7 @@ export class PinataScreen implements Component, Focusable {
   render(width: number): string[] {
     this.syncEditor();
     const height = Math.max(1, this.options.tui.terminal.rows);
+    if (this.palettePicker) return this.palettePicker.render(width);
     if (this.runPicker && this.options.runs) {
       this.router.setInspectorVisible(false);
       return renderRuns(this.runPicker, {
@@ -175,6 +178,11 @@ export class PinataScreen implements Component, Focusable {
   }
   handleInput(data: string): void {
     if (!this.alive) return;
+    if (this.palettePicker) {
+      this.palettePicker.handleInput?.(data);
+      this.requestRender();
+      return;
+    }
     if (this.runPicker) {
       if (matchesKey(data, "escape")) this.runPicker = undefined;
       else if (data === "r") this.run(() => this.openRunPicker());
@@ -447,6 +455,7 @@ export class PinataScreen implements Component, Focusable {
   }
   handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
     if (!this.alive) return undefined;
+    if (this.palettePicker) return this.palettePicker.handleMouse?.(event) ?? { handled: true };
     if (this.runPicker) {
       const index = this.runPicker.hitRows.get(event.y);
       if (event.type === "click" && index !== undefined) {
@@ -569,7 +578,7 @@ export class PinataScreen implements Component, Focusable {
     this.sending = true;
     try {
       const local =
-        /^\/(stop(?:-assignment|-run)?|background|recover|reconnect|inspect|more|refresh|main|fleet|queued|worker|assignment|scroll|palette|replace|continue|follow-up|steer|help)(?:\s+([\s\S]*))?$/.exec(
+        /^\/(stop(?:-assignment|-run)?|background|recover|reconnect|inspect|more|refresh|main|fleet|queued|worker|assignment|scroll|palette|pallete|replace|continue|follow-up|steer|help)(?:\s+([\s\S]*))?$/.exec(
           text.trim(),
         );
       let reply: SurfaceReply | undefined;
@@ -648,7 +657,20 @@ export class PinataScreen implements Component, Focusable {
             break;
           }
           case "palette":
-            this.router.setPalette(paletteSchema.parse(argument));
+          case "pallete":
+            if (argument.trim()) this.router.setPalette(readPalette(argument.trim(), "/palette"));
+            else
+              this.palettePicker = namePicker({
+                title: "Piñata palette",
+                names: paletteSchema.options,
+                current: this.router.palette,
+                height: () => this.options.tui.terminal.rows,
+                done: (name) => {
+                  this.palettePicker = undefined;
+                  if (name) this.router.setPalette(readPalette(name, "/palette"));
+                  this.requestRender();
+                },
+              });
             break;
           case "replace": {
             const replacement = /^(\S+)\s+([\s\S]+)$/.exec(argument.trim());
@@ -678,6 +700,10 @@ export class PinataScreen implements Component, Focusable {
         )
           this.router.clearDraft(worker, text);
       } else {
+        if (/^\/[^/\s]+(?:\s|$)/.test(text.trim()))
+          throw new Error(
+            "Unknown conversation command. Use /help for commands, or an explicit /steer, /follow-up or /continue to send this text.",
+          );
         const assignment = this.router.selected
           ? this.router.state.assignments[assignmentKey(this.router.selected)]
           : undefined;

@@ -18,12 +18,20 @@ import {
   type EventBus,
   DefaultResourceLoader,
   initTheme,
+  type KeybindingsManager,
   ModelRuntime,
   SessionManager,
   SettingsManager,
   type InputEvent,
 } from "@earendil-works/pi-coding-agent";
-import { CombinedAutocompleteProvider } from "@earendil-works/pi-tui";
+import {
+  CombinedAutocompleteProvider,
+  getKeybindings,
+  TuiAltScreen,
+  stripTerminalSequences,
+  type Component,
+} from "@earendil-works/pi-tui";
+import { MemoryTerminal } from "./rewrite-ui-fixture.ts";
 import { mentionAutocomplete } from "../../engine/pi/mention-autocomplete.ts";
 import { createPinataExtension } from "../../engine/pi/extension.ts";
 import { invokeCoordinatorTool } from "../../engine/pi/tools.ts";
@@ -236,6 +244,79 @@ async function fixture(
     draft: () => draft,
   };
 }
+
+test("schema browsing and palette picking leave the draft, session and next model input alone", async (t) => {
+  const f = await fixture(t, {
+    respond: (context) => {
+      assert.doesNotMatch(
+        JSON.stringify(context.messages),
+        /pinata\.schema\.v1|pinata\.grants\.v1|Piñata palette/,
+      );
+      return fauxAssistantMessage("Done");
+    },
+  });
+  const ui = f.session.extensionRunner.getUIContext();
+  ui.setEditorText("original draft");
+  const tui = new TuiAltScreen(new MemoryTerminal());
+  tui.requestRender = () => {};
+  const keys = getKeybindings() as KeybindingsManager;
+  let drive: (component: Component) => void = () => {};
+  ui.custom = (factory) =>
+    new Promise((resolve, reject) => {
+      Promise.resolve(factory(tui, ui.theme, keys, resolve))
+        .then(drive)
+        .catch(reject);
+    });
+  const render = (view: Component) => stripTerminalSequences(view.render(80).join("\n"));
+  const before = structuredClone(f.session.messages);
+  const entries = f.manager.getEntries().length;
+  drive = (view) => {
+    assert.match(render(view), /Piñata schemas/);
+    for (const key of "grants") view.handleInput?.(key);
+    assert.match(render(view), /pinata\.grants\.v1/);
+    view.handleInput?.("\r");
+    assert.match(render(view), /"properties"/);
+    view.handleInput?.("\u001b[6~");
+    assert.doesNotMatch(render(view), /Lines 1–/);
+    view.handleInput?.("\u001b");
+    assert.match(render(view), /Piñata schemas/);
+    view.handleInput?.("\u001b");
+  };
+  for (let i = 0; i < 3; i++) await f.session.prompt("/pinata-schema");
+  drive = (view) => {
+    assert.match(render(view), /pinata\.extension-reply\.v1/);
+    view.handleInput?.("\u001b[F");
+    assert.doesNotMatch(render(view), /Lines 1–/);
+    view.handleInput?.("\u001b");
+  };
+  await f.session.prompt("/pinata-schema pinata.extension-reply.v1");
+  await f.session.prompt("/pinata-schema missing");
+  assert.match(f.errors.at(-1) ?? "", /Unknown schema/);
+  drive = (view) => {
+    assert.match(render(view), /inherit\s+current/);
+    for (const key of "drac") view.handleInput?.(key);
+    view.handleInput?.("\r");
+  };
+  await f.session.prompt("/pinata pallete");
+  assert(f.notices.some((line) => line.includes("palette: dracula")));
+  drive = (view) => {
+    assert.match(render(view), /dracula\s+current/);
+    view.handleInput?.("\u001b[B");
+    view.handleInput?.("\u001b");
+  };
+  await f.session.prompt("/pinata-palette");
+  await f.session.prompt("/pinata palette");
+  await f.session.prompt("/pinata palette bad-name");
+  assert.match(f.errors.at(-1) ?? "", /Use \/pinata palette/);
+  await f.session.prompt("/pinata help");
+  assert.match(f.notices.at(-1) ?? "", /palette \[name\]/);
+  assert.deepEqual(f.session.messages, before);
+  assert.equal(f.manager.getEntries().length, entries);
+  assert.equal(ui.getEditorText(), "original draft");
+  await f.session.prompt("Continue the original task");
+  const reply = f.session.messages.at(-1);
+  assert(reply?.role === "assistant" && reply.stopReason === "stop");
+});
 
 test("mention grammar ignores embedded handles, quoted text, emails and path fragments", () => {
   for (const input of [

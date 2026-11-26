@@ -5,13 +5,20 @@ import {
   type ExtensionContext,
   type Theme,
 } from "@earendil-works/pi-coding-agent";
-import { matchesKey, type Component } from "@earendil-works/pi-tui";
+import { matchesKey, type AutocompleteItem, type Component } from "@earendil-works/pi-tui";
 import { canonicalJson, type AssignmentRef, type Config } from "../contracts/index.ts";
 import { paletteSchema } from "../contracts/config.ts";
 import type { RuntimeSource } from "../sources/runtime.ts";
 import { ScreenRouter, type ScreenName } from "./router.ts";
 import { PinataScreen, resolveKeys } from "./screen.ts";
-import { createPaint, rainbowText, type Paint, type SemanticToken } from "./palette.ts";
+import {
+  createPaint,
+  rainbowText,
+  readPalette,
+  type Paint,
+  type SemanticToken,
+} from "./palette.ts";
+import { namePicker } from "./name-picker.ts";
 import { fleetWidget } from "./render.ts";
 import { projectRuns, type ProjectRunCatalog } from "../sources/project.ts";
 
@@ -82,6 +89,44 @@ function paint(binding: UiBinding): Paint {
     mode: theme?.getColorMode(),
     inherit: theme ? (token, text) => inherit(theme, token, text) : undefined,
   });
+}
+
+function paletteNames(prefix: string, command = ""): AutocompleteItem[] | null {
+  if (!prefix) return null;
+  return paletteSchema.options
+    .filter((name) => name.startsWith(prefix) && name !== prefix)
+    .map((name) => ({ value: command + name, label: name }));
+}
+
+async function choosePalette(
+  context: ExtensionContext,
+  router: ScreenRouter,
+  argument: string,
+): Promise<void> {
+  let name: string | undefined = argument;
+  if (!name) {
+    if (context.mode !== "tui") {
+      context.ui.notify(
+        `Current palette: ${router.palette}. Choose with /pinata palette <name>. Available: ${paletteSchema.options.join(", ")}`,
+        "info",
+      );
+      return;
+    }
+    name = await context.ui.custom<string | undefined>(
+      (tui, _theme, _keys, done) =>
+        namePicker({
+          title: "Piñata palette",
+          names: paletteSchema.options,
+          current: router.palette,
+          height: () => tui.terminal.rows,
+          done,
+        }),
+      { overlay: true, overlayOptions: { width: "70%", maxHeight: "100%" } },
+    );
+    if (!name) return;
+  }
+  router.setPalette(readPalette(name, "/pinata palette"));
+  context.ui.notify(`Pinata palette: ${router.palette}`, "info");
 }
 
 export function installCoordinatorUi(
@@ -189,7 +234,9 @@ export function installCoordinatorUi(
             options.runs?.(context, resolved) ??
             (resolved.location
               ? projectRuns(resolved.location.workspace, () =>
-                  [...bindings.values()].map((binding) => binding.router.source),
+                  [...bindings.values()]
+                    .filter((binding) => binding.session === session)
+                    .map((binding) => binding.router.source),
                 )
               : undefined),
         };
@@ -218,7 +265,10 @@ export function installCoordinatorUi(
       } finally {
         context.ui.setStatus?.("pinata.opening", undefined);
       }
-      router.navigate(screen, ref);
+      if (!router.navigate(screen, ref)) {
+        context.ui.notify(router.notice, "error");
+        return;
+      }
       if (screen === "main") {
         closeScreen?.();
         return;
@@ -321,29 +371,71 @@ export function installCoordinatorUi(
   };
   const command = async (args: string, context: ExtensionContext): Promise<void> => {
     try {
-      const [action = "fleet", worker, ordinal] = args.trim().split(/\s+/).filter(Boolean);
+      const input = args.trim();
+      const action = input.split(/\s+/, 1)[0] || "fleet";
+      const argument = input.slice(action.length).trimStart();
+      if (action === "help") {
+        context.ui.notify(
+          [
+            "/pinata fleet · /pinata main — open the fleet or return to the coordinator",
+            "/pinata conversation <worker> [assignment] [--run <id>] — open a conversation",
+            "/pinata palette [name] — browse or select a palette",
+            "/pinata-schema [name] — browse data formats",
+            "/pinata-new — select a new run",
+            "/pinata-grants <json> — set grants for the next run",
+            "/pinata-memory inspect|edit|clear — manage worker memory",
+            "/pinata-retry <run>:<input-token> — retry an uncertain addressed input",
+          ].join("\n"),
+          "info",
+        );
+        return;
+      }
       if (action === "main") {
         api.navigate("main");
         return;
       }
       const router = await api.bind(context);
-      if (action === "palette") {
-        router.setPalette(paletteSchema.parse(worker));
-        context.ui.notify(`Pinata palette: ${router.palette}`, "info");
+      if (action === "palette" || action === "pallete") {
+        await choosePalette(context, router, argument);
         return;
       }
       if (!["fleet", "conversation"].includes(action))
+        throw new Error("Unknown Piñata command. Use /pinata help to see the commands.");
+      const match = /^(\S+)(?:\s+([1-9]\d*))?(?:\s+--run\s+([\s\S]+))?$/.exec(argument);
+      if (argument && !match)
         throw new Error(
-          "Use /pinata main, fleet, conversation <worker> [assignment], or palette <name>",
+          "Use /pinata conversation <worker> [positive assignment number] [--run <id>]",
         );
+      const [, worker, ordinal, runArgument] = match ?? [];
+      let target = router;
+      if (runArgument) {
+        const run = runArgument.startsWith('"') ? JSON.parse(runArgument) : runArgument;
+        if (typeof run !== "string") throw new Error("Expected a run ID after --run");
+        if (run !== router.source.run) {
+          const catalog = [...bindings.values()].find((binding) => binding.router === router)?.runs;
+          const matches = (await catalog?.list())?.runs.filter((entry) => entry.run === run) ?? [];
+          if (!catalog || matches.length !== 1)
+            throw new Error(
+              matches.length
+                ? "Multiple project runs have this ID. Open the project run browser to choose one."
+                : "That run is unavailable in this project.",
+            );
+          target = await api.bind(context, await catalog.open(matches[0]));
+        }
+      }
       const ref = worker
         ? {
-            run: router.state.run,
+            run: target.state.run,
             worker,
-            assignment: ordinal ? Number(ordinal) : router.state.latest[worker],
+            assignment: ordinal ? Number(ordinal) : target.state.latest[worker],
           }
         : undefined;
-      await api.open(context, action as ScreenName, ref);
+      try {
+        await api.open(context, action as ScreenName, ref, target.source);
+      } finally {
+        if (target !== router && selected?.router === target)
+          await api.bind(context, router.source);
+      }
     } catch (error) {
       errors(context, error);
     }
@@ -351,6 +443,13 @@ export function installCoordinatorUi(
   pi.registerCommand("pinata", {
     description: "Browse the live fleet and exact worker conversations without a model turn.",
     handler: command,
+    getArgumentCompletions: (prefix) => {
+      const match = /^palette\s+(\S+)$/.exec(prefix);
+      if (match) return paletteNames(match[1], "palette ");
+      return ["fleet", "conversation", "main", "palette", "help"]
+        .filter((name) => prefix && name.startsWith(prefix) && name !== prefix)
+        .map((name) => ({ value: name, label: name }));
+    },
   });
   for (const screen of ["main", "fleet", "conversation"] as const)
     pi.registerCommand(`pinata-${screen}`, {
@@ -360,6 +459,7 @@ export function installCoordinatorUi(
   pi.registerCommand("pinata-palette", {
     description: "Switch the Pinata semantic palette without restarting workers.",
     handler: (args, context) => command(`palette ${args}`, context),
+    getArgumentCompletions: (prefix) => paletteNames(prefix),
   });
   pi.on("session_start", (_event, context) => {
     terminalInput?.();

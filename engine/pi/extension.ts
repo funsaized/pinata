@@ -28,9 +28,11 @@ import {
   retainMentionIntent,
 } from "./mention-input.ts";
 import { installCoordinatorUi } from "../ui/pi.ts";
+import { runArgument } from "../ui/text.ts";
 import { ToolPages } from "../sources/pages.ts";
 import { projectRuns } from "../sources/project.ts";
 import { registerMemoryCommand } from "./memory.ts";
+import { registerSchemaCommand } from "./schema-command.ts";
 import { completionWatchType, CoordinatorCompletion } from "./completion.ts";
 
 const bindingType = "pinata.runtime.v1";
@@ -237,7 +239,7 @@ export function createPinataExtension(options: PiExtensionOptions = {}): Extensi
       {
         runs: (context, source) =>
           projectRuns(source.location?.workspace ?? context.cwd, () =>
-            [...bindings.values()].map((binding) => binding.host.source),
+            visibleBindings(context).map((binding) => binding.host.source),
           ),
         settings: (_context, source) =>
           [...bindings.values()].find((binding) => binding.host.source === source)?.host.config.ui,
@@ -272,8 +274,7 @@ export function createPinataExtension(options: PiExtensionOptions = {}): Extensi
       if (!context.ui.getEditorText().trim()) context.ui.setEditorText(text);
     };
     const retryCommand = (run: string, token: string): string => {
-      const selector = /^[A-Za-z0-9._-]+$/.test(run) ? run : JSON.stringify(run);
-      return `/pinata-retry ${selector}:${token}`;
+      return `/pinata-retry ${runArgument(run)}:${token}`;
     };
     const showReceipt = (
       context: ExtensionContext,
@@ -547,20 +548,7 @@ export function createPinataExtension(options: PiExtensionOptions = {}): Extensi
         }
       },
     });
-    pi.registerCommand("pinata-schema", {
-      description: "Inspect a canonical Pinata schema without a model call.",
-      handler: async (name, context) => {
-        const active = await getBinding(context);
-        const response = await active.host.source.request({
-          method: "query",
-          input: { kind: "schemas", ...(name.trim() ? { name: name.trim() } : {}) },
-        });
-        pi.sendMessage(
-          { customType: "pinata.schema.v1", content: canonicalJson(response), display: true },
-          { triggerTurn: false },
-        );
-      },
-    });
+    registerSchemaCommand(pi);
   };
 }
 
