@@ -1076,6 +1076,70 @@ test("worker palette selection and mistyped commands stay local and keep the sel
   }
 });
 
+test("worker commands reject extra targets before acting and keep the full command for correction", async (t) => {
+  const source = new UiSource();
+  const router = new ScreenRouter(source);
+  t.after(() => router.dispose());
+  await router.start();
+  router.navigate("conversation", ref());
+  await tick();
+  const screen = new PinataScreen({
+    tui: new TuiAltScreen(new MemoryTerminal()),
+    router,
+    main() {
+      assert.fail("unexpected navigation");
+    },
+  });
+  t.after(() => screen.dispose());
+  const priorCalls = source.calls.length;
+  for (const name of [
+    "stop",
+    "stop-assignment",
+    "stop-run",
+    "background",
+    "recover",
+    "reconnect",
+    "inspect",
+    "more",
+    "refresh",
+    "main",
+    "fleet",
+    "queued",
+    "help",
+  ]) {
+    const draft = `/${name} worker-2`;
+    router.setDraft(draft);
+    screen.render(80);
+    screen.handleInput("\r");
+    await tick();
+    assert.match(router.notice, /takes no arguments/);
+    if (name === "stop") assert.match(router.notice, /Stop worker-1 and its children/);
+    assert.equal(router.screen, "conversation");
+    assert.equal(router.help, false);
+    assert.equal(router.draft, draft);
+    assert.equal(screen.editor.getExpandedText(), draft);
+    assert.equal(source.calls.length, priorCalls);
+  }
+  for (const draft of ["/steer", "/follow-up", "/continue", "/scroll"]) {
+    router.setDraft(draft);
+    screen.render(80);
+    screen.handleInput("\r");
+    await tick();
+    assert.match(router.notice, /Use \//);
+    assert.equal(router.draft, draft);
+  }
+  source.respond = async () => ({
+    status: "error",
+    error: { code: "transport_closed", message: "Connection lost" },
+  });
+  router.setDraft("/follow-up Keep my instructions");
+  screen.render(80);
+  screen.handleInput("\r");
+  await tick();
+  assert.equal(router.notice, "Connection lost");
+  assert.equal(router.draft, "/follow-up Keep my instructions");
+});
+
 test("accepted visual intent is identical across runtime and saved views; lean only hides transient observations", async (t) => {
   const f = await surfaceFixture(t);
   await f.runtime.execute(

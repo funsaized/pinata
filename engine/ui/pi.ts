@@ -100,6 +100,17 @@ function paletteNames(prefix: string, command = ""): AutocompleteItem[] | null {
     .map((name) => ({ value: command + name, label: name }));
 }
 
+export function rejectExtraArguments(
+  context: ExtensionContext,
+  command: string,
+  args: string,
+): boolean {
+  if (!args.trim()) return false;
+  if (!context.ui.getEditorText()) context.ui.setEditorText(`${command} ${args}`);
+  context.ui.notify(`${command} takes no arguments.`, "error");
+  return true;
+}
+
 async function choosePalette(
   context: ExtensionContext,
   router: ScreenRouter,
@@ -374,11 +385,20 @@ export function installCoordinatorUi(
       }
     },
   };
-  const command = async (args: string, context: ExtensionContext): Promise<void> => {
+  const command = async (
+    args: string,
+    context: ExtensionContext,
+    alias?: string,
+  ): Promise<void> => {
     try {
       const input = args.trim();
       const action = input.split(/\s+/, 1)[0] || "fleet";
       const argument = input.slice(action.length).trimStart();
+      if (
+        (action === "help" || action === "main") &&
+        rejectExtraArguments(context, alias ?? `/pinata ${action}`, argument)
+      )
+        return;
       if (action === "help") {
         context.ui.notify(
           [
@@ -447,7 +467,7 @@ export function installCoordinatorUi(
   };
   pi.registerCommand("pinata", {
     description: "Browse the live fleet and exact worker conversations without a model turn.",
-    handler: command,
+    handler: (args, context) => command(args, context),
     getArgumentCompletions: (prefix) => {
       const match = /^palette\s+(\S+)$/.exec(prefix);
       if (match) return paletteNames(match[1], "palette ");
@@ -459,7 +479,7 @@ export function installCoordinatorUi(
   for (const screen of ["main", "fleet", "conversation"] as const)
     pi.registerCommand(`pinata-${screen}`, {
       description: `Open the Pinata ${screen} screen.`,
-      handler: (args, context) => command(`${screen} ${args}`, context),
+      handler: (args, context) => command(`${screen} ${args}`, context, `/pinata-${screen}`),
     });
   pi.registerCommand("pinata-palette", {
     description: "Switch the Pinata semantic palette without restarting workers.",

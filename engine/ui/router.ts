@@ -1226,9 +1226,9 @@ export class ScreenRouter {
     this.changed();
     return { status: "error", error: { code: "conflict", message } };
   }
-  async submit(action: MessageAction = "steer"): Promise<SurfaceReply> {
+  async submit(action: MessageAction = "steer", text = this.draft): Promise<SurfaceReply> {
     const ref = this.selected;
-    const text = this.draft;
+    const submittedDraft = this.draft;
     if (!ref || !text.trim()) return this.unavailable("Select an assignment and enter a message");
     if (!this.source.capabilities.control)
       return this.unavailable("This source is read-only; attach to the owning runtime for control");
@@ -1277,7 +1277,7 @@ export class ScreenRouter {
       reply.response.result.status === "accepted"
     ) {
       this.messages.delete(ref.worker);
-      if (this.drafts.get(ref.worker) === text) this.drafts.set(ref.worker, "");
+      this.clearDraft(ref.worker, submittedDraft);
       const receipt = reply.response.result;
       const target = receipt.assignments[0];
       const messageId =

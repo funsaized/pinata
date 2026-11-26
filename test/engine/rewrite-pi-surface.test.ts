@@ -318,6 +318,26 @@ test("schema browsing and palette picking leave the draft, session and next mode
   assert(reply?.role === "assistant" && reply.stopReason === "stop");
 });
 
+test("argumentless Pi commands reject trailing text without switching runs or overwriting drafts", async (t) => {
+  const f = await fixture(t);
+  const initialRuns = f.hosts.map((host) => host.caller.run);
+  const ui = f.session.extensionRunner.getUIContext();
+  for (const command of ["/pinata main", "/pinata-main", "/pinata help", "/pinata-new"]) {
+    ui.setEditorText("");
+    await f.session.prompt(`${command} later`);
+    assert.equal(f.errors.at(-1), `${command} takes no arguments.`);
+    assert.equal(ui.getEditorText(), `${command} later`);
+  }
+  ui.setEditorText("unfinished draft");
+  await f.session.prompt("/pinata-new later");
+  assert.equal(ui.getEditorText(), "unfinished draft");
+  assert.deepEqual(
+    f.hosts.map((host) => host.caller.run),
+    initialRuns,
+  );
+  assert.equal(f.faux.state.callCount, 0);
+});
+
 test("mention grammar ignores embedded handles, quoted text, emails and path fragments", () => {
   for (const input of [
     "mail a@host.test",

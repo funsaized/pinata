@@ -15,7 +15,8 @@ import { assignmentKey, type AssignmentRef, type SurfaceReply } from "../contrac
 import { createPaint, readPalette, type Paint } from "./palette.ts";
 import { namePicker } from "./name-picker.ts";
 import { renderScreen } from "./render.ts";
-import { ScreenRouter, type MessageAction } from "./router.ts";
+import { ScreenRouter } from "./router.ts";
+import { parseConversationCommand } from "./conversation-commands.ts";
 import type { ConversationPresentation } from "./conversation.ts";
 import { agentActions } from "./panels.ts";
 import { padded } from "./text.ts";
@@ -574,18 +575,16 @@ export class PinataScreen implements Component, Focusable {
   }
   private async submit(): Promise<void> {
     const text = this.editor.getExpandedText();
-    const worker = this.router.selected?.worker;
+    const ref = this.router.selected;
+    if (!ref) return;
     this.router.setDraft(text);
     this.sending = true;
     try {
-      const local =
-        /^\/(stop(?:-assignment|-run)?|background|recover|reconnect|inspect|more|refresh|main|fleet|queued|worker|assignment|scroll|palette|pallete|replace|continue|follow-up|steer|help)(?:\s+([\s\S]*))?$/.exec(
-          text.trim(),
-        );
+      const local = parseConversationCommand(text, ref);
       let reply: SurfaceReply | undefined;
       if (local) {
-        const argument = local[2] ?? "";
-        switch (local[1]) {
+        const { name, argument } = local;
+        switch (name) {
           case "stop":
             reply = await this.router.control("cancel");
             break;
@@ -658,7 +657,6 @@ export class PinataScreen implements Component, Focusable {
             break;
           }
           case "palette":
-          case "pallete":
             if (argument.trim()) this.router.setPalette(readPalette(argument.trim(), "/palette"));
             else
               this.palettePicker = namePicker({
@@ -682,32 +680,20 @@ export class PinataScreen implements Component, Focusable {
           case "continue":
           case "follow-up":
           case "steer":
-            this.router.setDraft(argument);
-            reply = await this.router.submit(
-              local[1] === "follow-up" ? "follow_up" : (local[1] as MessageAction),
-            );
+            reply = await this.router.submit(name === "follow-up" ? "follow_up" : name, argument);
             break;
           case "help":
             this.router.help = true;
             break;
         }
         if (
-          (!reply ||
-            (reply.status === "ok" &&
-              !(
-                reply.response.method === "execute" && reply.response.result.status === "rejected"
-              ))) &&
-          worker
+          !reply ||
+          (reply.status === "ok" &&
+            !(reply.response.method === "execute" && reply.response.result.status === "rejected"))
         )
-          this.router.clearDraft(worker, text);
+          this.router.clearDraft(ref.worker, text);
       } else {
-        if (/^\/[^/\s]+(?:\s|$)/.test(text.trim()))
-          throw new Error(
-            "Unknown conversation command. Use /help for commands, or an explicit /steer, /follow-up or /continue to send this text.",
-          );
-        const assignment = this.router.selected
-          ? this.router.state.assignments[assignmentKey(this.router.selected)]
-          : undefined;
+        const assignment = this.router.state.assignments[assignmentKey(ref)];
         await this.router.submit(
           assignment?.execution.phase === "ended"
             ? assignment.execution.reason === "completed"

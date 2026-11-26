@@ -27,7 +27,7 @@ import {
   recordMentionInput,
   retainMentionIntent,
 } from "./mention-input.ts";
-import { installCoordinatorUi } from "../ui/pi.ts";
+import { installCoordinatorUi, rejectExtraArguments } from "../ui/pi.ts";
 import { runArgument } from "../ui/text.ts";
 import { ToolPages } from "../sources/pages.ts";
 import { projectRuns } from "../sources/project.ts";
@@ -527,7 +527,8 @@ export function createPinataExtension(options: PiExtensionOptions = {}): Extensi
     });
     pi.registerCommand("pinata-new", {
       description: "Select a new Pinata run without cancelling existing workers.",
-      handler: async (_args, context) => {
+      handler: async (args, context) => {
+        if (rejectExtraArguments(context, "/pinata-new", args)) return;
         nextRun = true;
         const binding = await getBinding(context);
         context.ui.notify(`Selected run ${binding.host.caller.run}`, "info");

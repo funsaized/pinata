@@ -325,7 +325,9 @@ Inside a worker screen, `/worker <id> [assignment]`, `/assignment <number>`,
 `/fleet` and `/main` navigate. `/steer <text>`, `/follow-up <text>` and
 `/continue <text>` select the message action. `/stop`, `/stop-assignment` and
 `/stop-run` stop the selected agent, one assignment, or the entire fleet in the
-current run, respectively. Stops include child agents, interrupt active work and
+current run, respectively. To stop `scout`, open its conversation and type `/stop`.
+Typing `/stop scout` keeps the draft and shows which agent `/stop` would affect.
+Stops include child agents, interrupt active work and
 cancel queued work. The fleet action includes hidden and filtered agents and works
 without a selected row. Stop requests retain output and file edits; cleanup may take
 time. `/background` releases the
