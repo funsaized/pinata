@@ -38,6 +38,7 @@ export type RenderOptions = {
   projectRuns?: boolean;
   presentation?: ConversationPresentation;
   conversationKeys?: ConversationKeys;
+  commandMenu?: boolean;
 };
 function record(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -574,12 +575,18 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
               ["?", "help"],
               ["Esc", "back"],
             ]
-          : [
-              ["Enter", router.source.capabilities.control ? "send" : "command"],
-              ["Tab", "transcript"],
-              ["?", "help (empty message)"],
-              ["Esc", "back"],
-            ];
+          : options.commandMenu
+            ? [
+                ["↑↓", "choose"],
+                ["Tab", "insert"],
+                ["Esc", "close list"],
+              ]
+            : [
+                ["Enter", router.source.capabilities.control ? "send" : "command"],
+                ["Tab", "transcript"],
+                ["?", "help (empty message)"],
+                ["Esc", "back"],
+              ];
   const extra: Shortcut[] = router.searching
     ? [
         ["Ctrl+U", "clear"],

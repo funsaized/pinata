@@ -171,6 +171,7 @@ settled results. Embedded hosts own their notification policy.
 The coordinator shows a compact Agents tree while work is active or queued. Child
 assignments branch beneath their parent.
 Open the full fleet with `/pinata`.
+Type `/pinata` followed by a space in the main prompt to see its subcommands.
 
 While a worker runs, its fleet row shows the model turn or tool in progress and how
 long it has been active. Parallel tool calls show a count. The selected worker’s
@@ -320,6 +321,10 @@ unavailable controls and keeps inspection available. Message drafts remain edita
 for local commands; messages require a control connection. Earlier assignments
 identify when you need to select the latest assignment to send a message. Invalid
 navigation and replacement commands keep the draft and show usage or target errors.
+
+Type `/` in a worker's message box to see commands for that conversation.
+Use the arrow keys to choose, Tab to insert, and Enter to run the command you
+typed. `Esc` closes the list and keeps your draft.
 
 Inside a worker screen, `/worker <id> [assignment]`, `/assignment <number>`,
 `/fleet` and `/main` navigate. `/steer <text>`, `/follow-up <text>` and

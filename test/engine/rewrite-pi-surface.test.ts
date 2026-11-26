@@ -26,6 +26,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import {
   CombinedAutocompleteProvider,
+  Editor,
   getKeybindings,
   TuiAltScreen,
   stripTerminalSequences,
@@ -335,6 +336,41 @@ test("argumentless Pi commands reject trailing text without switching runs or ov
     f.hosts.map((host) => host.caller.run),
     initialRuns,
   );
+  assert.equal(f.faux.state.callCount, 0);
+});
+
+test("typing a space after /pinata opens its subcommands in the Pi editor", async (t) => {
+  const f = await fixture(t);
+  const command = f.session.extensionRunner.getCommand("pinata");
+  assert(command);
+  const tui = new TuiAltScreen(new MemoryTerminal());
+  tui.requestRender = () => {};
+  const plain = (text: string) => text;
+  const editor = new Editor(tui, {
+    borderColor: plain,
+    selectList: {
+      selectedPrefix: plain,
+      selectedText: plain,
+      description: plain,
+      scrollInfo: plain,
+      noMatch: plain,
+    },
+  });
+  editor.setAutocompleteProvider(
+    new CombinedAutocompleteProvider([command], f.hosts[0].workspace, null),
+  );
+  for (const key of "/pinata ") {
+    editor.handleInput(key);
+    await nextTurn();
+  }
+  const menu = stripTerminalSequences(editor.render(90).join("\n"));
+  for (const word of ["fleet", "conversation", "main", "palette", "help"])
+    assert(menu.includes(word), menu);
+  assert.match(menu, /palette\s+Choose a color palette/);
+  editor.handleInput("p");
+  await nextTurn();
+  editor.handleInput("\t");
+  assert.equal(editor.getText().trimEnd(), "/pinata palette");
   assert.equal(f.faux.state.callCount, 0);
 });
 

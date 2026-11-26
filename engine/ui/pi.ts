@@ -471,9 +471,15 @@ export function installCoordinatorUi(
     getArgumentCompletions: (prefix) => {
       const match = /^palette\s+(\S+)$/.exec(prefix);
       if (match) return paletteNames(match[1], "palette ");
-      return ["fleet", "conversation", "main", "palette", "help"]
-        .filter((name) => prefix && name.startsWith(prefix) && name !== prefix)
-        .map((name) => ({ value: name, label: name }));
+      return [
+        { value: "fleet", description: "Open the fleet" },
+        { value: "conversation", description: "Open a worker conversation" },
+        { value: "main", description: "Return to the coordinator" },
+        { value: "palette", description: "Choose a color palette" },
+        { value: "help", description: "Show Piñata commands" },
+      ]
+        .filter(({ value }) => value.startsWith(prefix) && value !== prefix)
+        .map((item) => ({ ...item, label: item.value }));
     },
   });
   for (const screen of ["main", "fleet", "conversation"] as const)

@@ -1140,6 +1140,69 @@ test("worker commands reject extra targets before acting and keep the full comma
   assert.equal(router.draft, "/follow-up Keep my instructions");
 });
 
+test("the worker slash menu names targets, completes drafts and limits controls to the owning view", async (t) => {
+  const source = new UiSource(uiState(2));
+  const router = new ScreenRouter(source);
+  t.after(() => router.dispose());
+  await router.start();
+  router.navigate("conversation", ref(2));
+  const tui = new TuiAltScreen(new MemoryTerminal());
+  tui.requestRender = () => {};
+  const screen = new PinataScreen({ tui, router, main() {} });
+  t.after(() => screen.dispose());
+  const render = () => stripTerminalSequences(screen.render(100).join("\n"));
+  const type = async (text: string) => {
+    for (const char of text) screen.handleInput(char);
+    await tick();
+    return render();
+  };
+  assert.match(await type("/"), /\/fleet\s+Open the fleet/);
+  assert.match(await type("st"), /\/stop\s+Stop worker-2 and its children/);
+  assert.match(await type("op-"), /Stop worker-2\/1 and its children/);
+  screen.handleInput("\u001b[B");
+  screen.handleInput("\t");
+  assert.equal(router.draft, "/stop-run ");
+  assert.equal(router.transcriptFocus, false);
+  assert.equal(screen.editor.isShowingAutocomplete(), false);
+  assert(!source.calls.some((call) => surfaceCallSchema.parse(call).method === "execute"));
+
+  router.setDraft("");
+  render();
+  await type("/stop");
+  screen.handleInput("\u001b[B");
+  screen.handleInput("\r");
+  assert.equal(router.draft, "/stop-assignment ");
+  assert(!source.calls.some((call) => surfaceCallSchema.parse(call).method === "execute"));
+  screen.handleInput("\r");
+  await tick();
+  const sent = surfaceCallSchema.parse(source.calls.at(-1));
+  assert(sent.method === "execute");
+  assert.deepEqual(commandEnvelopeSchema.parse(sent.input).command, {
+    kind: "cancel",
+    scope: "assignment",
+    worker: "worker-2",
+    assignment: 1,
+    descendants: true,
+  });
+  router.setDraft("");
+  render();
+  await type("/pal");
+  screen.handleInput("\u001b");
+  assert.equal(router.screen, "conversation");
+  assert.equal(router.draft, "/pal");
+  assert.equal(screen.editor.isShowingAutocomplete(), false);
+  screen.handleInput("\t");
+  assert.equal(router.transcriptFocus, true);
+  screen.handleInput("\t");
+  router.setDraft("");
+  source.capabilities.control = false;
+  render();
+  assert.match(await type("/"), /\/palette/);
+  await type("st");
+  assert.equal(screen.editor.isShowingAutocomplete(), false);
+  assert.equal(router.draft, "/st");
+});
+
 test("accepted visual intent is identical across runtime and saved views; lean only hides transient observations", async (t) => {
   const f = await surfaceFixture(t);
   await f.runtime.execute(

@@ -16,7 +16,7 @@ import { createPaint, readPalette, type Paint } from "./palette.ts";
 import { namePicker } from "./name-picker.ts";
 import { renderScreen } from "./render.ts";
 import { ScreenRouter } from "./router.ts";
-import { parseConversationCommand } from "./conversation-commands.ts";
+import { conversationAutocomplete, parseConversationCommand } from "./conversation-commands.ts";
 import type { ConversationPresentation } from "./conversation.ts";
 import { agentActions } from "./panels.ts";
 import { padded } from "./text.ts";
@@ -48,7 +48,7 @@ export class PinataScreen implements Component, Focusable {
   private readonly options: ScreenOptions;
   private keys: UiKeys;
   private readonly unsubscribe: () => void;
-  private syncedWorker?: string;
+  private syncedAssignment?: string;
   private syncedDraft = "";
   private alive = true;
   private pendingRender = false;
@@ -79,6 +79,11 @@ export class PinataScreen implements Component, Focusable {
     // The SDK editor clears before onSubmit. Intercept submit keys ourselves so
     // a rejected/uncertain control never destroys the user's draft.
     this.editor.disableSubmit = true;
+    this.editor.setAutocompleteProvider(conversationAutocomplete(this.router));
+    this.editor.onChange = () => {
+      this.syncedDraft = this.editor.getExpandedText();
+      if (this.syncedDraft !== this.router.draft) this.router.setDraft(this.syncedDraft);
+    };
     this.unsubscribe = this.router.onChange(() => this.requestRender());
   }
   get focused(): boolean {
@@ -102,13 +107,11 @@ export class PinataScreen implements Component, Focusable {
   }
   private syncEditor(): void {
     this.keys = resolveKeys(this.router.keys);
-    if (
-      this.syncedWorker !== this.router.selected?.worker ||
-      this.syncedDraft !== this.router.draft
-    ) {
+    const ref = this.router.screen === "conversation" && this.router.selected;
+    const key = ref ? assignmentKey(ref) : undefined;
+    if (this.syncedAssignment !== key || this.syncedDraft !== this.router.draft) {
       this.editor.setText(this.router.draft);
-      this.syncedWorker = this.router.selected?.worker;
-      this.syncedDraft = this.router.draft;
+      this.syncedAssignment = key;
     }
     this.editor.focused =
       this.focus && this.router.screen === "conversation" && !this.router.transcriptFocus;
@@ -149,6 +152,7 @@ export class PinataScreen implements Component, Focusable {
           height: available,
           presentation: this.options.presentation?.(),
           conversationKeys: resolveConversationKeys(this.router.keys, this.options.keybindings),
+          commandMenu: this.editor.isShowingAutocomplete() && !this.router.transcriptFocus,
           paint: this.paint(),
           ascii: this.options.ascii,
           hitRows: this.hitRows,
@@ -276,15 +280,38 @@ export class PinataScreen implements Component, Focusable {
         this.router.navigate("fleet", previous);
       return;
     }
+    const composing =
+      this.router.screen === "conversation" &&
+      Boolean(this.router.selected) &&
+      !this.router.transcriptFocus;
+    if (composing) this.syncEditor();
+    if (composing && this.editor.isShowingAutocomplete() && matchesKey(data, "enter")) {
+      const typed = this.editor.getExpandedText();
+      this.editor.handleInput(data);
+      const completed = this.editor.getExpandedText();
+      // Enter may fill a different command. Only execute a command the user has already seen in the draft.
+      if (typed.trimEnd() !== completed.trimEnd()) {
+        this.syncedDraft = completed;
+        this.router.setDraft(completed);
+        return;
+      }
+    }
+    if (
+      composing &&
+      this.editor.isShowingAutocomplete() &&
+      (["up", "down", "pageUp", "pageDown", "tab", "escape"] as const).some((key) =>
+        matchesKey(data, key),
+      )
+    ) {
+      this.editor.handleInput(data);
+      this.requestRender();
+      return;
+    }
     if (this.router.screen === "conversation" && matchesKey(data, "tab")) {
       this.router.transcriptFocus = !this.router.transcriptFocus;
       this.requestRender();
       return;
     }
-    const composing =
-      this.router.screen === "conversation" &&
-      Boolean(this.router.selected) &&
-      !this.router.transcriptFocus;
     if (this.router.screen === "conversation") {
       const keys = resolveConversationKeys(this.router.keys, this.options.keybindings);
       if (keys.expandTools.some((key) => matchesKey(data, key))) {
@@ -303,8 +330,6 @@ export class PinataScreen implements Component, Focusable {
       ["ctrl+left", "ctrl+right", "ctrl+b", "ctrl+r"].some((key) => matchesKey(data, key as KeyId))
     ) {
       this.editor.handleInput(data);
-      this.syncedDraft = this.editor.getExpandedText();
-      this.router.setDraft(this.syncedDraft);
       return;
     }
     if (!composing && !this.router.focusedDependency && data === "a") {
@@ -446,14 +471,11 @@ export class PinataScreen implements Component, Focusable {
       if (matchesKey(data, "down")) this.router.scroll(1);
       return;
     }
-    this.syncEditor();
     if (matchesKey(data, "enter") || matchesKey(data, "ctrl+enter")) {
       if (!this.sending) this.run(() => this.submit());
       return;
     }
     this.editor.handleInput(data);
-    this.syncedDraft = this.editor.getExpandedText();
-    this.router.setDraft(this.syncedDraft);
   }
   handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
     if (!this.alive) return undefined;
@@ -498,6 +520,16 @@ export class PinataScreen implements Component, Focusable {
         return { handled: true, focus: true, render: true };
       }
     }
+    if (
+      this.router.screen === "conversation" &&
+      event.y >= this.editorTop &&
+      (event.type !== "wheel" || this.editor.isShowingAutocomplete())
+    )
+      return this.editor.handleMouse({
+        ...event,
+        y: event.y - this.editorTop + this.editorOffset,
+        height: event.height - this.editorTop,
+      });
     if (event.type === "wheel" && event.wheelDelta) {
       if (this.router.screen === "fleet") {
         if (!inside(this.fleetRegions.list) && !inside(this.fleetRegions.inspector))
@@ -516,12 +548,6 @@ export class PinataScreen implements Component, Focusable {
         return { handled: true, focus: true, render: true };
       }
     }
-    if (this.router.screen === "conversation" && event.y >= this.editorTop)
-      return this.editor.handleMouse({
-        ...event,
-        y: event.y - this.editorTop + this.editorOffset,
-        height: event.height - this.editorTop,
-      });
     return undefined;
   }
   private async openRunPicker(): Promise<void> {
