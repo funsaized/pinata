@@ -3,6 +3,7 @@ import {
   assignmentKey,
   commandEnvelopeSchema,
   type Assignment,
+  type AssignmentProgress,
   type AssignmentRef,
   type CommandEnvelope,
   type CommandReceipt,
@@ -154,6 +155,7 @@ export class ScreenRouter {
   expandedTools = false;
   showThinking = false;
   readonly activity = new Map<string, string>();
+  readonly progress = new Map<string, AssignmentProgress>();
   private readonly drafts = new Map<string, string>();
   private readonly conversations = new Map<string, ConversationView>();
   private readonly messages = new Map<string, PendingMessage>();
@@ -182,6 +184,7 @@ export class ScreenRouter {
     this.options = options;
     const initial = source.snapshot();
     this.state = indexSnapshot(initial.snapshot);
+    this.restoreProgress(initial.progress);
     this.epoch = initial.ownerEpoch;
     this.palette = options.ui?.palette ?? "inherit";
     this.mode = options.mode ?? "lean";
@@ -206,13 +209,17 @@ export class ScreenRouter {
     this.connected = true;
     this.disconnect = this.source.onConnectionChange?.((connected) => {
       this.connectionAvailable = connected;
-      if (!connected) this.clearTiming();
+      if (!connected) {
+        this.clearTiming();
+        this.progress.clear();
+      }
       this.cancelPreview();
       this.notice = connected
         ? "Reconnected to the owning runtime; retained drafts are unchanged"
         : "Connection unavailable. /reconnect refreshes authority; drafts and pending receipt IDs are retained";
       this.changed();
       if (connected) {
+        this.receive(this.source.snapshot());
         if (this.selected) this.preview().revision = undefined;
         this.schedulePreview();
       }
@@ -235,9 +242,14 @@ export class ScreenRouter {
     this.options.changed?.();
     for (const listener of this.listeners) listener();
   }
+  private restoreProgress(progress: readonly AssignmentProgress[] = []): void {
+    this.progress.clear();
+    for (const item of progress) this.progress.set(assignmentKey(item.ref), item);
+  }
   private receive(event: RuntimeEvent): void {
     if (!this.alive) return;
     const changedOwner = event.ownerEpoch !== this.epoch;
+    if (event.kind === "progress" && changedOwner) return;
     if (changedOwner) {
       this.epoch = event.ownerEpoch;
       this.clearDependencyNavigation();
@@ -245,12 +257,27 @@ export class ScreenRouter {
       this.patchRequest?.abort();
       this.generation++;
       this.activity.clear();
+      this.progress.clear();
       this.activityOrdinals.clear();
       this.cancelPreview();
       this.previews.clear();
       this.clearTiming();
       for (const conversation of this.conversations.values())
         if (conversation.page) conversation.page.cursor = undefined;
+    }
+    if (event.kind === "progress") {
+      const key = assignmentKey(event.ref);
+      const assignment = this.state.assignments[key];
+      if (
+        !this.connectionAvailable ||
+        !assignment ||
+        assignment.execution.phase === "ended" ||
+        event.ordinal <= (this.progress.get(key)?.ordinal ?? -1)
+      )
+        return;
+      this.progress.set(key, event);
+      if (this.screen === "fleet") this.changed();
+      return;
     }
     if (event.kind === "activity") {
       if (this.mode === "lean") return;
@@ -273,6 +300,7 @@ export class ScreenRouter {
       if (!changedOwner && event.revision < this.state.revision) return;
       if (event.revision !== this.state.revision) this.clearTiming();
       this.state = indexSnapshot(event.snapshot);
+      this.restoreProgress(event.progress);
     } else if (!changedOwner && event.revision <= this.state.revision) return;
     else if (!changedOwner && event.revision === this.state.revision + 1)
       this.state = reduce(this.state, event.transition, event.revision);
@@ -295,6 +323,7 @@ export class ScreenRouter {
     }
     if (event.kind === "committed" && event.transition.kind === "settled") {
       const from = event.transition.result.ref;
+      this.progress.delete(assignmentKey(from));
       const targets = dependentAssignments(this.state, assignmentKey(from))
         .filter(
           (a) =>
@@ -1140,7 +1169,7 @@ export class ScreenRouter {
       await this.reconnect();
       return;
     }
-    this.state = indexSnapshot(this.source.snapshot().snapshot);
+    this.receive(this.source.snapshot());
     if (this.screen === "conversation" && this.selected) await this.loadConversation();
     if (this.screen === "fleet") await this.loadPreview();
     else this.refreshView();
@@ -1155,7 +1184,7 @@ export class ScreenRouter {
     }
     try {
       await this.source.reconnect();
-      this.state = indexSnapshot(this.source.snapshot().snapshot);
+      this.receive(this.source.snapshot());
       await this.loadConversation();
     } catch (error) {
       this.fail(error);

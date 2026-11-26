@@ -172,9 +172,11 @@ The coordinator shows a compact Agents tree while work is active or queued. Real
 children branch beneath their parent; dependencies appear as `after:` references.
 Finished work disappears from the widget. `/pinata` opens the full fleet.
 
-The fleet highlights the selected row and shows its last assistant message and
-prompt in a details pane. Wide terminals place it on the right. Smaller terminals
-stack it below the list. Right focuses details when the row has no dependencies
+While a worker runs, its fleet row shows the model turn or tool in progress and how
+long it has been active. Parallel tool calls show a count. The selected worker’s
+details include the last action and its duration, the prompt, and the latest
+assistant message when one exists. Wide terminals place this pane on the right.
+Smaller terminals stack it below the list. Right focuses details when the row has no dependencies
 or folded branch to open. Press `d` to expand and focus details on any assignment.
 Use Up and Down to scroll, and Left to return to the list. Press `d` again to
 collapse details. Cleanup problems stay visible in the preview. Page keys scroll
@@ -232,8 +234,11 @@ time since this viewer witnessed execution start. A dash means the start is unkn
 it is not an estimate of total execution time. Model settings live in the inspector.
 
 Last-message previews use retained assistant text for the selected assignment,
-excluding thinking and tool payloads. Reads are bounded and cached by artifact;
-only the visible selection refreshes. Incomplete evidence and disconnected previews
+excluding thinking and tool payloads. Live action labels work in both UI modes.
+Opening the fleet mid-turn uses the start time reported by the backend. A model
+turn includes request preparation and the provider response. Saved runs retain
+the transcript and results. The viewer bounds preview reads, caches them by artifact
+and refreshes only the visible selection. Incomplete evidence and disconnected previews
 are labeled. A whole-worker checkpoint is never attributed to a later assignment.
 
 Press `r` for runs in this project. Related Git worktrees share a run list, with
@@ -1259,8 +1264,11 @@ and preserve cancellation, context and recovery through these ports.
 ## Events and extension RPC
 
 `pinata.event.v1` distinguishes durable `committed` transitions, replay `snapshot`
-projections and transient `activity`. Revisions order history; `ownerEpoch` identifies
-ownership generations. Activity source and ordinal support deduplication. Activity
+projections, transient `activity` text and `progress` updates. Progress carries
+the current action and the last finished action, ordered by assignment ordinal.
+Live snapshots include the latest progress for active assignments. Revisions order
+history. `ownerEpoch` identifies ownership generations. Activity source and ordinal
+support deduplication. Activity
 gaps do not imply missing commits.
 
 The Pi adapter emits `pinata:ready`, `pinata:event` and `pinata:closed`. It binds only
@@ -1319,8 +1327,9 @@ consumption evidence stays intact. Acknowledgment cannot retract a previously sa
 Pi message; automatic completion watches exclude acknowledged notices.
 
 Process workers retain authenticated supervisor transport, including nested calls,
-lifecycle observations and coalesced activity. Reconnection replays the latest
-activity tail; durable writes remain the source for outcomes, usage and cleanup.
+lifecycle observations and coalesced activity. On reconnection, the supervisor
+replays the latest progress and activity text. Durable records provide outcomes,
+usage and cleanup evidence.
 
 Usage is per assignment and attempt, with response identities for deduplication.
 Own usage is separate from descendant totals. Incomplete coverage leaves totals

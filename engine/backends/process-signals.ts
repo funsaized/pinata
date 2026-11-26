@@ -1,6 +1,10 @@
 import { z } from "zod";
 import { identitySchema, revisionSchema } from "../contracts/common.ts";
-import type { BackendObservation } from "../contracts/backend.ts";
+import {
+  progressObservationSchema,
+  type BackendObservation,
+  type WorkerProgress,
+} from "../contracts/backend.ts";
 import { ControlClient } from "./supervision/client.ts";
 import type { RelayMessage, SupervisorIdentity } from "./supervision/contracts.ts";
 
@@ -35,6 +39,7 @@ export class ProcessSignals implements TransportSignals {
   private closed = false;
   private revision = 0;
   private display?: Activity;
+  private latestProgress?: WorkerProgress;
   private text = "";
   private offset = 0;
   private failure?: Error;
@@ -42,7 +47,7 @@ export class ProcessSignals implements TransportSignals {
   constructor(identity: SupervisorIdentity, side: "worker" | "coordinator") {
     this.identity = identity;
     this.topic = side;
-    this.topics = side === "worker" ? ["coordinator"] : ["worker", "activity"];
+    this.topics = side === "worker" ? ["coordinator"] : ["worker", "activity", "progress"];
   }
 
   get version(): number {
@@ -51,6 +56,10 @@ export class ProcessSignals implements TransportSignals {
 
   get activity(): Activity | undefined {
     return this.display ? { ...this.display } : undefined;
+  }
+
+  get progress(): WorkerProgress | undefined {
+    return this.latestProgress;
   }
 
   get diagnostic(): string | undefined {
@@ -68,7 +77,11 @@ export class ProcessSignals implements TransportSignals {
           this.identity,
           () => {},
           (message) => {
-            if (message.topic === "activity") {
+            if (message.topic === "progress") {
+              const progress = progressObservationSchema.parse(message.value);
+              if (progress.ordinal > (this.latestProgress?.ordinal ?? -1))
+                this.latestProgress = progress;
+            } else if (message.topic === "activity") {
               const activity = activitySchema.parse(message.value);
               if (
                 !this.display ||
@@ -120,6 +133,11 @@ export class ProcessSignals implements TransportSignals {
       offset: this.offset,
       text: this.text,
     });
+    this.schedule();
+  }
+
+  publishProgress(progress: WorkerProgress): void {
+    this.pending.set("progress", progress);
     this.schedule();
   }
 

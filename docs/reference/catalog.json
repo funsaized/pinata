@@ -2940,6 +2940,31 @@
                                               },
                                               "snapshot": {
                                                 "$ref": "#/definitions/__schema48"
+                                              },
+                                              "progress": {
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "kind": {
+                                                      "$ref": "#/definitions/__schema73"
+                                                    },
+                                                    "ordinal": {
+                                                      "$ref": "#/definitions/__schema3"
+                                                    },
+                                                    "current": {
+                                                      "$ref": "#/definitions/__schema74"
+                                                    },
+                                                    "last": {
+                                                      "$ref": "#/definitions/__schema76"
+                                                    },
+                                                    "ref": {
+                                                      "$ref": "#/definitions/__schema6"
+                                                    }
+                                                  },
+                                                  "required": ["kind", "ordinal", "ref"],
+                                                  "additionalProperties": false
+                                                }
                                               }
                                             },
                                             "required": [
@@ -2997,6 +3022,45 @@
                                               "text"
                                             ],
                                             "additionalProperties": false
+                                          },
+                                          {
+                                            "type": "object",
+                                            "properties": {
+                                              "kind": {
+                                                "$ref": "#/definitions/__schema73"
+                                              },
+                                              "ordinal": {
+                                                "$ref": "#/definitions/__schema3"
+                                              },
+                                              "current": {
+                                                "$ref": "#/definitions/__schema74"
+                                              },
+                                              "last": {
+                                                "$ref": "#/definitions/__schema76"
+                                              },
+                                              "ref": {
+                                                "$ref": "#/definitions/__schema6"
+                                              },
+                                              "schemaVersion": {
+                                                "type": "number",
+                                                "const": 1
+                                              },
+                                              "ownerEpoch": {
+                                                "$ref": "#/definitions/__schema0"
+                                              },
+                                              "revision": {
+                                                "$ref": "#/definitions/__schema3"
+                                              }
+                                            },
+                                            "required": [
+                                              "kind",
+                                              "ordinal",
+                                              "ref",
+                                              "schemaVersion",
+                                              "ownerEpoch",
+                                              "revision"
+                                            ],
+                                            "additionalProperties": false
                                           }
                                         ]
                                       }
@@ -3021,7 +3085,7 @@
                                         "type": "string"
                                       },
                                       "additionalProperties": {
-                                        "$ref": "#/definitions/__schema73"
+                                        "$ref": "#/definitions/__schema77"
                                       }
                                     }
                                   },
@@ -5887,6 +5951,86 @@
           "additionalProperties": false
         },
         "__schema73": {
+          "type": "string",
+          "const": "progress"
+        },
+        "__schema74": {
+          "type": "object",
+          "properties": {
+            "action": {
+              "$ref": "#/definitions/__schema75"
+            },
+            "startedAt": {
+              "$ref": "#/definitions/__schema3"
+            },
+            "count": {
+              "exclusiveMinimum": 0,
+              "allOf": [
+                {
+                  "$ref": "#/definitions/__schema3"
+                }
+              ]
+            }
+          },
+          "required": ["action", "startedAt", "count"],
+          "additionalProperties": false
+        },
+        "__schema75": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "model"
+                },
+                "turn": {
+                  "exclusiveMinimum": 0,
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/__schema3"
+                    }
+                  ]
+                }
+              },
+              "required": ["kind", "turn"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "tool"
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                }
+              },
+              "required": ["kind", "name"],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "__schema76": {
+          "type": "object",
+          "properties": {
+            "action": {
+              "$ref": "#/definitions/__schema75"
+            },
+            "durationMs": {
+              "$ref": "#/definitions/__schema3"
+            },
+            "failed": {
+              "type": "boolean"
+            }
+          },
+          "required": ["action", "durationMs", "failed"],
+          "additionalProperties": false
+        },
+        "__schema77": {
           "anyOf": [
             {
               "type": "string"
@@ -5903,7 +6047,7 @@
             {
               "type": "array",
               "items": {
-                "$ref": "#/definitions/__schema73"
+                "$ref": "#/definitions/__schema77"
               }
             },
             {
@@ -5912,7 +6056,7 @@
                 "type": "string"
               },
               "additionalProperties": {
-                "$ref": "#/definitions/__schema73"
+                "$ref": "#/definitions/__schema77"
               }
             }
           ]
@@ -6414,6 +6558,93 @@
             "truncated"
           ],
           "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "progress"
+            },
+            "ordinal": {
+              "$ref": "#/definitions/__schema2"
+            },
+            "current": {
+              "type": "object",
+              "properties": {
+                "action": {
+                  "$ref": "#/definitions/__schema12"
+                },
+                "startedAt": {
+                  "$ref": "#/definitions/__schema2"
+                },
+                "count": {
+                  "exclusiveMinimum": 0,
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/__schema2"
+                    }
+                  ]
+                }
+              },
+              "required": ["action", "startedAt", "count"],
+              "additionalProperties": false
+            },
+            "last": {
+              "type": "object",
+              "properties": {
+                "action": {
+                  "$ref": "#/definitions/__schema12"
+                },
+                "durationMs": {
+                  "$ref": "#/definitions/__schema2"
+                },
+                "failed": {
+                  "type": "boolean"
+                }
+              },
+              "required": ["action", "durationMs", "failed"],
+              "additionalProperties": false
+            },
+            "ref": {
+              "$ref": "#/definitions/__schema3"
+            },
+            "protocolVersion": {
+              "$ref": "#/definitions/__schema0"
+            },
+            "sessionId": {
+              "$ref": "#/definitions/__schema1"
+            },
+            "run": {
+              "$ref": "#/definitions/__schema1"
+            },
+            "ownerEpoch": {
+              "$ref": "#/definitions/__schema1"
+            },
+            "revision": {
+              "$ref": "#/definitions/__schema2"
+            },
+            "worker": {
+              "$ref": "#/definitions/__schema5"
+            },
+            "parentAssignment": {
+              "$ref": "#/definitions/__schema6"
+            },
+            "depth": {
+              "$ref": "#/definitions/__schema7"
+            }
+          },
+          "required": [
+            "kind",
+            "ordinal",
+            "ref",
+            "protocolVersion",
+            "sessionId",
+            "run",
+            "ownerEpoch",
+            "revision"
+          ],
+          "additionalProperties": false
         }
       ],
       "definitions": {
@@ -6531,6 +6762,45 @@
           "allOf": [
             {
               "$ref": "#/definitions/__schema1"
+            }
+          ]
+        },
+        "__schema12": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "model"
+                },
+                "turn": {
+                  "exclusiveMinimum": 0,
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/__schema2"
+                    }
+                  ]
+                }
+              },
+              "required": ["kind", "turn"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "tool"
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                }
+              },
+              "required": ["kind", "name"],
+              "additionalProperties": false
             }
           ]
         }
@@ -11654,6 +11924,31 @@
                                       },
                                       "snapshot": {
                                         "$ref": "#/definitions/__schema48"
+                                      },
+                                      "progress": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "kind": {
+                                              "$ref": "#/definitions/__schema73"
+                                            },
+                                            "ordinal": {
+                                              "$ref": "#/definitions/__schema3"
+                                            },
+                                            "current": {
+                                              "$ref": "#/definitions/__schema74"
+                                            },
+                                            "last": {
+                                              "$ref": "#/definitions/__schema76"
+                                            },
+                                            "ref": {
+                                              "$ref": "#/definitions/__schema6"
+                                            }
+                                          },
+                                          "required": ["kind", "ordinal", "ref"],
+                                          "additionalProperties": false
+                                        }
                                       }
                                     },
                                     "required": [
@@ -11711,6 +12006,45 @@
                                       "text"
                                     ],
                                     "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "$ref": "#/definitions/__schema73"
+                                      },
+                                      "ordinal": {
+                                        "$ref": "#/definitions/__schema3"
+                                      },
+                                      "current": {
+                                        "$ref": "#/definitions/__schema74"
+                                      },
+                                      "last": {
+                                        "$ref": "#/definitions/__schema76"
+                                      },
+                                      "ref": {
+                                        "$ref": "#/definitions/__schema6"
+                                      },
+                                      "schemaVersion": {
+                                        "type": "number",
+                                        "const": 1
+                                      },
+                                      "ownerEpoch": {
+                                        "$ref": "#/definitions/__schema2"
+                                      },
+                                      "revision": {
+                                        "$ref": "#/definitions/__schema3"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "ordinal",
+                                      "ref",
+                                      "schemaVersion",
+                                      "ownerEpoch",
+                                      "revision"
+                                    ],
+                                    "additionalProperties": false
                                   }
                                 ]
                               }
@@ -11735,7 +12069,7 @@
                                 "type": "string"
                               },
                               "additionalProperties": {
-                                "$ref": "#/definitions/__schema73"
+                                "$ref": "#/definitions/__schema77"
                               }
                             }
                           },
@@ -14446,6 +14780,86 @@
           "additionalProperties": false
         },
         "__schema73": {
+          "type": "string",
+          "const": "progress"
+        },
+        "__schema74": {
+          "type": "object",
+          "properties": {
+            "action": {
+              "$ref": "#/definitions/__schema75"
+            },
+            "startedAt": {
+              "$ref": "#/definitions/__schema3"
+            },
+            "count": {
+              "exclusiveMinimum": 0,
+              "allOf": [
+                {
+                  "$ref": "#/definitions/__schema3"
+                }
+              ]
+            }
+          },
+          "required": ["action", "startedAt", "count"],
+          "additionalProperties": false
+        },
+        "__schema75": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "model"
+                },
+                "turn": {
+                  "exclusiveMinimum": 0,
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/__schema3"
+                    }
+                  ]
+                }
+              },
+              "required": ["kind", "turn"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "tool"
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                }
+              },
+              "required": ["kind", "name"],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "__schema76": {
+          "type": "object",
+          "properties": {
+            "action": {
+              "$ref": "#/definitions/__schema75"
+            },
+            "durationMs": {
+              "$ref": "#/definitions/__schema3"
+            },
+            "failed": {
+              "type": "boolean"
+            }
+          },
+          "required": ["action", "durationMs", "failed"],
+          "additionalProperties": false
+        },
+        "__schema77": {
           "anyOf": [
             {
               "type": "string"
@@ -14462,7 +14876,7 @@
             {
               "type": "array",
               "items": {
-                "$ref": "#/definitions/__schema73"
+                "$ref": "#/definitions/__schema77"
               }
             },
             {
@@ -14471,7 +14885,7 @@
                 "type": "string"
               },
               "additionalProperties": {
-                "$ref": "#/definitions/__schema73"
+                "$ref": "#/definitions/__schema77"
               }
             }
           ]
@@ -24570,6 +24984,31 @@
                 "maxConcurrent"
               ],
               "additionalProperties": false
+            },
+            "progress": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "$ref": "#/definitions/__schema61"
+                  },
+                  "ordinal": {
+                    "$ref": "#/definitions/__schema1"
+                  },
+                  "current": {
+                    "$ref": "#/definitions/__schema62"
+                  },
+                  "last": {
+                    "$ref": "#/definitions/__schema64"
+                  },
+                  "ref": {
+                    "$ref": "#/definitions/__schema8"
+                  }
+                },
+                "required": ["kind", "ordinal", "ref"],
+                "additionalProperties": false
+              }
             }
           },
           "required": ["schemaVersion", "kind", "id", "revision", "ownerEpoch", "snapshot"],
@@ -24619,6 +25058,38 @@
             "ref",
             "text"
           ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "$ref": "#/definitions/__schema61"
+            },
+            "ordinal": {
+              "$ref": "#/definitions/__schema1"
+            },
+            "current": {
+              "$ref": "#/definitions/__schema62"
+            },
+            "last": {
+              "$ref": "#/definitions/__schema64"
+            },
+            "ref": {
+              "$ref": "#/definitions/__schema8"
+            },
+            "schemaVersion": {
+              "type": "number",
+              "const": 1
+            },
+            "ownerEpoch": {
+              "$ref": "#/definitions/__schema0"
+            },
+            "revision": {
+              "$ref": "#/definitions/__schema1"
+            }
+          },
+          "required": ["kind", "ordinal", "ref", "schemaVersion", "ownerEpoch", "revision"],
           "additionalProperties": false
         }
       ],
@@ -26463,6 +26934,86 @@
             "required": ["id", "state"],
             "additionalProperties": false
           }
+        },
+        "__schema61": {
+          "type": "string",
+          "const": "progress"
+        },
+        "__schema62": {
+          "type": "object",
+          "properties": {
+            "action": {
+              "$ref": "#/definitions/__schema63"
+            },
+            "startedAt": {
+              "$ref": "#/definitions/__schema1"
+            },
+            "count": {
+              "exclusiveMinimum": 0,
+              "allOf": [
+                {
+                  "$ref": "#/definitions/__schema1"
+                }
+              ]
+            }
+          },
+          "required": ["action", "startedAt", "count"],
+          "additionalProperties": false
+        },
+        "__schema63": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "model"
+                },
+                "turn": {
+                  "exclusiveMinimum": 0,
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/__schema1"
+                    }
+                  ]
+                }
+              },
+              "required": ["kind", "turn"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "tool"
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                }
+              },
+              "required": ["kind", "name"],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "__schema64": {
+          "type": "object",
+          "properties": {
+            "action": {
+              "$ref": "#/definitions/__schema63"
+            },
+            "durationMs": {
+              "$ref": "#/definitions/__schema1"
+            },
+            "failed": {
+              "type": "boolean"
+            }
+          },
+          "required": ["action", "durationMs", "failed"],
+          "additionalProperties": false
         }
       }
     },
@@ -28351,6 +28902,31 @@
                       },
                       "snapshot": {
                         "$ref": "#/definitions/__schema36"
+                      },
+                      "progress": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "$ref": "#/definitions/__schema70"
+                            },
+                            "ordinal": {
+                              "$ref": "#/definitions/__schema5"
+                            },
+                            "current": {
+                              "$ref": "#/definitions/__schema71"
+                            },
+                            "last": {
+                              "$ref": "#/definitions/__schema73"
+                            },
+                            "ref": {
+                              "$ref": "#/definitions/__schema6"
+                            }
+                          },
+                          "required": ["kind", "ordinal", "ref"],
+                          "additionalProperties": false
+                        }
                       }
                     },
                     "required": [
@@ -28408,6 +28984,45 @@
                       "text"
                     ],
                     "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "$ref": "#/definitions/__schema70"
+                      },
+                      "ordinal": {
+                        "$ref": "#/definitions/__schema5"
+                      },
+                      "current": {
+                        "$ref": "#/definitions/__schema71"
+                      },
+                      "last": {
+                        "$ref": "#/definitions/__schema73"
+                      },
+                      "ref": {
+                        "$ref": "#/definitions/__schema6"
+                      },
+                      "schemaVersion": {
+                        "type": "number",
+                        "const": 1
+                      },
+                      "ownerEpoch": {
+                        "$ref": "#/definitions/__schema2"
+                      },
+                      "revision": {
+                        "$ref": "#/definitions/__schema5"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "ordinal",
+                      "ref",
+                      "schemaVersion",
+                      "ownerEpoch",
+                      "revision"
+                    ],
+                    "additionalProperties": false
                   }
                 ]
               }
@@ -28432,7 +29047,7 @@
                 "type": "string"
               },
               "additionalProperties": {
-                "$ref": "#/definitions/__schema70"
+                "$ref": "#/definitions/__schema74"
               }
             }
           },
@@ -30876,6 +31491,86 @@
           "additionalProperties": false
         },
         "__schema70": {
+          "type": "string",
+          "const": "progress"
+        },
+        "__schema71": {
+          "type": "object",
+          "properties": {
+            "action": {
+              "$ref": "#/definitions/__schema72"
+            },
+            "startedAt": {
+              "$ref": "#/definitions/__schema5"
+            },
+            "count": {
+              "exclusiveMinimum": 0,
+              "allOf": [
+                {
+                  "$ref": "#/definitions/__schema5"
+                }
+              ]
+            }
+          },
+          "required": ["action", "startedAt", "count"],
+          "additionalProperties": false
+        },
+        "__schema72": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "model"
+                },
+                "turn": {
+                  "exclusiveMinimum": 0,
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/__schema5"
+                    }
+                  ]
+                }
+              },
+              "required": ["kind", "turn"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "tool"
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                }
+              },
+              "required": ["kind", "name"],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "__schema73": {
+          "type": "object",
+          "properties": {
+            "action": {
+              "$ref": "#/definitions/__schema72"
+            },
+            "durationMs": {
+              "$ref": "#/definitions/__schema5"
+            },
+            "failed": {
+              "type": "boolean"
+            }
+          },
+          "required": ["action", "durationMs", "failed"],
+          "additionalProperties": false
+        },
+        "__schema74": {
           "anyOf": [
             {
               "type": "string"
@@ -30892,7 +31587,7 @@
             {
               "type": "array",
               "items": {
-                "$ref": "#/definitions/__schema70"
+                "$ref": "#/definitions/__schema74"
               }
             },
             {
@@ -30901,7 +31596,7 @@
                 "type": "string"
               },
               "additionalProperties": {
-                "$ref": "#/definitions/__schema70"
+                "$ref": "#/definitions/__schema74"
               }
             }
           ]
@@ -36433,6 +37128,57 @@
           },
           "required": ["kind", "source", "ordinal", "text"],
           "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "progress"
+            },
+            "ordinal": {
+              "$ref": "#/definitions/__schema2"
+            },
+            "current": {
+              "type": "object",
+              "properties": {
+                "action": {
+                  "$ref": "#/definitions/__schema6"
+                },
+                "startedAt": {
+                  "$ref": "#/definitions/__schema2"
+                },
+                "count": {
+                  "exclusiveMinimum": 0,
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/__schema2"
+                    }
+                  ]
+                }
+              },
+              "required": ["action", "startedAt", "count"],
+              "additionalProperties": false
+            },
+            "last": {
+              "type": "object",
+              "properties": {
+                "action": {
+                  "$ref": "#/definitions/__schema6"
+                },
+                "durationMs": {
+                  "$ref": "#/definitions/__schema2"
+                },
+                "failed": {
+                  "type": "boolean"
+                }
+              },
+              "required": ["action", "durationMs", "failed"],
+              "additionalProperties": false
+            }
+          },
+          "required": ["kind", "ordinal"],
+          "additionalProperties": false
         }
       ],
       "definitions": {
@@ -36497,6 +37243,45 @@
           "allOf": [
             {
               "$ref": "#/definitions/__schema0"
+            }
+          ]
+        },
+        "__schema6": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "model"
+                },
+                "turn": {
+                  "exclusiveMinimum": 0,
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/__schema2"
+                    }
+                  ]
+                }
+              },
+              "required": ["kind", "turn"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "tool"
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                }
+              },
+              "required": ["kind", "name"],
+              "additionalProperties": false
             }
           ]
         }

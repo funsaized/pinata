@@ -34,6 +34,7 @@ import {
   subscriptionSchema,
   waitRequestSchema,
   type QueryResult,
+  type AssignmentProgress,
   type RuntimeEvent,
   type ShutdownReceipt,
   type ShutdownRequest,
@@ -133,6 +134,7 @@ export class Runtime {
   private closing = false;
   private checkpointAttemptRevision = 0;
   private readonly subscribers = new Set<Subscriber>();
+  private readonly progress = new Map<string, AssignmentProgress>();
   private readonly failures: RuntimeDiagnostic[] = [];
   private readonly execution?: ExecutionCoordinator;
   private readonly applications?: RuntimeApplications;
@@ -587,6 +589,8 @@ export class Runtime {
     const frames = await this.store.appendBatch(entries.map((entry) => entry.input));
     for (const [index, entry] of entries.entries()) {
       this.state = entry.state;
+      const transition = entry.input.transition;
+      if (transition.kind === "settled") this.progress.delete(assignmentKey(transition.result.ref));
       this.committedRequests.set(entry.input.requestId, {
         payloadDigest: entry.input.payloadDigest,
         transitionDigest: entry.transitionDigest,
@@ -594,7 +598,6 @@ export class Runtime {
       const event = this.event(frames[index]);
       const subscribers = [...this.subscribers];
       for (const subscriber of subscribers) this.deliver(subscriber, event);
-      const transition = entry.input.transition;
       if (
         (transition.kind === "accepted" && transition.decisions) ||
         transition.kind === "control_accepted" ||
@@ -897,11 +900,19 @@ export class Runtime {
         ownerEpoch: this.store.owner.epoch,
         revision: this.state.revision,
         snapshot: this.state,
+        ...(this.progress.size ? { progress: [...this.progress.values()] } : {}),
       });
     } else {
       const frames = this.store.frames;
       for (const frame of frames)
         if (frame.record.revision > request.since) this.deliver(subscriber, this.event(frame));
+      for (const progress of this.progress.values())
+        this.deliver(subscriber, {
+          ...progress,
+          schemaVersion: 1,
+          ownerEpoch: this.store.owner.epoch,
+          revision: this.state.revision,
+        });
     }
     return () => {
       subscriber.active = false;
@@ -956,19 +967,24 @@ export class Runtime {
 
   private publishActivity(
     ref: AssignmentRef,
-    observation: Extract<BackendObservation, { kind: "activity" }>,
+    observation: Extract<BackendObservation, { kind: "activity" | "progress" }>,
   ): void {
     const event: RuntimeEvent = {
       schemaVersion: 1,
-      kind: "activity",
-      source: observation.source,
-      ordinal: observation.ordinal,
+      ...observation,
       ownerEpoch: this.store.owner.epoch,
       revision: this.state.revision,
       ref,
-      text: observation.text,
-      ...(observation.snapshot ? { snapshot: true as const } : {}),
     };
+    if (observation.kind === "progress") {
+      const key = assignmentKey(ref);
+      if (
+        this.state.assignments[key]?.execution.phase === "ended" ||
+        (this.progress.get(key)?.ordinal ?? -1) >= observation.ordinal
+      )
+        return;
+      this.progress.set(key, { ...observation, ref });
+    }
     const subscribers = [...this.subscribers];
     for (const subscriber of subscribers) this.deliver(subscriber, event);
   }

@@ -72,6 +72,10 @@ async function runSession(
   let observations = Promise.resolve();
   const observe = (observation: BackendObservation): Promise<void> => {
     if (observation.kind === "enrolled") return Promise.resolve();
+    if (observation.kind === "progress") {
+      signals.publishProgress(observation);
+      return Promise.resolve();
+    }
     if (observation.kind === "activity") {
       signals.publishActivity({ ...observation, source: manifest.identity.id });
       return Promise.resolve();

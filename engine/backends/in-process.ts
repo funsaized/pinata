@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { SessionProgress } from "./session-progress.ts";
 import { join } from "node:path";
 import {
   createAgentSession,
@@ -446,7 +447,10 @@ export class InProcessBackend implements BackendPort {
           },
         });
       };
+      const progress = new SessionProgress();
       const unsubscribe = activeSession.subscribe((event: AgentSessionEvent) => {
+        const update = progress.observe(event);
+        if (update) enqueue(() => observe(update));
         if (
           event.type === "thinking_level_changed" ||
           event.type === "message_start" ||

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { grantsSchema, modelSchema } from "./common.ts";
-import { backendCapabilitiesSchema } from "./backend.ts";
+import { backendCapabilitiesSchema, progressObservationSchema } from "./backend.ts";
 import { applicationStateSchema } from "./application.ts";
 import { workspaceEntrySchema } from "./workspace.ts";
 import {
@@ -88,6 +88,10 @@ export const runtimeQuerySchema = z.discriminatedUnion("kind", [
 export type RuntimeQuery = z.infer<typeof runtimeQuerySchema>;
 export const subscriptionSchema = z.strictObject({ since: revisionSchema.optional() });
 export type Subscription = z.infer<typeof subscriptionSchema>;
+export const assignmentProgressSchema = progressObservationSchema.extend({
+  ref: assignmentRefSchema,
+});
+export type AssignmentProgress = z.infer<typeof assignmentProgressSchema>;
 export const runtimeEventSchema = z.discriminatedUnion("kind", [
   z.strictObject({
     schemaVersion: z.literal(1),
@@ -104,6 +108,7 @@ export const runtimeEventSchema = z.discriminatedUnion("kind", [
     revision: revisionSchema,
     ownerEpoch: identitySchema,
     snapshot: coreStateSchema,
+    progress: z.array(assignmentProgressSchema).optional(),
   }),
   z.strictObject({
     schemaVersion: z.literal(1),
@@ -115,6 +120,11 @@ export const runtimeEventSchema = z.discriminatedUnion("kind", [
     ref: assignmentRefSchema,
     text: z.string(),
     snapshot: z.literal(true).optional(),
+  }),
+  assignmentProgressSchema.extend({
+    schemaVersion: z.literal(1),
+    ownerEpoch: identitySchema,
+    revision: revisionSchema,
   }),
 ]);
 export type RuntimeEvent = z.infer<typeof runtimeEventSchema>;

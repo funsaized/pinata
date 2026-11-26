@@ -5,6 +5,7 @@ import {
   type AssignmentRef,
   type CoreState,
   type StoredWorkerMessage,
+  type WorkerProgress,
 } from "../contracts/index.ts";
 import {
   assignmentDecisions,
@@ -112,6 +113,23 @@ function duration(elapsed: number | undefined, ascii = false): string {
   return elapsed < 60_000 ? `${(elapsed / 1000).toFixed(1)}s` : `${(elapsed / 60_000).toFixed(1)}m`;
 }
 
+function actionDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  const seconds = Math.floor(ms / 1000);
+  return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+}
+
+function currentAction(progress?: WorkerProgress): string | undefined {
+  const current = progress?.current;
+  if (!current) return;
+  const { action, count, startedAt } = current;
+  let label: string;
+  if (action.kind === "model") label = `Model turn ${action.turn}`;
+  else if (count > 1) label = `Running ${count} tools`;
+  else label = `Running ${displayText(action.name)}`;
+  return `${label} · ${actionDuration(Math.max(0, Date.now() - startedAt))}`;
+}
+
 function excerpt(rows: string[], width: number, limit: number, paint: Paint): string[] {
   if (rows.length <= limit) return rows;
   return [...rows.slice(0, limit), paint("muted", fit("… d to expand", width))];
@@ -167,20 +185,18 @@ function inspector(router: ScreenRouter, pane: Pane, options: FleetOptions): str
   const { width, height } = pane;
   const worker = router.state.workers[ref.worker];
   const color = worker.color ?? agentAccent(worker.agent);
+  const progress = router.progress.get(assignmentKey(ref));
   const view = router.preview();
   const message = view.result?.message;
   let preview = message?.text;
   if (message?.truncated) preview += "…";
-  if (!preview) {
-    if (assignment.execution.phase === "queued") preview = "Not started yet.";
-    else if (view.loading && !view.result && !view.error) preview = "Loading last message…";
+  if (!preview && assignment.execution.phase !== "queued") {
+    if (view.loading && !view.result && !view.error) preview = "Loading last message…";
     else if (view.error) preview = "Preview unavailable. Enter opens the conversation.";
-    else if (view.result?.complete) preview = "No assistant message yet.";
     else if (view.result?.source === "checkpoint")
       preview = "Only a whole-worker checkpoint is available.";
-    else if (view.result?.source === "assignment")
+    else if (view.result?.source === "assignment" && !view.result.complete)
       preview = "Preview incomplete. Enter opens the conversation.";
-    else preview = "No retained message available yet.";
   }
   const sectionLimit = Math.max(1, Math.floor((height - 8) / 2));
   const markdown = (value: string) => conversationMarkdown(value, width, paint, presentation);
@@ -247,14 +263,30 @@ function inspector(router: ScreenRouter, pane: Pane, options: FleetOptions): str
     );
   }
   for (const row of decisionRows(router, ref, width, options)) content.push(row);
-  content.push("", paint("strong", paint(color, "Last message")));
+  const current = assignment.execution.phase === "running" && currentAction(progress);
+  if (current) content.push(...lines(current, width).map((line) => paint("strong", line)));
+  if (progress?.last) {
+    const { action, durationMs, failed } = progress.last;
+    const name = action.kind === "model" ? `Model turn ${action.turn}` : displayText(action.name);
+    content.push(
+      ...lines(
+        `Last action · ${name} ${failed ? "failed" : "finished"} in ${actionDuration(durationMs)}`,
+        width,
+      ),
+    );
+  }
+  if (message) content.push("", paint("strong", paint(color, "Last message")));
   if (!router.connectionAvailable || (view.error && message))
     content.push(paint("warning", "Retained preview · connection unavailable"));
-  const previewRows = message
-    ? markdown(preview)
-    : lines(preview, width).map((line) => paint("muted", line));
+  if (preview) {
+    const previewRows = message
+      ? markdown(preview)
+      : lines(preview, width).map((line) => paint("muted", line));
+    content.push(
+      ...excerpt(previewRows, width, router.details ? Infinity : Math.min(4, sectionLimit), paint),
+    );
+  }
   content.push(
-    ...excerpt(previewRows, width, router.details ? Infinity : Math.min(4, sectionLimit), paint),
     "",
     paint("strong", paint(color, "Prompt")),
     ...excerpt(
@@ -453,7 +485,7 @@ function list(
     " " +
     padded("Status", statusWidth) +
     (showTime ? padded("  Observed", timeWidth) : "") +
-    (infoWidth >= 12 ? "   Task / waiting" : "");
+    (infoWidth >= 12 ? "   Activity / task" : "");
   const output = [fit(paint("muted", heading), width)];
   const selection = router.selected && assignmentKey(router.selected);
   const anchor = nodes.findIndex((node) => assignmentKey(node.assignment.ref) === selection);
@@ -540,11 +572,12 @@ function list(
       visibleWidth(identityText) > identityWidth
         ? fit(identityText, identityWidth - 1) + "…"
         : identityText;
-    const context =
-      question?.text ??
-      (assignment.execution.phase === "queued"
-        ? waiting(router, assignment, true)
-        : assignment.task);
+    let context = assignment.task;
+    if (question) context = question.text;
+    else if (assignment.execution.phase === "queued") context = waiting(router, assignment, true);
+    else if (assignment.execution.phase === "running")
+      context =
+        currentAction(router.progress.get(assignmentKey(assignment.ref))) ?? assignment.task;
     const fields = [
       padded(identity, identityWidth),
       " ",

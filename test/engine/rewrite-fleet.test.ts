@@ -4,6 +4,7 @@ import { TuiAltScreen, stripTerminalSequences, visibleWidth } from "@earendil-wo
 import {
   assignmentKey,
   type AssignmentRef,
+  type AssignmentProgress,
   type StoredWorkerMessage,
   type SurfaceReply,
 } from "../../engine/contracts/index.ts";
@@ -33,6 +34,61 @@ const previewReply = (target: AssignmentRef, text: string): SurfaceReply => ({
       message: { text, truncated: false },
     },
   },
+});
+
+test("lean fleet restores live action time, orders tool updates and clears stale progress", async (t) => {
+  const source = new UiSource(uiState(1));
+  source.state.assignments[assignmentKey(ref())].execution = { phase: "running" };
+  const initial: AssignmentProgress = {
+    kind: "progress",
+    ref: ref(),
+    ordinal: 5,
+    current: { action: { kind: "model", turn: 10 }, startedAt: 1000, count: 1 },
+    last: { action: { kind: "tool", name: "bash" }, durationMs: 210, failed: false },
+  };
+  t.mock.method(Date, "now", () => 136000);
+  const snapshot = source.snapshot.bind(source);
+  t.mock.method(source, "snapshot", () => ({ ...snapshot(), progress: [initial] }));
+  const router = new ScreenRouter(source);
+  t.after(() => router.dispose());
+  await router.start();
+  router.navigate("fleet", ref());
+  const render = () =>
+    stripTerminalSequences(
+      renderScreen(router, { width: 175, height: 32, paint: createPaint("terminal-default") }).join(
+        "\n",
+      ),
+    );
+  assert.match(render(), /Model turn 10 · 2m 15s/);
+  assert.match(render(), /Last action · bash finished in 210ms/);
+  assert.doesNotMatch(render(), /Last message/);
+  const event = {
+    schemaVersion: 1 as const,
+    revision: source.state.revision,
+    ownerEpoch: source.epoch,
+    ...initial,
+  };
+  await source.emit({
+    ...event,
+    ordinal: 6,
+    current: { action: { kind: "tool", name: "read" }, startedAt: 135000, count: 2 },
+  });
+  await source.emit(event);
+  assert.match(render(), /Running 2 tools · 1s/);
+  assert.doesNotMatch(render(), /Model turn 10/);
+  await source.emit({
+    ...event,
+    ordinal: 7,
+    current: undefined,
+    last: { action: { kind: "tool", name: "read" }, failed: true, durationMs: 12 },
+  });
+  assert.match(render(), /read failed in 12ms/);
+  assert.doesNotMatch(render(), /Running 2 tools/);
+  for (const change of source.connections) change(false);
+  assert.doesNotMatch(render(), /read failed/);
+  await source.emit({ ...snapshot(), ownerEpoch: "new-owner" });
+  await source.emit(event);
+  assert.equal(router.progress.size, 0);
 });
 
 test("fleet follows worker questions through coordinator answers and saved history", async (t) => {
@@ -552,7 +608,7 @@ test("background preview refreshes keep the last resolved sidebar state visible"
           },
         },
       },
-      expected: "No assistant message yet.",
+      expected: "Prompt",
     },
     {
       name: "incomplete transcript",
@@ -608,6 +664,8 @@ test("background preview refreshes keep the last resolved sidebar state visible"
       respond(scenario.reply);
       await first;
       assert(render().includes(scenario.expected));
+      if (scenario.name === "empty transcript")
+        assert.doesNotMatch(render(), /Last message|No assistant message/);
       for (let refresh = 0; refresh < 3; refresh++) {
         const pending = router.loadPreview();
         const during = render();

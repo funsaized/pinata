@@ -234,7 +234,7 @@ test(
           JSON.parse(await readFile(join(transport, "observations", name), "utf8")).payload,
       ),
     );
-    assert(records.every((record) => record.observation.kind !== "activity"));
+    assert(records.every((record) => !["activity", "progress"].includes(record.observation.kind)));
     assert.deepEqual(
       records.map((record) => record.ordinal),
       records.map((_, index) => index + 1),
@@ -245,7 +245,9 @@ test(
     );
     assert(
       world.observed.every(({ observation, source }) =>
-        observation.kind === "activity" ? !source : source?.sourceId === first.identity.id,
+        observation.kind === "activity" || observation.kind === "progress"
+          ? !source
+          : source?.sourceId === first.identity.id,
       ),
     );
     const stopped = await first.stop("First complete");
@@ -320,7 +322,9 @@ test(
           observation.kind === "input_consumed" && observation.messageId === "steer",
       ),
     );
-    const durable = replay.filter(({ observation }) => observation.kind !== "activity");
+    const durable = replay.filter(
+      ({ observation }) => observation.kind !== "activity" && observation.kind !== "progress",
+    );
     assert(durable.every(({ source }) => source?.sourceId === original.identity.id));
     assert.deepEqual(
       durable.map(({ source }) => source?.ordinal),

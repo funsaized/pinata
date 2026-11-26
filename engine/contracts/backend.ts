@@ -104,6 +104,29 @@ export const contextUsageSchema = z.strictObject({
   timestamp: revisionSchema,
 });
 export type ContextUsage = z.infer<typeof contextUsageSchema>;
+const actionSchema = z.discriminatedUnion("kind", [
+  z.strictObject({ kind: z.literal("model"), turn: revisionSchema.positive() }),
+  z.strictObject({ kind: z.literal("tool"), name: z.string().min(1).max(128) }),
+]);
+export const progressObservationSchema = z.strictObject({
+  kind: z.literal("progress"),
+  ordinal: revisionSchema,
+  current: z
+    .strictObject({
+      action: actionSchema,
+      startedAt: revisionSchema,
+      count: revisionSchema.positive(),
+    })
+    .optional(),
+  last: z
+    .strictObject({
+      action: actionSchema,
+      durationMs: revisionSchema,
+      failed: z.boolean(),
+    })
+    .optional(),
+});
+export type WorkerProgress = z.infer<typeof progressObservationSchema>;
 export const backendObservationSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("model"), attemptId: identitySchema, model: modelSchema }),
   z.strictObject({
@@ -140,6 +163,7 @@ export const backendObservationSchema = z.discriminatedUnion("kind", [
     text: z.string(),
     snapshot: z.literal(true).optional(),
   }),
+  progressObservationSchema,
 ]);
 export type BackendObservation = z.infer<typeof backendObservationSchema>;
 export const backendObservationSourceSchema = z.strictObject({
