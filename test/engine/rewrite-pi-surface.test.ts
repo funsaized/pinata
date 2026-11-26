@@ -14,6 +14,7 @@ import {
 import {
   createAgentSession,
   createEventBus,
+  type AutocompleteProviderFactory,
   type EventBus,
   DefaultResourceLoader,
   initTheme,
@@ -22,6 +23,8 @@ import {
   SettingsManager,
   type InputEvent,
 } from "@earendil-works/pi-coding-agent";
+import { CombinedAutocompleteProvider } from "@earendil-works/pi-tui";
+import { mentionAutocomplete } from "../../engine/pi/mention-autocomplete.ts";
 import { createPinataExtension } from "../../engine/pi/extension.ts";
 import { invokeCoordinatorTool } from "../../engine/pi/tools.ts";
 import {
@@ -188,6 +191,7 @@ async function fixture(
     tools: options.coordinatorTools ? ["pinata_run", "pinata_wait"] : [],
   });
   const notices: string[] = [];
+  const autocomplete: AutocompleteProviderFactory[] = [];
   let draft = "";
   const errors: string[] = [];
   initTheme("dark", false);
@@ -196,6 +200,7 @@ async function fixture(
     mode: "tui",
     uiContext: {
       ...session.extensionRunner.getUIContext(),
+      addAutocompleteProvider: (factory) => autocomplete.push(factory),
       setEditorText: (text) => {
         draft = text;
       },
@@ -219,6 +224,7 @@ async function fixture(
   assert(inputHandler);
   return {
     session,
+    autocomplete,
     manager,
     faux,
     hosts,
@@ -251,6 +257,73 @@ test("mention grammar ignores embedded handles, quoted text, emails and path fra
     text: "task\ncontinued",
   });
   assert.deepEqual(parseMention("@run-one:scout"), { run: "run-one", handle: "scout", text: "" });
+});
+
+test("the coordinator @ menu completes project agents before files and keeps addressing local to the first token", async (t) => {
+  const f = await fixture(t);
+  const host = f.hosts[0];
+  const directory = join(host.workspace, ".pi", "pinata", "agents");
+  await mkdir(directory, { recursive: true });
+  await writeFile(
+    join(directory, "sf-quant.md"),
+    "---\nschemaVersion: 1\nname: sf-quant\nhandoffDescription: Check the figures.\n---\nCheck figures.\n",
+  );
+  const native = new CombinedAutocompleteProvider([], host.workspace, null);
+  const files = [
+    { value: "@sf-quant", label: "sf-quant", description: "sf-quant" },
+    {
+      value: "@.pi/pinata/agents/sf-quant.md",
+      label: "sf-quant.md",
+      description: ".pi/pinata/agents/sf-quant.md",
+    },
+  ];
+  assert.equal(f.autocomplete.length, 1);
+  const provider = f.autocomplete[0]({
+    getSuggestions: async (lines, line, col) => ({
+      prefix: lines[line].slice(0, col).split(" ").at(-1) ?? "",
+      items: files,
+    }),
+    applyCompletion: native.applyCompletion.bind(native),
+  });
+  const options = { signal: new AbortController().signal };
+  const suggestions = (text: string) => provider.getSuggestions([text], 0, text.length, options);
+  assert((await suggestions("@"))?.items.some((item) => item.label === "@sf-quant"));
+  const menu = await suggestions("@sf-q");
+  assert(menu);
+  assert.deepEqual(
+    menu.items.map((item) => item.label),
+    ["@sf-quant", "sf-quant", "sf-quant.md"],
+  );
+  const choose = (index: number) =>
+    provider.applyCompletion(["@sf-q check", "figures"], 0, 5, menu.items[index], menu.prefix);
+  assert.deepEqual(choose(0), {
+    lines: ["@sf-quant check", "figures"],
+    cursorLine: 0,
+    cursorCol: 10,
+  });
+  assert(choose(1).lines[0].startsWith("@./sf-quant "));
+  assert(choose(2).lines[0].startsWith("@.pi/pinata/agents/sf-quant.md "));
+  for (const text of ["inspect @sf-q", "@./sf", '@"sf-q', "@sf-quant.md", "/model"]) {
+    assert.deepEqual((await suggestions(text))?.items, files);
+  }
+  assert.deepEqual(
+    (await provider.getSuggestions(["hello", "@sf-q"], 1, 5, options))?.items,
+    files,
+  );
+  assert.deepEqual(host.source.snapshot().snapshot.workers, {});
+  await f.session.prompt("@sf-quant");
+  assert.equal(f.navigation.length, 1);
+  await host.runtime.execute(
+    {
+      requestId: "worker-alias",
+      command: {
+        kind: "create",
+        workers: [{ id: "sf-live", agent: "scout", task: "Check the figures." }],
+      },
+    },
+    host.caller,
+  );
+  assert.equal((await suggestions("@sf-l"))?.items[0].label, "@sf-live");
 });
 
 test(
@@ -1505,6 +1578,27 @@ test(
     assert.equal(Object.values(right.control.snapshot().snapshot.inbox).length, 2);
     assert.equal(Object.values(left.control.snapshot().snapshot.inbox).length, 2);
     const empty = await surfaceFixture(t);
+    const workers = new Map([
+      [left.control, new Set(["scout"])],
+      [right.control, new Set(["scout"])],
+      [empty.control, new Set<string>()],
+    ]);
+    const menu = mentionAutocomplete(
+      new CombinedAutocompleteProvider([], empty.workspace, null),
+      () => ({ current: empty.control, workers }),
+    );
+    const suggestions = async (prefix: string) =>
+      (
+        await menu.getSuggestions([prefix], 0, prefix.length, {
+          signal: new AbortController().signal,
+        })
+      )?.items.map((item) => item.value);
+    assert.deepEqual(
+      (await suggestions("@sc"))?.sort(),
+      [`@${left.run}:scout`, `@${right.run}:scout`].sort(),
+    );
+    const qualified = `@${left.run.slice(0, 12)}:`;
+    assert.deepEqual(await suggestions(qualified), [qualified + "scout"]);
     const ambiguous = await routeMention(
       "@scout instruction",
       [left.control, right.control, empty.control],

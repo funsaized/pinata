@@ -336,6 +336,10 @@ with the selected assignment recorded as origin.
 Only leading user input is routed. A worker ID is its handle; when no worker
 matches, an exact definition name starts one.
 
+Type `@` at the start of the coordinator prompt to see Piñata workers and agents
+above Pi's file matches. Type part of a name to narrow the list. Press Tab to
+insert the address, then add your message or press Enter to open the agent.
+
 | Input                                                  | Behavior                                                                |
 | ------------------------------------------------------ | ----------------------------------------------------------------------- |
 | `@scout Trace the parser`                              | Start the definition, steer pending work or follow up after completion. |

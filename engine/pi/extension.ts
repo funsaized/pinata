@@ -20,6 +20,7 @@ import { freezeConversationSeed } from "../context/conversation.ts";
 import { consumedNoticeIds, parentBranchArtifact, piNotifications } from "./notifications.ts";
 import { registerCoordinatorTools } from "./tools.ts";
 import { parseMention, routeMention, sendMention, type MentionResult } from "./mentions.ts";
+import { mentionAutocomplete } from "./mention-autocomplete.ts";
 import {
   mentionRequestId,
   readMentionIntent,
@@ -51,6 +52,7 @@ export type PiExtensionOptions = {
 type Binding = {
   session: string;
   host: Host;
+  workerNames: Set<string>;
   context: ExtensionContext;
   unsubscribe: () => void;
   pages: ToolPages;
@@ -167,9 +169,11 @@ export function createPinataExtension(options: PiExtensionOptions = {}): Extensi
           },
         });
         host = created;
+        const workerNames = new Set<string>();
         active = {
           session,
           host: created,
+          workerNames,
           context,
           unsubscribe: () => {},
           pages: new ToolPages({
@@ -184,6 +188,11 @@ export function createPinataExtension(options: PiExtensionOptions = {}): Extensi
         };
         await bindEvents(active);
         active.unsubscribe = created.runtime.subscribe({}, created.caller, (event) => {
+          if (event.kind === "snapshot") {
+            for (const name of Object.keys(event.snapshot.workers)) workerNames.add(name);
+          } else if (event.kind === "committed" && event.transition.kind === "accepted") {
+            for (const worker of event.transition.workers) workerNames.add(worker.id);
+          }
           if (
             event.kind !== "committed" ||
             (event.transition.kind !== "settled" &&
@@ -472,8 +481,21 @@ export function createPinataExtension(options: PiExtensionOptions = {}): Extensi
       }
     });
     pi.on("session_start", async (_event, context) => {
-      startedSessions.add(context.sessionManager.getSessionId());
+      const session = context.sessionManager.getSessionId();
+      startedSessions.add(session);
       const binding = await getBinding(context);
+      if (context.mode === "tui") {
+        context.ui.addAutocompleteProvider?.((base) =>
+          mentionAutocomplete(base, () => {
+            const current = bindings.get(session);
+            if (!current) return undefined;
+            const workers = new Map(
+              visibleBindings(context).map(({ host, workerNames }) => [host.source, workerNames]),
+            );
+            return { current: current.host.source, workers };
+          }),
+        );
+      }
       if (
         context.sessionManager
           .getBranch()
