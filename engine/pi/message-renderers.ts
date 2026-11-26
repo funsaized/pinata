@@ -42,7 +42,7 @@ export function registerPinataMessageRenderers(pi: ExtensionAPI, animate?: () =>
             "text" in details &&
             typeof details.text === "string"
           )
-            content = `${ref.data.worker}/${ref.data.assignment}: ${details.text}`;
+            content = `${"decision" in details ? "Decision requested · " : ""}${ref.data.worker}/${ref.data.assignment}: ${details.text}`;
           content = content.replace(/\nFull result: [^\n]+$/, "");
           if (type === completionMessageType && !options.expanded) {
             const line = displayText(content).replace(/\s+/g, " ");

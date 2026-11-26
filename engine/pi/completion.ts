@@ -94,7 +94,11 @@ export class CoordinatorCompletion {
       });
     } else if (name === "pinata_wait" && reply.response.method === "wait") {
       const waited = reply.response.result;
-      if (waited.status !== "settled") return;
+      if (
+        !waited.results.length ||
+        (waited.status !== "settled" && waited.status !== "decision_requested")
+      )
+        return;
       this.pi.appendEntry(completionWatchType, {
         kind: "collected",
         targets: waited.results.map((result) => result.ref),

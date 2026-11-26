@@ -72,7 +72,7 @@ export const childWaitSchema = z.strictObject({
   workers: z.array(idSchema).optional(),
   next: z.boolean().default(false),
 });
-export const childWaitResultSchema = waitResultSchema.extend({
+export const childWaitResultSchema = waitResultSchema.omit({ decisions: true }).extend({
   status: z.enum([
     "settled",
     "nothing_pending",

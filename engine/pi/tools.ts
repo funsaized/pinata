@@ -107,6 +107,11 @@ export const coordinatorTools: readonly ToolOperation[] = [
     "Record instructions for an active or queued assignment. The receipt distinguishes durable acceptance from transport and consumption.",
   ),
   commandTool(
+    "pinata_answer",
+    "answer_decisions",
+    "Answer one or more pending coordinator decision requests atomically. Use the decision IDs from pinata_wait or retained messages. Retry the same requestId and answers after an uncertain reply.",
+  ),
+  commandTool(
     "pinata_cancel",
     "cancel",
     "Cancel an assignment, worker or run. Partial output is retained; confirmed cleanup is reported separately.",
@@ -124,7 +129,7 @@ export const coordinatorTools: readonly ToolOperation[] = [
   {
     name: "pinata_wait",
     description:
-      "Wait for exact assignments or the next pending completion. Aborting this wait leaves workers running.",
+      "Wait for exact assignments or the next pending completion. Set includeDecisions to return early with outstanding decision requests from the selected assignments or their descendants. Answer them with pinata_answer, then wait again. Aborting this wait leaves workers running.",
     schema: waitRequestSchema,
     request: (value) => ({ method: "wait", input: value }),
   },
@@ -378,5 +383,7 @@ export function toolSummary(reply: SurfaceReply | ToolPageReply): string {
     if (result.kind === "schemas") return `Schemas: ${Object.keys(result.schemas).join(", ")}`;
     return `Pinata ${result.kind} · expand for details`;
   }
+  if (response.method === "wait" && response.result.status === "decision_requested")
+    return `Decision requested · ${response.result.decisions?.map((request) => request.from.worker).join(", ")} · expand for questions`;
   return `Pinata ${response.method} finished · expand for details`;
 }

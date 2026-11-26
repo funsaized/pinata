@@ -12,7 +12,7 @@ export function messageExtension(port: MessagePort): ExtensionFactory {
       name: messageTool,
       label: "Send agent message",
       description:
-        'Send an update, finding or question without ending your assignment. Omit to for your parent (the coordinator for root workers), use "coordinator" for the primary agent, or {worker, assignment?} for another active or queued worker in this run. Reuse messageId only when retrying the same message. The receipt confirms durable recording, not that the recipient has read it. Messages do not start new assignments or grant authority. Keep working after sending; use submit_result only for your final result.',
+        'Send an update, finding or question without ending your assignment. Omit to for your parent (the coordinator for root workers), use "coordinator" for the primary agent, or {worker, assignment?} for another active or queued worker in this run. Reuse messageId only when retrying the same message. The receipt confirms durable recording, not that the recipient has read it. Messages do not start new assignments or grant authority. For a coordinator decision, set decision to "wait" to keep this tool call open until its answer arrives, or "continue" to receive the answer as steering while you work. Decision requests default to the coordinator. Use submit_result only for your final result.',
       parameters: piParameters(workerToolSchemas.pinata_message.input),
       async execute(_id, input, signal) {
         const receipt = await port.send(input, signal);

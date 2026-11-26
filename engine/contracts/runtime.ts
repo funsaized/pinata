@@ -19,13 +19,14 @@ import {
 import { idSchema } from "./common.ts";
 import { definitionSummarySchema } from "./definition.ts";
 import { configSchema } from "./config.ts";
-import { workerMessageSchema } from "./messages.ts";
+import { storedWorkerMessageSchema } from "./messages.ts";
 
 export const waitRequestSchema = z
   .strictObject({
     workers: z.array(idSchema).optional(),
     targets: z.array(assignmentRefSchema).optional(),
     next: z.boolean().default(false),
+    includeDecisions: z.boolean().optional(),
   })
   .refine(
     (request) => !(request.workers && request.targets),
@@ -33,9 +34,18 @@ export const waitRequestSchema = z
   );
 export type WaitRequest = z.infer<typeof waitRequestSchema>;
 export const waitResultSchema = z.strictObject({
-  status: z.enum(["settled", "nothing_pending", "aborted"]),
+  status: z.enum(["settled", "nothing_pending", "aborted", "decision_requested"]),
   targets: z.array(assignmentRefSchema),
   results: z.array(resultSchema),
+  decisions: z
+    .array(
+      z.strictObject({
+        decisionId: identitySchema,
+        from: assignmentRefSchema,
+        question: textSchema,
+      }),
+    )
+    .optional(),
   cursor: revisionSchema,
 });
 export type WaitResult = z.infer<typeof waitResultSchema>;
@@ -177,7 +187,7 @@ export const queryResultSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("status"), state: coreStateSchema }),
   z.strictObject({
     kind: z.literal("messages"),
-    messages: z.array(workerMessageSchema),
+    messages: z.array(storedWorkerMessageSchema),
     cursor: revisionSchema,
   }),
   receiptQueryResultSchema,

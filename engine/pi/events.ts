@@ -44,7 +44,9 @@ class EventIdentities {
   private accepted(transition: Accepted): AssignmentRef[] {
     for (const worker of transition.workers) this.workers.set(worker.id, worker);
     for (const message of transition.messages) this.messages.set(message.id, message.target);
-    return transition.assignments.map((assignment) => assignment.ref);
+    return transition.decisions
+      ? transition.receipt.assignments
+      : transition.assignments.map((assignment) => assignment.ref);
   }
 
   references(transition: Transition): AssignmentRef[] {

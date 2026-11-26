@@ -62,6 +62,12 @@ outcomes as well as successful reports when the batch returns. `after`
 binds to exact accepted assignments and controls ordering, not acceptance. Later
 follow-ups never retarget earlier edges. Transfer code through shared files or Git.
 
+If workers may need a decision, pass `includeDecisions: true` to `pinata_wait`.
+On `decision_requested`, answer one or more questions with `pinata_answer` using
+their exact `decisionId` values, then wait again for the outstanding work.
+Workers ask with `pinata_message`: use `decision: "wait"` when blocked or
+`decision: "continue"` to keep working and receive steering on the same assignment.
+
 Steer active/queued work with `pinata_steer`. Use `pinata_run` with `follow_up` to
 append an assignment, or `continue` to explicitly continue stopped work with
 recoverable context. Keep message/request IDs stable after a lost reply. Durable

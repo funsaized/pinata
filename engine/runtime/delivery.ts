@@ -76,7 +76,13 @@ export class CompletionDelivery {
           const message = state.messages[record.messageId];
           if (!message)
             throw new DomainError("context_unavailable", `Worker message is missing: ${id}`);
-          notice = { kind: "message", id, ref: record.ref, text: message.text };
+          notice = {
+            kind: "message",
+            id,
+            ref: record.ref,
+            text: message.text,
+            ...(message.decision ? { decision: message.decision } : {}),
+          };
         } else {
           const result = state.results[assignmentKey(record.ref)];
           if (!result)

@@ -6,6 +6,7 @@ import {
   type CoreState,
 } from "../contracts/index.ts";
 import { validateAssignmentGraph } from "./graph.ts";
+import { prepareDecisionAnswers } from "./messages.ts";
 import { validateChildWorker } from "./delegation.ts";
 
 export function validateAcceptance(
@@ -93,7 +94,19 @@ export function validateAcceptance(
     )
       throw new DomainError("conflict", "Assignment and initial inbox message disagree");
   }
+  const decisions = transition.decisions;
+  const batch = decisions && prepareDecisionAnswers(state, decisions.answers, decisions.sender);
   if (
+    batch &&
+    (transition.assignments.length ||
+      transition.workers.length ||
+      transition.config ||
+      transition.maxConcurrent !== undefined ||
+      digestValue(batch.messages) !== digestValue(transition.messages))
+  )
+    throw new DomainError("conflict", "Decision acceptance differs from its bound requests");
+  if (
+    !batch &&
     !transition.assignments.length &&
     (transition.workers.length ||
       transition.messages.length !== 1 ||
@@ -119,9 +132,11 @@ export function validateAcceptance(
     }
   }
   validateAssignmentGraph(state, transition.assignments);
-  const targets = transition.assignments.length
-    ? transition.assignments.map((assignment) => assignment.ref)
-    : transition.messages.map((message) => message.target);
+  const targets =
+    batch?.targets ??
+    (transition.assignments.length
+      ? transition.assignments.map((assignment) => assignment.ref)
+      : transition.messages.map((message) => message.target));
   if (
     digestValue(receipt.assignments) !== digestValue(targets) ||
     receipt.resolved.length !== targets.length

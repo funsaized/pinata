@@ -754,6 +754,44 @@ Read retained messages with `pinata_status` and
 `since` value; an optional `worker` filter selects messages sent or received by that
 worker. The query also works through extension RPC, the CLI and saved-run viewer.
 
+#### Ask the coordinator for a decision
+
+When a worker needs a decision, it calls `pinata_message` with a stable message ID
+and a question. A decision goes to the main coordinator, including from nested workers.
+
+```json
+{ "messageId": "parser-policy", "decision": "wait", "text": "Should malformed lines be skipped?" }
+```
+
+With `"wait"`, the worker keeps its assignment and capacity slot. The tool returns
+the coordinator’s text in `answer`. Other workers keep running. A worker with
+independent work can use `"continue"` to return immediately and receive the answer
+as steering on the same assignment while it is active.
+
+The coordinator calls `pinata_wait` with `includeDecisions: true` and the exact
+`targets` from its launch receipt, or a list of `workers`. The wait returns
+`decision_requested` with outstanding questions from those assignments or their delegated
+children at any depth, including questions recorded before the wait began. Ordinary progress messages do not end the
+wait. A decision request never starts an idle coordinator turn. Use a decision-aware
+wait when a worker might block for an answer.
+
+Pass one or more returned `decisionId` values to `pinata_answer`, then wait again:
+
+```json
+{
+  "requestId": "answer-parser-policy",
+  "answers": [
+    { "decisionId": "<returned decisionId>", "text": "Skip malformed lines and count them." }
+  ]
+}
+```
+
+The runtime records the whole answer batch together. A repeated, stale or unknown
+decision ID rejects the batch. After an uncertain reply, retry the same request ID
+and payload. An answer stays bound to the assignment that asked the question.
+The `messages` query includes the recorded answer. Its `since` cursor returns a
+question again when the coordinator answers it.
+
 ## Configuration
 
 Layers resolve from personal `<Pi agent directory>/pinata.json`, project
@@ -961,7 +999,8 @@ and effective capabilities. Inspect installed contracts with `pinata tools --jso
 | `pinata_run`       | `command`, optional `requestId`; create/add/follow-up/continue/capacity/background.  |
 | `pinata_steer`     | `worker`, `messageId`, `text`, optional `requestId`.                                 |
 | `pinata_cancel`    | `scope`, applicable `worker`/`assignment`, optional `descendants`, `requestId`.      |
-| `pinata_wait`      | Optional `workers` or exact `targets`, and `next`.                                   |
+| `pinata_answer`    | `answers` with decision IDs and text, optional `requestId`.                          |
+| `pinata_wait`      | Optional `workers` or exact `targets`, `next` and `includeDecisions`.                |
 | `pinata_status`    | Canonical `query`, default status.                                                   |
 | `pinata_agents`    | Discover definitions, model defaults and effective grants.                           |
 | `pinata_integrate` | Exact `ref`, `destination`, optional `requestId`; observe its application operation. |
@@ -1000,6 +1039,7 @@ they do not promise exactly-once arbitrary external tool effects.
 | `create`, `add`          | Atomically accept worker batches; `create` can include config.           |
 | `follow_up`              | Queue with `worker`, `messageId`, `text`, optional `after`.              |
 | `steer`, `continue`      | Address a worker with message ID/text.                                   |
+| `answer_decisions`       | Answer one or more open requests on their original assignments.          |
 | `cancel`                 | Assignment/worker/run scope; descendants default on.                     |
 | `background`, `capacity` | Release a wait or select positive/null `maxConcurrent`.                  |
 | `apply`                  | Apply current worktree files after coordinator handoff; check conflicts. |

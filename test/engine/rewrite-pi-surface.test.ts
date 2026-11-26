@@ -1664,3 +1664,56 @@ test(
     assert.deepEqual(world.errors, []);
   },
 );
+
+test(
+  "Pi returns a worker's decision to a foreground wait and delivers the coordinator's answer in the same assignment",
+  { timeout: 30_000 },
+  async (t) => {
+    const f = await fixture(t, {
+      respond: (context, _options, state) => {
+        if (state.callCount === 1)
+          return fauxAssistantMessage([
+            fauxToolCall("pinata_message", {
+              messageId: "parser-policy",
+              decision: "wait",
+              text: "Skip malformed records?",
+            }),
+          ]);
+        assert.match(JSON.stringify(context.messages), /Skip them and count them/);
+        return fauxAssistantMessage("Parser policy received.");
+      },
+    });
+    await f.session.prompt("@scout Ask for a parser decision.");
+    const host = f.hosts[0];
+    const invoke = async (name: string, value: Record<string, unknown>) => {
+      const tool = f.session.extensionRunner.getToolDefinition(name);
+      assert(tool);
+      const result = await tool.execute(
+        name,
+        value,
+        t.signal,
+        undefined,
+        f.session.extensionRunner.createToolContext(name, undefined),
+      );
+      return surfaceReplySchema.parse(result.details);
+    };
+    const waited = await invoke("pinata_wait", { includeDecisions: true });
+    assert(waited.status === "ok" && waited.response.method === "wait");
+    assert.equal(waited.response.result.status, "decision_requested");
+    const [question] = waited.response.result.decisions ?? [];
+    assert.equal(question.question, "Skip malformed records?");
+    assert.equal(f.faux.state.callCount, 1);
+    const answered = await invoke("pinata_answer", {
+      answers: [{ decisionId: question.decisionId, text: "Skip them and count them." }],
+    });
+    assert(
+      answered.status === "ok" &&
+        answered.response.method === "execute" &&
+        answered.response.result.status === "accepted",
+    );
+    const ended = await host.runtime.wait({ targets: [question.from] }, host.caller, t.signal);
+    assert.equal(ended.results[0].summary, "Parser policy received.");
+    assert.equal(f.faux.state.callCount, 2);
+    assert.deepEqual(f.errors, []);
+  },
+);

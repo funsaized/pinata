@@ -275,6 +275,11 @@ test(
       ).status,
       "accepted",
     );
+    const waitOnParent = world.runtime.wait(
+      { targets: [ref("parent")], includeDecisions: true },
+      world.caller,
+      t.signal,
+    );
     const queued = await world.runtime.bindMessages(ref("parent")).send({
       messageId: "queued",
       to: { worker: "child" },
@@ -296,6 +301,13 @@ test(
       .bindMessages(ref("child"))
       .send({ messageId: "parent", text: "Finding from child." });
     assert.deepEqual(parent.to, ref("parent"));
+    const decision = await world.runtime
+      .bindMessages(ref("child"))
+      .send({ messageId: "decision", decision: "continue", text: "Proceed?" });
+    const waiting = await waitOnParent;
+    assert.deepEqual(waiting.decisions, [
+      { decisionId: decision.id, from: ref("child"), question: "Proceed?" },
+    ]);
     while (world.control.snapshot().snapshot.inbox[parent.id].state !== "consumed") await delay(1);
     assert.equal(
       (
@@ -349,5 +361,214 @@ test(
       await delay(1);
     assert.equal(reply.status, "error");
     assert.equal(forwarded, false);
+  },
+);
+
+test(
+  "decision-aware waits collect scoped questions and atomically answer exact running assignments",
+  { timeout: 20_000 },
+  async (t) => {
+    const scripted = heldBackend();
+    const { runtime, control, caller, viewer, run, directory } = await surfaceFixture(t, {
+      execution: true,
+      backend: scripted.backend,
+    });
+    const ref = (worker: string) => ({ run, worker, assignment: 1 });
+    const receipt = await runtime.execute(
+      {
+        requestId: "start",
+        command: {
+          kind: "create",
+          workers: ["parser", "docs", "peer"].map((id) => ({ id, agent: "fixture", task: "Hold" })),
+        },
+      },
+      caller,
+    );
+    assert.equal(receipt.status, "accepted");
+    while (
+      !["parser", "docs", "peer"].every(
+        (id) =>
+          control.snapshot().snapshot.assignments[assignmentKey(ref(id))]?.execution.phase ===
+          "running",
+      )
+    )
+      await delay(1, undefined, { signal: t.signal });
+    const parser = runtime.bindMessages(ref("parser"));
+    const docs = runtime.bindMessages(ref("docs"));
+    const request = { messageId: "policy", text: "Skip malformed input?", decision: "wait" };
+    const scope = { targets: [ref("parser"), ref("docs")], includeDecisions: true };
+    const waiting = runtime.wait(scope, caller, t.signal);
+    const ordinaryAbort = new AbortController();
+    const ordinary = runtime.wait({ targets: scope.targets }, caller, ordinaryAbort.signal);
+    const peer = await runtime
+      .bindMessages(ref("peer"))
+      .send({ messageId: "policy", text: "Unrelated?", decision: "continue" });
+    const progress = await parser.send({ messageId: "progress", text: "Still working" });
+    const blocked = parser.send(request, t.signal);
+    const first = await waiting;
+    assert.equal(first.status, "decision_requested");
+    assert.equal(first.decisions?.length, 1);
+    const question = first.decisions[0];
+    assert.deepEqual(question.from, ref("parser"));
+    assert.equal(question.question, request.text);
+    await assert.rejects(
+      docs.send({
+        messageId: "peer",
+        to: { worker: "parser" },
+        text: "Question?",
+        decision: "continue",
+      }),
+      /coordinator/,
+    );
+    const second = await docs.send({
+      messageId: "policy",
+      text: "Include an example?",
+      decision: "continue",
+    });
+    const pending = await runtime.wait(scope, caller, t.signal);
+    assert.deepEqual(
+      pending.decisions?.map((entry) => entry.decisionId),
+      [question.decisionId, second.id],
+    );
+    const answers = [
+      { decisionId: question.decisionId, text: "Skip it." },
+      { decisionId: second.id, text: "Include one example." },
+    ];
+    const envelope = { requestId: "answer-policy", command: { kind: "answer_decisions", answers } };
+    for (const invalidId of [question.decisionId, progress.id, "__proto__"]) {
+      const rejected = await runtime.execute(
+        {
+          requestId: "invalid-batch",
+          command: {
+            kind: "answer_decisions",
+            answers: [answers[0], { decisionId: invalidId, text: "Invalid" }],
+          },
+        },
+        caller,
+      );
+      assert.equal(rejected.status, "rejected");
+    }
+    assert.equal((await runtime.execute(envelope, viewer)).status, "rejected");
+    assert.deepEqual((await runtime.wait(scope, caller, t.signal)).decisions, pending.decisions);
+    const accepted = await runtime.execute(envelope, caller);
+    const updates = await runtime.query({ kind: "messages", since: pending.cursor }, caller);
+    assert(updates.kind === "messages");
+    assert.deepEqual(
+      updates.messages.map((message) => message.answer?.text),
+      ["Skip it.", "Include one example."],
+    );
+    assert.equal(accepted.status, "accepted");
+    assert.deepEqual(accepted.assignments, scope.targets);
+    assert.deepEqual(await runtime.execute(envelope, caller), accepted);
+    assert.equal(
+      (await runtime.execute({ ...envelope, requestId: "answer-again" }, caller)).status,
+      "rejected",
+    );
+    assert.equal((await blocked).answer, "Skip it.");
+    assert.equal((await parser.send(request)).answer, "Skip it.");
+    while (!scripted.inputs.some((input) => input.kind === "steer"))
+      await delay(1, undefined, { signal: t.signal });
+    const steering = scripted.inputs.filter((input) => input.kind === "steer");
+    assert.equal(steering.length, 1);
+    assert.deepEqual(steering[0].target, ref("docs"));
+    assert.match(steering[0].text, /Include one example/);
+    assert.equal(
+      (await runtime.wait({ workers: ["peer"], includeDecisions: true }, caller)).decisions?.[0]
+        .decisionId,
+      peer.id,
+    );
+    ordinaryAbort.abort();
+    assert.equal((await ordinary).status, "aborted");
+    assert.equal(Object.keys(control.snapshot().snapshot.results).length, 0);
+    const cancel = await runtime.execute(
+      { requestId: "stop", command: { kind: "cancel", scope: "run" } },
+      caller,
+    );
+    assert.equal(cancel.status, "accepted");
+    assert.equal(
+      (await runtime.wait({ ...scope, targets: [ref("peer")] }, caller, t.signal)).status,
+      "settled",
+    );
+    assert.equal(
+      (
+        await runtime.execute(
+          {
+            requestId: "stale",
+            command: { kind: "answer_decisions", answers: [{ decisionId: peer.id, text: "Late" }] },
+          },
+          caller,
+        )
+      ).status,
+      "rejected",
+    );
+    await runtime.close();
+    const reopened = await Runtime.open({ directory });
+    try {
+      assert.deepEqual(await reopened.execute(envelope, caller), accepted);
+      assert.equal((await reopened.bindMessages(ref("parser")).send(request)).answer, "Skip it.");
+      const saved = await openSavedSource(directory);
+      const history = await saved.request({ method: "query", input: { kind: "messages" } });
+      assert(
+        history.status === "ok" &&
+          history.response.method === "query" &&
+          history.response.result.kind === "messages",
+      );
+      assert.equal(
+        history.response.result.messages.find((m) => m.id === second.id)?.answer?.text,
+        "Include one example.",
+      );
+    } finally {
+      await reopened.close();
+    }
+  },
+);
+
+test(
+  "a cancelled worker releases its blocking decision call without ending a peer",
+  { timeout: 15_000 },
+  async (t) => {
+    const { runtime, caller, control, run } = await surfaceFixture(t, {
+      execution: true,
+      backend: heldBackend().backend,
+    });
+    const ref = { run, worker: "one", assignment: 1 };
+    await runtime.execute(
+      {
+        requestId: "create",
+        command: {
+          kind: "create",
+          workers: ["one", "two"].map((id) => ({ id, agent: "fixture", task: "Hold" })),
+        },
+      },
+      caller,
+    );
+    while (
+      Object.values(control.snapshot().snapshot.assignments).some(
+        (a) => a.execution.phase !== "running",
+      )
+    )
+      await delay(1, undefined, { signal: t.signal });
+    const request = { messageId: "blocked", decision: "wait", text: "Which file?" };
+    const port = runtime.bindMessages(ref);
+    const controller = new AbortController();
+    const interrupted = assert.rejects(port.send(request, controller.signal), /abort/i);
+    const read = await runtime.wait({ targets: [ref], includeDecisions: true }, caller, t.signal);
+    controller.abort();
+    await interrupted;
+    assert.equal(read.decisions?.length, 1);
+    const stopped = assert.rejects(port.send(request), /no longer active/);
+    await runtime.execute(
+      {
+        requestId: "cancel-one",
+        command: { kind: "cancel", scope: "assignment", worker: "one", assignment: 1 },
+      },
+      caller,
+    );
+    await stopped;
+    assert.equal(
+      control.snapshot().snapshot.assignments[assignmentKey({ ...ref, worker: "two" })].execution
+        .phase,
+      "running",
+    );
   },
 );

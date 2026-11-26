@@ -180,6 +180,35 @@ test(
 );
 
 test(
+  "a supervised worker receives a decision in its original tool call",
+  { skip: !supported, timeout: 30_000 },
+  async (t) => {
+    const world = await fixture(t, {
+      task: "ask-decision",
+      messages: {
+        async send(input) {
+          assert.deepEqual(input, { messageId: "policy", decision: "wait", text: "Which policy?" });
+          return {
+            status: "recorded",
+            id: "policy-answer",
+            from: world.launch.ref,
+            to: "coordinator",
+            revision: 1,
+            answer: "Use the strict policy.",
+          };
+        },
+      },
+    });
+    const handle = await world.start();
+    assert.equal((await handle.done).reason, "completed");
+    assert.equal((await handle.stop("Decision received")).cleanup.status, "stopped");
+    const turns = (await readFile(join(world.agentDir, "turns.jsonl"), "utf8")).trim().split("\n");
+    assert.equal(turns.length, 2);
+    assert.match(turns[1], /Use the strict policy/);
+  },
+);
+
+test(
   "replacement process backend retains consumed inputs, usage, transcript and continuation",
   { skip: !supported, timeout: 40_000 },
   async (t) => {
