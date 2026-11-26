@@ -48,6 +48,8 @@ test("the departing wave extends its last track and leaves dashes across the tex
   rows.remember("worker", { line, track, start: 2, position: 0, frame: 3 });
   rows.finish("worker");
   const frame = () => stripTerminalSequences(rows.render("worker", 20, paint) ?? "");
+  now += 2500;
+  rows.expire();
   assert.equal(frame(), "  - -co12界56789");
   now += 125;
   assert.equal(frame(), "  - -co 2界56789");
@@ -56,8 +58,17 @@ test("the departing wave extends its last track and leaves dashes across the tex
   now += 125;
   assert.equal(frame(), "  - --C o  56789", "half-eaten wide glyph keeps its remaining cell");
   now += 125;
-  assert.equal(frame(), "  - ---co o56789");
+  assert.equal(frame(), "  - ---co  56789");
   now += 2000;
+  assert.equal(frame(), "  ------c o56789", "a late redraw eats only the next cell");
+  assert.equal(frame(), "  ------c o56789", "repainting the same tick preserves the frame");
+  for (let step = 0; step < 5; step++) {
+    now += 250;
+    assert(frame().endsWith("89"), "the mouth reaches the final letters before they disappear");
+  }
+  now += 250;
+  assert.equal(frame(), "  " + "-".repeat(12) + "c9");
+  now += 250;
   assert.equal(frame(), "  " + "-".repeat(13) + "C");
   now += 250;
   assert.equal(frame(), "  " + "-".repeat(14));
@@ -66,6 +77,23 @@ test("the departing wave extends its last track and leaves dashes across the tex
   assert(rows.has("worker"));
   now += 250;
   rows.expire();
+  assert(!rows.has("worker"));
+});
+
+test("scrolling away retires a departure that no longer receives frames", () => {
+  const rows = new CompletionRows();
+  rows.begin("fleet");
+  rows.remember("worker", {
+    line: "c o o worker",
+    track: "c o o",
+    start: 0,
+    position: 0,
+    frame: 0,
+  });
+  rows.finish("worker");
+  rows.begin("fleet");
+  assert(rows.has("worker"));
+  rows.begin("fleet");
   assert(!rows.has("worker"));
 });
 

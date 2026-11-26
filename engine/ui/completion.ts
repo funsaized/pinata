@@ -5,11 +5,12 @@ import { activityMouth, activityStepMs } from "./tree.ts";
 
 type VisibleRow = { line: string; track: string; start: number; position: number; frame: number };
 type DepartingRow = VisibleRow & {
-  tick: number;
+  lastTick?: number;
+  ticksShown: number;
+  clearAt?: number;
   mouth: number;
   cells: number;
   textEnd: number;
-  visibleEnd: number;
 };
 // Pellets can enter the text half a beat before the mouth advances.
 export const pelletStepMs = activityStepMs / 2;
@@ -32,8 +33,10 @@ export class CompletionRows {
     this.departing.clear();
   }
   begin(scope: string): void {
+    // Rows scrolled off screen no longer receive frames.
+    for (const key of this.departing.keys())
+      if (this.scope !== scope || !this.visible.has(key)) this.departing.delete(key);
     this.visible.clear();
-    if (this.scope !== scope) this.departing.clear();
     this.scope = scope;
     this.expire();
   }
@@ -58,7 +61,7 @@ export class CompletionRows {
   }
   finish(key: string): void {
     const row = this.visible.get(key);
-    if (!row) return;
+    if (!row || this.departing.has(key)) return;
     const text = stripTerminalSequences(row.line);
     const textEnd = visibleWidth(text.trimEnd());
     const head = Math.max(row.track.lastIndexOf("c"), row.track.lastIndexOf("C"));
@@ -69,33 +72,38 @@ export class CompletionRows {
       mouth,
       cells: visibleWidth(text),
       textEnd,
-      visibleEnd: textEnd,
-      tick: Math.floor(performance.now() / pelletStepMs),
+      ticksShown: 0,
     });
-    this.visible.delete(key);
   }
   expire(): void {
-    const frame = Math.floor(performance.now() / activityStepMs);
+    const now = performance.now();
     for (const [key, row] of this.departing)
-      if (row.start + row.mouth + frame - Math.floor(row.tick / 2) >= row.visibleEnd + 2)
-        this.departing.delete(key);
+      if (row.clearAt !== undefined && now >= row.clearAt) this.departing.delete(key);
   }
   render(key: string, width: number, paint: Paint): string | undefined {
     const row = this.departing.get(key);
     if (!row) return;
-    row.visibleEnd = Math.min(width, row.textEnd);
-    const length = Math.max(0, row.visibleEnd - row.start);
+    this.visible.set(key, row);
+    const length = Math.max(0, Math.min(width, row.textEnd) - row.start);
     const gutter = " ".repeat(Math.min(row.start, width));
-    const tick = Math.floor(performance.now() / pelletStepMs);
-    const steps = Math.floor(tick / 2) - Math.floor(row.tick / 2);
+    const now = performance.now();
+    const tick = Math.floor(now / pelletStepMs);
+    // Resume from the frame the terminal last drew, even after a delayed repaint.
+    if (row.lastTick !== undefined) row.ticksShown += Math.min(2, tick - row.lastTick);
+    row.lastTick = tick;
+    const steps = Math.floor(row.ticksShown / 2);
     const mouth = row.mouth + steps;
-    if (mouth >= length) return gutter + paint("muted", "-".repeat(length));
+    if (mouth >= length) {
+      row.clearAt ??= now + 2 * activityStepMs;
+      return gutter + paint("muted", "-".repeat(length));
+    }
+    row.clearAt = undefined;
 
-    // Extend the original lane into the text, a cell at a time, up to four cells ahead.
-    const front = Math.min(
-      length,
-      Math.max(row.track.length, Math.min(row.track.length + tick - row.tick, mouth + 5)),
-    );
+    // Seed two cells ahead, then a third on the half beat. Let the mouth eat the last glyph,
+    // which can occupy two terminal cells.
+    const lead = 2 + (row.ticksShown % 2);
+    const pelletsEnd = Math.min(row.track.length + row.ticksShown, mouth + 1 + lead, length - 2);
+    const front = Math.min(length, Math.max(row.track.length, mouth + 1, pelletsEnd));
     let lane = row.track.slice(0, front);
     if (steps > 0) {
       const keep = Math.max(0, row.mouth - steps + 1);

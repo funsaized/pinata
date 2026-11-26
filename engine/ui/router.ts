@@ -238,6 +238,7 @@ export class ScreenRouter {
     this.updateTicker();
     return () => {
       this.listeners.delete(listener);
+      if (!this.listeners.size) this.completions.clear();
       this.updateTicker();
     };
   }

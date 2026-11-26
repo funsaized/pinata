@@ -470,8 +470,9 @@ test("a successful worker eats through its last visible row in the widget and fl
         const first = frames();
         assert(first.every((line) => line.includes(worker + "/1")));
         const finalDash = [false, false];
-        for (let step = 0; step <= 100 && finalDash.includes(false); step++) {
-          now += 250;
+        const lastMouth: (number | undefined)[] = [];
+        for (let step = 0; step <= 200 && finalDash.includes(false); step++) {
+          now += step === 15 ? 2000 : 125;
           for (const [index, router] of [widget, fleet].entries()) {
             if (finalDash[index]) continue;
             const line = render(router)[rowIndexes[index]]?.trimEnd();
@@ -479,12 +480,21 @@ test("a successful worker eats through its last visible row in the widget and fl
             if (/^ *-+$/.test(line)) {
               assert.equal(line.length, first[index].length);
               finalDash[index] = true;
-            } else if (step === 4) {
-              assert.match(line, /-+[cC](?:o | o)/);
-              assert(line.includes(worker + "/1") || line.includes("unning"), line);
+            } else {
+              const trail = /^ *-+[cC]/.exec(line);
+              if (!trail) continue;
+              const mouth = trail[0].length - 1;
+              const previous = lastMouth[index];
+              if (previous !== undefined) assert(mouth === previous || mouth === previous + 1);
+              lastMouth[index] = mouth;
+              // Beyond the original activity track, only the next three cells can change.
+              const untouched = Math.max(11, mouth + 4);
+              assert.equal(line.slice(untouched), first[index].slice(untouched));
+              if (mouth < first[index].length - 1) assert.equal(line.at(-1), first[index].at(-1));
             }
           }
         }
+        assert.equal(lastMouth.length, 2);
         assert.deepEqual(finalDash, [true, true], "both views hold a complete dash trail");
 
         // Even when the last worker leaves, a mounted widget gets a final redraw.
