@@ -207,7 +207,11 @@ function inspector(router: ScreenRouter, pane: Pane, options: FleetOptions): str
   if (result && assignment.execution.phase === "ended") {
     content.push(
       "",
-      paint("strong", result.report ? "Worker report" : "Result"),
+      ...(assignment.execution.outputTruncated
+        ? lines("Partial output · model output limit reached", width).map((line) =>
+            paint("warning", line),
+          )
+        : [paint("strong", result.report ? "Worker report" : "Result")]),
       ...excerpt(markdown(result.summary), width, router.details ? Infinity : 4, paint),
     );
     if (result.reportingError && !router.details)

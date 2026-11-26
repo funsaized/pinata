@@ -3,6 +3,7 @@ import {
   type Assignment,
   type AssignmentRef,
   type CoreState,
+  type ExecutionState,
   type StoredWorkerMessage,
 } from "../contracts/index.ts";
 import { dependentAssignments } from "../core/indexes.ts";
@@ -22,6 +23,12 @@ export function steerTarget(state: CoreState, worker: string): AssignmentRef | u
 export function executionLabel(assignment: Assignment): string {
   const execution = assignment.execution;
   return execution.phase === "ended" ? execution.reason : execution.phase;
+}
+export function resultStatus(execution: ExecutionState): string {
+  if (execution.phase !== "ended") return execution.phase;
+  return execution.outputTruncated
+    ? `${execution.reason} (model output limit reached)`
+    : execution.reason;
 }
 export function contextLabel(state: CoreState, ref: AssignmentRef): string {
   const usage = state.contextUsage[assignmentKey(ref)];

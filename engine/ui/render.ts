@@ -13,6 +13,7 @@ import {
   needsAttention,
   isFinished,
   queueLabel,
+  resultStatus,
   steerTarget,
 } from "./projection.ts";
 import { agentAccent, modelAccent, type Paint } from "./palette.ts";
@@ -430,7 +431,7 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
         ...(result &&
         result.execution.phase === "ended" &&
         (result.execution.reason !== "completed" || !view.page?.entries.length)
-          ? [`Result · ${result.execution.reason}`, result.summary, ""]
+          ? [`Result · ${resultStatus(result.execution)}`, result.summary, ""]
           : []),
         ...(router.transcriptDetails
           ? [detailRows(assignmentDetails(router.state, assignment), width, paint)]

@@ -7,8 +7,9 @@ import { dirname, join, resolve } from "node:path";
 import test, { type TestContext } from "node:test";
 import { promisify } from "node:util";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { surfaceReplySchema } from "../../engine/contracts/index.ts";
+import { assignmentKey, surfaceReplySchema } from "../../engine/contracts/index.ts";
 import { parseArguments } from "../../engine/headless/arguments.ts";
+import { openSavedSource } from "../../engine/sources/saved.ts";
 import { openHost as openProductionHost } from "../../engine/host/index.ts";
 import { openHost } from "./fixtures/rewrite-cli-factory.ts";
 
@@ -186,11 +187,13 @@ test("agents validate checks selected skill resources without opening a runtime"
   assert.equal((await readdir(f.agentDir)).length, 0);
 });
 test(
-  "embedded default and packaged-development hosts run against an HTTP loopback provider",
+  "embedded and packaged process hosts distinguish complete and output-limited HTTP responses",
   { timeout: 45_000 },
   async (t) => {
     const world = await fixture(t);
     let providerRequests = 0;
+    let finishReason: "stop" | "length" = "stop";
+    const partial = "I checked the parser and found";
     const requestPaths: Array<{
       method: string | undefined;
       url: string | undefined;
@@ -216,8 +219,14 @@ test(
         response.write(
           `data: ${JSON.stringify({ id: `fixture-${providerRequests}`, object: "chat.completion.chunk", created: 1, model: "fixture", choices: [{ index: 0, delta, finish_reason: finish }], ...(usage ? { usage } : {}) })}\n\n`,
         );
-      chunk({ role: "assistant", content: "Local HTTP fixture completed" }, null);
-      chunk({}, "stop", { prompt_tokens: 12, completion_tokens: 5, total_tokens: 17 });
+      chunk(
+        {
+          role: "assistant",
+          content: finishReason === "stop" ? "Local HTTP fixture completed" : partial,
+        },
+        null,
+      );
+      chunk({}, finishReason, { prompt_tokens: 12, completion_tokens: 5, total_tokens: 17 });
       response.end("data: [DONE]\n\n");
     });
     await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
@@ -287,25 +296,44 @@ test(
         parentModel: { provider: "cli-loopback", id: "fixture", thinking: "off" },
       });
       try {
-        const receipt = await host.runtime.execute(
-          {
-            requestId: "loopback",
-            command: {
-              kind: "create",
-              workers: [{ id: "worker", agent: "fixture", task: "HTTP fixture", backend }],
+        for (const stop of ["stop", "length"] as const) {
+          finishReason = stop;
+          const receipt = await host.runtime.execute(
+            {
+              requestId: "loopback-" + stop,
+              command: {
+                kind: stop === "stop" ? "create" : "add",
+                workers: [{ id: stop, agent: "fixture", task: "HTTP fixture", backend }],
+              },
             },
-          },
-          host.caller,
-        );
-        assert.equal(receipt.status, "accepted", JSON.stringify(receipt));
-        const waited = await host.runtime.wait({}, host.caller, AbortSignal.timeout(30_000));
-        assert.equal(waited.status, "settled");
-        assert.match(waited.results[0].summary, /Local HTTP fixture completed/);
+            host.caller,
+          );
+          assert(receipt.status === "accepted", JSON.stringify(receipt));
+          const waited = await host.runtime.wait(
+            { targets: receipt.assignments },
+            host.caller,
+            AbortSignal.timeout(30_000),
+          );
+          assert.equal(waited.status, "settled");
+          const [result] = waited.results;
+          assert.deepEqual(
+            result.execution,
+            stop === "stop"
+              ? { phase: "ended", reason: "completed", cleanup: "confirmed" }
+              : { phase: "ended", reason: "failed", cleanup: "confirmed", outputTruncated: true },
+          );
+          assert.equal(result.summary, stop === "stop" ? "Local HTTP fixture completed" : partial);
+          assert.equal(result.usage.complete, true);
+          assert(result.transcript && result.session);
+          const saved = await openSavedSource(join(world.directory, `http-${backend}`));
+          const retained = saved.snapshot().snapshot.results[assignmentKey(result.ref)];
+          assert.deepEqual(retained.result, result);
+        }
       } finally {
         await host.close();
       }
     }
     t.diagnostic(JSON.stringify(requestPaths));
-    assert.equal(providerRequests, 2, JSON.stringify(requestPaths));
+    assert.equal(providerRequests, 4, JSON.stringify(requestPaths));
   },
 );

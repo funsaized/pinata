@@ -4,6 +4,7 @@ import type {
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { z } from "zod";
+import { resultStatus } from "../ui/projection.ts";
 import {
   assignmentKey,
   assignmentRefSchema,
@@ -142,8 +143,7 @@ export class CoordinatorCompletion {
     if (targets.some((ref) => !state.results[assignmentKey(ref)])) return;
     const summaries = targets.map((ref) => {
       const result = state.results[assignmentKey(ref)].result;
-      const execution = result.execution;
-      const status = execution.phase === "ended" ? execution.reason : execution.phase;
+      const status = resultStatus(result.execution);
       return `${ref.worker}/${ref.assignment}: ${status}. ${result.summary.slice(0, 600)}\nFull result: ${canonicalJson(ref)}`;
     });
     return {

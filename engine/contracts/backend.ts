@@ -84,17 +84,23 @@ export const reportToolResultSchema = z.strictObject({
   report: reportedResultSchema.optional(),
   reportingError: z.string().optional(),
 });
-export const backendOutcomeSchema = z.strictObject({
-  reason: z.enum(["completed", "failed", "cancelled"]),
-  summary: z.string(),
-  usage: usageCoverageSchema,
-  report: artifactRefSchema.optional(),
-  reportingError: textSchema.optional(),
-  session: sessionCheckpointSchema.optional(),
-  transcript: artifactRefSchema.optional(),
-  artifacts: z.array(artifactRefSchema),
-  error: textSchema.optional(),
-});
+export const backendOutcomeSchema = z
+  .strictObject({
+    reason: z.enum(["completed", "failed", "cancelled"]),
+    outputTruncated: z.literal(true).optional(),
+    summary: z.string(),
+    usage: usageCoverageSchema,
+    report: artifactRefSchema.optional(),
+    reportingError: textSchema.optional(),
+    session: sessionCheckpointSchema.optional(),
+    transcript: artifactRefSchema.optional(),
+    artifacts: z.array(artifactRefSchema),
+    error: textSchema.optional(),
+  })
+  .refine((outcome) => !(outcome.reason === "completed" && outcome.outputTruncated), {
+    message: "Truncated output cannot be a completed backend outcome",
+    path: ["outputTruncated"],
+  });
 export type BackendOutcome = z.infer<typeof backendOutcomeSchema>;
 export const contextUsageSchema = z.strictObject({
   tokens: revisionSchema.nullable(),

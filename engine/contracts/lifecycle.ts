@@ -44,6 +44,7 @@ export const executionSchema = z.discriminatedUnion("phase", [
     phase: z.literal("ended"),
     reason: z.enum(["completed", "failed", "cancelled", "interrupted"]),
     cleanup: z.enum(["confirmed", "unconfirmed"]),
+    outputTruncated: z.literal(true).optional(),
   }),
 ]);
 export type ExecutionState = z.infer<typeof executionSchema>;

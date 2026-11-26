@@ -742,6 +742,12 @@ run in the original trusted validator. Discovery exposes input JSON Schema, whic
 cannot recreate callbacks. Transforms and non-JSON types are rejected. Failed optional
 reports remain as reporting errors; ordinary final text remains valid output.
 
+If the model hits its output limit on its final response before submitting a
+report, the assignment fails with `execution.outputTruncated: true`. The result
+summary keeps the text the model returned, even if it ends mid-sentence. The
+fleet and coordinator show why the response stopped. Usage and cleanup are
+recorded separately.
+
 Workers freeze the selected bootstrap path, source bytes, digest and schema descriptor.
 Missing or changed bootstraps fail before execution. Editing an already loaded module
 requires a fresh host process and worker. Only host code or explicit `--bootstrap`

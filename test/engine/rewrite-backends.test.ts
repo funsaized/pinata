@@ -78,6 +78,32 @@ test(
   },
 );
 
+test("a recovered truncated tool call does not mark the final answer as partial", async (t) => {
+  const world = await piFixture(t, (_context, _options, state) =>
+    state.callCount === 1
+      ? fauxAssistantMessage([fauxToolCall("read", { path: "file.txt" })], { stopReason: "length" })
+      : fauxAssistantMessage("Recovered answer"),
+  );
+  const receipt = await world.runtime.execute(
+    {
+      requestId: "recovered-output",
+      command: {
+        kind: "create",
+        workers: [{ id: "reader", agent: "fixture", task: "Read the file" }],
+      },
+    },
+    world.caller,
+  );
+  assert.equal(receipt.status, "accepted");
+  const {
+    results: [result],
+  } = await world.runtime.wait({}, world.caller, AbortSignal.timeout(10_000));
+  assert.equal(world.turns.length, 2);
+  assert.deepEqual(result.execution, { phase: "ended", reason: "completed", cleanup: "confirmed" });
+  assert.equal(result.summary, "Recovered answer");
+  assert.equal(result.usage.complete, true);
+});
+
 test(
   "a final report blocks later tools in its batch and ends without another provider request",
   { timeout: 20_000 },

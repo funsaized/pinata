@@ -226,7 +226,17 @@ test("dependency tool cards summarize frozen results and reveal the retained pay
   initTheme("dark", false);
   const ref = { run: "retained-run", worker: "scout", assignment: 2 };
   const artifact = { digest: "a".repeat(64), size: 417 };
-  const frozen = JSON.stringify({ summary: "The parser is in server.ts.", artifacts: [artifact] });
+  const execution = {
+    phase: "ended",
+    reason: "failed",
+    cleanup: "confirmed",
+    outputTruncated: true,
+  };
+  const frozen = JSON.stringify({
+    summary: "The parser is in server.ts.",
+    execution,
+    artifacts: [artifact],
+  });
   const result = { kind: "result", ref, artifact, offset: 0, total: frozen.length, text: frozen };
   const list = {
     kind: "list",
@@ -236,7 +246,7 @@ test("dependency tool cards summarize frozen results and reveal the retained pay
       {
         ref,
         artifact,
-        execution: { phase: "ended", reason: "completed", cleanup: "confirmed" },
+        execution,
         summary: "Found the parser.",
         summaryComplete: true,
       },
@@ -255,7 +265,8 @@ test("dependency tool cards summarize frozen results and reveal the retained pay
   const options = { width: 76, paint: createPaint("terminal-default") };
   const folded = renderConversation(entries, { ...options, expanded: false }).join("\n");
   assert.match(folded, /1 prerequisite/);
-  assert.match(folded, /scout\/2 · completed/);
+  assert.match(folded, /scout\/2 · failed \(model output limit reached\)/);
+  assert.match(folded, /Frozen result · failed \(model output limit reached\)/);
   assert.match(folded, /The parser is in server.ts/);
   assert.match(folded, /Result page 0–30/);
   assert.doesNotMatch(folded, /"digest"|"artifact"|retained-run/);

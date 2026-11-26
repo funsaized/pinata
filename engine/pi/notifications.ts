@@ -10,6 +10,7 @@ import { type NotificationPort } from "../runtime/delivery.ts";
 import { storeConversation } from "../storage/conversation.ts";
 import { validateConversation } from "../agent/conversation.ts";
 import { isMissing } from "../storage/io.ts";
+import { resultStatus } from "../ui/projection.ts";
 
 export const completionMessageType = "pinata.completion.v1";
 export const workerMessageType = "pinata.message.v1";
@@ -124,8 +125,7 @@ export function piNotifications(
           const isMessage = "kind" in notice && notice.kind === "message";
           let content: string;
           if ("result" in notice) {
-            const execution = notice.result.execution;
-            const status = execution.phase === "ended" ? execution.reason : execution.phase;
+            const status = resultStatus(notice.result.execution);
             content = `${notice.ref.worker}/${notice.ref.assignment}: ${status}.\n${notice.result.summary.slice(0, 600)}\nFull result: ${canonicalJson(notice.ref)}`;
           } else {
             content = notice.decision

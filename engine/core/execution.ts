@@ -72,6 +72,8 @@ export function validateSettlement(
     throw new DomainError("conflict", "Settlement notification identity is not stable");
   const attempts = assignmentAttempts(state, key);
   const latest = attempts.at(-1);
+  if (execution.outputTruncated !== latest?.outcome?.outputTruncated)
+    throw new DomainError("conflict", "Settlement truncation disagrees with the retained outcome");
   if (
     result.worktree &&
     digestValue(result.worktree) !== digestValue(latest?.prepared?.worktree ?? null)

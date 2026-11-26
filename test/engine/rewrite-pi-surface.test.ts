@@ -872,7 +872,7 @@ test(
 );
 
 test(
-  "a completed batch continues at a safe boundary after coordinator work",
+  "a settled batch reports truncated worker output after coordinator work",
   { timeout: 20_000 },
   async (t) => {
     const working = deferred();
@@ -882,7 +882,7 @@ test(
       coordinatorTools: true,
       respond: async (context) => {
         if (!getCurrentTools(context.messages).some((tool) => tool.name === "pinata_run"))
-          return fauxAssistantMessage("Worker result.");
+          return fauxAssistantMessage("The first finding was", { stopReason: "length" });
         coordinatorRequests++;
         if (coordinatorRequests === 1)
           return fauxAssistantMessage([
@@ -910,12 +910,15 @@ test(
     finishWork.resolve();
     await prompt;
     assert.equal(coordinatorRequests, 3);
-    assert.equal(
-      f.manager
-        .getEntries()
-        .filter((entry) => entry.type === "custom_message" && entry.customType === batchMessageType)
-        .length,
-      1,
+    const batches = f.manager
+      .getEntries()
+      .filter((entry) => entry.type === "custom_message" && entry.customType === batchMessageType);
+    assert.equal(batches.length, 1);
+    const [batch] = batches;
+    assert(batch.type === "custom_message");
+    assert.match(
+      String(batch.content),
+      /worker\/1: failed \(model output limit reached\)\. The first finding was/,
     );
     assert.deepEqual(f.errors, []);
   },
@@ -1301,7 +1304,12 @@ test(
   "real Pi input routes handles without coordinator turns and deduplicates saved completion notices",
   { timeout: 30_000 },
   async (t) => {
-    const f = await fixture(t);
+    const f = await fixture(t, {
+      respond: (_context, _options, state) =>
+        fauxAssistantMessage("@scout model-output-is-data", {
+          stopReason: state.callCount === 1 ? "length" : "stop",
+        }),
+    });
     await f.session.prompt("@scout");
     assert.equal(f.faux.state.callCount, 0);
     assert.equal(f.navigation.length, 1, JSON.stringify(f.errors));
@@ -1336,7 +1344,14 @@ test(
     await host.runtime.deliverNotifications(host.caller);
     await host.runtime.deliverNotifications(host.caller);
     await delivered(1);
-    assert.equal(f.manager.getEntries().filter((entry) => noticeId(entry)).length, 1);
+    const notices = f.manager.getEntries().filter((entry) => noticeId(entry));
+    assert.equal(notices.length, 1);
+    const [notice] = notices;
+    assert(notice.type === "custom_message");
+    assert.match(
+      String(notice.content),
+      /scout\/1: failed \(model output limit reached\)\.\n@scout model-output-is-data/,
+    );
     const state = host.source.snapshot().snapshot;
     const id = Object.keys(state.outbox)[0];
     assert.equal(state.outbox[id].state, "delivered");

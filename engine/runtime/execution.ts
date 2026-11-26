@@ -1019,6 +1019,7 @@ export class ExecutionCoordinator {
           phase: "ended",
           reason,
           cleanup: completion.cleanup.status === "stopped" ? "confirmed" : "unconfirmed",
+          ...(completion.outcome.outputTruncated ? { outputTruncated: true } : {}),
         },
         artifacts: uniqueArtifacts([
           ...(active.prepared?.artifacts ?? []),

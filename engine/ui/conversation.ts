@@ -1,7 +1,9 @@
 import { Markdown, type MarkdownTheme } from "@earendil-works/pi-tui";
 import { dependencyPageSchema } from "../contracts/dependencies.ts";
+import { executionSchema } from "../contracts/lifecycle.ts";
 import type { Paint } from "./palette.ts";
 import { displayText, fit, lines } from "./text.ts";
+import { resultStatus } from "./projection.ts";
 
 export type ConversationSurface = "pending" | "success" | "error" | "custom";
 
@@ -94,7 +96,7 @@ function dependencyOutput(details: unknown, raw: string, expanded: boolean): str
       `${page.total} ${page.total === 1 ? "prerequisite" : "prerequisites"}`,
       ...page.entries.map(
         ({ ref, execution, summary, summaryComplete }) =>
-          `${ref.worker}/${ref.assignment} · ${execution.phase === "ended" ? execution.reason : execution.phase}` +
+          `${ref.worker}/${ref.assignment} · ${resultStatus(execution)}` +
           (summary
             ? `
 ${summary}${summaryComplete ? "" : "…"}`
@@ -111,10 +113,10 @@ ${summary}${summaryComplete ? "" : "…"}`
 ${frozen ? JSON.stringify(frozen, null, 2) : fragment}`;
   const end = page.next ?? page.total;
   const result = `${page.ref.worker}/${page.ref.assignment} · ${page.offset === 0 && end === page.total ? "Frozen result" : `Result page ${page.offset}–${end} of ${page.total}`}`;
-  return typeof frozen?.summary === "string"
-    ? `${result}
-${frozen.summary}`
-    : result;
+  if (typeof frozen?.summary !== "string") return result;
+  const execution = executionSchema.safeParse(frozen.execution);
+  const status = execution.success ? ` · ${resultStatus(execution.data)}` : "";
+  return `${result}${status}\n${frozen.summary}`;
 }
 
 // Render retained data using Pi's public Markdown component. Tool bursts are

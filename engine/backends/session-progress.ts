@@ -26,7 +26,7 @@ export class SessionProgress {
         this.last = {
           action: this.model.action,
           durationMs: Math.max(0, Date.now() - this.model.startedAt),
-          failed: stopReason === "aborted" || stopReason === "error",
+          failed: stopReason === "aborted" || stopReason === "error" || stopReason === "length",
         };
         this.model = undefined;
         break;

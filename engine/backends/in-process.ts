@@ -866,14 +866,16 @@ export class InProcessBackend implements BackendPort {
             usage: total,
           });
         }
+        const outputTruncated = finalStopReason === "length" && !reported && !responseId;
         const reason =
           signal.aborted || isStopping || finalStopReason === "aborted"
             ? "cancelled"
-            : errorMessage || finalStopReason === "error"
+            : errorMessage || finalStopReason === "error" || outputTruncated
               ? "failed"
               : "completed";
         return {
           reason,
+          ...(outputTruncated ? { outputTruncated: true } : {}),
           summary,
           usage: {
             expectedAttempts: [launch.attemptId],
