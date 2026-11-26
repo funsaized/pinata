@@ -29,7 +29,8 @@ import {
   type FleetFilter,
 } from "./projection.ts";
 import { type PaletteName } from "./palette.ts";
-import { assignmentTree } from "./tree.ts";
+import { activityStepMs, assignmentTree } from "./tree.ts";
+import { CompletionRows, pelletStepMs } from "./completion.ts";
 
 export type ScreenName = "main" | "fleet" | "conversation";
 export type MessageAction = "steer" | "follow_up" | "continue";
@@ -131,6 +132,7 @@ export class ScreenRouter {
     search: string;
     filter: FleetFilter;
     ascii: boolean;
+    completing: number;
     revealed?: AssignmentRef;
     nodes: ReturnType<typeof assignmentTree>;
   };
@@ -171,6 +173,8 @@ export class ScreenRouter {
   private localPalette = false;
   private readonly observedTimes = new Map<string, { start: number; end?: number }>();
   private ticker?: NodeJS.Timeout;
+  private tickMs = 0;
+  readonly completions = new CompletionRows();
   private lastConversationRead = -Infinity;
   private lastPreviewRead = -Infinity;
   private previewTimer?: NodeJS.Timeout;
@@ -323,7 +327,17 @@ export class ScreenRouter {
     }
     if (event.kind === "committed" && event.transition.kind === "settled") {
       const from = event.transition.result.ref;
-      this.progress.delete(assignmentKey(from));
+      const key = assignmentKey(from);
+      this.progress.delete(key);
+      const execution = event.transition.result.execution;
+      if (
+        this.source.capabilities.live &&
+        this.motion === "full" &&
+        execution.phase === "ended" &&
+        execution.reason === "completed" &&
+        execution.cleanup === "confirmed"
+      )
+        this.completions.finish(key);
       const targets = dependentAssignments(this.state, assignmentKey(from))
         .filter(
           (a) =>
@@ -602,6 +616,7 @@ export class ScreenRouter {
       )
         this.selected = this.preferredSelection(rows);
     }
+    if (this.screen !== screen) this.completions.clear();
     this.screen = screen;
     if (location) {
       this.focusedDependency = location.focusedDependency;
@@ -662,10 +677,12 @@ export class ScreenRouter {
   fleetAssignments(): ReturnType<typeof assignments> {
     return this.fleetNodes().map((node) => node.assignment);
   }
-  fleetNodes(ascii = false): ReturnType<typeof assignmentTree> {
+  fleetNodes(ascii = false, showCompletions = false): ReturnType<typeof assignmentTree> {
+    const completing = showCompletions ? this.completions.size : 0;
     const cached = this.fleetCache;
     if (
       cached?.state === this.state &&
+      cached.completing === completing &&
       cached.filter === this.filter &&
       cached.search === this.search &&
       cached.revealed === this.revealedAssignment &&
@@ -674,7 +691,11 @@ export class ScreenRouter {
       return cached.nodes;
     const include = new Set(
       this.matchingAssignments()
-        .filter((assignment) => matchesFleetFilter(this.state, assignment, this.filter))
+        .filter(
+          (assignment) =>
+            matchesFleetFilter(this.state, assignment, this.filter) ||
+            (completing > 0 && this.completions.has(assignmentKey(assignment.ref))),
+        )
         .map((assignment) => assignmentKey(assignment.ref)),
     );
     const revealedPath = new Set<string>();
@@ -703,6 +724,7 @@ export class ScreenRouter {
       return true;
     });
     this.fleetCache = {
+      completing,
       state: this.state,
       search: this.search,
       filter: this.filter,
@@ -817,29 +839,35 @@ export class ScreenRouter {
     return timing ? Math.max(0, (timing.end ?? this.now()) - timing.start) : undefined;
   }
   private updateTicker(): void {
+    const interval = this.completions.size
+      ? pelletStepMs
+      : this.motion === "full"
+        ? activityStepMs
+        : 1000;
     const running =
       this.listeners.size > 0 &&
-      (Boolean(this.release) ||
+      (this.completions.size > 0 ||
+        Boolean(this.release) ||
         Object.values(this.state.assignments).some(
           (assignment) => !["queued", "ended"].includes(assignment.execution.phase),
         ));
-    if (running && !this.ticker) {
-      this.ticker = setInterval(
-        () => {
-          this.changed();
-          if (this.release && this.now() - this.release.at >= 2200) {
-            this.release = undefined;
-            this.updateTicker();
-          }
-          this.refreshFollowingConversation();
-          if (this.now() - this.lastPreviewRead >= 1000) this.schedulePreview();
-        },
-        this.motion === "full" ? 250 : 1000,
-      );
-      this.ticker.unref();
-    } else if (!running && this.ticker) {
+    if (this.ticker && (!running || interval !== this.tickMs)) {
       clearInterval(this.ticker);
       this.ticker = undefined;
+    }
+    if (running && !this.ticker) {
+      this.tickMs = interval;
+      this.ticker = setInterval(() => {
+        this.completions.expire();
+        const releaseEnded = this.release && this.now() - this.release.at >= 2200;
+        if (releaseEnded) this.release = undefined;
+        if (releaseEnded || (interval === pelletStepMs && !this.completions.size))
+          this.updateTicker();
+        this.changed();
+        this.refreshFollowingConversation();
+        if (this.now() - this.lastPreviewRead >= 1000) this.schedulePreview();
+      }, interval);
+      this.ticker.unref();
     }
   }
   private refreshFollowingConversation(): void {
@@ -867,6 +895,7 @@ export class ScreenRouter {
     void this.loadConversation().catch((error: unknown) => this.fail(error));
   }
   private clearTiming(): void {
+    this.completions.clear();
     this.release = undefined;
     this.observedTimes.clear();
     if (this.ticker) clearInterval(this.ticker);
@@ -894,6 +923,7 @@ export class ScreenRouter {
       this.ticker = undefined;
     }
     this.motion = config.ui.motion;
+    if (this.motion !== "full") this.completions.clear();
     this.updateTicker();
     if (!this.localPalette) this.palette = config.ui.palette;
     Object.assign(this.keys, config.ui.keys);

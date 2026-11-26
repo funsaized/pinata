@@ -5,6 +5,29 @@ import {
   type CoreState,
 } from "../contracts/index.ts";
 import { assignments, isFinished, needsAttention } from "./projection.ts";
+import type { CompletionRows } from "./completion.ts";
+
+export function restingMarker(assignment: Assignment, ascii: boolean): string {
+  const { execution } = assignment;
+  if (execution.phase === "queued") return ascii ? "o" : "○";
+  if (execution.phase !== "ended" || execution.cleanup === "unconfirmed") return "!";
+  switch (execution.reason) {
+    case "completed":
+      return ascii ? "+" : "✓";
+    case "failed":
+      return ascii ? "x" : "×";
+    case "cancelled":
+      return ascii ? "-" : "−";
+    case "interrupted":
+      return "!";
+  }
+}
+
+export const activityStepMs = 250;
+
+export function activityMouth(frame: number): string {
+  return frame % 3 === 1 ? "C" : "c";
+}
 
 export function activityIndicator(
   motion: "full" | "reduced" | "off",
@@ -17,13 +40,13 @@ export function activityIndicator(
   const rail = ascii ? "-" : "─";
   const branch = prefix.replace(/[-─] $/, rail + rail) + rail.repeat(5);
   if (motion !== "full") return branch;
-  const frame = Math.floor(now / 250);
+  const frame = Math.floor(now / activityStepMs);
   const position = (frame % cycle) - row;
   return Array.from(branch, (character, column) => {
     if (character === " ") return character;
     // Indentation does not add empty travel frames before a connected branch.
     const distance = Math.max(0, column - Math.max(0, prefix.length - 3));
-    if (position === distance) return ["c", "C", "c"][frame % 3];
+    if (position === distance) return activityMouth(frame);
     if (position < distance) return column % 2 === 0 ? "o" : " ";
     if (character === "─" || character === "-") return column % 2 === 0 ? "-" : " ";
     if (character === "│" || character === "├") return "┆";
@@ -53,11 +76,13 @@ export function assignmentTree(
     limit?: number;
     trailing?: boolean;
     include?: ReadonlySet<string>;
+    completing?: CompletionRows;
   } = {},
 ): TreeNode[] {
   const all = assignments(state);
   const selected = options.selected ? assignmentKey(options.selected) : undefined;
   let chosen = all.filter((assignment) => {
+    if (options.completing?.has(assignmentKey(assignment.ref))) return true;
     if (options.include) return options.include.has(assignmentKey(assignment.ref));
     const phase = assignment.execution.phase;
     if (options.finished === false && isFinished(assignment)) return false;
@@ -70,7 +95,14 @@ export function assignmentTree(
     return options.queued || phase !== "queued";
   });
 
-  if (options.limit) chosen = chosen.slice(0, options.limit);
+  if (options.limit) {
+    let remaining = options.limit - (options.completing?.size ?? 0);
+    chosen = options.completing?.size
+      ? chosen.filter(
+          (assignment) => options.completing?.has(assignmentKey(assignment.ref)) || remaining-- > 0,
+        )
+      : chosen.slice(0, options.limit);
+  }
   const included = new Set(chosen.map((assignment) => assignmentKey(assignment.ref)));
   for (const assignment of chosen) {
     let parent = state.workers[assignment.ref.worker].parentAssignment;

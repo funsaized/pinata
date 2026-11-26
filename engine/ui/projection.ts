@@ -7,7 +7,7 @@ import {
 } from "../contracts/index.ts";
 import { dependentAssignments } from "../core/indexes.ts";
 import { isOpenDecision } from "../core/messages.ts";
-import { readinessFor, type ReadinessReason } from "../core/readiness.ts";
+import { readinessFor } from "../core/readiness.ts";
 import { assignmentUsage } from "../core/usage.ts";
 
 export function assignments(state: CoreState): Assignment[] {
@@ -189,19 +189,34 @@ export function matchesFleetFilter(
   }
 }
 
-export function queueLabel(
-  state: CoreState,
-  assignment: Assignment,
-  reason: ReadinessReason = readinessFor(state, assignmentKey(assignment.ref)) ?? "dependency",
-): string {
-  if (reason !== "dependency") return reason;
-  const blocked = assignment.after.flatMap((ref) => {
-    const dependency = state.assignments[assignmentKey(ref)];
-    if (dependency?.execution.phase === "ended" && dependency.execution.cleanup === "confirmed")
-      return [];
-    return [
-      `${ref.worker}/${ref.assignment} (${dependency ? executionLabel(dependency) : "unavailable"}${dependency?.execution.phase === "ended" ? "; cleanup unconfirmed" : ""})`,
-    ];
-  });
-  return `dependency · ${blocked.join(", ")}`;
+export function queueLabel(state: CoreState, assignment: Assignment, compact = false): string {
+  const reason = readinessFor(state, assignmentKey(assignment.ref)) ?? "dependency";
+  switch (reason) {
+    case "dependency": {
+      const blocked = assignment.after.filter((ref) => {
+        const dependency = state.assignments[assignmentKey(ref)];
+        return !dependency || !isFinished(dependency);
+      });
+      if (!blocked.length) return "Waiting on dependencies";
+      if (compact && blocked.length > 1) return `Waiting on ${blocked.length} assignments`;
+      const labels = blocked.map((ref) => {
+        const name = `${ref.worker}/${ref.assignment}`;
+        if (compact) return name;
+        const dependency = state.assignments[assignmentKey(ref)];
+        const phase = dependency ? executionLabel(dependency) : "unavailable";
+        return `${name} (${phase}${dependency?.execution.phase === "ended" ? "; cleanup unconfirmed" : ""})`;
+      });
+      return "Waiting on " + labels.join(", ");
+    }
+    case "ready":
+      return "Ready to start";
+    case "capacity":
+      return compact ? "Waiting for slot" : "Waiting for a free execution slot";
+    case "cancelled":
+      return "Cancellation pending";
+    case "effect_unconfirmed":
+      return "Waiting for execution recovery";
+    default:
+      return reason.replaceAll("_", " ");
+  }
 }

@@ -49,6 +49,8 @@ export type CoordinatorUiOptions = {
 
 function inherit(theme: Theme, token: SemanticToken, text: string): string {
   switch (token) {
+    case "selection":
+      return theme.bg("selectedBg", text);
     case "accent.blue":
       return theme.fg("syntaxFunction", text);
     case "accent.cyan":
@@ -185,6 +187,9 @@ export function installCoordinatorUi(
             paint: paint(binding),
             mode: binding.router.mode,
             motion: binding.router.motion,
+            completions: binding.router.source.capabilities.live
+              ? binding.router.completions
+              : undefined,
             activity: binding.router.activity,
             elapsed: (ref) => binding.router.observedElapsed(ref),
             ascii: process.env.TERM === "dumb" || process.env.PINATA_ASCII === "1",

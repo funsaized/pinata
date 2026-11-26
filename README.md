@@ -168,9 +168,9 @@ automatic returns until the next user turn. Closing the session stops wake-ups;
 reopening it restores retained watches. These continuations use the shared engine's
 settled results. Embedded hosts own their notification policy.
 
-The coordinator shows a compact Agents tree while work is active or queued. Real
-children branch beneath their parent; dependencies appear as `after:` references.
-Finished work disappears from the widget. `/pinata` opens the full fleet.
+The coordinator shows a compact Agents tree while work is active or queued. Child
+assignments branch beneath their parent.
+Open the full fleet with `/pinata`.
 
 While a worker runs, its fleet row shows the model turn or tool in progress and how
 long it has been active. Parallel tool calls show a count. The selected worker’s
@@ -183,12 +183,18 @@ collapse details. Cleanup problems stay visible in the preview. Page keys scroll
 the focused pane, and the wheel scrolls the pane under the pointer. Enter on an
 assignment opens its conversation.
 
-The selected assignment groups its links under **Prerequisites** and
-**Dependents**. A group starts folded when every assignment completed with
-confirmed cleanup. Open a group to see each assignment’s status. A Braille
-spinner marks running work, an hourglass marks queued work, and a checkmark
-marks completed work. Failures and cleanup problems carry text labels.
-Reduced motion uses a static running icon. ASCII mode uses text glyphs.
+The selected assignment groups its links under **Depends on** and **Needed by**.
+A queued row shows how many assignments it’s waiting on. When only one remains,
+the row names it. A group starts folded when every assignment completed with
+confirmed cleanup. Open a group to see each assignment’s status.
+
+The moving `c` marks active work in the widget, fleet rows and dependency links.
+An open circle marks queued work. When a visible worker completes with confirmed
+cleanup, pellets appear just ahead of the `c` in the worker’s name and activity.
+The `c` keeps its pace of one cell per quarter second. A line of dashes remains
+for two beats before the row clears. The result is already available in Finished.
+Failures and cleanup problems carry text labels. Reduced or disabled motion
+keeps the track still and skips the finish animation. ASCII mode uses text glyphs.
 
 Use Up and Down to move between assignments. Press Right to enter dependencies.
 If there’s one group, this opens it and moves to its first link. Inside
@@ -229,9 +235,9 @@ assignments, and `w` selects Queued. Press `h` or `w` again to restore the previ
 filter and selection. Dependencies do not create parent/child branches.
 
 Search with `/`, apply with Enter, cancel with Escape, or clear with Ctrl+U.
-Cancelling restores the previous query and selection. The Observed column measures
-time since this viewer witnessed execution start. A dash means the start is unknown;
-it is not an estimate of total execution time. Model settings live in the inspector.
+Cancelling restores the previous query and selection. The inspector shows the model
+settings and the time this viewer has observed execution. A dash means the
+viewer missed the start.
 
 Last-message previews use retained assistant text for the selected assignment,
 excluding thinking and tool payloads. Live action labels work in both UI modes.

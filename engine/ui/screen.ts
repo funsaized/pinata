@@ -115,6 +115,7 @@ export class PinataScreen implements Component, Focusable {
   render(width: number): string[] {
     this.syncEditor();
     const height = Math.max(1, this.options.tui.terminal.rows);
+    if (this.palettePicker || this.runPicker) this.router.completions.clear();
     if (this.palettePicker) return this.palettePicker.render(width);
     if (this.runPicker && this.options.runs) {
       this.router.setInspectorVisible(false);

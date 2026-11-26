@@ -10,6 +10,8 @@ import {
 } from "../../engine/contracts/index.ts";
 import { prepareCommand } from "../../engine/core/accept.ts";
 import { reduce } from "../../engine/core/state.ts";
+import { CompletionRows } from "../../engine/ui/completion.ts";
+import { activityIndicator } from "../../engine/ui/tree.ts";
 import { fleetWidget, renderScreen } from "../../engine/ui/render.ts";
 import type { FleetRegions } from "../../engine/ui/fleet.ts";
 import { createPaint } from "../../engine/ui/palette.ts";
@@ -34,6 +36,37 @@ const previewReply = (target: AssignmentRef, text: string): SurfaceReply => ({
       message: { text, truncated: false },
     },
   },
+});
+
+test("the departing wave extends its last track and leaves dashes across the text", (t) => {
+  let now = 750;
+  t.mock.method(performance, "now", () => now);
+  const rows = new CompletionRows();
+  const paint = createPaint("gruvbox-dark");
+  const track = activityIndicator("full", now);
+  const line = "  " + paint("accent.cyan", track) + paint("strong", "12界56789");
+  rows.remember("worker", { line, track, start: 2, position: 0, frame: 3 });
+  rows.finish("worker");
+  const frame = () => stripTerminalSequences(rows.render("worker", 20, paint) ?? "");
+  assert.equal(frame(), "  - -co12界56789");
+  now += 125;
+  assert.equal(frame(), "  - -co 2界56789");
+  now += 125;
+  assert.equal(frame(), "  - --C o界56789");
+  now += 125;
+  assert.equal(frame(), "  - --C o  56789", "half-eaten wide glyph keeps its remaining cell");
+  now += 125;
+  assert.equal(frame(), "  - ---co o56789");
+  now += 2000;
+  assert.equal(frame(), "  " + "-".repeat(13) + "C");
+  now += 250;
+  assert.equal(frame(), "  " + "-".repeat(14));
+  now += 250;
+  rows.expire();
+  assert(rows.has("worker"));
+  now += 250;
+  rows.expire();
+  assert(!rows.has("worker"));
 });
 
 test("lean fleet restores live action time, orders tool updates and clears stale progress", async (t) => {
@@ -130,7 +163,7 @@ test("fleet follows worker questions through coordinator answers and saved histo
     router.fleetAssignments().map((a) => a.ref),
     [ref(), ref(2)],
   );
-  assert.match(render(), /\? +worker-1\/1 +Running/);
+  assert.match(render(), /worker-1\/1 +\? Running/);
   assert.match(render(), /\? Waiting for coordinator\s+Keep malformed lines\?/);
   assert.match(render(), /\+1 more open/);
   router.details = true;
@@ -234,16 +267,12 @@ test("wide fleets keep prompt and last message beside the selected full row; sta
       assert(plain.some((row) => row.includes("Inspect the contract inventory.")));
       const selectedRow = [...hitRows].find(([, target]) => target.worker === "worker-1");
       assert(selectedRow);
-      // Matching palette escapes is the subject of this rendering assertion.
-      // oxlint-disable-next-line no-control-regex
-      const selected = /\x1b\[1;7m([^]*?)\x1b\[27;22m/.exec(rows[selectedRow[0]]);
-      assert(selected);
-      assert.equal(
-        selected[1].includes("\u001b[0m"),
-        false,
-        "truncation must not reset selection styling",
-      );
-      assert.equal(visibleWidth(selected[1]), fleetRegions.list?.width);
+      const selected = rows[selectedRow[0]];
+      assert(stripTerminalSequences(selected).startsWith("› "));
+      assert(selected.includes("\u001b[1m"), "the selected name is bold");
+      assert(!selected.includes("\u001b[1;7m"), "selection preserves state colors");
+      const selection = createPaint("pinata")("selection", "ROW").split("ROW")[0];
+      assert(selected.includes(selection), "the focus tint marks the selected row");
     } else if (fleetRegions.inspector) {
       assert.equal(
         fleetRegions.inspector.y,
@@ -292,20 +321,23 @@ test("dependency groups show distinct status icons, exceptions and static fallba
       .join("\n");
 
   const full = render();
-  assert.match(full, /▾ Prerequisites +1\/5 complete · 2 need attention/);
-  assert.match(full, /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]  worker-1\/1/);
-  assert.match(full, /⧖  worker-2\/1/);
-  assert.match(full, /×  worker-3\/1 +Failed/);
-  assert.match(full, /!  worker-4\/1 +Cleanup unconfirmed/);
-  assert.match(full, /✓  worker-5\/1/);
-  assert(full.indexOf("×  worker-3/1") < full.indexOf("⧖  worker-2/1"));
-  assert(full.indexOf("⧖  worker-2/1") < full.indexOf("✓  worker-5/1"));
-  assert.match(full, /▸ Dependents +1 complete/);
-  assert.doesNotMatch(full, /✓  worker-7\/1/);
+  assert.match(full, /▾ Depends on +1\/5 complete · 2 need attention/);
+  assert.match(full, /Waiting on 3 assignments/);
+  assert.match(full, /○ +│ {2}├─ worker-2\/1 +Queued/);
+  assert.match(full, /× +│ {2}├─ worker-3\/1 +Failed/);
+  assert.match(full, /! +│ {2}├─ worker-4\/1 +Cleanup unconfirmed/);
+  assert.match(full, /✓ +│ {2}└─ worker-5\/1 +Completed/);
+  assert(full.indexOf("├─ worker-3/1") < full.indexOf("├─ worker-2/1"));
+  assert(full.indexOf("├─ worker-2/1") < full.indexOf("└─ worker-5/1"));
+  assert.match(full, /▸ Needed by +1 complete/);
+  assert.doesNotMatch(full, /└─ worker-7\/1/);
+  const running = full.split("\n").filter((line) => /worker-1\/1 +Running/.test(line));
+  assert.equal(running.length, 2);
+  assert.equal(running[0].slice(2, 7), running[1].slice(2, 7), "both appearances share a wave");
   router.motion = "reduced";
-  assert.match(render(), /◐  worker-1\/1/);
-  assert.match(render(true), /~  worker-1\/1/);
-  assert.match(render(true), /o  worker-2\/1/);
+  assert.match(render(), /───── +│ {2}├─ worker-1\/1/);
+  assert.match(render(true), /----- +\| {2}\|- worker-1\/1/);
+  assert.match(render(true), /o +\| {2}\|- worker-2\/1/);
 });
 
 test("a prerequisite that settles while focused stays visible until the user leaves it", async (t) => {
@@ -328,11 +360,11 @@ test("a prerequisite that settles while focused stays visible until the user lea
     renderScreen(router, { width: 80, height: 24, paint: createPaint("terminal-default") }).join(
       "\n",
     );
-  assert.match(render(), /> .*✓  worker-1\/1/);
+  assert.match(render(), /› +✓ +└─ worker-1\/1/);
   router.moveFleetBranch("left");
-  assert.match(render(), /▸ Prerequisites +1 complete/);
+  assert.match(render(), /▸ Depends on +1 complete/);
   assert.equal(router.focusedDependency, undefined);
-  assert.doesNotMatch(render(), /✓  worker-1\/1/);
+  assert.doesNotMatch(render(), /✓ +└─ worker-1\/1/);
 });
 
 test("details use vertical arrows to scroll and Left returns to the list", async (t) => {

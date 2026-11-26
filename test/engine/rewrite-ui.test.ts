@@ -130,7 +130,7 @@ test("staged fleets use aligned rows, one shared model, and keep the selected ag
         .filter(([, target]) => ["worker-1", "worker-2"].includes(target.worker))
         .map(([row]) => stripTerminalSequences(rows[row]));
       assert.equal(activeRows[0].indexOf("Running"), activeRows[1].indexOf("Running"));
-      assert.match(output, /Waiting for worker-3\/1/);
+      assert.match(output, /Waiting on worker-3\/1/);
       if (width >= 300) {
         const divider = rows.map(stripTerminalSequences).find((row) => /^─+$/.test(row.trimEnd()));
         assert.equal(visibleWidth(divider?.trimEnd() ?? ""), width);
@@ -153,7 +153,7 @@ test("staged fleets use aligned rows, one shared model, and keep the selected ag
   router.setDraft("keep this draft");
   screen.handleInput("d");
   assert.equal(router.details, true);
-  assert.match(stripTerminalSequences(screen.render(120).join("\n")), /⧖  worker-3\/1/);
+  assert.match(stripTerminalSequences(screen.render(120).join("\n")), /○ +│ {2}└─ worker-3\/1/);
   assert.match(stripTerminalSequences(screen.render(120).join("\n")), /in-process/);
   screen.handleInput("d");
   assert.equal(router.details, false);
@@ -186,14 +186,14 @@ test("fleet rows preserve actual parent branches and unconfirmed cleanup blocker
     );
   assert.match(render(), /Attention 1/);
   assert.match(render(), /Failed !/);
-  assert.match(render(), /└─ ───── worker-2\/1/);
-  assert.match(render(), /Waiting for worker-1\/1 \(failed; cleanup/);
+  assert.match(render(), /───── +└─ +worker-2\/1/);
+  assert.match(render(), /Waiting on worker-1\/1 \(failed; cleanup/);
   assert.match(render(), /unconfirmed\)/);
   router.navigate("fleet", ref());
   router.collapse(true);
-  assert.doesNotMatch(render(), /└─ ───── worker-2\/1/);
+  assert.doesNotMatch(render(), /───── +└─ +worker-2\/1/);
   router.collapse(false);
-  assert.match(render(), /└─ ───── worker-2\/1/);
+  assert.match(render(), /───── +└─ +worker-2\/1/);
   router.dispose();
 });
 function accepted(input: unknown): SurfaceReply {
@@ -226,12 +226,16 @@ function luminance(hex: string): number {
 test("every palette has readable text, semantic accents and explicit terminal fallbacks", () => {
   assert.deepEqual(Object.keys(palettes).sort(), [...paletteSchema.options].sort());
   for (const palette of Object.values(palettes)) {
-    const background = luminance(palette.colors.background);
+    const backgrounds = [palette.colors.background, palette.colors.selection].map(luminance);
     for (const [token, color] of Object.entries(palette.colors)) {
-      if (token === "background") continue;
+      if (token === "background" || token === "selection") continue;
       const foreground = luminance(color);
-      const contrast =
-        (Math.max(background, foreground) + 0.05) / (Math.min(background, foreground) + 0.05);
+      const contrast = Math.min(
+        ...backgrounds.map(
+          (background) =>
+            (Math.max(background, foreground) + 0.05) / (Math.min(background, foreground) + 0.05),
+        ),
+      );
       assert(
         contrast >= (token === "text" || token === "muted" || token === "border" ? 4.5 : 3),
         `${palette.name}/${token}: ${contrast}`,
@@ -1994,13 +1998,13 @@ test("completed dependency groups start folded and disclose links without invent
       paint: createPaint("terminal-default"),
       ascii: true,
     }).join("\n");
-  assert.match(render(), /\+ Prerequisites +2 complete/);
-  assert.doesNotMatch(render(), /\+  worker-[12]\/1/);
+  assert.match(render(), /\+ Depends on +2 complete/);
+  assert.doesNotMatch(render(), /\+ +(?:\|-|`-) worker-[12]\/1/);
   router.moveFleetBranch("right");
   assert.equal(router.focusedDependency, assignmentKey(ref()));
-  assert.match(render(), /- Prerequisites +2 complete/);
-  assert.match(render(), /\+  worker-1\/1/);
-  assert.match(render(), /\+  worker-2\/1/);
+  assert.match(render(), /- Depends on +2 complete/);
+  assert.match(render(), /\+ +\|- worker-1\/1/);
+  assert.match(render(), /\+ +`- worker-2\/1/);
   assert(router.fleetNodes(true).every((node) => !node.hasChildren));
   router.dispose();
 });

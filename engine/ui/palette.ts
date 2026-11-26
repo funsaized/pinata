@@ -1,6 +1,8 @@
 import {
   backgroundAnsi,
+  colorToHex,
   foregroundAnsi,
+  mixColors,
   parseColor,
   type TerminalColorMode,
 } from "@earendil-works/pi-tui";
@@ -15,6 +17,7 @@ export function readPalette(value: string, browse: string): PaletteName {
 }
 export type SemanticToken =
   | "background"
+  | "selection"
   | "text"
   | "muted"
   | "border"
@@ -55,6 +58,14 @@ function palette(name: PaletteName, appearance: Palette["appearance"], values: C
     appearance,
     colors: {
       background,
+      selection: colorToHex(
+        mixColors(
+          parseColor(background),
+          parseColor(appearance === "dark" ? "#000000" : "#ffffff"),
+          0.55,
+          "srgb",
+        ),
+      ),
       text,
       muted,
       border: muted,
@@ -343,6 +354,8 @@ export function createPaint(
     }
     if (name === "inherit" && options.inherit && !token.startsWith("#"))
       return options.inherit(token as SemanticToken, text);
+    if (token === "selection")
+      return `${backgroundAnsi(parseColor(palettes[name].colors.selection), options.mode ?? "truecolor")}${text}\u001b[49m`;
     const color = token.startsWith("#")
       ? token
       : (palettes[name].colors[token as SemanticToken] ?? palettes[name].colors.accent);
