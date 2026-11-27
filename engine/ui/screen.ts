@@ -436,17 +436,7 @@ export class PinataScreen implements Component, Focusable {
         if (matchesKey(data, "down")) return this.router.scroll(1);
       }
       if (matchesKey(data, "left")) return this.router.moveFleetBranch("left");
-      if (matchesKey(data, "right")) {
-        if (
-          this.router.selectedBranchCollapsed ||
-          this.router.hasDependencies ||
-          !this.router.inspectorVisible
-        )
-          return this.router.moveFleetBranch("right");
-        this.router.inspectorFocus = true;
-        this.requestRender();
-        return;
-      }
+      if (matchesKey(data, "right")) return this.router.moveFleetBranch("right");
       if (matchesKey(data, "up")) this.router.moveFleetSelection(-1);
       else if (matchesKey(data, "down")) this.router.moveFleetSelection(1);
       else if (matchesKey(data, "enter") && this.router.selected) {

@@ -254,6 +254,37 @@ test("custom shortcuts cannot replace text entry, paging or reserved fleet contr
   assert.equal(resolveKeys({ stop: "ctrl+k" }).stop, "ctrl+k");
 });
 
+test("horizontal arrows enter a child branch and fold it on return", async (t) => {
+  const state = uiState(4);
+  state.workers["worker-2"].parentAssignment = ref();
+  state.workers["worker-3"].parentAssignment = ref();
+  state.assignments[assignmentKey(ref())].after = [ref(4)];
+  const { router, screen } = await setup(t, new UiSource(state));
+  router.navigate("fleet", ref());
+  screen.render(160);
+
+  screen.handleInput("\x1b[C");
+  assert.deepEqual(router.selected, ref(2));
+  screen.handleInput("\x1b[B");
+  assert.deepEqual(router.selected, ref(3));
+  screen.handleInput("\x1b[D");
+  assert.deepEqual(router.selected, ref());
+  assert.deepEqual(
+    router.fleetAssignments().map(({ ref }) => ref.worker),
+    ["worker-1", "worker-4"],
+  );
+
+  screen.handleInput("\x1b[C");
+  assert.deepEqual(router.selected, ref());
+  assert.equal(router.selectedBranchCollapsed, false);
+  screen.handleInput("\x1b[B");
+  assert.equal(router.focusedDependency, "prerequisites");
+  screen.handleInput("\x1b[A");
+  assert.equal(router.focusedDependency, undefined);
+  screen.handleInput("\x1b[C");
+  assert.deepEqual(router.selected, ref(2));
+});
+
 test("dependency drill-in opens conversations and can reveal filtered and collapsed assignments", async (t) => {
   const state = uiState(4);
   state.workers["worker-2"].parentAssignment = ref();
@@ -268,9 +299,19 @@ test("dependency drill-in opens conversations and can reveal filtered and collap
   router.collapse(true);
   router.navigate("fleet", ref(3));
   screen.handleInput("\x1b[B");
-  assert.deepEqual(router.selected, ref(4), "Down skips the visible dependency rows");
+  assert.equal(router.focusedDependency, "prerequisites");
   screen.handleInput("\x1b[A");
   assert.deepEqual(router.selected, ref(3));
+  assert.equal(
+    router.focusedDependency,
+    undefined,
+    "Up returns from the first row to its assignment",
+  );
+  screen.handleInput("\x1b[C");
+  screen.handleInput("\x1b[B");
+  screen.handleInput("\x1b[B");
+  assert.deepEqual(router.selected, ref(4), "Down from the last link selects the next assignment");
+  assert.equal(router.focusedDependency, undefined);
   router.search = "worker-3";
   router.navigate("fleet", ref(3));
   const rows = screen.render(80).map(stripTerminalSequences);
@@ -288,10 +329,18 @@ test("dependency drill-in opens conversations and can reveal filtered and collap
   assert.equal(router.selectedBranchCollapsed, false, "Left leaves details without folding links");
   screen.handleInput("\x1b[C");
   assert.equal(router.focusedDependency, assignmentKey(ref()));
+  screen.handleInput("\x1b[B");
+  assert.equal(router.focusedDependency, assignmentKey(ref(2)));
   screen.handleInput("\x1b[D");
   assert.equal(router.focusedDependency, undefined, "Left returns directly to the assignment");
+  assert.deepEqual(router.selected, ref(3));
+  assert.deepEqual(
+    router.dependencyRows().map((row) => row.key),
+    ["prerequisites"],
+    "Left folds the group even while a prerequisite is pending",
+  );
   screen.handleInput("\x1b[C");
-  screen.handleInput("\x1b[B");
+  assert.equal(router.focusedDependency, assignmentKey(ref()), "Right reopens at the first link");
   screen.handleInput("\x1b[B");
   assert.equal(router.focusedDependency, assignmentKey(ref(2)));
   assert.deepEqual(router.selected, ref(3), "Down stays inside the dependencies");

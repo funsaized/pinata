@@ -544,9 +544,10 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
   if (router.screen === "fleet") {
     if (inspectorFocus) horizontal.push(["←", "list"]);
     else if (dependencyFocus)
-      horizontal.push(["←", "assignment"], ["→", focusedGroup ? "enter group" : "show in fleet"]);
-    else if (router.hasDependencies) horizontal.push(["→", "dependencies"]);
+      horizontal.push(["←", "fold group"], ["→", focusedGroup ? "enter group" : "show in fleet"]);
     else if (router.selectedBranchCollapsed) horizontal.push(["→", "expand branch"]);
+    else if (router.selectedHasChildren) horizontal.push(["→", "first child"]);
+    else if (router.hasDependencies) horizontal.push(["→", "dependencies"]);
     else if (options.fleetRegions?.inspector) horizontal.push(["→", "details"]);
   }
   const preview = router.screen === "conversation" && !router.selected;
@@ -557,9 +558,7 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
       ]
     : router.screen === "fleet"
       ? [
-          ...(width >= 30
-            ? [["↑↓", inspectorFocus ? "scroll" : dependencyFocus ? "links" : "select"] as Shortcut]
-            : []),
+          ...(width >= 30 ? [["↑↓", inspectorFocus ? "scroll" : "select"] as Shortcut] : []),
           ...(!router.focusedDependency ? [["a", "actions"] as Shortcut] : []),
           ["?", "help"],
           ["Esc", "back"],

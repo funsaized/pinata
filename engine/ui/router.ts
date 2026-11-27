@@ -475,17 +475,54 @@ export class ScreenRouter {
       this.navigate("conversation", row.assignment.ref);
     }
   }
+  get selectedHasChildren(): boolean {
+    const key = this.selected && assignmentKey(this.selected);
+    return this.fleetNodes().some(
+      (node) => assignmentKey(node.assignment.ref) === key && node.hasChildren,
+    );
+  }
   moveFleetBranch(direction: "left" | "right"): void {
+    if (!this.selected) return;
+    const parent = this.state.workers[this.selected.worker]?.parentAssignment;
     if (direction === "left") {
-      if (this.focusedDependency) this.focusDependency();
-      else if (this.selected && !this.selectedBranchCollapsed) {
-        const key = assignmentKey(this.selected);
-        const node = this.fleetNodes().find((row) => assignmentKey(row.assignment.ref) === key);
-        if (node?.hasChildren || this.hasDependencies) this.collapse(true);
+      if (this.focusedDependency) {
+        const focused = this.dependencyRows().find((row) => row.key === this.focusedDependency);
+        if (focused)
+          this.dependencyDisclosure.set(this.disclosureKey(this.selected, focused.group), false);
+        this.focusDependency();
+      } else if (
+        parent &&
+        this.fleetNodes().some(
+          (node) => assignmentKey(node.assignment.ref) === assignmentKey(parent),
+        )
+      ) {
+        this.revealedAssignment = undefined;
+        const key = assignmentKey(parent);
+        this.collapsed.add(key);
+        this.fleetCache = undefined;
+        if (!this.fleetNodes().some((node) => assignmentKey(node.assignment.ref) === key))
+          this.revealedAssignment = parent;
+        this.navigate("fleet", parent);
+      } else if (
+        !this.selectedBranchCollapsed &&
+        (this.selectedHasChildren || this.hasDependencies)
+      ) {
+        this.collapse(true);
       }
       return;
     }
-    if (this.selectedBranchCollapsed) this.collapse(false);
+    if (this.selectedBranchCollapsed) return this.collapse(false);
+    if (!this.focusedDependency && this.selectedHasChildren) {
+      const key = assignmentKey(this.selected);
+      const child = this.fleetNodes().find(({ assignment }) => {
+        const childParent = this.state.workers[assignment.ref.worker]?.parentAssignment;
+        return childParent && assignmentKey(childParent) === key;
+      });
+      if (child) {
+        this.navigate("fleet", child.assignment.ref);
+        return;
+      }
+    }
     const rows = this.dependencyRows();
     const focused = rows.find((row) => row.key === this.focusedDependency);
     if (focused?.kind === "link") {
@@ -496,6 +533,10 @@ export class ScreenRouter {
     const group = focused ?? (groups.length === 1 ? groups[0] : undefined);
     if (!group) {
       if (groups.length) this.focusDependency(groups[0].key);
+      else if (this.inspectorVisible) {
+        this.inspectorFocus = true;
+        this.changed();
+      }
       return;
     }
     if (!group.expanded) this.toggleDependencyGroup(group.key, true);
@@ -736,14 +777,12 @@ export class ScreenRouter {
     return visible;
   }
   moveFleetSelection(amount: number): void {
-    if (this.focusedDependency) {
+    if (this.focusedDependency || amount > 0) {
       const dependencies = this.dependencyRows();
       const index = dependencies.findIndex((row) => row.key === this.focusedDependency);
-      if (index >= 0) {
-        const next = dependencies[index + amount];
-        if (next) this.focusDependency(next.key);
-        return;
-      }
+      const next = dependencies[index + amount];
+      if (next) return this.focusDependency(next.key);
+      if (index >= 0 && amount < 0) return this.focusDependency();
     }
     const rows = this.fleetNodes();
     const selected = this.selected && assignmentKey(this.selected);
