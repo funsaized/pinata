@@ -14,14 +14,26 @@ import {
 import {
   createAgentSession,
   createEventBus,
+  type AutocompleteProviderFactory,
   type EventBus,
   DefaultResourceLoader,
   initTheme,
+  type KeybindingsManager,
   ModelRuntime,
   SessionManager,
   SettingsManager,
   type InputEvent,
 } from "@earendil-works/pi-coding-agent";
+import {
+  CombinedAutocompleteProvider,
+  Editor,
+  getKeybindings,
+  TuiAltScreen,
+  stripTerminalSequences,
+  type Component,
+} from "@earendil-works/pi-tui";
+import { MemoryTerminal } from "./rewrite-ui-fixture.ts";
+import { mentionAutocomplete } from "../../engine/pi/mention-autocomplete.ts";
 import { createPinataExtension } from "../../engine/pi/extension.ts";
 import { invokeCoordinatorTool } from "../../engine/pi/tools.ts";
 import {
@@ -188,6 +200,7 @@ async function fixture(
     tools: options.coordinatorTools ? ["pinata_run", "pinata_wait"] : [],
   });
   const notices: string[] = [];
+  const autocomplete: AutocompleteProviderFactory[] = [];
   let draft = "";
   const errors: string[] = [];
   initTheme("dark", false);
@@ -196,6 +209,7 @@ async function fixture(
     mode: "tui",
     uiContext: {
       ...session.extensionRunner.getUIContext(),
+      addAutocompleteProvider: (factory) => autocomplete.push(factory),
       setEditorText: (text) => {
         draft = text;
       },
@@ -219,6 +233,7 @@ async function fixture(
   assert(inputHandler);
   return {
     session,
+    autocomplete,
     manager,
     faux,
     hosts,
@@ -230,6 +245,134 @@ async function fixture(
     draft: () => draft,
   };
 }
+
+test("schema browsing and palette picking leave the draft, session and next model input alone", async (t) => {
+  const f = await fixture(t, {
+    respond: (context) => {
+      assert.doesNotMatch(
+        JSON.stringify(context.messages),
+        /pinata\.schema\.v1|pinata\.grants\.v1|Piñata palette/,
+      );
+      return fauxAssistantMessage("Done");
+    },
+  });
+  const ui = f.session.extensionRunner.getUIContext();
+  ui.setEditorText("original draft");
+  const tui = new TuiAltScreen(new MemoryTerminal());
+  tui.requestRender = () => {};
+  const keys = getKeybindings() as KeybindingsManager;
+  let drive: (component: Component) => void = () => {};
+  ui.custom = (factory) =>
+    new Promise((resolve, reject) => {
+      Promise.resolve(factory(tui, ui.theme, keys, resolve))
+        .then(drive)
+        .catch(reject);
+    });
+  const render = (view: Component) => stripTerminalSequences(view.render(80).join("\n"));
+  const before = structuredClone(f.session.messages);
+  const entries = f.manager.getEntries().length;
+  drive = (view) => {
+    assert.match(render(view), /Piñata schemas/);
+    for (const key of "grants") view.handleInput?.(key);
+    assert.match(render(view), /pinata\.grants\.v1/);
+    view.handleInput?.("\r");
+    assert.match(render(view), /"properties"/);
+    view.handleInput?.("\u001b[6~");
+    assert.doesNotMatch(render(view), /Lines 1–/);
+    view.handleInput?.("\u001b");
+    assert.match(render(view), /Piñata schemas/);
+    view.handleInput?.("\u001b");
+  };
+  for (let i = 0; i < 3; i++) await f.session.prompt("/pinata-schema");
+  drive = (view) => {
+    assert.match(render(view), /pinata\.extension-reply\.v1/);
+    view.handleInput?.("\u001b[F");
+    assert.doesNotMatch(render(view), /Lines 1–/);
+    view.handleInput?.("\u001b");
+  };
+  await f.session.prompt("/pinata-schema pinata.extension-reply.v1");
+  await f.session.prompt("/pinata-schema missing");
+  assert.match(f.errors.at(-1) ?? "", /Unknown schema/);
+  drive = (view) => {
+    assert.match(render(view), /inherit\s+current/);
+    for (const key of "drac") view.handleInput?.(key);
+    view.handleInput?.("\r");
+  };
+  await f.session.prompt("/pinata pallete");
+  assert(f.notices.some((line) => line.includes("palette: dracula")));
+  drive = (view) => {
+    assert.match(render(view), /dracula\s+current/);
+    view.handleInput?.("\u001b[B");
+    view.handleInput?.("\u001b");
+  };
+  await f.session.prompt("/pinata-palette");
+  await f.session.prompt("/pinata palette");
+  await f.session.prompt("/pinata palette bad-name");
+  assert.match(f.errors.at(-1) ?? "", /Use \/pinata palette/);
+  await f.session.prompt("/pinata help");
+  assert.match(f.notices.at(-1) ?? "", /palette \[name\]/);
+  assert.deepEqual(f.session.messages, before);
+  assert.equal(f.manager.getEntries().length, entries);
+  assert.equal(ui.getEditorText(), "original draft");
+  await f.session.prompt("Continue the original task");
+  const reply = f.session.messages.at(-1);
+  assert(reply?.role === "assistant" && reply.stopReason === "stop");
+});
+
+test("argumentless Pi commands reject trailing text without switching runs or overwriting drafts", async (t) => {
+  const f = await fixture(t);
+  const initialRuns = f.hosts.map((host) => host.caller.run);
+  const ui = f.session.extensionRunner.getUIContext();
+  for (const command of ["/pinata main", "/pinata-main", "/pinata help", "/pinata-new"]) {
+    ui.setEditorText("");
+    await f.session.prompt(`${command} later`);
+    assert.equal(f.errors.at(-1), `${command} takes no arguments.`);
+    assert.equal(ui.getEditorText(), `${command} later`);
+  }
+  ui.setEditorText("unfinished draft");
+  await f.session.prompt("/pinata-new later");
+  assert.equal(ui.getEditorText(), "unfinished draft");
+  assert.deepEqual(
+    f.hosts.map((host) => host.caller.run),
+    initialRuns,
+  );
+  assert.equal(f.faux.state.callCount, 0);
+});
+
+test("typing a space after /pinata opens its subcommands in the Pi editor", async (t) => {
+  const f = await fixture(t);
+  const command = f.session.extensionRunner.getCommand("pinata");
+  assert(command);
+  const tui = new TuiAltScreen(new MemoryTerminal());
+  tui.requestRender = () => {};
+  const plain = (text: string) => text;
+  const editor = new Editor(tui, {
+    borderColor: plain,
+    selectList: {
+      selectedPrefix: plain,
+      selectedText: plain,
+      description: plain,
+      scrollInfo: plain,
+      noMatch: plain,
+    },
+  });
+  editor.setAutocompleteProvider(
+    new CombinedAutocompleteProvider([command], f.hosts[0].workspace, null),
+  );
+  for (const key of "/pinata ") {
+    editor.handleInput(key);
+    await nextTurn();
+  }
+  const menu = stripTerminalSequences(editor.render(90).join("\n"));
+  for (const word of ["fleet", "conversation", "main", "palette", "help"])
+    assert(menu.includes(word), menu);
+  assert.match(menu, /palette\s+Choose a color palette/);
+  editor.handleInput("p");
+  await nextTurn();
+  editor.handleInput("\t");
+  assert.equal(editor.getText().trimEnd(), "/pinata palette");
+  assert.equal(f.faux.state.callCount, 0);
+});
 
 test("mention grammar ignores embedded handles, quoted text, emails and path fragments", () => {
   for (const input of [
@@ -251,6 +394,73 @@ test("mention grammar ignores embedded handles, quoted text, emails and path fra
     text: "task\ncontinued",
   });
   assert.deepEqual(parseMention("@run-one:scout"), { run: "run-one", handle: "scout", text: "" });
+});
+
+test("the coordinator @ menu completes project agents before files and keeps addressing local to the first token", async (t) => {
+  const f = await fixture(t);
+  const host = f.hosts[0];
+  const directory = join(host.workspace, ".pi", "pinata", "agents");
+  await mkdir(directory, { recursive: true });
+  await writeFile(
+    join(directory, "sf-quant.md"),
+    "---\nschemaVersion: 1\nname: sf-quant\nhandoffDescription: Check the figures.\n---\nCheck figures.\n",
+  );
+  const native = new CombinedAutocompleteProvider([], host.workspace, null);
+  const files = [
+    { value: "@sf-quant", label: "sf-quant", description: "sf-quant" },
+    {
+      value: "@.pi/pinata/agents/sf-quant.md",
+      label: "sf-quant.md",
+      description: ".pi/pinata/agents/sf-quant.md",
+    },
+  ];
+  assert.equal(f.autocomplete.length, 1);
+  const provider = f.autocomplete[0]({
+    getSuggestions: async (lines, line, col) => ({
+      prefix: lines[line].slice(0, col).split(" ").at(-1) ?? "",
+      items: files,
+    }),
+    applyCompletion: native.applyCompletion.bind(native),
+  });
+  const options = { signal: new AbortController().signal };
+  const suggestions = (text: string) => provider.getSuggestions([text], 0, text.length, options);
+  assert((await suggestions("@"))?.items.some((item) => item.label === "@sf-quant"));
+  const menu = await suggestions("@sf-q");
+  assert(menu);
+  assert.deepEqual(
+    menu.items.map((item) => item.label),
+    ["@sf-quant", "sf-quant", "sf-quant.md"],
+  );
+  const choose = (index: number) =>
+    provider.applyCompletion(["@sf-q check", "figures"], 0, 5, menu.items[index], menu.prefix);
+  assert.deepEqual(choose(0), {
+    lines: ["@sf-quant check", "figures"],
+    cursorLine: 0,
+    cursorCol: 10,
+  });
+  assert(choose(1).lines[0].startsWith("@./sf-quant "));
+  assert(choose(2).lines[0].startsWith("@.pi/pinata/agents/sf-quant.md "));
+  for (const text of ["inspect @sf-q", "@./sf", '@"sf-q', "@sf-quant.md", "/model"]) {
+    assert.deepEqual((await suggestions(text))?.items, files);
+  }
+  assert.deepEqual(
+    (await provider.getSuggestions(["hello", "@sf-q"], 1, 5, options))?.items,
+    files,
+  );
+  assert.deepEqual(host.source.snapshot().snapshot.workers, {});
+  await f.session.prompt("@sf-quant");
+  assert.equal(f.navigation.length, 1);
+  await host.runtime.execute(
+    {
+      requestId: "worker-alias",
+      command: {
+        kind: "create",
+        workers: [{ id: "sf-live", agent: "scout", task: "Check the figures." }],
+      },
+    },
+    host.caller,
+  );
+  assert.equal((await suggestions("@sf-l"))?.items[0].label, "@sf-live");
 });
 
 test(
@@ -718,7 +928,7 @@ test(
 );
 
 test(
-  "a completed batch continues at a safe boundary after coordinator work",
+  "a settled batch reports truncated worker output after coordinator work",
   { timeout: 20_000 },
   async (t) => {
     const working = deferred();
@@ -728,7 +938,7 @@ test(
       coordinatorTools: true,
       respond: async (context) => {
         if (!getCurrentTools(context.messages).some((tool) => tool.name === "pinata_run"))
-          return fauxAssistantMessage("Worker result.");
+          return fauxAssistantMessage("The first finding was", { stopReason: "length" });
         coordinatorRequests++;
         if (coordinatorRequests === 1)
           return fauxAssistantMessage([
@@ -756,12 +966,15 @@ test(
     finishWork.resolve();
     await prompt;
     assert.equal(coordinatorRequests, 3);
-    assert.equal(
-      f.manager
-        .getEntries()
-        .filter((entry) => entry.type === "custom_message" && entry.customType === batchMessageType)
-        .length,
-      1,
+    const batches = f.manager
+      .getEntries()
+      .filter((entry) => entry.type === "custom_message" && entry.customType === batchMessageType);
+    assert.equal(batches.length, 1);
+    const [batch] = batches;
+    assert(batch.type === "custom_message");
+    assert.match(
+      String(batch.content),
+      /worker\/1: failed \(model output limit reached\)\. The first finding was/,
     );
     assert.deepEqual(f.errors, []);
   },
@@ -1147,7 +1360,12 @@ test(
   "real Pi input routes handles without coordinator turns and deduplicates saved completion notices",
   { timeout: 30_000 },
   async (t) => {
-    const f = await fixture(t);
+    const f = await fixture(t, {
+      respond: (_context, _options, state) =>
+        fauxAssistantMessage("@scout model-output-is-data", {
+          stopReason: state.callCount === 1 ? "length" : "stop",
+        }),
+    });
     await f.session.prompt("@scout");
     assert.equal(f.faux.state.callCount, 0);
     assert.equal(f.navigation.length, 1, JSON.stringify(f.errors));
@@ -1182,7 +1400,14 @@ test(
     await host.runtime.deliverNotifications(host.caller);
     await host.runtime.deliverNotifications(host.caller);
     await delivered(1);
-    assert.equal(f.manager.getEntries().filter((entry) => noticeId(entry)).length, 1);
+    const notices = f.manager.getEntries().filter((entry) => noticeId(entry));
+    assert.equal(notices.length, 1);
+    const [notice] = notices;
+    assert(notice.type === "custom_message");
+    assert.match(
+      String(notice.content),
+      /scout\/1: failed \(model output limit reached\)\.\n@scout model-output-is-data/,
+    );
     const state = host.source.snapshot().snapshot;
     const id = Object.keys(state.outbox)[0];
     assert.equal(state.outbox[id].state, "delivered");
@@ -1505,6 +1730,27 @@ test(
     assert.equal(Object.values(right.control.snapshot().snapshot.inbox).length, 2);
     assert.equal(Object.values(left.control.snapshot().snapshot.inbox).length, 2);
     const empty = await surfaceFixture(t);
+    const workers = new Map([
+      [left.control, new Set(["scout"])],
+      [right.control, new Set(["scout"])],
+      [empty.control, new Set<string>()],
+    ]);
+    const menu = mentionAutocomplete(
+      new CombinedAutocompleteProvider([], empty.workspace, null),
+      () => ({ current: empty.control, workers }),
+    );
+    const suggestions = async (prefix: string) =>
+      (
+        await menu.getSuggestions([prefix], 0, prefix.length, {
+          signal: new AbortController().signal,
+        })
+      )?.items.map((item) => item.value);
+    assert.deepEqual(
+      (await suggestions("@sc"))?.sort(),
+      [`@${left.run}:scout`, `@${right.run}:scout`].sort(),
+    );
+    const qualified = `@${left.run.slice(0, 12)}:`;
+    assert.deepEqual(await suggestions(qualified), [qualified + "scout"]);
     const ambiguous = await routeMention(
       "@scout instruction",
       [left.control, right.control, empty.control],
@@ -1662,5 +1908,58 @@ test(
       false,
     );
     assert.deepEqual(world.errors, []);
+  },
+);
+
+test(
+  "Pi returns a worker's decision to a foreground wait and delivers the coordinator's answer in the same assignment",
+  { timeout: 30_000 },
+  async (t) => {
+    const f = await fixture(t, {
+      respond: (context, _options, state) => {
+        if (state.callCount === 1)
+          return fauxAssistantMessage([
+            fauxToolCall("pinata_message", {
+              messageId: "parser-policy",
+              decision: "wait",
+              text: "Skip malformed records?",
+            }),
+          ]);
+        assert.match(JSON.stringify(context.messages), /Skip them and count them/);
+        return fauxAssistantMessage("Parser policy received.");
+      },
+    });
+    await f.session.prompt("@scout Ask for a parser decision.");
+    const host = f.hosts[0];
+    const invoke = async (name: string, value: Record<string, unknown>) => {
+      const tool = f.session.extensionRunner.getToolDefinition(name);
+      assert(tool);
+      const result = await tool.execute(
+        name,
+        value,
+        t.signal,
+        undefined,
+        f.session.extensionRunner.createToolContext(name, undefined),
+      );
+      return surfaceReplySchema.parse(result.details);
+    };
+    const waited = await invoke("pinata_wait", { includeDecisions: true });
+    assert(waited.status === "ok" && waited.response.method === "wait");
+    assert.equal(waited.response.result.status, "decision_requested");
+    const [question] = waited.response.result.decisions ?? [];
+    assert.equal(question.question, "Skip malformed records?");
+    assert.equal(f.faux.state.callCount, 1);
+    const answered = await invoke("pinata_answer", {
+      answers: [{ decisionId: question.decisionId, text: "Skip them and count them." }],
+    });
+    assert(
+      answered.status === "ok" &&
+        answered.response.method === "execute" &&
+        answered.response.result.status === "accepted",
+    );
+    const ended = await host.runtime.wait({ targets: [question.from] }, host.caller, t.signal);
+    assert.equal(ended.results[0].summary, "Parser policy received.");
+    assert.equal(f.faux.state.callCount, 2);
+    assert.deepEqual(f.errors, []);
   },
 );

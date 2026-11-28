@@ -20,16 +20,19 @@ import { freezeConversationSeed } from "../context/conversation.ts";
 import { consumedNoticeIds, parentBranchArtifact, piNotifications } from "./notifications.ts";
 import { registerCoordinatorTools } from "./tools.ts";
 import { parseMention, routeMention, sendMention, type MentionResult } from "./mentions.ts";
+import { mentionAutocomplete } from "./mention-autocomplete.ts";
 import {
   mentionRequestId,
   readMentionIntent,
   recordMentionInput,
   retainMentionIntent,
 } from "./mention-input.ts";
-import { installCoordinatorUi } from "../ui/pi.ts";
+import { installCoordinatorUi, rejectExtraArguments } from "../ui/pi.ts";
+import { runArgument } from "../ui/text.ts";
 import { ToolPages } from "../sources/pages.ts";
 import { projectRuns } from "../sources/project.ts";
 import { registerMemoryCommand } from "./memory.ts";
+import { registerSchemaCommand } from "./schema-command.ts";
 import { completionWatchType, CoordinatorCompletion } from "./completion.ts";
 
 const bindingType = "pinata.runtime.v1";
@@ -51,6 +54,7 @@ export type PiExtensionOptions = {
 type Binding = {
   session: string;
   host: Host;
+  workerNames: Set<string>;
   context: ExtensionContext;
   unsubscribe: () => void;
   pages: ToolPages;
@@ -167,9 +171,11 @@ export function createPinataExtension(options: PiExtensionOptions = {}): Extensi
           },
         });
         host = created;
+        const workerNames = new Set<string>();
         active = {
           session,
           host: created,
+          workerNames,
           context,
           unsubscribe: () => {},
           pages: new ToolPages({
@@ -184,6 +190,11 @@ export function createPinataExtension(options: PiExtensionOptions = {}): Extensi
         };
         await bindEvents(active);
         active.unsubscribe = created.runtime.subscribe({}, created.caller, (event) => {
+          if (event.kind === "snapshot") {
+            for (const name of Object.keys(event.snapshot.workers)) workerNames.add(name);
+          } else if (event.kind === "committed" && event.transition.kind === "accepted") {
+            for (const worker of event.transition.workers) workerNames.add(worker.id);
+          }
           if (
             event.kind !== "committed" ||
             (event.transition.kind !== "settled" &&
@@ -228,7 +239,7 @@ export function createPinataExtension(options: PiExtensionOptions = {}): Extensi
       {
         runs: (context, source) =>
           projectRuns(source.location?.workspace ?? context.cwd, () =>
-            [...bindings.values()].map((binding) => binding.host.source),
+            visibleBindings(context).map((binding) => binding.host.source),
           ),
         settings: (_context, source) =>
           [...bindings.values()].find((binding) => binding.host.source === source)?.host.config.ui,
@@ -263,8 +274,7 @@ export function createPinataExtension(options: PiExtensionOptions = {}): Extensi
       if (!context.ui.getEditorText().trim()) context.ui.setEditorText(text);
     };
     const retryCommand = (run: string, token: string): string => {
-      const selector = /^[A-Za-z0-9._-]+$/.test(run) ? run : JSON.stringify(run);
-      return `/pinata-retry ${selector}:${token}`;
+      return `/pinata-retry ${runArgument(run)}:${token}`;
     };
     const showReceipt = (
       context: ExtensionContext,
@@ -472,8 +482,21 @@ export function createPinataExtension(options: PiExtensionOptions = {}): Extensi
       }
     });
     pi.on("session_start", async (_event, context) => {
-      startedSessions.add(context.sessionManager.getSessionId());
+      const session = context.sessionManager.getSessionId();
+      startedSessions.add(session);
       const binding = await getBinding(context);
+      if (context.mode === "tui") {
+        context.ui.addAutocompleteProvider?.((base) =>
+          mentionAutocomplete(base, () => {
+            const current = bindings.get(session);
+            if (!current) return undefined;
+            const workers = new Map(
+              visibleBindings(context).map(({ host, workerNames }) => [host.source, workerNames]),
+            );
+            return { current: current.host.source, workers };
+          }),
+        );
+      }
       if (
         context.sessionManager
           .getBranch()
@@ -504,7 +527,8 @@ export function createPinataExtension(options: PiExtensionOptions = {}): Extensi
     });
     pi.registerCommand("pinata-new", {
       description: "Select a new Pinata run without cancelling existing workers.",
-      handler: async (_args, context) => {
+      handler: async (args, context) => {
+        if (rejectExtraArguments(context, "/pinata-new", args)) return;
         nextRun = true;
         const binding = await getBinding(context);
         context.ui.notify(`Selected run ${binding.host.caller.run}`, "info");
@@ -525,20 +549,7 @@ export function createPinataExtension(options: PiExtensionOptions = {}): Extensi
         }
       },
     });
-    pi.registerCommand("pinata-schema", {
-      description: "Inspect a canonical Pinata schema without a model call.",
-      handler: async (name, context) => {
-        const active = await getBinding(context);
-        const response = await active.host.source.request({
-          method: "query",
-          input: { kind: "schemas", ...(name.trim() ? { name: name.trim() } : {}) },
-        });
-        pi.sendMessage(
-          { customType: "pinata.schema.v1", content: canonicalJson(response), display: true },
-          { triggerTurn: false },
-        );
-      },
-    });
+    registerSchemaCommand(pi);
   };
 }
 

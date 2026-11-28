@@ -125,11 +125,18 @@ test(
     await publisher.connect();
     for (let ordinal = 1; ordinal <= 1000; ordinal++)
       publisher.publishActivity({ kind: "activity", source: "fixture", ordinal, text: "token" });
+    const progress = {
+      kind: "progress",
+      ordinal: 7,
+      current: { action: { kind: "tool", name: "read" }, startedAt: 123, count: 2 },
+    } as const;
+    publisher.publishProgress(progress);
     await publisher.flush();
     for (let connection = 0; connection < 2; connection++) {
       const observer = new ProcessSignals(handle.identity, "coordinator");
       try {
         await observer.connect();
+        assert.deepEqual(observer.progress, progress);
         assert.deepEqual(observer.activity, {
           source: "fixture",
           ordinal: 1000,

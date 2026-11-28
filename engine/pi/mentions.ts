@@ -8,6 +8,16 @@ import {
 import type { RuntimeSource } from "../sources/runtime.ts";
 
 export type Mention = { handle: string; run?: string; text: string };
+
+export function matchingRuns(
+  runs: readonly RuntimeSource[],
+  selector?: string,
+): readonly RuntimeSource[] {
+  if (!selector) return runs;
+  const exact = runs.find((source) => source.run === selector);
+  return exact ? [exact] : runs.filter((source) => source.run.startsWith(selector));
+}
+
 export function parseMention(input: string): Mention | undefined {
   const match = /^@(?:([A-Za-z0-9._-]+):)?([a-z][a-z0-9-]{0,31})(?:\s+([\s\S]*))?$/.exec(input);
   if (!match) return undefined;
@@ -55,12 +65,7 @@ export async function routeMention(
   const visible = [
     ...new Map([current, ...sources].map((source) => [source.run, source])).values(),
   ];
-  const selector = mention.run;
-  const exactRun = visible.find((source) => source.run === selector);
-  const candidates = selector
-    ? visible.filter((source) => source.run.startsWith(selector))
-    : visible;
-  const selected = exactRun ? [exactRun] : candidates;
+  const selected = matchingRuns(visible, mention.run);
   if (!selected.length) return { kind: "error", message: `Unknown run selector: ${mention.run}` };
   if (mention.run && selected.length > 1)
     return {

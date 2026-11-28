@@ -69,7 +69,7 @@ export type ExecutionHost = {
   assertOwner(): Promise<void>;
   activity(
     ref: AssignmentRef,
-    observation: Extract<BackendObservation, { kind: "activity" }>,
+    observation: Extract<BackendObservation, { kind: "activity" | "progress" }>,
   ): void;
   diagnostic(message: string): void;
 };
@@ -1019,6 +1019,7 @@ export class ExecutionCoordinator {
           phase: "ended",
           reason,
           cleanup: completion.cleanup.status === "stopped" ? "confirmed" : "unconfirmed",
+          ...(completion.outcome.outputTruncated ? { outputTruncated: true } : {}),
         },
         artifacts: uniqueArtifacts([
           ...(active.prepared?.artifacts ?? []),
@@ -1143,15 +1144,15 @@ export class ExecutionCoordinator {
   ): Promise<void> {
     const observation = backendObservationSchema.parse(input);
     const source = sourceInput ? backendObservationSourceSchema.parse(sourceInput) : undefined;
-    if (active.recovered && observation.kind !== "activity" && !source)
+    if (observation.kind === "activity" || observation.kind === "progress") {
+      this.host.activity(active.assignment.ref, observation);
+      return;
+    }
+    if (active.recovered && !source)
       throw new DomainError(
         "invalid_input",
         "Recovered backend observations require stable source identities",
       );
-    if (observation.kind === "activity") {
-      this.host.activity(active.assignment.ref, observation);
-      return;
-    }
     await this.host.transaction(async (transaction) => {
       const state = transaction.state();
       const identity = source

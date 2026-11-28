@@ -161,7 +161,8 @@ export function helpPanel(
                 ],
                 ["Shift+Enter", "Insert newline"],
                 ["Ctrl+Left / Right", "Move by word"],
-                ["Tab", "Focus transcript"],
+                ["/", "Show commands for this conversation"],
+                ["Tab", "Insert a highlighted command or focus the transcript"],
                 [conversationKeys.expandTools.join(" / "), "Expand / collapse tool output"],
                 [conversationKeys.toggleThinking.join(" / "), "Show / hide thinking"],
                 ["? (empty message)", "Open help"],
@@ -194,7 +195,7 @@ export function helpPanel(
                 ["/fleet /main", "Return to the fleet or coordinator"],
                 ["/queued", "Open the Queued filter; repeat to return"],
                 ["/scroll up|down|N", "Scroll the transcript"],
-                ["/palette <name>", "Change the viewer palette"],
+                ["/palette [name]", "Choose a viewer palette or apply one by name"],
               ],
             },
           ]

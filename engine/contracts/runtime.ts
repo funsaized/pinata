@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { grantsSchema, modelSchema } from "./common.ts";
-import { backendCapabilitiesSchema } from "./backend.ts";
+import { backendCapabilitiesSchema, progressObservationSchema } from "./backend.ts";
 import { applicationStateSchema } from "./application.ts";
 import { workspaceEntrySchema } from "./workspace.ts";
 import {
@@ -19,13 +19,14 @@ import {
 import { idSchema } from "./common.ts";
 import { definitionSummarySchema } from "./definition.ts";
 import { configSchema } from "./config.ts";
-import { workerMessageSchema } from "./messages.ts";
+import { storedWorkerMessageSchema } from "./messages.ts";
 
 export const waitRequestSchema = z
   .strictObject({
     workers: z.array(idSchema).optional(),
     targets: z.array(assignmentRefSchema).optional(),
     next: z.boolean().default(false),
+    includeDecisions: z.boolean().optional(),
   })
   .refine(
     (request) => !(request.workers && request.targets),
@@ -33,9 +34,18 @@ export const waitRequestSchema = z
   );
 export type WaitRequest = z.infer<typeof waitRequestSchema>;
 export const waitResultSchema = z.strictObject({
-  status: z.enum(["settled", "nothing_pending", "aborted"]),
+  status: z.enum(["settled", "nothing_pending", "aborted", "decision_requested"]),
   targets: z.array(assignmentRefSchema),
   results: z.array(resultSchema),
+  decisions: z
+    .array(
+      z.strictObject({
+        decisionId: identitySchema,
+        from: assignmentRefSchema,
+        question: textSchema,
+      }),
+    )
+    .optional(),
   cursor: revisionSchema,
 });
 export type WaitResult = z.infer<typeof waitResultSchema>;
@@ -78,6 +88,10 @@ export const runtimeQuerySchema = z.discriminatedUnion("kind", [
 export type RuntimeQuery = z.infer<typeof runtimeQuerySchema>;
 export const subscriptionSchema = z.strictObject({ since: revisionSchema.optional() });
 export type Subscription = z.infer<typeof subscriptionSchema>;
+export const assignmentProgressSchema = progressObservationSchema.extend({
+  ref: assignmentRefSchema,
+});
+export type AssignmentProgress = z.infer<typeof assignmentProgressSchema>;
 export const runtimeEventSchema = z.discriminatedUnion("kind", [
   z.strictObject({
     schemaVersion: z.literal(1),
@@ -94,6 +108,7 @@ export const runtimeEventSchema = z.discriminatedUnion("kind", [
     revision: revisionSchema,
     ownerEpoch: identitySchema,
     snapshot: coreStateSchema,
+    progress: z.array(assignmentProgressSchema).optional(),
   }),
   z.strictObject({
     schemaVersion: z.literal(1),
@@ -105,6 +120,11 @@ export const runtimeEventSchema = z.discriminatedUnion("kind", [
     ref: assignmentRefSchema,
     text: z.string(),
     snapshot: z.literal(true).optional(),
+  }),
+  assignmentProgressSchema.extend({
+    schemaVersion: z.literal(1),
+    ownerEpoch: identitySchema,
+    revision: revisionSchema,
   }),
 ]);
 export type RuntimeEvent = z.infer<typeof runtimeEventSchema>;
@@ -177,7 +197,7 @@ export const queryResultSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("status"), state: coreStateSchema }),
   z.strictObject({
     kind: z.literal("messages"),
-    messages: z.array(workerMessageSchema),
+    messages: z.array(storedWorkerMessageSchema),
     cursor: revisionSchema,
   }),
   receiptQueryResultSchema,

@@ -1,5 +1,9 @@
 import { scheduleStateSchema, scheduleOccurrenceSchema } from "./legacy-schedule.ts";
-import { workerMessageSchema } from "./messages.ts";
+import {
+  decisionAnswersSchema,
+  storedWorkerMessageSchema,
+  workerMessageSchema,
+} from "./messages.ts";
 import { z } from "zod";
 import { worktreeSchema } from "./workspace.ts";
 import { applicationIntentSchema, applicationStateSchema } from "./application.ts";
@@ -40,6 +44,7 @@ export const executionSchema = z.discriminatedUnion("phase", [
     phase: z.literal("ended"),
     reason: z.enum(["completed", "failed", "cancelled", "interrupted"]),
     cleanup: z.enum(["confirmed", "unconfirmed"]),
+    outputTruncated: z.literal(true).optional(),
   }),
 ]);
 export type ExecutionState = z.infer<typeof executionSchema>;
@@ -119,6 +124,7 @@ export const acceptedTransitionSchema = z.strictObject({
   workers: z.array(frozenWorkerSchema),
   assignments: z.array(assignmentSchema),
   messages: z.array(inboxMessageSchema),
+  decisions: z.strictObject({ sender: identitySchema, answers: decisionAnswersSchema }).optional(),
   config: artifactRefSchema.optional(),
   maxConcurrent: revisionSchema.positive().nullable().optional(),
 });
@@ -389,7 +395,7 @@ export const coreStateSchema = z.strictObject({
   assignments: z.record(z.string(), assignmentSchema),
   latest: z.record(z.string(), revisionSchema.positive()),
   inbox: z.record(z.string(), inboxMessageSchema),
-  messages: z.record(z.string(), workerMessageSchema).default({}),
+  messages: z.record(z.string(), storedWorkerMessageSchema).default({}),
   receipts: z.record(
     z.string(),
     z.strictObject({ payloadDigest: digestSchema, receipt: acceptedReceiptSchema }),

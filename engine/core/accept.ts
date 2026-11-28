@@ -14,6 +14,7 @@ import {
 } from "../contracts/index.ts";
 import type { CoreState } from "./state.ts";
 import type { Config } from "../contracts/config.ts";
+import { prepareDecisionAnswers } from "./messages.ts";
 import { validateAssignmentGraph } from "./graph.ts";
 import { checkChildCommand } from "./delegation.ts";
 
@@ -221,6 +222,7 @@ export function prepareCommand(
   const assignments: Assignment[] = [];
   const workers: FrozenWorker[] = [];
   const messages: InboxMessage[] = [];
+  let decisionTargets: AssignmentRef[] | undefined;
   const firstSequence = state.nextSequence;
   switch (command.kind) {
     case "create":
@@ -312,6 +314,12 @@ export function prepareCommand(
       messages.push(message(command.messageId, ref, caller, "follow_up", command.text));
       break;
     }
+    case "answer_decisions": {
+      const batch = prepareDecisionAnswers(state, command.answers, caller.id);
+      messages.push(...batch.messages);
+      decisionTargets = batch.targets;
+      break;
+    }
     case "steer": {
       requireWorker(state, command.worker);
       const pending = Object.values(state.assignments)
@@ -344,9 +352,11 @@ export function prepareCommand(
       throw new DomainError("conflict", `Message ID is already recorded: ${entry.id}`, "messageId");
     ids.add(entry.id);
   }
-  const targets = assignments.length
-    ? assignments.map((assignment) => assignment.ref)
-    : messages.map((entry) => entry.target);
+  const targets =
+    decisionTargets ??
+    (assignments.length
+      ? assignments.map((assignment) => assignment.ref)
+      : messages.map((entry) => entry.target));
   return {
     kind: "accepted",
     requestId: envelope.requestId,
@@ -373,6 +383,9 @@ export function prepareCommand(
           maxConcurrent:
             (options.resolvedConfig ?? command.config)?.execution?.maxConcurrent ?? null,
         }
+      : {}),
+    ...(command.kind === "answer_decisions"
+      ? { decisions: { sender: caller.id, answers: command.answers } }
       : {}),
     workers,
     assignments,

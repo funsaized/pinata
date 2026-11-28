@@ -254,6 +254,37 @@ test("custom shortcuts cannot replace text entry, paging or reserved fleet contr
   assert.equal(resolveKeys({ stop: "ctrl+k" }).stop, "ctrl+k");
 });
 
+test("horizontal arrows enter a child branch and fold it on return", async (t) => {
+  const state = uiState(4);
+  state.workers["worker-2"].parentAssignment = ref();
+  state.workers["worker-3"].parentAssignment = ref();
+  state.assignments[assignmentKey(ref())].after = [ref(4)];
+  const { router, screen } = await setup(t, new UiSource(state));
+  router.navigate("fleet", ref());
+  screen.render(160);
+
+  screen.handleInput("\x1b[C");
+  assert.deepEqual(router.selected, ref(2));
+  screen.handleInput("\x1b[B");
+  assert.deepEqual(router.selected, ref(3));
+  screen.handleInput("\x1b[D");
+  assert.deepEqual(router.selected, ref());
+  assert.deepEqual(
+    router.fleetAssignments().map(({ ref }) => ref.worker),
+    ["worker-1", "worker-4"],
+  );
+
+  screen.handleInput("\x1b[C");
+  assert.deepEqual(router.selected, ref());
+  assert.equal(router.selectedBranchCollapsed, false);
+  screen.handleInput("\x1b[B");
+  assert.equal(router.focusedDependency, "prerequisites");
+  screen.handleInput("\x1b[A");
+  assert.equal(router.focusedDependency, undefined);
+  screen.handleInput("\x1b[C");
+  assert.deepEqual(router.selected, ref(2));
+});
+
 test("dependency drill-in opens conversations and can reveal filtered and collapsed assignments", async (t) => {
   const state = uiState(4);
   state.workers["worker-2"].parentAssignment = ref();
@@ -268,16 +299,26 @@ test("dependency drill-in opens conversations and can reveal filtered and collap
   router.collapse(true);
   router.navigate("fleet", ref(3));
   screen.handleInput("\x1b[B");
-  assert.deepEqual(router.selected, ref(4), "Down skips the visible dependency rows");
+  assert.equal(router.focusedDependency, "prerequisites");
   screen.handleInput("\x1b[A");
   assert.deepEqual(router.selected, ref(3));
+  assert.equal(
+    router.focusedDependency,
+    undefined,
+    "Up returns from the first row to its assignment",
+  );
+  screen.handleInput("\x1b[C");
+  screen.handleInput("\x1b[B");
+  screen.handleInput("\x1b[B");
+  assert.deepEqual(router.selected, ref(4), "Down from the last link selects the next assignment");
+  assert.equal(router.focusedDependency, undefined);
   router.search = "worker-3";
   router.navigate("fleet", ref(3));
   const rows = screen.render(80).map(stripTerminalSequences);
-  const origin = rows.findIndex((row) => /> .*worker-3\/1/.test(row));
-  assert.match(rows[origin + 1], /└─ ▾ Prerequisites +1\/2 complete/);
-  assert.match(rows[origin + 2], /├─ ⧖  worker-1\/1/);
-  assert.match(rows[origin + 3], /└─ ✓  worker-2\/1/);
+  const origin = rows.findIndex((row) => /› .*worker-3\/1/.test(row));
+  assert.match(rows[origin + 1], /└─ ▾ Depends on +1\/2 complete/);
+  assert.match(rows[origin + 2], /○ +├─ worker-1\/1/);
+  assert.match(rows[origin + 3], /✓ +└─ worker-2\/1/);
   assert.match(rows.at(-2) ?? "", /Esc/);
   screen.handleInput("d");
   assert.equal(router.inspectorFocus, true);
@@ -288,10 +329,18 @@ test("dependency drill-in opens conversations and can reveal filtered and collap
   assert.equal(router.selectedBranchCollapsed, false, "Left leaves details without folding links");
   screen.handleInput("\x1b[C");
   assert.equal(router.focusedDependency, assignmentKey(ref()));
+  screen.handleInput("\x1b[B");
+  assert.equal(router.focusedDependency, assignmentKey(ref(2)));
   screen.handleInput("\x1b[D");
   assert.equal(router.focusedDependency, undefined, "Left returns directly to the assignment");
+  assert.deepEqual(router.selected, ref(3));
+  assert.deepEqual(
+    router.dependencyRows().map((row) => row.key),
+    ["prerequisites"],
+    "Left folds the group even while a prerequisite is pending",
+  );
   screen.handleInput("\x1b[C");
-  screen.handleInput("\x1b[B");
+  assert.equal(router.focusedDependency, assignmentKey(ref()), "Right reopens at the first link");
   screen.handleInput("\x1b[B");
   assert.equal(router.focusedDependency, assignmentKey(ref(2)));
   assert.deepEqual(router.selected, ref(3), "Down stays inside the dependencies");
@@ -324,7 +373,7 @@ test("dependency drill-in opens conversations and can reveal filtered and collap
   assert.equal(router.focusedDependency, "prerequisites");
   screen.handleInput("\r");
   const collapsed = screen.render(80).map(stripTerminalSequences);
-  assert.doesNotMatch(collapsed.join("\n"), /✓  worker-2\/1/);
+  assert.doesNotMatch(collapsed.join("\n"), /✓ +└─ worker-2\/1/);
   const click = (rows: string[], label: string) => {
     const row = rows.findIndex((line) => line.includes(label));
     assert(row >= 0, label);
@@ -345,8 +394,8 @@ test("dependency drill-in opens conversations and can reveal filtered and collap
       { handled: true, focus: true, render: true },
     );
   };
-  click(collapsed, "▸ Prerequisites");
-  click(screen.render(80).map(stripTerminalSequences), "✓  worker-2/1");
+  click(collapsed, "▸ Depends on");
+  click(screen.render(80).map(stripTerminalSequences), "└─ worker-2/1");
   assert.equal(router.screen, "conversation");
   assert.deepEqual(router.selected, ref(2));
   assert.equal(router.draft, "Trace the HTTP parser");
@@ -372,7 +421,7 @@ test("returning from a linked conversation restores the viewport and open groups
     screen
       .render(80)
       .map(stripTerminalSequences)
-      .findIndex((row) => /^\s*> .*worker-17\/1/.test(row));
+      .findIndex((row) => /^\s*› .*worker-17\/1/.test(row));
   const row = selectedRow();
   const scroll = router.fleetScroll;
   assert(row >= 0 && scroll > 0);
@@ -398,6 +447,131 @@ test("returning from a linked conversation restores the viewport and open groups
       .dependencyRows()
       .some((item) => item.kind === "group" && item.group === "dependents" && item.expanded),
   );
+});
+
+test("a successful worker eats through its last visible row in the widget and fleet", async (t) => {
+  let now = 0;
+  t.mock.method(performance, "now", () => now);
+  await withDemoFleet(async (source) => {
+    const widget = new ScreenRouter(source);
+    const fleet = new ScreenRouter(source);
+    const quiet = new ScreenRouter(source, { ui: { motion: "reduced" } });
+    const views = [widget, fleet, quiet];
+    const paint = createPaint("terminal-default");
+    const render = (router: ScreenRouter) =>
+      renderScreen(router, { width: 100, height: 12, paint });
+    try {
+      for (const router of views) await router.start();
+      fleet.navigate("fleet");
+      for (const worker of ["scout", "review"]) {
+        const ref = { run: source.run, worker, assignment: 1 };
+        const key = assignmentKey(ref);
+        const deadline = AbortSignal.timeout(5000);
+        while (
+          !views.every((router) => router.state.assignments[key]?.execution.phase === "running")
+        ) {
+          deadline.throwIfAborted();
+          await tick();
+        }
+        fleet.navigate("fleet", ref);
+        const rowIndexes = views.map((router) => {
+          const row = render(router).findIndex(
+            (line) => line.includes(worker + "/1") && /running/i.test(line),
+          );
+          assert(row >= 0, "the active row was on screen at settlement");
+          return row;
+        });
+        const reply = await source.request({
+          method: "execute",
+          input: {
+            requestId: "finish-" + worker,
+            command: {
+              kind: "steer",
+              worker,
+              messageId: "message-" + worker,
+              text: "Finish this assignment",
+            },
+          },
+        });
+        assert.equal(reply.status, "ok");
+        await source.request({ method: "wait", input: { targets: [ref] } }, deadline);
+        while (
+          !views.every((router) => router.state.assignments[key]?.execution.phase === "ended")
+        ) {
+          deadline.throwIfAborted();
+          await tick();
+        }
+        assert.equal(quiet.completions.size, 0);
+        if (worker === "scout") {
+          const released = assignmentKey({ ...ref, worker: "review" });
+          while (
+            !views.every(
+              (router) => router.state.assignments[released]?.execution.phase === "running",
+            )
+          ) {
+            deadline.throwIfAborted();
+            await tick();
+          }
+        }
+        assert(!fleet.fleetAssignments().some((a) => a.ref.worker === worker));
+        const frames = () =>
+          [widget, fleet].map((router, index) => render(router)[rowIndexes[index]].trimEnd());
+        const first = frames();
+        assert(first.every((line) => line.includes(worker + "/1")));
+        const finalDash = [false, false];
+        const lastMouth: (number | undefined)[] = [];
+        for (let step = 0; step <= 200 && finalDash.includes(false); step++) {
+          now += step === 15 ? 2000 : 125;
+          for (const [index, router] of [widget, fleet].entries()) {
+            if (finalDash[index]) continue;
+            const line = render(router)[rowIndexes[index]]?.trimEnd();
+            assert(line, "the row stays in place until the entire line is eaten");
+            if (/^ *-+$/.test(line)) {
+              assert.equal(line.length, first[index].length);
+              finalDash[index] = true;
+            } else {
+              const trail = /^ *-+[cC]/.exec(line);
+              if (!trail) continue;
+              const mouth = trail[0].length - 1;
+              const previous = lastMouth[index];
+              if (previous !== undefined) assert(mouth === previous || mouth === previous + 1);
+              lastMouth[index] = mouth;
+              // Beyond the original activity track, only the next three cells can change.
+              const untouched = Math.max(11, mouth + 4);
+              assert.equal(line.slice(untouched), first[index].slice(untouched));
+              if (mouth < first[index].length - 1) assert.equal(line.at(-1), first[index].at(-1));
+            }
+          }
+        }
+        assert.equal(lastMouth.length, 2);
+        assert.deepEqual(finalDash, [true, true], "both views hold a complete dash trail");
+
+        // Even when the last worker leaves, a mounted widget gets a final redraw.
+        let repainted = false;
+        const unsubscribe = widget.onChange(() => {
+          repainted = true;
+        });
+        try {
+          now += 500;
+          while (widget.completions.size) {
+            deadline.throwIfAborted();
+            await tick();
+          }
+          assert(repainted);
+        } finally {
+          unsubscribe();
+        }
+        render(fleet);
+        assert.equal(fleet.completions.size, 0);
+      }
+      assert.deepEqual(render(widget), []);
+      assert.match(render(fleet).join("\n"), /No unfinished work/);
+      fleet.setFilter("finished");
+      assert.match(render(fleet).join("\n"), /review\/1 +Completed/);
+    } finally {
+      for (const router of views) router.dispose();
+    }
+  });
 });
 
 test("offline demo consumes a correction, releases review and preserves the coordinator's place", async () => {

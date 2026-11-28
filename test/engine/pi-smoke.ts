@@ -141,7 +141,9 @@ export async function runPiSmoke(options: { packageRoot?: string; installed?: bo
     assert.equal(schemaReply.success, true, JSON.stringify(schemaReply));
     await pi.wait(
       (event) =>
-        event.type === "message_end" && JSON.stringify(event.message).includes("pinata.schema.v1"),
+        event.type === "extension_ui_request" &&
+        event.method === "notify" &&
+        String(event.message).includes("pinata schema pinata.command.v1 --json"),
       direct,
     );
     assert(

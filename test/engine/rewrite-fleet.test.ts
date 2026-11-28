@@ -4,9 +4,15 @@ import { TuiAltScreen, stripTerminalSequences, visibleWidth } from "@earendil-wo
 import {
   assignmentKey,
   type AssignmentRef,
+  type AssignmentProgress,
+  type StoredWorkerMessage,
   type SurfaceReply,
 } from "../../engine/contracts/index.ts";
-import { renderScreen } from "../../engine/ui/render.ts";
+import { prepareCommand } from "../../engine/core/accept.ts";
+import { reduce } from "../../engine/core/state.ts";
+import { CompletionRows } from "../../engine/ui/completion.ts";
+import { activityIndicator } from "../../engine/ui/tree.ts";
+import { fleetWidget, renderScreen } from "../../engine/ui/render.ts";
 import type { FleetRegions } from "../../engine/ui/fleet.ts";
 import { createPaint } from "../../engine/ui/palette.ts";
 import { ScreenRouter } from "../../engine/ui/router.ts";
@@ -30,6 +36,213 @@ const previewReply = (target: AssignmentRef, text: string): SurfaceReply => ({
       message: { text, truncated: false },
     },
   },
+});
+
+test("the departing wave extends its last track and leaves dashes across the text", (t) => {
+  let now = 750;
+  t.mock.method(performance, "now", () => now);
+  const rows = new CompletionRows();
+  const paint = createPaint("gruvbox-dark");
+  const track = activityIndicator("full", now);
+  const line = "  " + paint("accent.cyan", track) + paint("strong", "12界56789");
+  rows.remember("worker", { line, track, start: 2, position: 0, frame: 3 });
+  rows.finish("worker");
+  const frame = () => stripTerminalSequences(rows.render("worker", 20, paint) ?? "");
+  now += 2500;
+  rows.expire();
+  assert.equal(frame(), "  - -co12界56789");
+  now += 125;
+  assert.equal(frame(), "  - -co 2界56789");
+  now += 125;
+  assert.equal(frame(), "  - --C o界56789");
+  now += 125;
+  assert.equal(frame(), "  - --C o  56789", "half-eaten wide glyph keeps its remaining cell");
+  now += 125;
+  assert.equal(frame(), "  - ---co  56789");
+  now += 2000;
+  assert.equal(frame(), "  ------c o56789", "a late redraw eats only the next cell");
+  assert.equal(frame(), "  ------c o56789", "repainting the same tick preserves the frame");
+  for (let step = 0; step < 5; step++) {
+    now += 250;
+    assert(frame().endsWith("89"), "the mouth reaches the final letters before they disappear");
+  }
+  now += 250;
+  assert.equal(frame(), "  " + "-".repeat(12) + "c9");
+  now += 250;
+  assert.equal(frame(), "  " + "-".repeat(13) + "C");
+  now += 250;
+  assert.equal(frame(), "  " + "-".repeat(14));
+  now += 250;
+  rows.expire();
+  assert(rows.has("worker"));
+  now += 250;
+  rows.expire();
+  assert(!rows.has("worker"));
+});
+
+test("scrolling away retires a departure that no longer receives frames", () => {
+  const rows = new CompletionRows();
+  rows.begin("fleet");
+  rows.remember("worker", {
+    line: "c o o worker",
+    track: "c o o",
+    start: 0,
+    position: 0,
+    frame: 0,
+  });
+  rows.finish("worker");
+  rows.begin("fleet");
+  assert(rows.has("worker"));
+  rows.begin("fleet");
+  assert(!rows.has("worker"));
+});
+
+test("lean fleet restores live action time, orders tool updates and clears stale progress", async (t) => {
+  const source = new UiSource(uiState(1));
+  source.state.assignments[assignmentKey(ref())].execution = { phase: "running" };
+  const initial: AssignmentProgress = {
+    kind: "progress",
+    ref: ref(),
+    ordinal: 5,
+    current: { action: { kind: "model", turn: 10 }, startedAt: 1000, count: 1 },
+    last: { action: { kind: "tool", name: "bash" }, durationMs: 210, failed: false },
+  };
+  t.mock.method(Date, "now", () => 136000);
+  const snapshot = source.snapshot.bind(source);
+  t.mock.method(source, "snapshot", () => ({ ...snapshot(), progress: [initial] }));
+  const router = new ScreenRouter(source);
+  t.after(() => router.dispose());
+  await router.start();
+  router.navigate("fleet", ref());
+  const render = () =>
+    stripTerminalSequences(
+      renderScreen(router, { width: 175, height: 32, paint: createPaint("terminal-default") }).join(
+        "\n",
+      ),
+    );
+  assert.match(render(), /Model turn 10 · 2m 15s/);
+  assert.match(render(), /Last action · bash finished in 210ms/);
+  assert.doesNotMatch(render(), /Last message/);
+  const event = {
+    schemaVersion: 1 as const,
+    revision: source.state.revision,
+    ownerEpoch: source.epoch,
+    ...initial,
+  };
+  await source.emit({
+    ...event,
+    ordinal: 6,
+    current: { action: { kind: "tool", name: "read" }, startedAt: 135000, count: 2 },
+  });
+  await source.emit(event);
+  assert.match(render(), /Running 2 tools · 1s/);
+  assert.doesNotMatch(render(), /Model turn 10/);
+  await source.emit({
+    ...event,
+    ordinal: 7,
+    current: undefined,
+    last: { action: { kind: "tool", name: "read" }, failed: true, durationMs: 12 },
+  });
+  assert.match(render(), /read failed in 12ms/);
+  assert.doesNotMatch(render(), /Running 2 tools/);
+  for (const change of source.connections) change(false);
+  assert.doesNotMatch(render(), /read failed/);
+  await source.emit({ ...snapshot(), ownerEpoch: "new-owner" });
+  await source.emit(event);
+  assert.equal(router.progress.size, 0);
+});
+
+test("fleet follows worker questions through coordinator answers and saved history", async (t) => {
+  const state = uiState(4);
+  for (const assignment of Object.values(state.assignments))
+    assignment.execution = { phase: "running" };
+  function message(worker: number, text: string, decision?: StoredWorkerMessage["decision"]) {
+    const revision = ++state.revision;
+    const id = `message/${revision}`;
+    state.messages[id] = {
+      id,
+      revision,
+      requestDigest: "a".repeat(64),
+      from: ref(worker),
+      to: "coordinator",
+      text,
+      decision,
+    };
+    return id;
+  }
+  const format = message(1, "Which format?", "continue");
+  const policy = message(1, "Keep malformed lines?", "wait");
+  message(2, "Use UTF-8?", "continue");
+  message(3, "Progress update");
+  const source = new UiSource(state);
+  const router = new ScreenRouter(source);
+  await router.start();
+  t.after(() => router.dispose());
+  router.navigate("fleet", ref());
+  router.setDraft("Remember the example");
+  const paint = createPaint("terminal-default");
+  const render = (view = router, width = 100) =>
+    renderScreen(view, { width, height: 35, paint, ascii: true }).join("\n");
+  const compact = fleetWidget(router.state, { width: 90, paint }).join("\n");
+  assert.match(compact, /2 need attention/);
+  assert.doesNotMatch(compact, /more assignments/);
+  router.setFilter("attention");
+  assert.deepEqual(
+    router.fleetAssignments().map((a) => a.ref),
+    [ref(), ref(2)],
+  );
+  assert.match(render(), /worker-1\/1 +\? Running/);
+  assert.match(render(), /\? Waiting for coordinator\s+Keep malformed lines\?/);
+  assert.match(render(), /\+1 more open/);
+  router.details = true;
+  assert.match(render(), /\? Also asked the coordinator\s+Which format\?/);
+
+  const answers = [
+    { decisionId: format, text: "Use CSV." },
+    { decisionId: policy, text: "Keep them.\x1b]0;fake title\x07" },
+  ];
+  const transition = prepareCommand(
+    source.state,
+    { requestId: "answers", command: { kind: "answer_decisions", answers } },
+    {
+      id: "coordinator",
+      kind: "coordinator",
+      run: state.run,
+      grants: state.workers["worker-1"].grants,
+    },
+  );
+  source.state = reduce(source.state, transition, source.state.revision + 1);
+  await source.emit({
+    kind: "committed",
+    schemaVersion: 1,
+    id: "answers",
+    revision: source.state.revision,
+    ownerEpoch: source.epoch,
+    transition,
+  });
+  assert.deepEqual(router.selected, ref(2));
+  assert.match(render(), /\[Attention 1\]/);
+  assert.match(render(), /\? Asked coordinator · still working\s+Use UTF-8\?/);
+  router.setFilter("working");
+  router.navigate("fleet", ref());
+  assert.equal(router.draft, "Remember the example");
+  assert.match(render(), /Coordinator answered\s+Keep malformed lines\?\s+> Keep them\./);
+  assert.doesNotMatch(render(), /fake title|Waiting for coordinator/);
+
+  const savedSource = new UiSource(structuredClone(source.state));
+  savedSource.capabilities.control = savedSource.capabilities.live = false;
+  savedSource.state.cancelled[assignmentKey(ref(2))] = { requestId: "cancel" };
+  const saved = new ScreenRouter(savedSource);
+  t.after(() => saved.dispose());
+  saved.navigate("fleet", ref());
+  saved.details = true;
+  assert.match(render(saved), /Saved · read-only/);
+  assert.match(render(saved), /> Use CSV\./);
+  saved.navigate("fleet", ref(2));
+  assert.match(render(saved), /Closed without an answer\s+Use UTF-8\?/);
+  saved.setFilter("attention");
+  assert.deepEqual(saved.fleetAssignments(), []);
+  assert.equal(savedSource.calls.length, 0);
 });
 
 test("wide fleets keep prompt and last message beside the selected full row; stacked layouts stay near the list", async (t) => {
@@ -82,16 +295,12 @@ test("wide fleets keep prompt and last message beside the selected full row; sta
       assert(plain.some((row) => row.includes("Inspect the contract inventory.")));
       const selectedRow = [...hitRows].find(([, target]) => target.worker === "worker-1");
       assert(selectedRow);
-      // Matching palette escapes is the subject of this rendering assertion.
-      // oxlint-disable-next-line no-control-regex
-      const selected = /\x1b\[1;7m([^]*?)\x1b\[27;22m/.exec(rows[selectedRow[0]]);
-      assert(selected);
-      assert.equal(
-        selected[1].includes("\u001b[0m"),
-        false,
-        "truncation must not reset selection styling",
-      );
-      assert.equal(visibleWidth(selected[1]), fleetRegions.list?.width);
+      const selected = rows[selectedRow[0]];
+      assert(stripTerminalSequences(selected).startsWith("› "));
+      assert(selected.includes("\u001b[1m"), "the selected name is bold");
+      assert(!selected.includes("\u001b[1;7m"), "selection preserves state colors");
+      const selection = createPaint("pinata")("selection", "ROW").split("ROW")[0];
+      assert(selected.includes(selection), "the focus tint marks the selected row");
     } else if (fleetRegions.inspector) {
       assert.equal(
         fleetRegions.inspector.y,
@@ -140,20 +349,23 @@ test("dependency groups show distinct status icons, exceptions and static fallba
       .join("\n");
 
   const full = render();
-  assert.match(full, /▾ Prerequisites +1\/5 complete · 2 need attention/);
-  assert.match(full, /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]  worker-1\/1/);
-  assert.match(full, /⧖  worker-2\/1/);
-  assert.match(full, /×  worker-3\/1 +Failed/);
-  assert.match(full, /!  worker-4\/1 +Cleanup unconfirmed/);
-  assert.match(full, /✓  worker-5\/1/);
-  assert(full.indexOf("×  worker-3/1") < full.indexOf("⧖  worker-2/1"));
-  assert(full.indexOf("⧖  worker-2/1") < full.indexOf("✓  worker-5/1"));
-  assert.match(full, /▸ Dependents +1 complete/);
-  assert.doesNotMatch(full, /✓  worker-7\/1/);
+  assert.match(full, /▾ Depends on +1\/5 complete · 2 need attention/);
+  assert.match(full, /Waiting on 3 assignments/);
+  assert.match(full, /○ +│ {2}├─ worker-2\/1 +Queued/);
+  assert.match(full, /× +│ {2}├─ worker-3\/1 +Failed/);
+  assert.match(full, /! +│ {2}├─ worker-4\/1 +Cleanup unconfirmed/);
+  assert.match(full, /✓ +│ {2}└─ worker-5\/1 +Completed/);
+  assert(full.indexOf("├─ worker-3/1") < full.indexOf("├─ worker-2/1"));
+  assert(full.indexOf("├─ worker-2/1") < full.indexOf("└─ worker-5/1"));
+  assert.match(full, /▸ Needed by +1 complete/);
+  assert.doesNotMatch(full, /└─ worker-7\/1/);
+  const running = full.split("\n").filter((line) => /worker-1\/1 +Running/.test(line));
+  assert.equal(running.length, 2);
+  assert.equal(running[0].slice(2, 7), running[1].slice(2, 7), "both appearances share a wave");
   router.motion = "reduced";
-  assert.match(render(), /◐  worker-1\/1/);
-  assert.match(render(true), /~  worker-1\/1/);
-  assert.match(render(true), /o  worker-2\/1/);
+  assert.match(render(), /───── +│ {2}├─ worker-1\/1/);
+  assert.match(render(true), /----- +\| {2}\|- worker-1\/1/);
+  assert.match(render(true), /o +\| {2}\|- worker-2\/1/);
 });
 
 test("a prerequisite that settles while focused stays visible until the user leaves it", async (t) => {
@@ -176,11 +388,11 @@ test("a prerequisite that settles while focused stays visible until the user lea
     renderScreen(router, { width: 80, height: 24, paint: createPaint("terminal-default") }).join(
       "\n",
     );
-  assert.match(render(), /> .*✓  worker-1\/1/);
+  assert.match(render(), /› +✓ +└─ worker-1\/1/);
   router.moveFleetBranch("left");
-  assert.match(render(), /▸ Prerequisites +1 complete/);
+  assert.match(render(), /▸ Depends on +1 complete/);
   assert.equal(router.focusedDependency, undefined);
-  assert.doesNotMatch(render(), /✓  worker-1\/1/);
+  assert.doesNotMatch(render(), /✓ +└─ worker-1\/1/);
 });
 
 test("details use vertical arrows to scroll and Left returns to the list", async (t) => {
@@ -456,7 +668,7 @@ test("background preview refreshes keep the last resolved sidebar state visible"
           },
         },
       },
-      expected: "No assistant message yet.",
+      expected: "Prompt",
     },
     {
       name: "incomplete transcript",
@@ -512,6 +724,8 @@ test("background preview refreshes keep the last resolved sidebar state visible"
       respond(scenario.reply);
       await first;
       assert(render().includes(scenario.expected));
+      if (scenario.name === "empty transcript")
+        assert.doesNotMatch(render(), /Last message|No assistant message/);
       for (let refresh = 0; refresh < 3; refresh++) {
         const pending = router.loadPreview();
         const during = render();

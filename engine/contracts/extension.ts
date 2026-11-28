@@ -16,7 +16,12 @@ import {
   notificationAcknowledgmentRequestSchema,
   transitionSchema,
 } from "./lifecycle.ts";
-import { recoveryRequestSchema, runtimeQuerySchema, waitRequestSchema } from "./runtime.ts";
+import {
+  assignmentProgressSchema,
+  recoveryRequestSchema,
+  runtimeQuerySchema,
+  waitRequestSchema,
+} from "./runtime.ts";
 import { surfaceCapabilitiesSchema, surfaceReplySchema } from "./surface.ts";
 import { usageObservationSchema, usageSchema } from "./usage.ts";
 
@@ -175,5 +180,6 @@ export const extensionEventSchema = z.discriminatedUnion("kind", [
     truncated: z.boolean(),
     snapshot: z.literal(true).optional(),
   }),
+  assignmentProgressSchema.extend({ ...eventFields, ref: assignmentRefSchema }),
 ]);
 export type ExtensionEvent = z.infer<typeof extensionEventSchema>;

@@ -44,7 +44,9 @@ class EventIdentities {
   private accepted(transition: Accepted): AssignmentRef[] {
     for (const worker of transition.workers) this.workers.set(worker.id, worker);
     for (const message of transition.messages) this.messages.set(message.id, message.target);
-    return transition.assignments.map((assignment) => assignment.ref);
+    return transition.decisions
+      ? transition.receipt.assignments
+      : transition.assignments.map((assignment) => assignment.ref);
   }
 
   references(transition: Transition): AssignmentRef[] {
@@ -214,6 +216,18 @@ export async function bindPiEvents(options: {
       ownerEpoch: event.ownerEpoch,
       revision: event.revision,
     } as const;
+    if (event.kind === "progress") {
+      emit(extensionChannels.event, {
+        ...base,
+        ...identities.lineage(event.ref),
+        kind: event.kind,
+        ref: event.ref,
+        ordinal: event.ordinal,
+        current: event.current,
+        last: event.last,
+      } satisfies ExtensionEvent);
+      return;
+    }
     if (event.kind === "activity") {
       emit(extensionChannels.event, {
         ...base,

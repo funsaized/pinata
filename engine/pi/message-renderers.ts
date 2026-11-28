@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Box, Text } from "@earendil-works/pi-tui";
 import { assignmentRefSchema, commandReceiptSchema } from "../contracts/index.ts";
-import { displayText } from "../ui/text.ts";
+import { displayText, runArgument } from "../ui/text.ts";
 import { completionMessageType, workerMessageType } from "./notifications.ts";
 import { batchMessageType } from "./completion.ts";
 
@@ -42,13 +42,13 @@ export function registerPinataMessageRenderers(pi: ExtensionAPI, animate?: () =>
             "text" in details &&
             typeof details.text === "string"
           )
-            content = `${ref.data.worker}/${ref.data.assignment}: ${details.text}`;
+            content = `${"decision" in details ? "Decision requested · " : ""}${ref.data.worker}/${ref.data.assignment}: ${details.text}`;
           content = content.replace(/\nFull result: [^\n]+$/, "");
           if (type === completionMessageType && !options.expanded) {
             const line = displayText(content).replace(/\s+/g, " ");
             content = line.length > 180 ? line.slice(0, 179) + "…" : line;
           }
-          content += `\nOpen conversation: /pinata-conversation ${ref.data.worker} ${ref.data.assignment}`;
+          content += `\nOpen conversation: /pinata-conversation ${ref.data.worker} ${ref.data.assignment} --run ${runArgument(ref.data.run)}`;
           if (options.expanded) content += `\nRun: ${ref.data.run}`;
         }
       }

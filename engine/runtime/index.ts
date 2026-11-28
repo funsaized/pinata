@@ -34,6 +34,7 @@ import {
   subscriptionSchema,
   waitRequestSchema,
   type QueryResult,
+  type AssignmentProgress,
   type RuntimeEvent,
   type ShutdownReceipt,
   type ShutdownRequest,
@@ -50,7 +51,14 @@ import { StorageError, type FaultHook } from "../storage/io.ts";
 import { RuntimeApplications, type RuntimeApplicationPort } from "./application.ts";
 import { readChanges } from "./changes.ts";
 import { ChildBindings } from "./delegation.ts";
-import { messageReceipt, messageTarget, queryMessages, validateMessage } from "../core/messages.ts";
+import {
+  decisionInScope,
+  isOpenDecision,
+  messageReceipt,
+  messageTarget,
+  queryMessages,
+  validateMessage,
+} from "../core/messages.ts";
 import {
   workerMessageRequestSchema,
   type MessagePort,
@@ -126,6 +134,7 @@ export class Runtime {
   private closing = false;
   private checkpointAttemptRevision = 0;
   private readonly subscribers = new Set<Subscriber>();
+  private readonly progress = new Map<string, AssignmentProgress>();
   private readonly failures: RuntimeDiagnostic[] = [];
   private readonly execution?: ExecutionCoordinator;
   private readonly applications?: RuntimeApplications;
@@ -133,6 +142,7 @@ export class Runtime {
   private readonly children: ChildBindings;
   private readonly conversations: ConversationQueries;
   private shutdown?: Promise<ShutdownReceipt>;
+  private readonly decisionWaiters = new Set<() => void>();
   private readonly waitCancellations = new Set<() => void>();
   private readonly committedRequests = new Map<
     string,
@@ -386,7 +396,7 @@ export class Runtime {
         const request = workerMessageRequestSchema.parse(input);
         const id = `worker-message:${digestValue([from, request.messageId])}`;
         const requestDigest = digestValue(request);
-        return this.serialize(async () => {
+        const receipt = await this.serialize(async () => {
           signal?.throwIfAborted();
           if (this.closing) throw new DomainError("conflict", "Runtime is closing");
           await this.store.assertOwner();
@@ -405,10 +415,19 @@ export class Runtime {
             from,
             to: messageTarget(this.state, from, request.to),
             text: request.text,
+            ...(request.decision ? { decision: request.decision } : {}),
             requestDigest,
             revision: this.state.revision + 1,
           };
           validateMessage(this.state, message);
+          if (message.decision === "continue" && this.options.execution) {
+            const backend = this.state.workers[from.worker].backend;
+            if (!this.options.execution.backends[backend]?.capabilities.steer)
+              throw new DomainError(
+                "unsupported",
+                `Backend ${backend} cannot receive answers while working; use decision: wait`,
+              );
+          }
           if (message.to !== "coordinator" && this.options.execution) {
             const target = this.state.assignments[assignmentKey(message.to)];
             const worker = this.state.workers[message.to.worker];
@@ -426,8 +445,30 @@ export class Runtime {
           });
           return immutable(messageReceipt(message));
         });
+        if (request.decision !== "wait") return receipt;
+        // Release the transaction before waiting so the coordinator can commit its answer.
+        return { ...receipt, answer: await this.waitForDecisionAnswer(id, signal) };
       },
     };
+  }
+
+  private waitForDecisionAnswer(id: string, signal?: AbortSignal): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const check = (): void => {
+        const request = this.state.messages[id];
+        if (signal?.aborted || this.closing)
+          reject(signal?.reason ?? new DomainError("conflict", "Decision wait interrupted"));
+        else if (request.answer) resolve(request.answer.text);
+        else if (!isOpenDecision(this.state, request))
+          reject(new DomainError("conflict", "Decision requester is no longer active"));
+        else return;
+        this.decisionWaiters.delete(check);
+        signal?.removeEventListener("abort", check);
+      };
+      this.decisionWaiters.add(check);
+      signal?.addEventListener("abort", check, { once: true });
+      check();
+    });
   }
 
   async parentCheckpoint(
@@ -548,6 +589,8 @@ export class Runtime {
     const frames = await this.store.appendBatch(entries.map((entry) => entry.input));
     for (const [index, entry] of entries.entries()) {
       this.state = entry.state;
+      const transition = entry.input.transition;
+      if (transition.kind === "settled") this.progress.delete(assignmentKey(transition.result.ref));
       this.committedRequests.set(entry.input.requestId, {
         payloadDigest: entry.input.payloadDigest,
         transitionDigest: entry.transitionDigest,
@@ -555,7 +598,14 @@ export class Runtime {
       const event = this.event(frames[index]);
       const subscribers = [...this.subscribers];
       for (const subscriber of subscribers) this.deliver(subscriber, event);
-      this.execution?.committed(entry.input.transition, this.state);
+      if (
+        (transition.kind === "accepted" && transition.decisions) ||
+        transition.kind === "control_accepted" ||
+        transition.kind === "assignment_state" ||
+        transition.kind === "settled"
+      )
+        for (const check of this.decisionWaiters) check();
+      this.execution?.committed(transition, this.state);
     }
     await this.checkpoint();
   }
@@ -702,6 +752,11 @@ export class Runtime {
     const request = waitRequestSchema.parse(input);
     const captured = await this.serialize(async () => {
       this.authorize(caller, false);
+      if (request.includeDecisions && caller.kind === "worker")
+        throw new DomainError(
+          "capability_denied",
+          "Coordinator decision requests are outside the child wait scope",
+        );
       const cursor = this.state.revision;
       const workers = request.workers ?? Object.keys(this.state.workers);
       for (const worker of workers)
@@ -746,10 +801,37 @@ export class Runtime {
           return stored ? [[assignmentKey(ref), stored.result] as const] : [];
         }),
       );
-      const response = (status: WaitResult["status"], revision = cursor): WaitResult =>
-        immutable({ status, targets, results: [...results.values()], cursor: revision });
+      const pendingDecisions = () =>
+        Object.values(this.state.messages)
+          .filter(
+            (message) =>
+              isOpenDecision(this.state, message) &&
+              decisionInScope(this.state, message.from, targetKeys),
+          )
+          .map((message) => ({
+            decisionId: message.id,
+            from: message.from,
+            question: message.text,
+          }));
+      const response = (
+        status: WaitResult["status"],
+        revision = cursor,
+        decisions?: WaitResult["decisions"],
+      ): WaitResult =>
+        immutable({
+          status,
+          targets,
+          results: [...results.values()],
+          cursor: revision,
+          ...(decisions ? { decisions } : {}),
+        });
       if (signal?.aborted || this.closing)
         return { completion: Promise.resolve(response("aborted")) };
+      if (request.includeDecisions) {
+        const decisions = pendingDecisions();
+        if (decisions.length)
+          return { completion: Promise.resolve(response("decision_requested", cursor, decisions)) };
+      }
       if (!targets.length) return { completion: Promise.resolve(response("nothing_pending")) };
       if (!request.next && targets.length === results.size)
         return { completion: Promise.resolve(response("settled")) };
@@ -759,14 +841,29 @@ export class Runtime {
       });
       let unsubscribe = (): void => {};
       const cancel = (): void => finish("aborted", this.state.revision);
-      const finish = (status: WaitResult["status"], revision: number): void => {
+      const finish = (
+        status: WaitResult["status"],
+        revision: number,
+        decisions?: WaitResult["decisions"],
+      ): void => {
         unsubscribe();
         signal?.removeEventListener("abort", cancel);
         this.waitCancellations.delete(cancel);
-        complete(response(status, revision));
+        complete(response(status, revision, decisions));
       };
       unsubscribe = this.subscribe({ since: cursor }, caller, (event) => {
-        if (event.kind !== "committed" || event.transition.kind !== "settled") return;
+        if (event.kind !== "committed") return;
+        if (
+          request.includeDecisions &&
+          event.transition.kind === "message_sent" &&
+          event.transition.message.decision &&
+          decisionInScope(this.state, event.transition.message.from, targetKeys)
+        ) {
+          const { id, from, text } = event.transition.message;
+          finish("decision_requested", event.revision, [{ decisionId: id, from, question: text }]);
+          return;
+        }
+        if (event.transition.kind !== "settled") return;
         const result = event.transition.result;
         const key = assignmentKey(result.ref);
         if (!targetKeys.has(key)) return;
@@ -803,11 +900,19 @@ export class Runtime {
         ownerEpoch: this.store.owner.epoch,
         revision: this.state.revision,
         snapshot: this.state,
+        ...(this.progress.size ? { progress: [...this.progress.values()] } : {}),
       });
     } else {
       const frames = this.store.frames;
       for (const frame of frames)
         if (frame.record.revision > request.since) this.deliver(subscriber, this.event(frame));
+      for (const progress of this.progress.values())
+        this.deliver(subscriber, {
+          ...progress,
+          schemaVersion: 1,
+          ownerEpoch: this.store.owner.epoch,
+          revision: this.state.revision,
+        });
     }
     return () => {
       subscriber.active = false;
@@ -862,19 +967,24 @@ export class Runtime {
 
   private publishActivity(
     ref: AssignmentRef,
-    observation: Extract<BackendObservation, { kind: "activity" }>,
+    observation: Extract<BackendObservation, { kind: "activity" | "progress" }>,
   ): void {
     const event: RuntimeEvent = {
       schemaVersion: 1,
-      kind: "activity",
-      source: observation.source,
-      ordinal: observation.ordinal,
+      ...observation,
       ownerEpoch: this.store.owner.epoch,
       revision: this.state.revision,
       ref,
-      text: observation.text,
-      ...(observation.snapshot ? { snapshot: true as const } : {}),
     };
+    if (observation.kind === "progress") {
+      const key = assignmentKey(ref);
+      if (
+        this.state.assignments[key]?.execution.phase === "ended" ||
+        (this.progress.get(key)?.ordinal ?? -1) >= observation.ordinal
+      )
+        return;
+      this.progress.set(key, { ...observation, ref });
+    }
     const subscribers = [...this.subscribers];
     for (const subscriber of subscribers) this.deliver(subscriber, event);
   }
@@ -1019,6 +1129,7 @@ export class Runtime {
   async close(request: ShutdownRequest = { reason: "Runtime closed" }): Promise<ShutdownReceipt> {
     if (this.shutdown) return this.shutdown;
     this.closing = true;
+    for (const check of this.decisionWaiters) check();
     this.shutdown = (async (): Promise<ShutdownReceipt> => {
       const confirmed = (await this.execution?.close(request.reason)) ?? true;
       const applicationConfirmed = (await this.applications?.close()) ?? true;

@@ -3,6 +3,7 @@ import {
   assignmentKey,
   commandEnvelopeSchema,
   type Assignment,
+  type AssignmentProgress,
   type AssignmentRef,
   type CommandEnvelope,
   type CommandReceipt,
@@ -23,11 +24,13 @@ import {
   assignments,
   fleetFilters,
   matchesFleetFilter,
+  needsAttention,
   steerTarget,
   type FleetFilter,
 } from "./projection.ts";
 import { type PaletteName } from "./palette.ts";
-import { assignmentTree } from "./tree.ts";
+import { activityStepMs, assignmentTree } from "./tree.ts";
+import { CompletionRows, pelletStepMs } from "./completion.ts";
 
 export type ScreenName = "main" | "fleet" | "conversation";
 export type MessageAction = "steer" | "follow_up" | "continue";
@@ -129,6 +132,7 @@ export class ScreenRouter {
     search: string;
     filter: FleetFilter;
     ascii: boolean;
+    completing: number;
     revealed?: AssignmentRef;
     nodes: ReturnType<typeof assignmentTree>;
   };
@@ -153,6 +157,7 @@ export class ScreenRouter {
   expandedTools = false;
   showThinking = false;
   readonly activity = new Map<string, string>();
+  readonly progress = new Map<string, AssignmentProgress>();
   private readonly drafts = new Map<string, string>();
   private readonly conversations = new Map<string, ConversationView>();
   private readonly messages = new Map<string, PendingMessage>();
@@ -168,6 +173,8 @@ export class ScreenRouter {
   private localPalette = false;
   private readonly observedTimes = new Map<string, { start: number; end?: number }>();
   private ticker?: NodeJS.Timeout;
+  private tickMs = 0;
+  readonly completions = new CompletionRows();
   private lastConversationRead = -Infinity;
   private lastPreviewRead = -Infinity;
   private previewTimer?: NodeJS.Timeout;
@@ -181,6 +188,7 @@ export class ScreenRouter {
     this.options = options;
     const initial = source.snapshot();
     this.state = indexSnapshot(initial.snapshot);
+    this.restoreProgress(initial.progress);
     this.epoch = initial.ownerEpoch;
     this.palette = options.ui?.palette ?? "inherit";
     this.mode = options.mode ?? "lean";
@@ -205,13 +213,17 @@ export class ScreenRouter {
     this.connected = true;
     this.disconnect = this.source.onConnectionChange?.((connected) => {
       this.connectionAvailable = connected;
-      if (!connected) this.clearTiming();
+      if (!connected) {
+        this.clearTiming();
+        this.progress.clear();
+      }
       this.cancelPreview();
       this.notice = connected
         ? "Reconnected to the owning runtime; retained drafts are unchanged"
         : "Connection unavailable. /reconnect refreshes authority; drafts and pending receipt IDs are retained";
       this.changed();
       if (connected) {
+        this.receive(this.source.snapshot());
         if (this.selected) this.preview().revision = undefined;
         this.schedulePreview();
       }
@@ -226,6 +238,7 @@ export class ScreenRouter {
     this.updateTicker();
     return () => {
       this.listeners.delete(listener);
+      if (!this.listeners.size) this.completions.clear();
       this.updateTicker();
     };
   }
@@ -234,9 +247,14 @@ export class ScreenRouter {
     this.options.changed?.();
     for (const listener of this.listeners) listener();
   }
+  private restoreProgress(progress: readonly AssignmentProgress[] = []): void {
+    this.progress.clear();
+    for (const item of progress) this.progress.set(assignmentKey(item.ref), item);
+  }
   private receive(event: RuntimeEvent): void {
     if (!this.alive) return;
     const changedOwner = event.ownerEpoch !== this.epoch;
+    if (event.kind === "progress" && changedOwner) return;
     if (changedOwner) {
       this.epoch = event.ownerEpoch;
       this.clearDependencyNavigation();
@@ -244,12 +262,27 @@ export class ScreenRouter {
       this.patchRequest?.abort();
       this.generation++;
       this.activity.clear();
+      this.progress.clear();
       this.activityOrdinals.clear();
       this.cancelPreview();
       this.previews.clear();
       this.clearTiming();
       for (const conversation of this.conversations.values())
         if (conversation.page) conversation.page.cursor = undefined;
+    }
+    if (event.kind === "progress") {
+      const key = assignmentKey(event.ref);
+      const assignment = this.state.assignments[key];
+      if (
+        !this.connectionAvailable ||
+        !assignment ||
+        assignment.execution.phase === "ended" ||
+        event.ordinal <= (this.progress.get(key)?.ordinal ?? -1)
+      )
+        return;
+      this.progress.set(key, event);
+      if (this.screen === "fleet") this.changed();
+      return;
     }
     if (event.kind === "activity") {
       if (this.mode === "lean") return;
@@ -272,6 +305,7 @@ export class ScreenRouter {
       if (!changedOwner && event.revision < this.state.revision) return;
       if (event.revision !== this.state.revision) this.clearTiming();
       this.state = indexSnapshot(event.snapshot);
+      this.restoreProgress(event.progress);
     } else if (!changedOwner && event.revision <= this.state.revision) return;
     else if (!changedOwner && event.revision === this.state.revision + 1)
       this.state = reduce(this.state, event.transition, event.revision);
@@ -294,6 +328,17 @@ export class ScreenRouter {
     }
     if (event.kind === "committed" && event.transition.kind === "settled") {
       const from = event.transition.result.ref;
+      const key = assignmentKey(from);
+      this.progress.delete(key);
+      const execution = event.transition.result.execution;
+      if (
+        this.source.capabilities.live &&
+        this.motion === "full" &&
+        execution.phase === "ended" &&
+        execution.reason === "completed" &&
+        execution.cleanup === "confirmed"
+      )
+        this.completions.finish(key);
       const targets = dependentAssignments(this.state, assignmentKey(from))
         .filter(
           (a) =>
@@ -379,8 +424,10 @@ export class ScreenRouter {
       const pending: DependencyLink[] = [];
       for (const link of related) {
         const execution = link.assignment.execution;
-        if (execution.phase !== "ended") pending.push(link);
-        else if (execution.reason === "completed" && execution.cleanup === "confirmed")
+        if (execution.phase !== "ended") {
+          if (needsAttention(this.state, link.assignment)) attention.push(link);
+          else pending.push(link);
+        } else if (execution.reason === "completed" && execution.cleanup === "confirmed")
           completed.push(link);
         else attention.push(link);
       }
@@ -428,17 +475,54 @@ export class ScreenRouter {
       this.navigate("conversation", row.assignment.ref);
     }
   }
+  get selectedHasChildren(): boolean {
+    const key = this.selected && assignmentKey(this.selected);
+    return this.fleetNodes().some(
+      (node) => assignmentKey(node.assignment.ref) === key && node.hasChildren,
+    );
+  }
   moveFleetBranch(direction: "left" | "right"): void {
+    if (!this.selected) return;
+    const parent = this.state.workers[this.selected.worker]?.parentAssignment;
     if (direction === "left") {
-      if (this.focusedDependency) this.focusDependency();
-      else if (this.selected && !this.selectedBranchCollapsed) {
-        const key = assignmentKey(this.selected);
-        const node = this.fleetNodes().find((row) => assignmentKey(row.assignment.ref) === key);
-        if (node?.hasChildren || this.hasDependencies) this.collapse(true);
+      if (this.focusedDependency) {
+        const focused = this.dependencyRows().find((row) => row.key === this.focusedDependency);
+        if (focused)
+          this.dependencyDisclosure.set(this.disclosureKey(this.selected, focused.group), false);
+        this.focusDependency();
+      } else if (
+        parent &&
+        this.fleetNodes().some(
+          (node) => assignmentKey(node.assignment.ref) === assignmentKey(parent),
+        )
+      ) {
+        this.revealedAssignment = undefined;
+        const key = assignmentKey(parent);
+        this.collapsed.add(key);
+        this.fleetCache = undefined;
+        if (!this.fleetNodes().some((node) => assignmentKey(node.assignment.ref) === key))
+          this.revealedAssignment = parent;
+        this.navigate("fleet", parent);
+      } else if (
+        !this.selectedBranchCollapsed &&
+        (this.selectedHasChildren || this.hasDependencies)
+      ) {
+        this.collapse(true);
       }
       return;
     }
-    if (this.selectedBranchCollapsed) this.collapse(false);
+    if (this.selectedBranchCollapsed) return this.collapse(false);
+    if (!this.focusedDependency && this.selectedHasChildren) {
+      const key = assignmentKey(this.selected);
+      const child = this.fleetNodes().find(({ assignment }) => {
+        const childParent = this.state.workers[assignment.ref.worker]?.parentAssignment;
+        return childParent && assignmentKey(childParent) === key;
+      });
+      if (child) {
+        this.navigate("fleet", child.assignment.ref);
+        return;
+      }
+    }
     const rows = this.dependencyRows();
     const focused = rows.find((row) => row.key === this.focusedDependency);
     if (focused?.kind === "link") {
@@ -449,6 +533,10 @@ export class ScreenRouter {
     const group = focused ?? (groups.length === 1 ? groups[0] : undefined);
     if (!group) {
       if (groups.length) this.focusDependency(groups[0].key);
+      else if (this.inspectorVisible) {
+        this.inspectorFocus = true;
+        this.changed();
+      }
       return;
     }
     if (!group.expanded) this.toggleDependencyGroup(group.key, true);
@@ -570,6 +658,7 @@ export class ScreenRouter {
       )
         this.selected = this.preferredSelection(rows);
     }
+    if (this.screen !== screen) this.completions.clear();
     this.screen = screen;
     if (location) {
       this.focusedDependency = location.focusedDependency;
@@ -630,10 +719,12 @@ export class ScreenRouter {
   fleetAssignments(): ReturnType<typeof assignments> {
     return this.fleetNodes().map((node) => node.assignment);
   }
-  fleetNodes(ascii = false): ReturnType<typeof assignmentTree> {
+  fleetNodes(ascii = false, showCompletions = false): ReturnType<typeof assignmentTree> {
+    const completing = showCompletions ? this.completions.size : 0;
     const cached = this.fleetCache;
     if (
       cached?.state === this.state &&
+      cached.completing === completing &&
       cached.filter === this.filter &&
       cached.search === this.search &&
       cached.revealed === this.revealedAssignment &&
@@ -642,7 +733,11 @@ export class ScreenRouter {
       return cached.nodes;
     const include = new Set(
       this.matchingAssignments()
-        .filter((assignment) => matchesFleetFilter(this.state, assignment, this.filter))
+        .filter(
+          (assignment) =>
+            matchesFleetFilter(this.state, assignment, this.filter) ||
+            (completing > 0 && this.completions.has(assignmentKey(assignment.ref))),
+        )
         .map((assignment) => assignmentKey(assignment.ref)),
     );
     const revealedPath = new Set<string>();
@@ -671,6 +766,7 @@ export class ScreenRouter {
       return true;
     });
     this.fleetCache = {
+      completing,
       state: this.state,
       search: this.search,
       filter: this.filter,
@@ -681,14 +777,12 @@ export class ScreenRouter {
     return visible;
   }
   moveFleetSelection(amount: number): void {
-    if (this.focusedDependency) {
+    if (this.focusedDependency || amount > 0) {
       const dependencies = this.dependencyRows();
       const index = dependencies.findIndex((row) => row.key === this.focusedDependency);
-      if (index >= 0) {
-        const next = dependencies[index + amount];
-        if (next) this.focusDependency(next.key);
-        return;
-      }
+      const next = dependencies[index + amount];
+      if (next) return this.focusDependency(next.key);
+      if (index >= 0 && amount < 0) return this.focusDependency();
     }
     const rows = this.fleetNodes();
     const selected = this.selected && assignmentKey(this.selected);
@@ -785,29 +879,35 @@ export class ScreenRouter {
     return timing ? Math.max(0, (timing.end ?? this.now()) - timing.start) : undefined;
   }
   private updateTicker(): void {
+    const interval = this.completions.size
+      ? pelletStepMs
+      : this.motion === "full"
+        ? activityStepMs
+        : 1000;
     const running =
       this.listeners.size > 0 &&
-      (Boolean(this.release) ||
+      (this.completions.size > 0 ||
+        Boolean(this.release) ||
         Object.values(this.state.assignments).some(
           (assignment) => !["queued", "ended"].includes(assignment.execution.phase),
         ));
-    if (running && !this.ticker) {
-      this.ticker = setInterval(
-        () => {
-          this.changed();
-          if (this.release && this.now() - this.release.at >= 2200) {
-            this.release = undefined;
-            this.updateTicker();
-          }
-          this.refreshFollowingConversation();
-          if (this.now() - this.lastPreviewRead >= 1000) this.schedulePreview();
-        },
-        this.motion === "full" ? 250 : 1000,
-      );
-      this.ticker.unref();
-    } else if (!running && this.ticker) {
+    if (this.ticker && (!running || interval !== this.tickMs)) {
       clearInterval(this.ticker);
       this.ticker = undefined;
+    }
+    if (running && !this.ticker) {
+      this.tickMs = interval;
+      this.ticker = setInterval(() => {
+        this.completions.expire();
+        const releaseEnded = this.release && this.now() - this.release.at >= 2200;
+        if (releaseEnded) this.release = undefined;
+        if (releaseEnded || (interval === pelletStepMs && !this.completions.size))
+          this.updateTicker();
+        this.changed();
+        this.refreshFollowingConversation();
+        if (this.now() - this.lastPreviewRead >= 1000) this.schedulePreview();
+      }, interval);
+      this.ticker.unref();
     }
   }
   private refreshFollowingConversation(): void {
@@ -835,6 +935,7 @@ export class ScreenRouter {
     void this.loadConversation().catch((error: unknown) => this.fail(error));
   }
   private clearTiming(): void {
+    this.completions.clear();
     this.release = undefined;
     this.observedTimes.clear();
     if (this.ticker) clearInterval(this.ticker);
@@ -862,6 +963,7 @@ export class ScreenRouter {
       this.ticker = undefined;
     }
     this.motion = config.ui.motion;
+    if (this.motion !== "full") this.completions.clear();
     this.updateTicker();
     if (!this.localPalette) this.palette = config.ui.palette;
     Object.assign(this.keys, config.ui.keys);
@@ -1137,7 +1239,7 @@ export class ScreenRouter {
       await this.reconnect();
       return;
     }
-    this.state = indexSnapshot(this.source.snapshot().snapshot);
+    this.receive(this.source.snapshot());
     if (this.screen === "conversation" && this.selected) await this.loadConversation();
     if (this.screen === "fleet") await this.loadPreview();
     else this.refreshView();
@@ -1152,7 +1254,7 @@ export class ScreenRouter {
     }
     try {
       await this.source.reconnect();
-      this.state = indexSnapshot(this.source.snapshot().snapshot);
+      this.receive(this.source.snapshot());
       await this.loadConversation();
     } catch (error) {
       this.fail(error);
@@ -1164,9 +1266,9 @@ export class ScreenRouter {
     this.changed();
     return { status: "error", error: { code: "conflict", message } };
   }
-  async submit(action: MessageAction = "steer"): Promise<SurfaceReply> {
+  async submit(action: MessageAction = "steer", text = this.draft): Promise<SurfaceReply> {
     const ref = this.selected;
-    const text = this.draft;
+    const submittedDraft = this.draft;
     if (!ref || !text.trim()) return this.unavailable("Select an assignment and enter a message");
     if (!this.source.capabilities.control)
       return this.unavailable("This source is read-only; attach to the owning runtime for control");
@@ -1215,7 +1317,7 @@ export class ScreenRouter {
       reply.response.result.status === "accepted"
     ) {
       this.messages.delete(ref.worker);
-      if (this.drafts.get(ref.worker) === text) this.drafts.set(ref.worker, "");
+      this.clearDraft(ref.worker, submittedDraft);
       const receipt = reply.response.result;
       const target = receipt.assignments[0];
       const messageId =

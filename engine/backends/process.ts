@@ -182,9 +182,15 @@ export class ProcessHandle implements BackendHandle {
   private async pollObservations(): Promise<void> {
     let ordinal = 1;
     let activityOrdinal = -1;
+    let progressOrdinal = -1;
     let inspectAt = 0;
     while (this.active) {
       const version = this.signals.version;
+      const progress = this.signals.progress;
+      if (progress && progress.ordinal > progressOrdinal) {
+        progressOrdinal = progress.ordinal;
+        await this.observe(progress);
+      }
       const activity = this.signals.activity;
       if (activity && activity.ordinal > activityOrdinal) {
         activityOrdinal = activity.ordinal;

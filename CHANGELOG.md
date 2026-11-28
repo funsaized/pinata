@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.0.8
+
+- Workers can ask the coordinator for a decision and either wait for an answer
+  or keep working. Use `pinata_wait` with `includeDecisions: true` to return when
+  a targeted assignment or one of its descendants asks a question. Use
+  `pinata_answer` to answer one or more questions together. Saved runs retain
+  the exchange.
+- The fleet marks open questions with `?`. Press `d` to read the exchange.
+  The inspector shows live model and tool activity from both Pi backends.
+  Arrow keys follow fleet branches and dependency rows.
+- The completion animation keeps worker text visible until it passes over it.
+  Results are available in Finished while the animation runs. If a model hits
+  its output limit before reporting, Piñata records a failure and keeps the
+  partial response.
+- Type `@` in the coordinator editor to find workers and agents before file
+  matches. Both editors suggest slash commands for the current context.
+  Invalid worker commands stay in the draft, and extra arguments to `/stop`
+  are rejected before it acts on the selected worker.
+- Open the searchable picker with `/pinata palette`. Browse schemas locally
+  without using coordinator model context. Result cards reopen the original
+  run and assignment even when another run reuses a worker name.
+
 ## 0.0.7
 
 - Press Right to browse dependency groups, Enter to open a linked conversation,

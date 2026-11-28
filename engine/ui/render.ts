@@ -5,6 +5,7 @@ import { resolveConversationKeys, type ConversationKeys } from "./keys.ts";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { assignmentKey, type AssignmentRef, type CoreState } from "../contracts/index.ts";
 import {
+  assignmentDecisions,
   assignmentDetails,
   assignments,
   executionLabel,
@@ -12,12 +13,20 @@ import {
   needsAttention,
   isFinished,
   queueLabel,
+  resultStatus,
   steerTarget,
 } from "./projection.ts";
 import { agentAccent, modelAccent, type Paint } from "./palette.ts";
 import { detailRows, displayText, fit, lines, padded } from "./text.ts";
 import type { ConversationView, ScreenRouter } from "./router.ts";
-import { activityIndicator, assignmentTree, type TreeNode } from "./tree.ts";
+import {
+  activityIndicator,
+  activityStepMs,
+  assignmentTree,
+  restingMarker,
+  type TreeNode,
+} from "./tree.ts";
+import type { CompletionRows } from "./completion.ts";
 
 export type RenderOptions = {
   width: number;
@@ -29,6 +38,7 @@ export type RenderOptions = {
   projectRuns?: boolean;
   presentation?: ConversationPresentation;
   conversationKeys?: ConversationKeys;
+  commandMenu?: boolean;
 };
 function record(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -89,11 +99,16 @@ type TreeOptions = {
   collapsed?: ReadonlySet<string>;
   dependencies?: boolean;
   showModels?: boolean;
+  completions?: CompletionRows;
 };
-type TreeLine = { text: string; ref: AssignmentRef; worker: boolean };
-function treeLines(state: CoreState, nodes: TreeNode[], options: TreeOptions): TreeLine[] {
+type TreeLine = { text: string; ref: AssignmentRef; worker: boolean; track?: string };
+function treeLines(
+  state: CoreState,
+  nodes: TreeNode[],
+  options: TreeOptions,
+  now: number,
+): TreeLine[] {
   const output: TreeLine[] = [];
-  const now = performance.now();
   const models = Object.values(state.workers).flatMap((worker) =>
     worker.model ? [`${worker.model.provider}/${worker.model.id}`] : [],
   );
@@ -108,7 +123,14 @@ function treeLines(state: CoreState, nodes: TreeNode[], options: TreeOptions): T
   let activeRow = 0;
   for (const node of nodes) {
     const assignment = node.assignment;
+    const key = assignmentKey(assignment.ref);
+    const sweep = options.completions?.render(key, options.width, options.paint);
+    if (sweep !== undefined) {
+      output.push({ text: sweep, ref: assignment.ref, worker: true });
+      continue;
+    }
     const worker = state.workers[assignment.ref.worker];
+    const question = assignmentDecisions(state, assignment.ref)?.open[0];
     const status = executionLabel(assignment);
     const elapsed = options.elapsed?.(assignment.ref);
     const duration =
@@ -127,11 +149,7 @@ function treeLines(state: CoreState, nodes: TreeNode[], options: TreeOptions): T
           cycle,
           options.ascii ?? false,
         )
-      : assignment.execution.phase === "queued"
-        ? node.prefix + "  o  "
-        : assignment.execution.phase === "ended" && assignment.execution.reason === "completed"
-          ? node.prefix + "  +  "
-          : node.prefix + "  !  ";
+      : node.prefix + `  ${restingMarker(assignment, Boolean(options.ascii))}  `;
     const marker = `${activity} ${isSelected ? ">" : " "}`;
     let modelLabel = "";
     if (options.showModels)
@@ -160,17 +178,22 @@ function treeLines(state: CoreState, nodes: TreeNode[], options: TreeOptions): T
       ) +
       identity;
     const suffix =
+      (question
+        ? options.paint(question.decision === "wait" ? "warning" : "accent.cyan", "  ?")
+        : "") +
       options.paint(statusToken(status), ` · ${status}`) +
       options.paint("muted", options.width >= 60 ? duration : "");
     const identityWidth = Math.max(1, options.width - visibleWidth(suffix));
+    const text = fit(prefix, identityWidth) + suffix;
     output.push({
-      text: fit(prefix, identityWidth) + suffix,
+      text,
       ref: assignment.ref,
       worker: true,
+      track: active ? activity : undefined,
     });
     if (options.dependencies && assignment.after.length) {
       const dependencyText =
-        "after: " + assignment.after.map((ref) => `${ref.worker}/${ref.assignment}`).join(", ");
+        "Depends on " + assignment.after.map((ref) => `${ref.worker}/${ref.assignment}`).join(", ");
       for (const line of lines(
         dependencyText,
         Math.max(1, options.width - visibleWidth(node.continuation)),
@@ -183,10 +206,7 @@ function treeLines(state: CoreState, nodes: TreeNode[], options: TreeOptions): T
     }
     if (assignment.execution.phase === "queued") {
       output.push({
-        text: options.paint(
-          "muted",
-          `${node.continuation}waiting: ${queueLabel(state, assignment)}`,
-        ),
+        text: options.paint("muted", `${node.continuation}${queueLabel(state, assignment, true)}`),
         ref: assignment.ref,
         worker: false,
       });
@@ -220,6 +240,8 @@ function treeLines(state: CoreState, nodes: TreeNode[], options: TreeOptions): T
   return output;
 }
 export function fleetWidget(state: CoreState, options: TreeOptions): string[] {
+  const completing = options.motion === "full" ? options.completions : undefined;
+  completing?.begin("main");
   const all = assignments(state);
   const active = all.filter(
     (assignment) => !["queued", "ended"].includes(assignment.execution.phase),
@@ -227,24 +249,43 @@ export function fleetWidget(state: CoreState, options: TreeOptions): string[] {
   const queued = all.filter((assignment) => assignment.execution.phase === "queued").length;
   const attention = all.filter(
     (assignment) => !isFinished(assignment) && needsAttention(state, assignment),
-  ).length;
-  if (!active && !queued && !attention) return [];
+  );
+  const cleanup = attention.filter((assignment) => assignment.execution.phase === "ended").length;
+  const visibleCount = active + cleanup + (completing?.size ?? 0);
+  if (!visibleCount && !queued) return [];
   const nodes = assignmentTree(state, {
     ascii: options.ascii,
     activeOnly: true,
+    completing,
     finished: false,
     attention: true,
     limit: 4,
-    trailing: queued > 0 || active > 4,
+    trailing: queued > 0 || visibleCount > 4,
   }).slice(0, 8);
   const output = [options.paint("accent.cyan", `${options.ascii ? "*" : "●"} Agents`)];
-  output.push(...treeLines(state, nodes, options).map((row) => row.text));
-  if (attention) output.push(options.paint("error", `${attention} need attention`));
-  if (active + attention > 4)
+  const now = performance.now();
+  const rows = treeLines(state, nodes, { ...options, completions: completing }, now);
+  const positioned =
+    completing?.positionRows(rows, (row) => (row.worker ? assignmentKey(row.ref) : undefined)) ??
+    rows;
+  for (const [position, row] of positioned.entries()) {
+    if (row.track)
+      completing?.remember(assignmentKey(row.ref), {
+        line: row.text,
+        track: row.track,
+        start: 0,
+        position,
+        frame: Math.floor(now / activityStepMs),
+      });
+    output.push(row.text);
+  }
+  if (attention.length)
+    output.push(options.paint(cleanup ? "error" : "warning", `${attention.length} need attention`));
+  if (visibleCount > 4)
     output.push(
       options.paint(
         "muted",
-        `${options.ascii ? "|-" : "├─"} ${active + attention - 4} more assignments · /pinata`,
+        `${options.ascii ? "|-" : "├─"} ${visibleCount - 4} more assignments · /pinata`,
       ),
     );
   if (queued)
@@ -284,12 +325,14 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
     options.fleetRegions.inspector = undefined;
     options.fleetRegions.filters = [];
   }
-  if (router.actions || router.help)
+  if (router.actions || router.help) {
+    router.completions.clear();
     return (
       router.actions
         ? actionsPanel(router, width, height, paint)
         : helpPanel(router, width, height, paint, conversationKeys)
     ).map((line) => paint("background", padded(line, width)));
+  }
 
   const header =
     paint("accent.pink", options.ascii ? "[P] Pinata" : "✦ Pinata") +
@@ -307,6 +350,8 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
       ...options,
       width,
       mode: router.mode,
+      motion: router.motion,
+      completions: router.source.capabilities.live ? router.completions : undefined,
       activity: router.activity,
       elapsed: (ref) => router.observedElapsed(ref),
     }).slice(0, height);
@@ -387,7 +432,7 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
         ...(result &&
         result.execution.phase === "ended" &&
         (result.execution.reason !== "completed" || !view.page?.entries.length)
-          ? [`Result · ${result.execution.reason}`, result.summary, ""]
+          ? [`Result · ${resultStatus(result.execution)}`, result.summary, ""]
           : []),
         ...(router.transcriptDetails
           ? [detailRows(assignmentDetails(router.state, assignment), width, paint)]
@@ -499,9 +544,10 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
   if (router.screen === "fleet") {
     if (inspectorFocus) horizontal.push(["←", "list"]);
     else if (dependencyFocus)
-      horizontal.push(["←", "assignment"], ["→", focusedGroup ? "enter group" : "show in fleet"]);
-    else if (router.hasDependencies) horizontal.push(["→", "dependencies"]);
+      horizontal.push(["←", "fold group"], ["→", focusedGroup ? "enter group" : "show in fleet"]);
     else if (router.selectedBranchCollapsed) horizontal.push(["→", "expand branch"]);
+    else if (router.selectedHasChildren) horizontal.push(["→", "first child"]);
+    else if (router.hasDependencies) horizontal.push(["→", "dependencies"]);
     else if (options.fleetRegions?.inspector) horizontal.push(["→", "details"]);
   }
   const preview = router.screen === "conversation" && !router.selected;
@@ -512,9 +558,7 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
       ]
     : router.screen === "fleet"
       ? [
-          ...(width >= 30
-            ? [["↑↓", inspectorFocus ? "scroll" : dependencyFocus ? "links" : "select"] as Shortcut]
-            : []),
+          ...(width >= 30 ? [["↑↓", inspectorFocus ? "scroll" : "select"] as Shortcut] : []),
           ...(!router.focusedDependency ? [["a", "actions"] as Shortcut] : []),
           ["?", "help"],
           ["Esc", "back"],
@@ -530,12 +574,18 @@ export function renderScreen(router: ScreenRouter, options: RenderOptions): stri
               ["?", "help"],
               ["Esc", "back"],
             ]
-          : [
-              ["Enter", router.source.capabilities.control ? "send" : "command"],
-              ["Tab", "transcript"],
-              ["?", "help (empty message)"],
-              ["Esc", "back"],
-            ];
+          : options.commandMenu
+            ? [
+                ["↑↓", "choose"],
+                ["Tab", "insert"],
+                ["Esc", "close list"],
+              ]
+            : [
+                ["Enter", router.source.capabilities.control ? "send" : "command"],
+                ["Tab", "transcript"],
+                ["?", "help (empty message)"],
+                ["Esc", "back"],
+              ];
   const extra: Shortcut[] = router.searching
     ? [
         ["Ctrl+U", "clear"],

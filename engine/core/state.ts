@@ -81,6 +81,12 @@ function reduceTransition(state: CoreState, value: Transition, revision: number)
       return reduceApplication(state, transition, revision);
     case "accepted": {
       validateAcceptance(state, transition, revision);
+      if (transition.decisions) {
+        next.messages = { ...state.messages };
+        for (const { decisionId, text } of transition.decisions.answers) {
+          next.messages[decisionId] = { ...state.messages[decisionId], answer: { text, revision } };
+        }
+      }
       next.workers = { ...state.workers };
       next.assignments = { ...state.assignments };
       next.latest = { ...state.latest };

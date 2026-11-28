@@ -168,25 +168,34 @@ automatic returns until the next user turn. Closing the session stops wake-ups;
 reopening it restores retained watches. These continuations use the shared engine's
 settled results. Embedded hosts own their notification policy.
 
-The coordinator shows a compact Agents tree while work is active or queued. Real
-children branch beneath their parent; dependencies appear as `after:` references.
-Finished work disappears from the widget. `/pinata` opens the full fleet.
+The coordinator shows a compact Agents tree while work is active or queued. Child
+assignments branch beneath their parent.
+Open the full fleet with `/pinata`.
+Type `/pinata` followed by a space in the main prompt to see its subcommands.
 
-The fleet highlights the selected row and shows its last assistant message and
-prompt in a details pane. Wide terminals place it on the right. Smaller terminals
-stack it below the list. Right focuses details when the row has no dependencies
+While a worker runs, its fleet row shows the model turn or tool in progress and how
+long it has been active. Parallel tool calls show a count. The selected worker’s
+details include the last action and its duration, the prompt, and the latest
+assistant message when one exists. Wide terminals place this pane on the right.
+Smaller terminals stack it below the list. Right focuses details when the row has no dependencies
 or folded branch to open. Press `d` to expand and focus details on any assignment.
 Use Up and Down to scroll, and Left to return to the list. Press `d` again to
 collapse details. Cleanup problems stay visible in the preview. Page keys scroll
 the focused pane, and the wheel scrolls the pane under the pointer. Enter on an
 assignment opens its conversation.
 
-The selected assignment groups its links under **Prerequisites** and
-**Dependents**. A group starts folded when every assignment completed with
-confirmed cleanup. Open a group to see each assignment’s status. A Braille
-spinner marks running work, an hourglass marks queued work, and a checkmark
-marks completed work. Failures and cleanup problems carry text labels.
-Reduced motion uses a static running icon. ASCII mode uses text glyphs.
+The selected assignment groups its links under **Depends on** and **Needed by**.
+A queued row shows how many assignments it’s waiting on. When only one remains,
+the row names it. A group starts folded when every assignment completed with
+confirmed cleanup. Open a group to see each assignment’s status.
+
+The moving `c` marks active work in the widget, fleet rows and dependency links.
+An open circle marks queued work. When a visible worker completes with confirmed
+cleanup, pellets appear just ahead of the `c` in the worker’s name and activity.
+The `c` keeps its pace of one cell per quarter second. A line of dashes remains
+for two beats before the row clears. The result is already available in Finished.
+Failures and cleanup problems carry text labels. Reduced or disabled motion
+keeps the track still and skips the finish animation. ASCII mode uses text glyphs.
 
 Use Up and Down to move between assignments. Press Right to enter dependencies.
 If there’s one group, this opens it and moves to its first link. Inside
@@ -213,7 +222,13 @@ recorded file changes.
 The filter strip counts Unfinished, Working, Queued, Attention and Finished work.
 Working includes preparing, running and stopping; rows keep those exact states.
 Attention includes unresolved cleanup and failed or interrupted assignments that
-are latest for their worker or still have queued dependents. Finished means execution ended
+are latest for their worker or still have queued dependents. It also includes
+assignments with an open question for the coordinator. A `?` marks the worker’s
+row. Select it to read the question and see whether the worker is waiting or
+still working. Press `d` to see every question and the coordinator’s recorded
+answers. To weigh in, steer the coordinator in the main thread.
+
+Finished means execution ended
 with confirmed cleanup, not necessarily success or acceptance. Counts apply after
 search and before branch collapse; parents shown only for context do not add to
 counts. Tab advances to the next status. `h` selects Finished, including earlier
@@ -221,13 +236,16 @@ assignments, and `w` selects Queued. Press `h` or `w` again to restore the previ
 filter and selection. Dependencies do not create parent/child branches.
 
 Search with `/`, apply with Enter, cancel with Escape, or clear with Ctrl+U.
-Cancelling restores the previous query and selection. The Observed column measures
-time since this viewer witnessed execution start. A dash means the start is unknown;
-it is not an estimate of total execution time. Model settings live in the inspector.
+Cancelling restores the previous query and selection. The inspector shows the model
+settings and the time this viewer has observed execution. A dash means the
+viewer missed the start.
 
 Last-message previews use retained assistant text for the selected assignment,
-excluding thinking and tool payloads. Reads are bounded and cached by artifact;
-only the visible selection refreshes. Incomplete evidence and disconnected previews
+excluding thinking and tool payloads. Live action labels work in both UI modes.
+Opening the fleet mid-turn uses the start time reported by the backend. A model
+turn includes request preparation and the provider response. Saved runs retain
+the transcript and results. The viewer bounds preview reads, caches them by artifact
+and refreshes only the visible selection. Incomplete evidence and disconnected previews
 are labeled. A whole-worker checkpoint is never attributed to a later assignment.
 
 Press `r` for runs in this project. Related Git worktrees share a run list, with
@@ -304,11 +322,17 @@ for local commands; messages require a control connection. Earlier assignments
 identify when you need to select the latest assignment to send a message. Invalid
 navigation and replacement commands keep the draft and show usage or target errors.
 
+Type `/` in a worker's message box to see commands for that conversation.
+Use the arrow keys to choose, Tab to insert, and Enter to run the command you
+typed. `Esc` closes the list and keeps your draft.
+
 Inside a worker screen, `/worker <id> [assignment]`, `/assignment <number>`,
 `/fleet` and `/main` navigate. `/steer <text>`, `/follow-up <text>` and
 `/continue <text>` select the message action. `/stop`, `/stop-assignment` and
 `/stop-run` stop the selected agent, one assignment, or the entire fleet in the
-current run, respectively. Stops include child agents, interrupt active work and
+current run, respectively. To stop `scout`, open its conversation and type `/stop`.
+Typing `/stop scout` keeps the draft and shows which agent `/stop` would affect.
+Stops include child agents, interrupt active work and
 cancel queued work. The fleet action includes hidden and filtered agents and works
 without a selected row. Stop requests retain output and file edits; cleanup may take
 time. `/background` releases the
@@ -317,13 +341,19 @@ menu or leaves the view without stopping work.
 
 Other controls are `/inspect`, `/more`, `/refresh`,
 `/recover`, `/reconnect`, `/background`, `/queued`, `/scroll up|down|N`,
-`/palette <name>` and `/help`. `/replace <new-worker-id> <task>` creates a worker
+`/palette [name]` and `/help`. A mistyped slash command stays in the draft.
+To send it literally, use `/steer`, `/follow-up` or `/continue` followed by the text.
+`/replace <new-worker-id> <task>` creates a worker
 with the selected assignment recorded as origin.
 
 ### Agent mentions
 
 Only leading user input is routed. A worker ID is its handle; when no worker
 matches, an exact definition name starts one.
+
+Type `@` at the start of the coordinator prompt to see Piñata workers and agents
+above Pi's file matches. Type part of a name to narrow the list. Press Tab to
+insert the address, then add your message or press Enter to open the agent.
 
 | Input                                                  | Behavior                                                                |
 | ------------------------------------------------------ | ----------------------------------------------------------------------- |
@@ -345,8 +375,11 @@ See [recovery](#recovery) for session loss and retained envelopes.
 
 ### Palettes and accessibility
 
-`/pinata-palette <name>` or `ui.palette` selects a palette. The default, `inherit`,
-uses Pi's theme; the standalone viewer has its own fallback. Available names:
+Type `/pinata palette` or `/pinata-palette` to open the picker. It marks the
+current palette. Type to filter, press Enter to apply a palette, or Escape to
+cancel. In a worker conversation, use `/palette`. To select a palette directly,
+use its name, as in `/pinata palette dracula`. Set `ui.palette` for a persistent
+default. The default `inherit` follows Pi's theme and has a standalone fallback.
 
 ```text
 inherit             pinata              terminal-default
@@ -716,6 +749,12 @@ run in the original trusted validator. Discovery exposes input JSON Schema, whic
 cannot recreate callbacks. Transforms and non-JSON types are rejected. Failed optional
 reports remain as reporting errors; ordinary final text remains valid output.
 
+If the model hits its output limit on its final response before submitting a
+report, the assignment fails with `execution.outputTruncated: true`. The result
+summary keeps the text the model returned, even if it ends mid-sentence. The
+fleet and coordinator show why the response stopped. Usage and cleanup are
+recorded separately.
+
 Workers freeze the selected bootstrap path, source bytes, digest and schema descriptor.
 Missing or changed bootstraps fail before execution. Editing an already loaded module
 requires a fresh host process and worker. Only host code or explicit `--bootstrap`
@@ -753,6 +792,44 @@ Read retained messages with `pinata_status` and
 `{"query":{"kind":"messages","since":0}}`. The returned `cursor` is the next
 `since` value; an optional `worker` filter selects messages sent or received by that
 worker. The query also works through extension RPC, the CLI and saved-run viewer.
+
+#### Ask the coordinator for a decision
+
+When a worker needs a decision, it calls `pinata_message` with a stable message ID
+and a question. A decision goes to the main coordinator, including from nested workers.
+
+```json
+{ "messageId": "parser-policy", "decision": "wait", "text": "Should malformed lines be skipped?" }
+```
+
+With `"wait"`, the worker keeps its assignment and capacity slot. The tool returns
+the coordinator’s text in `answer`. Other workers keep running. A worker with
+independent work can use `"continue"` to return immediately and receive the answer
+as steering on the same assignment while it is active.
+
+The coordinator calls `pinata_wait` with `includeDecisions: true` and the exact
+`targets` from its launch receipt, or a list of `workers`. The wait returns
+`decision_requested` with outstanding questions from those assignments or their delegated
+children at any depth, including questions recorded before the wait began. Ordinary progress messages do not end the
+wait. A decision request never starts an idle coordinator turn. Use a decision-aware
+wait when a worker might block for an answer.
+
+Pass one or more returned `decisionId` values to `pinata_answer`, then wait again:
+
+```json
+{
+  "requestId": "answer-parser-policy",
+  "answers": [
+    { "decisionId": "<returned decisionId>", "text": "Skip malformed lines and count them." }
+  ]
+}
+```
+
+The runtime records the whole answer batch together. A repeated, stale or unknown
+decision ID rejects the batch. After an uncertain reply, retry the same request ID
+and payload. An answer stays bound to the assignment that asked the question.
+The `messages` query includes the recorded answer. Its `since` cursor returns a
+question again when the coordinator answers it.
 
 ## Configuration
 
@@ -961,7 +1038,8 @@ and effective capabilities. Inspect installed contracts with `pinata tools --jso
 | `pinata_run`       | `command`, optional `requestId`; create/add/follow-up/continue/capacity/background.  |
 | `pinata_steer`     | `worker`, `messageId`, `text`, optional `requestId`.                                 |
 | `pinata_cancel`    | `scope`, applicable `worker`/`assignment`, optional `descendants`, `requestId`.      |
-| `pinata_wait`      | Optional `workers` or exact `targets`, and `next`.                                   |
+| `pinata_answer`    | `answers` with decision IDs and text, optional `requestId`.                          |
+| `pinata_wait`      | Optional `workers` or exact `targets`, `next` and `includeDecisions`.                |
 | `pinata_status`    | Canonical `query`, default status.                                                   |
 | `pinata_agents`    | Discover definitions, model defaults and effective grants.                           |
 | `pinata_integrate` | Exact `ref`, `destination`, optional `requestId`; observe its application operation. |
@@ -1000,6 +1078,7 @@ they do not promise exactly-once arbitrary external tool effects.
 | `create`, `add`          | Atomically accept worker batches; `create` can include config.           |
 | `follow_up`              | Queue with `worker`, `messageId`, `text`, optional `after`.              |
 | `steer`, `continue`      | Address a worker with message ID/text.                                   |
+| `answer_decisions`       | Answer one or more open requests on their original assignments.          |
 | `cancel`                 | Assignment/worker/run scope; descendants default on.                     |
 | `background`, `capacity` | Release a wait or select positive/null `maxConcurrent`.                  |
 | `apply`                  | Apply current worktree files after coordinator handoff; check conflicts. |
@@ -1078,10 +1157,19 @@ trusted `--bootstrap <module>`. Inspection accepts `--cursor`, `--since`,
 Exit codes: `0` observed, `1` failed/uncertain application evidence, `2` invalid or
 rejected request. Execution completion does not certify correctness.
 
-Pi commands: `/pinata`, `/pinata-main`, `/pinata-fleet`,
-`/pinata-conversation <worker> [assignment]`, `/pinata-palette <name>`,
-`/pinata-schema <name>`, `/pinata-grants <json>`, `/pinata-new`,
+Pi commands: `/pinata`, `/pinata help`, `/pinata-main`, `/pinata-fleet`,
+`/pinata-conversation <worker> [assignment] [--run <id>]`, `/pinata-palette [name]`,
+`/pinata-schema [name]`, `/pinata-grants <json>`, `/pinata-new`,
 `/pinata-retry <run>:<input-token>`, `/pinata-memory inspect|edit|clear ...`.
+
+Result cards include the run ID in their conversation command. An older card
+opens its recorded assignment, even if the selected run has reused the worker
+name. Saved runs open read-only.
+
+A schema describes a data format, including its fields and allowed values.
+`/pinata-schema` lets you search by name and page through one format at a time.
+Browsing stays in the terminal and preserves the coordinator's model context.
+Use `pinata schema <name> --json` to read the full definition from a script.
 
 ## Package API
 
@@ -1213,8 +1301,11 @@ and preserve cancellation, context and recovery through these ports.
 ## Events and extension RPC
 
 `pinata.event.v1` distinguishes durable `committed` transitions, replay `snapshot`
-projections and transient `activity`. Revisions order history; `ownerEpoch` identifies
-ownership generations. Activity source and ordinal support deduplication. Activity
+projections, transient `activity` text and `progress` updates. Progress carries
+the current action and the last finished action, ordered by assignment ordinal.
+Live snapshots include the latest progress for active assignments. Revisions order
+history. `ownerEpoch` identifies ownership generations. Activity source and ordinal
+support deduplication. Activity
 gaps do not imply missing commits.
 
 The Pi adapter emits `pinata:ready`, `pinata:event` and `pinata:closed`. It binds only
@@ -1273,8 +1364,9 @@ consumption evidence stays intact. Acknowledgment cannot retract a previously sa
 Pi message; automatic completion watches exclude acknowledged notices.
 
 Process workers retain authenticated supervisor transport, including nested calls,
-lifecycle observations and coalesced activity. Reconnection replays the latest
-activity tail; durable writes remain the source for outcomes, usage and cleanup.
+lifecycle observations and coalesced activity. On reconnection, the supervisor
+replays the latest progress and activity text. Durable records provide outcomes,
+usage and cleanup evidence.
 
 Usage is per assignment and attempt, with response identities for deduplication.
 Own usage is separate from descendant totals. Incomplete coverage leaves totals

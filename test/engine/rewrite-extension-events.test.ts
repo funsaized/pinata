@@ -335,6 +335,8 @@ test(
     await scoped.close();
     const handle = scripted.handles.get("grandchild");
     assert(handle);
+    const current = { action: { kind: "model", turn: 2 }, startedAt: 1000, count: 1 } as const;
+    await handle.observe({ kind: "progress", ordinal: 3, current });
     await handle.observe({
       kind: "activity",
       source: "activity",
@@ -398,6 +400,10 @@ test(
       assert(cleanup?.kind === "committed" && cleanup.cleanup === "stopped");
     }
     const activity = observed.find((event) => event.kind === "activity");
+    const progress = observed.find((event) => event.kind === "progress");
+    assert(progress?.kind === "progress");
+    assert.deepEqual(progress.current, current);
+    assert.equal(progress.ref.worker, "grandchild");
     assert(activity?.kind === "activity" && activity.truncated && activity.text.length === 4096);
     assert(
       observed.some(

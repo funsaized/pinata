@@ -3,9 +3,12 @@ import {
   type Assignment,
   type AssignmentRef,
   type CoreState,
+  type ExecutionState,
+  type StoredWorkerMessage,
 } from "../contracts/index.ts";
 import { dependentAssignments } from "../core/indexes.ts";
-import { readinessFor, type ReadinessReason } from "../core/readiness.ts";
+import { isOpenDecision } from "../core/messages.ts";
+import { readinessFor } from "../core/readiness.ts";
 import { assignmentUsage } from "../core/usage.ts";
 
 export function assignments(state: CoreState): Assignment[] {
@@ -20,6 +23,12 @@ export function steerTarget(state: CoreState, worker: string): AssignmentRef | u
 export function executionLabel(assignment: Assignment): string {
   const execution = assignment.execution;
   return execution.phase === "ended" ? execution.reason : execution.phase;
+}
+export function resultStatus(execution: ExecutionState): string {
+  if (execution.phase !== "ended") return execution.phase;
+  return execution.outputTruncated
+    ? `${execution.reason} (model output limit reached)`
+    : execution.reason;
 }
 export function contextLabel(state: CoreState, ref: AssignmentRef): string {
   const usage = state.contextUsage[assignmentKey(ref)];
@@ -75,7 +84,7 @@ export function assignmentDetails(state: CoreState, assignment: Assignment): Det
       ],
       ["Notification", delivery?.state ?? "Not recorded"],
       ["Assessment", result?.report ? "Retained worker report" : "None"],
-      ["Acceptance", "No decision recorded · correctness unknown"],
+      ["Acceptance", "Not recorded · correctness unknown"],
     ],
   };
   if (sent || received) handoff.fields.push(["Messages", `${sent} sent · ${received} received`]);
@@ -117,8 +126,44 @@ export function isFinished(assignment: Assignment): boolean {
   return assignment.execution.phase === "ended" && assignment.execution.cleanup === "confirmed";
 }
 
+type FleetDecisions = {
+  open: StoredWorkerMessage[];
+  closed: StoredWorkerMessage[];
+};
+const decisionViews = new WeakMap<CoreState, Map<string, FleetDecisions>>();
+
+export function assignmentDecisions(
+  state: CoreState,
+  ref: AssignmentRef,
+): FleetDecisions | undefined {
+  let byAssignment = decisionViews.get(state);
+  if (!byAssignment) {
+    byAssignment = new Map<string, FleetDecisions>();
+    for (const message of Object.values(state.messages)) {
+      if (!message.decision) continue;
+      const key = assignmentKey(message.from);
+      const group = byAssignment.get(key) ?? { open: [], closed: [] };
+      if (isOpenDecision(state, message)) group.open.push(message);
+      else group.closed.push(message);
+      byAssignment.set(key, group);
+    }
+    for (const { open, closed } of byAssignment.values()) {
+      open.sort(
+        (a, b) =>
+          Number(b.decision === "wait") - Number(a.decision === "wait") || a.revision - b.revision,
+      );
+      closed.sort(
+        (a, b) => (b.answer?.revision ?? b.revision) - (a.answer?.revision ?? a.revision),
+      );
+    }
+    decisionViews.set(state, byAssignment);
+  }
+  return byAssignment.get(assignmentKey(ref));
+}
+
 export function needsAttention(state: CoreState, assignment: Assignment): boolean {
-  if (assignment.execution.phase !== "ended") return false;
+  if (assignment.execution.phase !== "ended")
+    return Boolean(assignmentDecisions(state, assignment.ref)?.open.length);
   if (assignment.execution.cleanup === "unconfirmed") return true;
   if (!["failed", "interrupted"].includes(assignment.execution.reason)) return false;
   return (
@@ -151,19 +196,34 @@ export function matchesFleetFilter(
   }
 }
 
-export function queueLabel(
-  state: CoreState,
-  assignment: Assignment,
-  reason: ReadinessReason = readinessFor(state, assignmentKey(assignment.ref)) ?? "dependency",
-): string {
-  if (reason !== "dependency") return reason;
-  const blocked = assignment.after.flatMap((ref) => {
-    const dependency = state.assignments[assignmentKey(ref)];
-    if (dependency?.execution.phase === "ended" && dependency.execution.cleanup === "confirmed")
-      return [];
-    return [
-      `${ref.worker}/${ref.assignment} (${dependency ? executionLabel(dependency) : "unavailable"}${dependency?.execution.phase === "ended" ? "; cleanup unconfirmed" : ""})`,
-    ];
-  });
-  return `dependency · ${blocked.join(", ")}`;
+export function queueLabel(state: CoreState, assignment: Assignment, compact = false): string {
+  const reason = readinessFor(state, assignmentKey(assignment.ref)) ?? "dependency";
+  switch (reason) {
+    case "dependency": {
+      const blocked = assignment.after.filter((ref) => {
+        const dependency = state.assignments[assignmentKey(ref)];
+        return !dependency || !isFinished(dependency);
+      });
+      if (!blocked.length) return "Waiting on dependencies";
+      if (compact && blocked.length > 1) return `Waiting on ${blocked.length} assignments`;
+      const labels = blocked.map((ref) => {
+        const name = `${ref.worker}/${ref.assignment}`;
+        if (compact) return name;
+        const dependency = state.assignments[assignmentKey(ref)];
+        const phase = dependency ? executionLabel(dependency) : "unavailable";
+        return `${name} (${phase}${dependency?.execution.phase === "ended" ? "; cleanup unconfirmed" : ""})`;
+      });
+      return "Waiting on " + labels.join(", ");
+    }
+    case "ready":
+      return "Ready to start";
+    case "capacity":
+      return compact ? "Waiting for slot" : "Waiting for a free execution slot";
+    case "cancelled":
+      return "Cancellation pending";
+    case "effect_unconfirmed":
+      return "Waiting for execution recovery";
+    default:
+      return reason.replaceAll("_", " ");
+  }
 }

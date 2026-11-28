@@ -1,7 +1,9 @@
 import { assignmentKey, DomainError, type AssignmentRef } from "../contracts/common.ts";
 import { canonicalJson } from "../contracts/digest.ts";
-import type { CoreState } from "../contracts/lifecycle.ts";
+import type { CoreState, InboxMessage } from "../contracts/lifecycle.ts";
 import type {
+  DecisionAnswer,
+  StoredWorkerMessage,
   WorkerMessage,
   WorkerMessageReceipt,
   WorkerMessageRequest,
@@ -11,12 +13,12 @@ import { assignmentAttempts } from "./indexes.ts";
 export function queryMessages(
   state: CoreState,
   query: { since: number; worker?: string },
-): { kind: "messages"; messages: WorkerMessage[]; cursor: number } {
+): { kind: "messages"; messages: StoredWorkerMessage[]; cursor: number } {
   return {
     kind: "messages",
     messages: Object.values(state.messages).filter(
       (message) =>
-        message.revision > query.since &&
+        (message.answer?.revision ?? message.revision) > query.since &&
         (!query.worker ||
           message.from.worker === query.worker ||
           (message.to !== "coordinator" && message.to.worker === query.worker)),
@@ -74,6 +76,8 @@ export function validateMessage(state: CoreState, message: WorkerMessage): void 
       "Messages require the bound sender assignment to be running and uncancelled",
     );
   if (message.to === "coordinator") return;
+  if (message.decision)
+    throw new DomainError("invalid_input", "Decision requests must target the coordinator", "to");
   const targetKey = assignmentKey(message.to);
   const target = state.assignments[targetKey];
   if (
@@ -135,4 +139,64 @@ export function recordMessage(
     };
   }
   return next;
+}
+
+export function isOpenDecision(state: CoreState, message: StoredWorkerMessage): boolean {
+  if (!message.decision || message.answer) return false;
+  const key = assignmentKey(message.from);
+  const phase = state.assignments[key]?.execution.phase;
+  return (phase === "running" || phase === "preparing") && !Object.hasOwn(state.cancelled, key);
+}
+
+export function decisionInScope(
+  state: CoreState,
+  from: AssignmentRef,
+  targets: ReadonlySet<string>,
+): boolean {
+  let ref: AssignmentRef | undefined = from;
+  while (ref) {
+    if (targets.has(assignmentKey(ref))) return true;
+    ref = state.workers[ref.worker]?.parentAssignment;
+  }
+  return false;
+}
+
+export function prepareDecisionAnswers(
+  state: CoreState,
+  answers: DecisionAnswer[],
+  sender: string,
+): { targets: AssignmentRef[]; messages: InboxMessage[] } {
+  const seen = new Set<string>();
+  const targets = new Map<string, AssignmentRef>();
+  const messages: InboxMessage[] = [];
+  for (const { decisionId, text } of answers) {
+    const request = Object.hasOwn(state.messages, decisionId)
+      ? state.messages[decisionId]
+      : undefined;
+    if (!request?.decision)
+      throw new DomainError(
+        "invalid_input",
+        `Unknown decision request: ${decisionId}`,
+        "decisionId",
+      );
+    if (seen.has(decisionId) || !isOpenDecision(state, request))
+      throw new DomainError(
+        "conflict",
+        `Decision request is repeated, answered or no longer active: ${decisionId}`,
+        "decisionId",
+      );
+    seen.add(decisionId);
+    targets.set(assignmentKey(request.from), request.from);
+    if (request.decision === "continue")
+      messages.push({
+        id: `decision-answer:${decisionId}`,
+        target: request.from,
+        sender,
+        kind: "steer",
+        text: `Coordinator answer to ${decisionId}:\n${text}`,
+        state: "recorded",
+        attempts: [],
+      });
+  }
+  return { targets: [...targets.values()], messages };
 }

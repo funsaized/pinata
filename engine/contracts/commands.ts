@@ -16,6 +16,7 @@ import {
   workspaceSchema,
 } from "./common.ts";
 import { configLayerSchema } from "./config.ts";
+import { decisionAnswersSchema } from "./messages.ts";
 import { applicationCommandSchema } from "./application.ts";
 
 export const workerRequestSchema = z.strictObject({
@@ -101,6 +102,7 @@ export const runtimeCommandSchema = z.discriminatedUnion("kind", [
     kind: z.literal("capacity"),
     maxConcurrent: revisionSchema.positive().nullable(),
   }),
+  z.strictObject({ kind: z.literal("answer_decisions"), answers: decisionAnswersSchema }),
   ...applicationCommandSchema.options,
 ]);
 export type RuntimeCommand = z.infer<typeof runtimeCommandSchema>;

@@ -8,7 +8,101 @@ import { piFixture } from "./rewrite-pi-fixture.ts";
 import { supervisedSessionProcesses } from "../../engine/agent/processes.ts";
 import { materializeConversation } from "../../engine/storage/conversation.ts";
 import { verifyArtifact } from "../../engine/storage/index.ts";
-import { assignmentKey } from "../../engine/contracts/index.ts";
+import { assignmentKey, type WorkerProgress } from "../../engine/contracts/index.ts";
+import { bindRuntime } from "../../engine/sources/runtime.ts";
+
+test(
+  "a late subscriber sees the running model turn and the last tool without any assistant prose",
+  { timeout: 20_000 },
+  async (t) => {
+    let release = (): void => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const world = await piFixture(t, async (_context, _options, state) => {
+      if (state.callCount === 1)
+        return fauxAssistantMessage([
+          fauxToolCall("read", { path: "a.txt" }),
+          fauxToolCall("read", { path: "b.txt" }),
+        ]);
+      await held;
+      return fauxAssistantMessage("Done");
+    });
+    await Promise.all(
+      ["a.txt", "b.txt"].map((name) => writeFile(join(world.workspace, name), name)),
+    );
+    const updates: WorkerProgress[] = [];
+    let start = (): void => {};
+    const started = new Promise<void>((resolve) => {
+      start = resolve;
+    });
+    const unsubscribe = world.runtime.subscribe({}, world.caller, (event) => {
+      if (event.kind !== "progress") return;
+      updates.push(event);
+      if (event.current?.action.kind === "model" && event.current.action.turn === 2) start();
+    });
+    t.after(unsubscribe);
+    const source = bindRuntime(world.runtime, world.caller);
+    try {
+      await world.runtime.execute(
+        {
+          requestId: "progress",
+          command: {
+            kind: "create",
+            workers: [{ id: "reader", agent: "fixture", task: "Read two files" }],
+          },
+        },
+        world.caller,
+      );
+      await started;
+      const latest = updates.at(-1);
+      assert(latest?.current?.action.kind === "model");
+      assert.deepEqual(source.snapshot().progress?.[0]?.current, latest.current);
+      assert.deepEqual(latest.last?.action, { kind: "tool", name: "read" });
+      assert.equal(latest.last?.failed, false);
+      assert(updates.some((update) => update.current?.count === 2));
+    } finally {
+      release();
+    }
+    const ended = await world.runtime.wait({}, world.caller, t.signal);
+    assert.deepEqual(ended.results[0]?.execution, {
+      phase: "ended",
+      reason: "completed",
+      cleanup: "confirmed",
+    });
+    assert.deepEqual(source.snapshot().progress ?? [], []);
+    assert.doesNotMatch(
+      await readFile(join(world.storeDirectory, "journal.jsonl"), "utf8"),
+      /"kind":"progress"/,
+    );
+  },
+);
+
+test("a recovered truncated tool call does not mark the final answer as partial", async (t) => {
+  const world = await piFixture(t, (_context, _options, state) =>
+    state.callCount === 1
+      ? fauxAssistantMessage([fauxToolCall("read", { path: "file.txt" })], { stopReason: "length" })
+      : fauxAssistantMessage("Recovered answer"),
+  );
+  const receipt = await world.runtime.execute(
+    {
+      requestId: "recovered-output",
+      command: {
+        kind: "create",
+        workers: [{ id: "reader", agent: "fixture", task: "Read the file" }],
+      },
+    },
+    world.caller,
+  );
+  assert.equal(receipt.status, "accepted");
+  const {
+    results: [result],
+  } = await world.runtime.wait({}, world.caller, AbortSignal.timeout(10_000));
+  assert.equal(world.turns.length, 2);
+  assert.deepEqual(result.execution, { phase: "ended", reason: "completed", cleanup: "confirmed" });
+  assert.equal(result.summary, "Recovered answer");
+  assert.equal(result.usage.complete, true);
+});
 
 test(
   "a final report blocks later tools in its batch and ends without another provider request",

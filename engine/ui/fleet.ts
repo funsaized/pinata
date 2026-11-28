@@ -1,6 +1,14 @@
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { assignmentKey, type Assignment, type AssignmentRef } from "../contracts/index.ts";
 import {
+  assignmentKey,
+  type Assignment,
+  type AssignmentRef,
+  type CoreState,
+  type StoredWorkerMessage,
+  type WorkerProgress,
+} from "../contracts/index.ts";
+import {
+  assignmentDecisions,
   assignmentDetails,
   executionLabel,
   fleetFilters,
@@ -11,7 +19,7 @@ import {
 import { agentAccent, type Paint } from "./palette.ts";
 import type { DependencyRow, ScreenRouter } from "./router.ts";
 import { detailRows, displayText, fit, lines, padded } from "./text.ts";
-import { activityIndicator } from "./tree.ts";
+import { activityIndicator, activityStepMs, restingMarker } from "./tree.ts";
 import { conversationMarkdown, type ConversationPresentation } from "./conversation.ts";
 
 export type Pane = { x: number; y: number; width: number; height: number };
@@ -45,35 +53,6 @@ function ellipsis(text: string, width: number): string {
   return displayText(width > 1 ? fit(clean, width - 1) + "…" : fit(clean, width));
 }
 
-function waiting(router: ScreenRouter, assignment: Assignment, compact = false): string {
-  const reason = queueLabel(router.state, assignment);
-  if (reason.startsWith("dependency · ")) {
-    if (!compact) return "Waiting for " + reason.slice("dependency · ".length);
-    const blocked = assignment.after.filter((ref) => {
-      const dependency = router.state.assignments[assignmentKey(ref)];
-      return (
-        dependency?.execution.phase !== "ended" || dependency.execution.cleanup !== "confirmed"
-      );
-    });
-    const first = blocked[0];
-    return first
-      ? `Needs ${first.worker}/${first.assignment}${blocked.length > 1 ? ` +${blocked.length - 1}` : ""}`
-      : "Waiting for dependencies";
-  }
-  switch (reason) {
-    case "ready":
-      return "Ready to start";
-    case "capacity":
-      return compact ? "Waiting for slot" : "Waiting for a free execution slot";
-    case "cancelled":
-      return "Cancellation pending";
-    case "effect_unconfirmed":
-      return "Waiting for execution recovery";
-    default:
-      return reason.replaceAll("_", " ");
-  }
-}
-
 function status(assignment: Assignment): string {
   const label = executionLabel(assignment);
   return (
@@ -105,9 +84,67 @@ function duration(elapsed: number | undefined, ascii = false): string {
   return elapsed < 60_000 ? `${(elapsed / 1000).toFixed(1)}s` : `${(elapsed / 60_000).toFixed(1)}m`;
 }
 
+function actionDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  const seconds = Math.floor(ms / 1000);
+  return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+}
+
+function currentAction(progress?: WorkerProgress): string | undefined {
+  const current = progress?.current;
+  if (!current) return;
+  const { action, count, startedAt } = current;
+  let label: string;
+  if (action.kind === "model") label = `Model turn ${action.turn}`;
+  else if (count > 1) label = `Running ${count} tools`;
+  else label = `Running ${displayText(action.name)}`;
+  return `${label} · ${actionDuration(Math.max(0, Date.now() - startedAt))}`;
+}
+
 function excerpt(rows: string[], width: number, limit: number, paint: Paint): string[] {
   if (rows.length <= limit) return rows;
   return [...rows.slice(0, limit), paint("muted", fit("… d to expand", width))];
+}
+
+function questionStyle(question: StoredWorkerMessage): { color: string; label: string } {
+  return question.decision === "wait"
+    ? { color: "warning", label: "Waiting for coordinator" }
+    : { color: "accent.cyan", label: "Asked coordinator · still working" };
+}
+
+function decisionRows(
+  router: ScreenRouter,
+  ref: AssignmentRef,
+  width: number,
+  options: FleetOptions,
+): string[] {
+  const decisions = assignmentDecisions(router.state, ref);
+  if (!decisions) return [];
+  const { open, closed } = decisions;
+  const { paint, ascii } = options;
+  const rows: string[] = [];
+  const limit = router.details ? Infinity : 3;
+  function appendText(text: string) {
+    for (const line of excerpt(lines(text, width), width, limit, paint)) rows.push(line);
+  }
+  for (const question of router.details ? open : open.slice(0, 1)) {
+    const { color, label } = questionStyle(question);
+    const alsoAsked = question.decision === "continue" && open[0].decision === "wait";
+    rows.push(paint(color, fit(`? ${alsoAsked ? "Also asked the coordinator" : label}`, width)));
+    appendText(question.text);
+  }
+  if (!router.details && open.length) {
+    if (open.length > 1)
+      rows.push(paint("muted", fit(`+${open.length - 1} more open · d to expand`, width)));
+    return rows;
+  }
+  for (const question of router.details ? closed : closed.slice(0, 1)) {
+    const label = question.answer ? "Coordinator answered" : "Closed without an answer";
+    rows.push(paint("muted", fit(label, width)));
+    appendText(question.text);
+    if (question.answer) appendText(`${ascii ? ">" : "↳"} ${question.answer.text}`);
+  }
+  return rows;
 }
 
 function inspector(router: ScreenRouter, pane: Pane, options: FleetOptions): string[] {
@@ -119,20 +156,18 @@ function inspector(router: ScreenRouter, pane: Pane, options: FleetOptions): str
   const { width, height } = pane;
   const worker = router.state.workers[ref.worker];
   const color = worker.color ?? agentAccent(worker.agent);
+  const progress = router.progress.get(assignmentKey(ref));
   const view = router.preview();
   const message = view.result?.message;
   let preview = message?.text;
   if (message?.truncated) preview += "…";
-  if (!preview) {
-    if (assignment.execution.phase === "queued") preview = "Not started yet.";
-    else if (view.loading && !view.result && !view.error) preview = "Loading last message…";
+  if (!preview && assignment.execution.phase !== "queued") {
+    if (view.loading && !view.result && !view.error) preview = "Loading last message…";
     else if (view.error) preview = "Preview unavailable. Enter opens the conversation.";
-    else if (view.result?.complete) preview = "No assistant message yet.";
     else if (view.result?.source === "checkpoint")
       preview = "Only a whole-worker checkpoint is available.";
-    else if (view.result?.source === "assignment")
+    else if (view.result?.source === "assignment" && !view.result.complete)
       preview = "Preview incomplete. Enter opens the conversation.";
-    else preview = "No retained message available yet.";
   }
   const sectionLimit = Math.max(1, Math.floor((height - 8) / 2));
   const markdown = (value: string) => conversationMarkdown(value, width, paint, presentation);
@@ -143,7 +178,7 @@ function inspector(router: ScreenRouter, pane: Pane, options: FleetOptions): str
     ),
     fit(
       paint(statusColor(assignment), status(assignment)) +
-        paint("muted", ` · observed ${duration(router.observedElapsed(ref), ascii)}`),
+        paint("muted", ` · Observed here ${duration(router.observedElapsed(ref), ascii)}`),
       width,
     ),
     paint(
@@ -160,7 +195,7 @@ function inspector(router: ScreenRouter, pane: Pane, options: FleetOptions): str
   if (assignment.execution.phase === "queued")
     content.push(
       ...excerpt(
-        lines(waiting(router, assignment), width),
+        lines(queueLabel(router.state, assignment), width),
         width,
         router.details ? Infinity : 2,
         paint,
@@ -172,7 +207,11 @@ function inspector(router: ScreenRouter, pane: Pane, options: FleetOptions): str
   if (result && assignment.execution.phase === "ended") {
     content.push(
       "",
-      paint("strong", result.report ? "Worker report" : "Result"),
+      ...(assignment.execution.outputTruncated
+        ? lines("Partial output · model output limit reached", width).map((line) =>
+            paint("warning", line),
+          )
+        : [paint("strong", result.report ? "Worker report" : "Result")]),
       ...excerpt(markdown(result.summary), width, router.details ? Infinity : 4, paint),
     );
     if (result.reportingError && !router.details)
@@ -198,14 +237,31 @@ function inspector(router: ScreenRouter, pane: Pane, options: FleetOptions): str
       ),
     );
   }
-  content.push("", paint("strong", paint(color, "Last message")));
+  for (const row of decisionRows(router, ref, width, options)) content.push(row);
+  const current = assignment.execution.phase === "running" && currentAction(progress);
+  if (current) content.push(...lines(current, width).map((line) => paint("strong", line)));
+  if (progress?.last) {
+    const { action, durationMs, failed } = progress.last;
+    const name = action.kind === "model" ? `Model turn ${action.turn}` : displayText(action.name);
+    content.push(
+      ...lines(
+        `Last action · ${name} ${failed ? "failed" : "finished"} in ${actionDuration(durationMs)}`,
+        width,
+      ),
+    );
+  }
+  if (message) content.push("", paint("strong", paint(color, "Last message")));
   if (!router.connectionAvailable || (view.error && message))
     content.push(paint("warning", "Retained preview · connection unavailable"));
-  const previewRows = message
-    ? markdown(preview)
-    : lines(preview, width).map((line) => paint("muted", line));
+  if (preview) {
+    const previewRows = message
+      ? markdown(preview)
+      : lines(preview, width).map((line) => paint("muted", line));
+    content.push(
+      ...excerpt(previewRows, width, router.details ? Infinity : Math.min(4, sectionLimit), paint),
+    );
+  }
   content.push(
-    ...excerpt(previewRows, width, router.details ? Infinity : Math.min(4, sectionLimit), paint),
     "",
     paint("strong", paint(color, "Prompt")),
     ...excerpt(
@@ -280,9 +336,11 @@ function filterStrip(router: ScreenRouter, options: FleetOptions, row: number): 
       paint(
         label.filter === router.filter
           ? "focus"
-          : label.filter === "attention" && !label.text.endsWith(" 0")
+          : label.filter === "attention" && counts.attention > 0
             ? "warning"
-            : "muted",
+            : counts[label.filter]
+              ? "text"
+              : "muted",
         text,
       ) + " ";
   }
@@ -292,81 +350,63 @@ function filterStrip(router: ScreenRouter, options: FleetOptions, row: number): 
   return fit(output, width);
 }
 
-// Pi's default Braille loader frames, advanced by the fleet's shared redraw timer.
-const workingFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-
-function dependencyStatus(
-  assignment: Assignment,
-  options: { ascii: boolean; animate: boolean; now: number },
-): { icon: string; label?: string } {
-  const { ascii, animate, now } = options;
-  const { execution } = assignment;
-  if (execution.phase === "queued") return { icon: ascii ? "o" : "⧖" };
-  if (execution.phase !== "ended") {
-    const icon = ascii
-      ? "~"
-      : animate
-        ? workingFrames[Math.floor(now / 250) % workingFrames.length]
-        : "◐";
-    return { icon, label: execution.phase === "running" ? undefined : status(assignment) };
-  }
-  if (execution.cleanup === "unconfirmed") return { icon: "!", label: "Cleanup unconfirmed" };
-  switch (execution.reason) {
-    case "completed":
-      return { icon: ascii ? "+" : "✓" };
-    case "failed":
-      return { icon: ascii ? "x" : "×", label: "Failed" };
-    case "cancelled":
-      return { icon: ascii ? "-" : "−", label: "Cancelled" };
-    case "interrupted":
-      return { icon: "!", label: "Interrupted" };
-  }
+function cursor(paint: Paint, selected: boolean, ascii?: boolean): string {
+  return selected ? paint("accent", ascii ? "> " : "› ") : "  ";
 }
+
 function renderDependencyRow(
+  state: CoreState,
   row: DependencyRow,
   branch: string,
   options: Pick<FleetOptions, "paint" | "ascii" | "width"> & {
     selected: boolean;
-    animate: boolean;
-    now: number;
+    track?: string;
   },
 ): string {
-  const { paint, width, selected, ascii, animate, now } = options;
-  const prefix = `${selected ? ">" : " "} ${branch}`;
+  const { paint, width, selected, ascii } = options;
+  const prefix = cursor(paint, selected, ascii);
+  let text: string;
   if (row.kind === "group") {
     const disclosure = row.expanded ? (ascii ? "-" : "▾") : ascii ? "+" : "▸";
-    const title = row.group === "prerequisites" ? "Prerequisites" : "Dependents";
+    const title = row.group === "prerequisites" ? "Depends on" : "Needed by";
     const complete = row.completed === row.total ? row.total : `${row.completed}/${row.total}`;
-    const summary = `   ${complete} complete`;
     const attention = row.attention
       ? ` · ${row.attention} ${row.attention === 1 ? "needs" : "need"} attention`
       : "";
-    const heading = `${disclosure} ${title}`;
-    return selected
-      ? paint("focus", padded(prefix + heading + summary + attention, width))
-      : fit(
-          paint("border", prefix) +
-            paint("strong", heading) +
-            paint("muted", summary) +
-            paint("warning", attention),
-          width,
-        );
+    text =
+      prefix +
+      "       " +
+      paint("border", branch) +
+      paint("strong", disclosure + " " + title) +
+      paint("muted", `   ${complete} complete`) +
+      paint("warning", attention);
+  } else {
+    const { assignment } = row;
+    const question = assignmentDecisions(state, assignment.ref)?.open[0];
+    const style = question && questionStyle(question);
+    const color = statusColor(assignment);
+    const label =
+      assignment.execution.phase === "ended" && assignment.execution.cleanup === "unconfirmed"
+        ? "Cleanup unconfirmed"
+        : status(assignment);
+    const name = paint(
+      "text",
+      `${displayText(assignment.ref.worker)}/${assignment.ref.assignment}`,
+    );
+    text =
+      prefix +
+      paint(color, options.track ?? "") +
+      "  " +
+      paint("border", branch) +
+      (selected ? paint("strong", name) : name) +
+      "   " +
+      paint(color, label) +
+      (style ? paint(style.color, " · ? " + style.label) : "");
   }
-  const { ref } = row.assignment;
-  const { icon, label } = dependencyStatus(row.assignment, { ascii: Boolean(ascii), animate, now });
-  const identity = `  ${displayText(ref.worker)}/${ref.assignment}`;
-  const suffix = label ? `   ${label}` : "";
-  const color = statusColor(row.assignment);
-  return selected
-    ? paint("focus", padded(prefix + icon + identity + suffix, width))
-    : fit(
-        paint("border", prefix) +
-          paint(color, icon) +
-          paint("text", identity) +
-          paint(color, suffix),
-        width,
-      );
+  const line = fit(text, width);
+  return selected ? paint("selection", line) : line;
 }
+
 function list(
   router: ScreenRouter,
   pane: Pane,
@@ -378,28 +418,31 @@ function list(
   const { width, height } = pane;
   if (!height) return [];
   const statusWidth = Math.min(13, Math.max(7, Math.floor(width * 0.25)));
-  const showTime = width >= 65;
-  const timeWidth = showTime ? 10 : 0;
-  const identityWidth = Math.min(
-    Math.max(
-      10,
-      ...nodes.map(
-        (node) =>
-          visibleWidth(node.assignment.ref.worker) +
-          String(node.assignment.ref.assignment).length +
-          node.prefix.length +
-          8,
-      ),
-    ),
-    Math.max(8, Math.min(32, Math.floor(width * 0.4))),
-  );
-  const infoWidth = Math.max(0, width - identityWidth - statusWidth - timeWidth - 4);
+  // Two cells for focus, five for motion, two for the gutter and two for disclosure.
+  const nameColumn = 11;
+  const identityWidth =
+    width < 34
+      ? width
+      : Math.min(
+          Math.max(
+            nameColumn + 5,
+            ...nodes.map(
+              ({ assignment, prefix }) =>
+                nameColumn +
+                Math.max(0, prefix.length - 3) +
+                visibleWidth(assignment.ref.worker) +
+                1 +
+                String(assignment.ref.assignment).length,
+            ),
+          ),
+          Math.min(40, Math.max(nameColumn + 5, Math.floor(width * 0.45))),
+        );
+  const infoWidth = width - identityWidth - statusWidth - 3;
   const heading =
-    padded("  Agent", identityWidth) +
+    padded(" ".repeat(nameColumn) + "Agent", identityWidth) +
     " " +
     padded("Status", statusWidth) +
-    (showTime ? padded("  Observed", timeWidth) : "") +
-    (infoWidth >= 12 ? "   Task / waiting" : "");
+    (infoWidth >= 8 ? "  Activity" : "");
   const output = [fit(paint("muted", heading), width)];
   const selection = router.selected && assignmentKey(router.selected);
   const anchor = nodes.findIndex((node) => assignmentKey(node.assignment.ref) === selection);
@@ -425,12 +468,26 @@ function list(
       return { dependency: dependencies[dependencyIndex], dependencyIndex };
     return { node: nodes[index > anchor ? index - dependencyCount : index] };
   });
-  const activeCount = visible.filter(
-    ({ node }) => node && matchesFleetFilter(router.state, node.assignment, "working"),
-  ).length;
+  // Both appearances of an assignment share the same phase of the wave.
+  const active = new Map<string, number>();
+  for (const { node, dependency } of visible) {
+    const assignment = node?.assignment ?? (dependency?.kind === "link" && dependency.assignment);
+    if (!assignment || !matchesFleetFilter(router.state, assignment, "working")) continue;
+    const key = assignmentKey(assignment.ref);
+    if (!active.has(key)) active.set(key, active.size);
+  }
   const now = performance.now();
-  let activeRow = 0;
-  for (const { node, dependency, dependencyIndex } of visible) {
+  function track(assignment: Assignment): string {
+    const index = active.get(assignmentKey(assignment.ref));
+    return index === undefined
+      ? `  ${restingMarker(assignment, Boolean(ascii))}  `
+      : activityIndicator(router.motion, now, "", index, active.size + 4, Boolean(ascii));
+  }
+  const positioned = router.completions.positionRows(
+    visible,
+    ({ node }) => node && assignmentKey(node.assignment.ref),
+  );
+  for (const { node, dependency, dependencyIndex } of positioned) {
     if (dependency && dependencyIndex !== undefined) {
       const parent = nodes[anchor];
       const hasVisibleChildren = nodes[anchor + 1]?.prefix.length > parent.prefix.length;
@@ -444,67 +501,69 @@ function list(
       const connector = last ? (ascii ? "`- " : "└─ ") : ascii ? "|- " : "├─ ";
       options.fleetRegions?.dependencyRows?.set(pane.y + output.length, dependency);
       output.push(
-        renderDependencyRow(dependency, indent + connector, {
+        renderDependencyRow(router.state, dependency, indent + connector, {
           width,
           paint,
           ascii,
           selected: dependencyIndex === focusedRow,
-          animate: router.motion === "full",
-          now,
+          track: dependency.kind === "link" ? track(dependency.assignment) : undefined,
         }),
       );
       continue;
     }
     if (!node) continue;
     const assignment = node.assignment;
+    const key = assignmentKey(assignment.ref);
+    const sweep = router.completions.render(key, width, paint);
+    if (sweep !== undefined) {
+      output.push(sweep);
+      continue;
+    }
     const worker = router.state.workers[assignment.ref.worker];
     const color = worker.color ?? agentAccent(worker.agent);
     const selected = assignmentKey(assignment.ref) === selection;
     const working = matchesFleetFilter(router.state, assignment, "working");
-    const marker = working
-      ? activityIndicator(router.motion, now, "", activeRow++, activeCount + 4, ascii ?? false)
-      : assignment.execution.phase === "queued"
-        ? ascii
-          ? "  o  "
-          : "  ○  "
-        : assignment.execution.phase === "ended" && assignment.execution.reason === "completed"
-          ? "  +  "
-          : "  !  ";
+    const question = assignmentDecisions(router.state, assignment.ref)?.open[0];
+    const questionColor = question && questionStyle(question).color;
+    const marker = track(assignment);
     const branch = node.prefix.slice(3);
-    const disclosure =
-      node.hasChildren ||
-      (selected &&
-        (dependencyCount > 0 || (router.selectedBranchCollapsed && router.hasDependencies)))
-        ? router.collapsed.has(assignmentKey(assignment.ref))
-          ? "+ "
-          : "- "
-        : "";
-    const identityText = `${selected && focusedRow < 0 ? ">" : " "} ${branch}${disclosure}${marker} ${displayText(worker.id)}/${assignment.ref.assignment}`;
+    const hasBranch = node.hasChildren || (selected && router.hasDependencies);
+    let disclosure = "  ";
+    if (hasBranch)
+      disclosure = router.collapsed.has(key) ? (ascii ? "+ " : "▸ ") : ascii ? "- " : "▾ ";
     const identity =
-      visibleWidth(identityText) > identityWidth
-        ? fit(identityText, identityWidth - 1) + "…"
-        : identityText;
-    const context =
-      assignment.execution.phase === "queued" ? waiting(router, assignment, true) : assignment.task;
-    const fields = [
-      padded(identity, identityWidth),
-      " ",
-      padded(status(assignment), statusWidth),
-      showTime ? duration(router.observedElapsed(assignment.ref), ascii).padStart(timeWidth) : "",
-      infoWidth >= 12 ? "   " + ellipsis(context, infoWidth - 1) : "",
-    ];
-    const text = selected
-      ? paint(
-          focusedRow < 0 && !router.inspectorFocus ? "focus" : "strong",
-          padded(fields.join(""), width),
-        )
-      : paint(color, fields[0]) +
-        fields[1] +
-        paint(statusColor(assignment), fields[2]) +
-        paint("muted", fields[3]) +
-        paint("text", fields[4]);
+      cursor(paint, selected && focusedRow < 0, ascii) +
+      paint(statusColor(assignment), marker) +
+      "  " +
+      paint("border", branch + disclosure);
+    const nameWidth = Math.max(1, identityWidth - visibleWidth(identity));
+    const name = paint(color, ellipsis(`${worker.id}/${assignment.ref.assignment}`, nameWidth));
+    let context = assignment.task;
+    if (question) context = question.text;
+    else if (assignment.execution.phase === "queued")
+      context = queueLabel(router.state, assignment, true);
+    else if (assignment.execution.phase === "running")
+      context =
+        currentAction(router.progress.get(assignmentKey(assignment.ref))) ?? assignment.task;
+    const rowStatus = (question ? "? " : "") + status(assignment);
+    const text =
+      padded(identity + (selected ? paint("strong", name) : name), identityWidth) +
+      " " +
+      paint(questionColor ?? statusColor(assignment), padded(rowStatus, statusWidth)) +
+      (infoWidth >= 8 ? "  " + paint(questionColor ?? "text", ellipsis(context, infoWidth)) : "");
+    const line = fit(text, width);
+    if (working && router.motion === "full" && router.source.capabilities.live)
+      router.completions.remember(key, {
+        line,
+        track: marker,
+        start: 2,
+        position: output.length - 1,
+        frame: Math.floor(now / activityStepMs),
+      });
     options.hitRows?.set(pane.y + output.length, assignment.ref);
-    output.push(fit(text, width));
+    output.push(
+      selected && focusedRow < 0 && !router.inspectorFocus ? paint("selection", line) : line,
+    );
   }
   if (!nodes.length)
     output.push(
@@ -539,7 +598,8 @@ export function renderFleet(router: ScreenRouter, options: FleetOptions): string
       ? "Live"
       : "Saved"
     : "Disconnected";
-  const scope = `Run ${router.state.run.slice(0, 24)} · ${connection}${router.source.capabilities.control ? "" : " · read-only"}`;
+  const run = router.state.run.replace(/^([0-9a-f]{8})-[0-9a-f-]{27}$/i, "$1");
+  const scope = `${connection}${router.source.capabilities.control ? "" : " · read-only"} · Run ${displayText(run)}`;
   const output = [
     fit(
       paint("strong", ellipsis(title, width)) + paint("muted", " · " + ellipsis(scope, width)),
@@ -558,7 +618,10 @@ export function renderFleet(router: ScreenRouter, options: FleetOptions): string
   const available = Math.max(0, height - output.length);
   const wide = width >= 120 && available >= 8 && Boolean(router.selected);
   const inspectorWidth = wide ? Math.min(64, Math.max(40, Math.floor(width * 0.39))) : width;
-  const nodes = router.fleetNodes(ascii);
+  if (router.motion === "full" && router.source.capabilities.live)
+    router.completions.begin(JSON.stringify(["fleet", router.filter, router.search]));
+  else router.completions.clear();
+  const nodes = router.fleetNodes(ascii, true);
   const dependencies = router.dependencyRows();
   const stacked = !wide && Boolean(router.selected) && available >= 12;
   const listHeight = stacked

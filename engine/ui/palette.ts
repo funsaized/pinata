@@ -1,6 +1,8 @@
 import {
   backgroundAnsi,
+  colorToHex,
   foregroundAnsi,
+  mixColors,
   parseColor,
   type TerminalColorMode,
 } from "@earendil-works/pi-tui";
@@ -8,8 +10,14 @@ import { paletteSchema } from "../contracts/config.ts";
 import type { z } from "zod";
 
 export type PaletteName = z.infer<typeof paletteSchema>;
+export function readPalette(value: string, browse: string): PaletteName {
+  const result = paletteSchema.safeParse(value);
+  if (!result.success) throw new Error(`Unknown palette. Use ${browse} to choose a name.`);
+  return result.data;
+}
 export type SemanticToken =
   | "background"
+  | "selection"
   | "text"
   | "muted"
   | "border"
@@ -50,6 +58,14 @@ function palette(name: PaletteName, appearance: Palette["appearance"], values: C
     appearance,
     colors: {
       background,
+      selection: colorToHex(
+        mixColors(
+          parseColor(background),
+          parseColor(appearance === "dark" ? "#000000" : "#ffffff"),
+          0.55,
+          "srgb",
+        ),
+      ),
       text,
       muted,
       border: muted,
@@ -338,6 +354,8 @@ export function createPaint(
     }
     if (name === "inherit" && options.inherit && !token.startsWith("#"))
       return options.inherit(token as SemanticToken, text);
+    if (token === "selection")
+      return `${backgroundAnsi(parseColor(palettes[name].colors.selection), options.mode ?? "truecolor")}${text}\u001b[49m`;
     const color = token.startsWith("#")
       ? token
       : (palettes[name].colors[token as SemanticToken] ?? palettes[name].colors.accent);

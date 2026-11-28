@@ -2,6 +2,7 @@ import {
   childCommandEnvelopeSchema,
   childQuerySchema,
   childQueryResultSchema,
+  childWaitResultSchema,
   childWaitSchema,
   type ChildPort,
   type ChildWaitResult,
@@ -179,7 +180,9 @@ export class ChildBindings {
           guidance:
             "Inspect child status without blocking, then finish this parent assignment to release its ordering/capacity slot. The coordinator can explicitly continue it after the children finish.",
         };
-      return await this.runtime.wait({ workers, next: request.next }, caller, signal);
+      return childWaitResultSchema.parse(
+        await this.runtime.wait({ workers, next: request.next }, caller, signal),
+      );
     } finally {
       this.waiting.delete(parentKey);
     }

@@ -84,17 +84,23 @@ export const reportToolResultSchema = z.strictObject({
   report: reportedResultSchema.optional(),
   reportingError: z.string().optional(),
 });
-export const backendOutcomeSchema = z.strictObject({
-  reason: z.enum(["completed", "failed", "cancelled"]),
-  summary: z.string(),
-  usage: usageCoverageSchema,
-  report: artifactRefSchema.optional(),
-  reportingError: textSchema.optional(),
-  session: sessionCheckpointSchema.optional(),
-  transcript: artifactRefSchema.optional(),
-  artifacts: z.array(artifactRefSchema),
-  error: textSchema.optional(),
-});
+export const backendOutcomeSchema = z
+  .strictObject({
+    reason: z.enum(["completed", "failed", "cancelled"]),
+    outputTruncated: z.literal(true).optional(),
+    summary: z.string(),
+    usage: usageCoverageSchema,
+    report: artifactRefSchema.optional(),
+    reportingError: textSchema.optional(),
+    session: sessionCheckpointSchema.optional(),
+    transcript: artifactRefSchema.optional(),
+    artifacts: z.array(artifactRefSchema),
+    error: textSchema.optional(),
+  })
+  .refine((outcome) => !(outcome.reason === "completed" && outcome.outputTruncated), {
+    message: "Truncated output cannot be a completed backend outcome",
+    path: ["outputTruncated"],
+  });
 export type BackendOutcome = z.infer<typeof backendOutcomeSchema>;
 export const contextUsageSchema = z.strictObject({
   tokens: revisionSchema.nullable(),
@@ -104,6 +110,29 @@ export const contextUsageSchema = z.strictObject({
   timestamp: revisionSchema,
 });
 export type ContextUsage = z.infer<typeof contextUsageSchema>;
+const actionSchema = z.discriminatedUnion("kind", [
+  z.strictObject({ kind: z.literal("model"), turn: revisionSchema.positive() }),
+  z.strictObject({ kind: z.literal("tool"), name: z.string().min(1).max(128) }),
+]);
+export const progressObservationSchema = z.strictObject({
+  kind: z.literal("progress"),
+  ordinal: revisionSchema,
+  current: z
+    .strictObject({
+      action: actionSchema,
+      startedAt: revisionSchema,
+      count: revisionSchema.positive(),
+    })
+    .optional(),
+  last: z
+    .strictObject({
+      action: actionSchema,
+      durationMs: revisionSchema,
+      failed: z.boolean(),
+    })
+    .optional(),
+});
+export type WorkerProgress = z.infer<typeof progressObservationSchema>;
 export const backendObservationSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("model"), attemptId: identitySchema, model: modelSchema }),
   z.strictObject({
@@ -140,6 +169,7 @@ export const backendObservationSchema = z.discriminatedUnion("kind", [
     text: z.string(),
     snapshot: z.literal(true).optional(),
   }),
+  progressObservationSchema,
 ]);
 export type BackendObservation = z.infer<typeof backendObservationSchema>;
 export const backendObservationSourceSchema = z.strictObject({
